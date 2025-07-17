@@ -6,6 +6,18 @@ document.addEventListener('alpine:init', () => {
         filteredDevices: [],
         activeCategory: null,
         searchQuery: '',
+        sortDropdownOpen: false,
+        currentSort: { field: null, direction: null },
+		
+		showSortMenu: false,
+		currentSort: null,
+		sortOptions: [
+			{ value: 'clock_asc', label: 'Clock ▲', field: 'clock', order: 'asc' },
+			{ value: 'clock_desc', label: 'Clock ▼', field: 'clock', order: 'desc' },
+			{ value: 'name_asc', label: 'Name A-Z', field: 'name', order: 'asc' },
+			{ value: 'name_desc', label: 'Name Z-A', field: 'name', order: 'desc' },
+			{ value: 'none', label: 'No sorting' }
+		],
         
         // Modals
         isCategoryModalOpen: false,
@@ -37,7 +49,7 @@ document.addEventListener('alpine:init', () => {
             this.$watch('searchQuery', () => this.searchDevices());
             feather.replace();
         },
-
+		
         // Data Loading
         async loadCategories() {
             const response = await fetch('/api/categories');
@@ -55,19 +67,51 @@ document.addEventListener('alpine:init', () => {
             this.filteredDevices = this.devices;
         },
 
-        // Search
+        // Search and Sort
         searchDevices() {
             if (!this.searchQuery) {
-                this.filteredDevices = this.devices;
-                return;
+                this.filteredDevices = [...this.devices];
+            } else {
+                const query = this.searchQuery.toLowerCase();
+                this.filteredDevices = this.devices.filter(device => 
+                    device.name.toLowerCase().includes(query) ||
+                    (device.serial_number && device.serial_number.toLowerCase().includes(query)) ||
+                    JSON.stringify(device.specs).toLowerCase().includes(query)
+                );
             }
             
-            const query = this.searchQuery.toLowerCase();
-            this.filteredDevices = this.devices.filter(device => 
-                device.name.toLowerCase().includes(query) ||
-                (device.serial_number && device.serial_number.toLowerCase().includes(query)) ||
-                JSON.stringify(device.specs).toLowerCase().includes(query)
-            );
+            // Apply current sort if one is active
+            if (this.currentSort.field) {
+                this.sortDevices(this.currentSort.field, this.currentSort.direction);
+            }
+        },
+
+        toggleSortDropdown() {
+            this.sortDropdownOpen = !this.sortDropdownOpen;
+        },
+
+        sortDevices(field, direction) {
+            this.currentSort = { field, direction };
+            this.sortDropdownOpen = false;
+            
+            this.filteredDevices.sort((a, b) => {
+                let valueA = a[field];
+                let valueB = b[field];
+                
+                // Handle cases where values might be null or undefined
+                if (valueA === null || valueA === undefined) valueA = '';
+                if (valueB === null || valueB === undefined) valueB = '';
+                
+                // Convert to string for case-insensitive comparison
+                valueA = String(valueA).toLowerCase();
+                valueB = String(valueB).toLowerCase();
+                
+                if (direction === 'asc') {
+                    return valueA.localeCompare(valueB);
+                } else {
+                    return valueB.localeCompare(valueA);
+                }
+            });
         },
 
         // Category Methods

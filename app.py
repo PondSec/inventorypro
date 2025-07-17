@@ -126,10 +126,27 @@ def login():
 
     return render_template('login.html')
 
-@app.route('/logout')
+@app.route('/logout', methods=['POST'])  # Nur POST erlauben
 def logout():
+    # Sicherstellen, dass der User eingeloggt war
+    if not session.get('logged_in'):
+        return jsonify({"error": "Not logged in"}), 401
+    
+    # Session bereinigen
     session.clear()
-    return redirect(url_for('login'))
+    
+    # Response mit explizitem Cookie-Löschen
+    response = jsonify({"message": "Successfully logged out"})
+    response.set_cookie(
+        'session',  # Ihr Session-Cookie-Name
+        '',
+        expires=0,
+        path='/',
+        secure=True if request.is_secure else False,
+        httponly=True,
+        samesite='Lax'
+    )
+    return response
 
 @app.route('/')
 @login_required
@@ -283,6 +300,8 @@ def get_devices():
     
     devices = db.execute(query, params).fetchall()
     return jsonify([dict(row) for row in devices])
+
+
 
 if __name__ == '__main__':
     init_db()
