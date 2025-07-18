@@ -2,9 +2,6 @@
 
 **A modern, web-based inventory management system** for tracking IT assets, devices, and components with advanced analytics.
 
-![Dashboard Preview](https://i.imgur.com/JQYmG0E.png)  
-*(Screenshot example - replace with your actual preview image)*
-
 ## 🌟 Features
 
 - **Multi-Category Tracking** (Hardware, Software, Peripherals)
