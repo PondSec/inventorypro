@@ -46,50 +46,80 @@
                 </div>
                 </a>
             </div>
-				<nav x-data="{ init() { this.$nextTick(() => feather.replace()); } }" 
-					 class="sidebar-nav p-4 overflow-y-auto max-h-[calc(100vh-8rem)]">
-					<div class="space-y-1">
-						<template x-for="category in categories" :key="category.id">
-							<div class="group flex items-center justify-between px-4 py-3 rounded-lg hover:bg-gray-50 transition-colors">
-								<div @click="loadDevices(category.id)" class="flex items-center space-x-3 cursor-pointer flex-1">
-									<span x-text="category.name"></span>
-								</div>
-							<script src="https://unpkg.com/heroicons@2.0.18/outline/index.js"></script>
+				<nav x-data="{
+				  categoriesOpen: false,
+				  init() { this.$nextTick(() => feather.replace()); }
+				}"
+				class="sidebar-nav p-4 overflow-y-auto max-h-[calc(100vh-8rem)]">
 
-							<div class="flex items-center space-x-2 text-gray-600 hover:text-black">
-								<button @click="editCategoryModal(category)" class="p-1 hover:bg-gray-100 rounded">
-									<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-											d="M15.232 5.232l3.536 3.536M4 20h4l10-10-4-4L4 16v4z" />
-									</svg>
-								</button>
-								<button @click="deleteCategory(category.id)" class="p-1 hover:bg-red-100 rounded">
-									<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-											d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22" />
-									</svg>
-								</button>
-							</div>
+				  <div class="space-y-2">
+
+					<!-- Kategorien-Accordion -->
+					<div class="border border-gray-200 rounded-lg overflow-hidden">
+					  <div @click="categoriesOpen = !categoriesOpen"
+						   class="flex items-center justify-between px-4 py-3 bg-white hover:bg-gray-100 cursor-pointer transition-colors">
+						<div class="flex items-center space-x-3">
+						  <i data-feather="layers" class="w-4 h-4 text-gray-500"></i>
+						  <span class="text-sm font-medium text-gray-800">Kategorien</span>
 						</div>
-					</template>
-					
-					<button 
-						@click="openAddCategoryModal()" 
-						x-data
-						class="flex items-center px-4 py-3 mt-4 text-sm font-medium text-blue-600 hover:text-blue-800 w-full rounded-lg hover:bg-gray-50 transition-colors"
-					>
-						<i data-feather="plus-circle" class="w-5 h-5 mr-3"></i>
-						<span>Add Category</span>
+						<svg :class="{ 'rotate-180': categoriesOpen }"
+							 class="w-4 h-4 text-gray-500 transition-transform duration-200"
+							 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+								d="M19 9l-7 7-7-7"/>
+						</svg>
+					  </div>
+
+					  <!-- Alle Kategorien im Dropdown -->
+					  <div x-show="categoriesOpen" x-transition
+						   class="bg-gray-50 px-2 py-2 space-y-1 text-sm text-gray-800">
+
+						<template x-for="category in categories" :key="category.id">
+						  <div class="group flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+							<button @click="loadDevices(category.id)" class="flex items-center space-x-2 flex-1 text-left">
+							  <!-- Dynamisches Icon -->
+							  <div x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-gray-500' })"></div>
+							  <span x-text="category.name"></span>
+							</button>
+							<div class="flex items-center space-x-2">
+							  <button @click="editCategoryModal(category)"
+									  class="text-gray-500 hover:text-black">
+								<i data-feather="edit" class="w-4 h-4"></i>
+							  </button>
+							  <button @click="deleteCategory(category.id)"
+									  class="text-red-500 hover:text-red-700">
+								<i data-feather="trash-2" class="w-4 h-4"></i>
+							  </button>
+							</div>
+						  </div>
+						</template>
+					  </div>
+					</div>
+
+					<!-- Kategorie hinzufügen -->
+					<button @click="openAddCategoryModal()"
+							class="flex items-center px-4 py-3 text-sm font-medium text-blue-600 hover:text-blue-800 w-full rounded-lg hover:bg-gray-50 transition-colors">
+					  <i data-feather="plus-circle" class="w-5 h-5 mr-3"></i>
+					  <span>Kategorie hinzufügen</span>
 					</button>
-					
-					<button 
-						class="flex items-center px-4 py-3 mt-4 text-sm font-medium text-gray-700 hover:text-black w-full rounded-lg hover:bg-gray-50 transition-colors"
-					>
-						<i data-feather="bar-chart-2" class="w-5 h-5 mr-3"></i>
-						<a href="https://inv.pondsec.com/stats">Statistiken</a>
-					</button>
-				</div>
-			</nav>
+
+					<!-- Statistiken -->
+					<a href="https://inv.pondsec.com/stats"
+					   class="flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:text-black w-full rounded-lg hover:bg-gray-50 transition-colors">
+					  <i data-feather="bar-chart-2" class="w-5 h-5 mr-3"></i>
+					  <span>Statistiken</span>
+					</a>
+
+				  </div>
+
+				  <!-- Feather Icons Init -->
+				  <script src="https://unpkg.com/feather-icons"></script>
+				  <script>
+					document.addEventListener("alpine:init", () => {
+					  feather.replace();
+					});
+				  </script>
+				</nav>
         </div>
         
         <!-- Main Content -->
@@ -155,7 +185,7 @@
 					  aria-label="Sort options"
 					  class="absolute right-1 top-1/2 transform -translate-y-1/2 px-3 py-1.5 bg-white border border-gray-300 rounded-md text-gray-700 shadow-sm hover:bg-gray-50 active:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-all duration-200 ease-in-out flex items-center gap-1"
 					>
-					  <span class="text-xs select-none">Sort</span>
+
 					  <i data-feather="chevron-down" class="w-4 h-4"></i>
 					</button>
 
@@ -277,6 +307,11 @@
 								<option value="server">Server</option>
 								<option value="monitor">Monitor</option>
 								<option value="printer">Drucker</option>
+								<option value="wind">Kühlsystem</option>
+								<option value="grid">Mainboard</option>
+								<option value="power">Netzteil</option>
+								<option value="sliders">RAM</option>
+								<option value="wifi">Netzwerk</option>
 							</select>
 						</div>
 						
