@@ -325,7 +325,7 @@ def stats():
     for device in devices:
         try:
             specs = json.loads(device['specs']) if device['specs'] else {}
-            status = specs.get('status', 'Verwendet')
+            status = specs.get('Status', 'Verwendet')
             # Normalisiere den Status (entferne Leerzeichen, mache erste Buchstabe groß)
             status = status.strip().capitalize()
             # Falls der Status nicht in unserer Liste ist, zählen wir als "Verwendet"
