@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="de" x-data="inventoryStats()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - Statistiken</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <style>
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        .progress-bar {
+            height: 6px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="flex h-screen">
+	
+	
+        <!-- Sidebar -->
+        <div class="w-64 bg-white border-r border-gray-200">
+            <div class="sidebar-header p-6 border-b border-gray-200">
+                <a href="https://inv.pondsec.com">
+                <div class="logo flex items-center space-x-3">
+                    <i data-feather="cpu" class="text-black w-6 h-6"></i>
+                    <span class="text-xl font-semibold">Inventory Pro</span>
+                </div>
+                </a>
+            </div>
+            <nav class="p-4 space-y-2">
+                <a href="/" class="block px-4 py-2 rounded hover:bg-gray-100">
+                    <i data-feather="layers" class="inline mr-2 w-4 h-4"></i> Kategorien
+                </a>
+				<a href="/stats" class="block px-4 py-2 bg-blue-50 text-blue-600 rounded">
+                    <i data-feather="bar-chart-2" class="inline mr-2 w-4 h-4"></i> Statistiken
+                </a>
+            </nav>
+        </div>
+		
+		<header class="app-header bg-white border-b border-gray-200 px-6 flex justify-between items-center fixed top-0 left-[240px] z-30 h-[77px]" style="width: calc(100% - 240px);">
+			<!-- Linke Seite: Titel -->
+			<h1 class="text-2xl font-semibold" x-text="activeCategory ? getCategoryName(activeCategory) : 'All Devices'"></h1>
+
+			<!-- Rechte Seite: Button-Gruppe -->
+			<div class="flex items-center space-x-4">
+
+			  <!-- Logout Button -->
+			  <button onclick="logout()" class="text-red-600 hover:text-red-800 flex items-center">
+				<i data-feather="log-out" class="w-5 h-5 mr-2"></i>
+				Abmelden
+			  </button>
+			</div>
+
+			<!-- Logout Script -->
+			<script>
+				async function logout() {
+					try {
+						const response = await fetch('/logout', {
+							method: 'POST',
+							credentials: 'same-origin',
+							headers: { 'Content-Type': 'application/json' }
+						});
+
+						if (response.ok) {
+							window.location.href = 'https://inv.pondsec.com/login';
+						} else {
+							const data = await response.json();
+							alert('Logout failed: ' + (data.error || 'Unknown error'));
+						}
+					} catch (error) {
+						alert('Network error: ' + error.message);
+					}
+				}
+			</script>
+		</header>
+		
+        <!-- Main Content -->
+        <div class="flex-1 overflow-auto p-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-6">Bestandsstatistiken</h1>
+            
+            <!-- Statistik-Karten -->
+			<div class="grid grid-cols-4 gap-4 mb-8">
+				<!-- Gesamtgeräte -->
+				<div class="bg-white p-6 rounded-lg shadow">
+					<h3 class="text-gray-500">Gesamtgeräte</h3>
+					<p class="text-3xl font-bold">{{ total_devices }}</p>
+				</div>
+				
+				<!-- Kategorien -->
+				<div class="bg-white p-6 rounded-lg shadow">
+					<h3 class="text-gray-500">Kategorien</h3>
+					<p class="text-3xl font-bold">{{ total_categories }}</p>
+				</div>
+				
+				<!-- Aktiv-Status -->
+				<div class="bg-white p-6 rounded-lg shadow">
+					<h3 class="text-gray-500">Verwendet</h3>
+					<p class="text-3xl font-bold">{{ status_data['Verwendet'] }}</p>
+				</div>
+				
+				<!-- In Wartung -->
+				<div class="bg-white p-6 rounded-lg shadow">
+					<h3 class="text-gray-500">Lager</h3>
+					<p class="text-3xl font-bold">{{ status_data['Lager'] }}</p>
+				</div>
+			</div>
+
+			<!-- Kategorieverteilung Chart -->
+			<div class="bg-white p-6 rounded-lg shadow mb-8">
+				<h2 class="text-xl font-semibold mb-4">Verteilung nach Kategorien</h2>
+				<div class="grid grid-cols-2 gap-4">
+					{% for category in categories %}
+					<div class="flex items-center">
+						<div class="w-4 h-4 rounded-full mr-2" 
+							 style="background-color: {{ loop.cycle('#3B82F6', '#10B981', '#6366F1', '#F59E0B') }}"></div>
+						<span>{{ category['name'] }}</span>
+						<span class="ml-auto font-medium">{{ category['device_count'] }}</span>
+					</div>
+					{% endfor %}
+				</div>
+			</div>
+			
+			<!-- Charts Section -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                <!-- Kategorieverteilung -->
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold">Verteilung nach Kategorien</h2>
+                        <select x-model="chartTimeRange" class="border rounded px-2 py-1 text-sm">
+                            <option value="all">Alle</option>
+                            <option value="month">Letzter Monat</option>
+                            <option value="week">Letzte Woche</option>
+                        </select>
+                    </div>
+                    <canvas id="categoryChart" height="300"></canvas>
+                </div>
+                
+                <!-- Statusverteilung -->
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h2 class="text-xl font-semibold mb-4">Gerätestatus</h2>
+                    <canvas id="statusChart" height="300"></canvas>
+                </div>
+            </div>
+
+			<!-- Letzte Geräte -->
+			<div class="bg-white p-6 rounded-lg shadow">
+				<h2 class="text-xl font-semibold mb-4">Zuletzt hinzugefügt</h2>
+				<table class="min-w-full">
+					<thead>
+						<tr class="border-b">
+							<th class="text-left py-2">Name</th>
+							<th class="text-left py-2">Kategorie</th>
+							<th class="text-left py-2">Besitzer</th>
+							<th class="text-left py-2">Datum</th>
+						</tr>
+					</thead>
+					<tbody>
+						{% for device in recent_devices %}
+						<tr class="border-b">
+							<td class="py-2">{{ device['name'] }}</td>
+							<td class="py-2">{{ device['category_name'] }}</td>
+							<td class="py-2">{{ device['serial_number'] or '-' }}</td>
+							<td class="py-2">{{ device['created_at'][:10] }}</td>
+						</tr>
+						{% endfor %}
+					</tbody>
+				</table>
+			</div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('inventoryStats', () => ({
+                // Daten aus dem Haupt-App-State
+                categories: [],
+                devices: [],
+                filteredDevices: [],
+                recentDevices: [],
+                chartTimeRange: 'all',
+                
+                // Statistikwerte
+                totalDevices: 0,
+                activePercentage: 0,
+                topCategory: '',
+                avgSpecs: 0,
+                mostCommonSpec: '',
+                newestDevice: '',
+                newestDeviceCategory: '',
+                
+                // Initialisierung
+                async init() {
+                    await this.loadData();
+                    this.calculateStats();
+                    this.initCharts();
+                    feather.replace();
+                    
+                    // Aktualisiere Daten alle 30 Sekunden
+                    setInterval(async () => {
+                        await this.loadData();
+                        this.calculateStats();
+                        this.updateCharts();
+                    }, 30000);
+                },
+                
+                // Daten laden
+                async loadData() {
+                    const [catRes, devRes] = await Promise.all([
+                        fetch('/api/categories'),
+                        fetch('/api/devices')
+                    ]);
+                    
+                    this.categories = await catRes.json();
+                    this.devices = await devRes.json();
+                    this.filteredDevices = [...this.devices];
+                    this.recentDevices = [...this.devices]
+                        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                        .slice(0, 5);
+                },
+                
+                // Statistiken berechnen
+                calculateStats() {
+                    this.totalDevices = this.devices.length;
+                    
+                    // Aktive Geräte berechnen
+                    const activeCount = this.devices.filter(d => 
+                        (d.specs && JSON.parse(d.specs).status === 'Verwendet') || 
+                        !d.specs
+                    ).length;
+                    this.activePercentage = Math.round((activeCount / this.totalDevices) * 100);
+                    
+                    // Top Kategorie finden
+                    const categoryCounts = {};
+                    this.devices.forEach(device => {
+                        const catName = this.categories.find(c => c.id === device.category_id)?.name || 'Unknown';
+                        categoryCounts[catName] = (categoryCounts[catName] || 0) + 1;
+                    });
+                    this.topCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+                    
+                    // Durchschnittliche Specs
+                    const specCounts = {};
+                    this.devices.forEach(device => {
+                        if (device.specs) {
+                            const specs = JSON.parse(device.specs);
+                            Object.entries(specs).forEach(([key, val]) => {
+                                if (key !== 'status') {
+                                    const specKey = `${key}:${val}`;
+                                    specCounts[specKey] = (specCounts[specKey] || 0) + 1;
+                                }
+                            });
+                        }
+                    });
+                    this.avgSpecs = Object.keys(specCounts).length > 0 
+                        ? (Object.values(specCounts).reduce((a, b) => a + b, 0) / Object.keys(specCounts).length
+                        : 0;
+                    this.mostCommonSpec = Object.entries(specCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+                    
+                    // Neuestes Gerät
+                    const newest = [...this.devices].sort((a, b) => 
+                        new Date(b.created_at) - new Date(a.created_at))[0];
+                    if (newest) {
+                        this.newestDevice = newest.name;
+                        this.newestDeviceCategory = this.categories.find(c => c.id === newest.category_id)?.name || 'Unknown';
+                    }
+                },
+                
+                // Charts initialisieren
+                initCharts() {
+                    // Kategorie-Chart
+                    this.categoryChart = new Chart(
+                        document.getElementById('categoryChart'),
+                        this.getCategoryChartConfig()
+                    );
+                    
+                    // Status-Chart
+                    this.statusChart = new Chart(
+                        document.getElementById('statusChart'),
+                        this.getStatusChartConfig()
+                    );
+                },
+                
+                // Charts aktualisieren
+                updateCharts() {
+                    this.categoryChart.data = this.getCategoryChartData();
+                    this.statusChart.data = this.getStatusChartData();
+                    this.categoryChart.update();
+                    this.statusChart.update();
+                },
+                
+                // Kategorie-Chart Konfiguration
+                getCategoryChartConfig() {
+                    return {
+                        type: 'doughnut',
+                        data: this.getCategoryChartData(),
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    position: 'right',
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            return `${context.label}: ${context.raw} (${context.parsed}%)`;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    };
+                },
+                
+                getCategoryChartData() {
+                    const categoryCounts = {};
+                    this.categories.forEach(cat => {
+                        categoryCounts[cat.name] = this.devices.filter(d => d.category_id === cat.id).length;
+                    });
+                    
+                    return {
+                        labels: Object.keys(categoryCounts),
+                        datasets: [{
+                            data: Object.values(categoryCounts),
+                            backgroundColor: [
+                                '#3B82F6', '#10B981', '#6366F1', '#F59E0B', 
+                                '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'
+                            ],
+                            borderWidth: 1
+                        }]
+                    };
+                },
+                
+                // Status-Chart Konfiguration
+                getStatusChartConfig() {
+                    return {
+                        type: 'bar',
+                        data: this.getStatusChartData(),
+                        options: {
+                            responsive: true,
+                            scales: {
+                                y: {
+                                    beginAtZero: true
+                                }
+                            }
+                        }
+                    };
+                },
+                
+                getStatusChartData() {
+                    const statusCounts = {
+                        'Verwendet': 0,
+                        'Lager': 0,
+                        'Defekt': 0
+                    };
+                    
+                    this.devices.forEach(device => {
+                        let status = 'Verwendet';
+                        if (device.specs) {
+                            const specs = JSON.parse(device.specs);
+                            if (specs.status && statusCounts.hasOwnProperty(specs.status)) {
+                                status = specs.status;
+                            }
+                        }
+                        statusCounts[status]++;
+                    });
+                    
+                    return {
+                        labels: Object.keys(statusCounts),
+                        datasets: [{
+                            label: 'Geräte nach Status',
+                            data: Object.values(statusCounts),
+                            backgroundColor: [
+                                '#10B981',
+                                '#F59E0B',
+                                '#EF4444'
+                            ]
+                        }]
+                    };
+                },
+                
+                // Hilfsfunktion aus dem Haupt-App-State
+                getCategoryColor(categoryName) {
+                    const predefinedColors = {
+                        'CPU': 'bg-blue-100 text-blue-800',
+                        'GPU': 'bg-purple-100 text-purple-800',
+                        'RAM': 'bg-green-100 text-green-800',
+                        'Storage': 'bg-yellow-100 text-yellow-800'
+                    };
+                    
+                    if (predefinedColors[categoryName]) {
+                        return predefinedColors[categoryName];
+                    }
+                    
+                    const dynamicColors = [
+                        'bg-blue-100 text-blue-800',
+                        'bg-red-100 text-red-800',
+                        'bg-green-100 text-green-800',
+                        'bg-yellow-100 text-yellow-800',
+                        'bg-purple-100 text-purple-800',
+                        'bg-pink-100 text-pink-800',
+                        'bg-rose-100 text-rose-800',
+                        'bg-fuchsia-100 text-fuchsia-800',
+                        'bg-indigo-100 text-indigo-800',
+                        'bg-cyan-100 text-cyan-800',
+                        'bg-sky-100 text-sky-800',
+                        'bg-amber-100 text-amber-800',
+                        'bg-orange-100 text-orange-800',
+                        'bg-lime-100 text-lime-800',
+                        'bg-emerald-100 text-emerald-800',
+                        'bg-teal-100 text-teal-800',
+                        'bg-violet-100 text-violet-800',
+                    ];
+                    
+                    const hash = Array.from(categoryName).reduce(
+                        (hash, char) => (hash << 5) - hash + char.charCodeAt(0),
+                        0
+                    );
+                    const colorIndex = Math.abs(hash) % dynamicColors.length;
+                    
+                    return dynamicColors[colorIndex];
+                }
+            }));
+        });
+    </script>
+	
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+	<!-- Chart.js Integration mit Null-Checks -->
+	<script>
+	document.addEventListener('DOMContentLoaded', function() {
+		// Sicherstellen, dass Daten vorhanden sind
+		const categories = {{ categories|tojson|default([]) }};
+		const statusData = {{ status_data|tojson|default({}) }};
+		
+		// Kategorie-Chart nur rendern wenn Daten vorhanden
+		if (categories.length > 0) {
+			const ctx1 = document.getElementById('categoryChart');
+			new Chart(ctx1, {
+				type: 'pie',
+				data: {
+					labels: categories.map(c => c.name),
+					datasets: [{
+						data: categories.map(c => c.device_count),
+						backgroundColor: [
+							'#3B82F6', '#10B981', '#6366F1', '#F59E0B',
+							'#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'
+						]
+					}]
+				}
+			});
+		}
+		
+		// Status-Chart
+		const ctx2 = document.getElementById('statusChart');
+		new Chart(ctx2, {
+			type: 'bar',
+			data: {
+				labels: Object.keys(statusData),
+				datasets: [{
+					label: 'Geräte',
+					data: Object.values(statusData),
+					backgroundColor: [
+						'#EF4444', '#F59E0B', '#10B981'
+					]
+				}]
+			}
+		});
+	});
+	</script>
+	
+	<script src="https://unpkg.com/feather-icons"></script>
+		<script>
+		document.addEventListener('DOMContentLoaded', function() {
+			feather.replace();
+		});
+	</script>
+	
+</body>
+</html>

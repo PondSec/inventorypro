@@ -5,6 +5,12 @@ import sqlite3
 import json
 from functools import wraps
 import os
+import pyotp
+import qrcode
+import qrcode.image.svg
+from io import BytesIO
+import base64
+
 
 app = Flask(__name__)
 CORS(app)
@@ -35,7 +41,8 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL
+                password_hash TEXT NOT NULL,
+                otp_secret TEXT
             )
         ''')
 
@@ -73,7 +80,7 @@ def init_db():
             INSERT OR IGNORE INTO categories (name, icon, fields)
             VALUES (?, ?, ?)
         ''', default_categories)
-
+        
         db.commit()
 
 # Setup-Funktion zum Benutzer erstellen
@@ -301,7 +308,171 @@ def get_devices():
     devices = db.execute(query, params).fetchall()
     return jsonify([dict(row) for row in devices])
 
+@app.route('/stats')
+@login_required
+def stats():
+    db = get_db()
+    
+    # 1. Grundstatistiken mit Default-Werten
+    total_devices = db.execute('SELECT COUNT(*) FROM devices').fetchone()[0] or 0
+    total_categories = db.execute('SELECT COUNT(*) FROM categories').fetchone()[0] or 0
+    
+    # 2. Kategorieverteilung mit sicherer Abfrage
+    categories = db.execute('''
+        SELECT c.id, c.name, COUNT(d.id) as device_count
+        FROM categories c
+        LEFT JOIN devices d ON c.id = d.category_id
+        GROUP BY c.id
+    ''').fetchall()
+    categories_data = [dict(c) for c in categories] if categories else []
+    
+    # 3. Verbesserte Statusverteilung mit Default-Werten
+    status_data = {'Verwendet': 0, 'Lager': 0, 'Defekt': 0}
+    devices = db.execute('SELECT specs FROM devices').fetchall()
+    for device in devices:
+        try:
+            specs = json.loads(device['specs']) if device['specs'] else {}
+            status = specs.get('Status', 'Verwendet')
+            # Normalisiere den Status (entferne Leerzeichen, mache erste Buchstabe groß)
+            status = status.strip().capitalize()
+            # Falls der Status nicht in unserer Liste ist, zählen wir als "Verwendet"
+            if status in status_data:
+                status_data[status] += 1
+            else:
+                status_data['Verwendet'] += 1
+        except json.JSONDecodeError:
+            status_data['Verwendet'] += 1
+    
+    # 4. Letzte Geräte mit sicherer Abfrage
+    recent_devices = db.execute('''
+        SELECT d.name, c.name as category_name, d.serial_number, d.created_at
+        FROM devices d
+        JOIN categories c ON d.category_id = c.id
+        ORDER BY d.created_at DESC
+        LIMIT 5
+    ''').fetchall()
+    recent_devices_data = [dict(d) for d in recent_devices] if recent_devices else []
+    
+    context = {
+        'total_devices': total_devices,
+        'total_categories': total_categories,
+        'categories': categories_data,
+        'status_data': status_data,
+        'recent_devices': recent_devices_data,
+        'username': session.get('username', '')
+    }
+    
+    return render_template('stats.html', **context)
 
+@app.route('/api/otp/setup', methods=['POST'])
+@login_required
+def setup_otp():
+    username = session.get('username')
+    db = get_db()
+
+    # 1. Vorher prüfen, ob bereits ein OTP eingerichtet ist
+    user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
+    if user and user['otp_secret']:
+        # Bereits eingerichtet – nur Status zurückgeben
+        return jsonify({'enabled': True}), 200
+
+    # 2. Wenn nicht vorhanden, neues Secret generieren und speichern
+    secret = pyotp.random_base32()
+    db.execute("UPDATE users SET otp_secret = ? WHERE username = ?", (secret, username))
+    db.commit()
+
+    # 3. QR-Code generieren
+    issuer_name = "Inventory Pro"
+    otp_uri = pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=issuer_name)
+    factory = qrcode.image.svg.SvgImage
+    img = qrcode.make(otp_uri, image_factory=factory)
+    stream = BytesIO()
+    img.save(stream)
+    qr_code = stream.getvalue().decode()
+    
+    qr_img = qrcode.make(otp_uri)
+    buffered = BytesIO()
+    qr_img.save(buffered, format="PNG")
+    img_str = "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode()
+
+    # 4. Secret + QR zurückgeben
+    return jsonify({
+        'enabled': False,
+        'secret': secret,
+        'qr_code': img_str
+    })
+
+
+@app.route('/verify')
+@login_required
+def verify():
+    return render_template('verify_otp.html')
+
+@app.route('/api/otp/verify', methods=['POST'])
+@login_required
+def verify_otp():
+    code = request.json.get('code')
+    username = session.get('username')
+
+    db = get_db()
+    user = db.execute('SELECT otp_secret FROM users WHERE username = ?', (username,)).fetchone()
+
+    if user and pyotp.TOTP(user['otp_secret']).verify(code):
+        return jsonify({"verified": True}), 200
+    else:
+        return jsonify({"verified": False}), 401
+
+@app.route('/reset', methods=['GET'])
+def reset_page():
+    return render_template('reset_password.html')
+
+@app.route('/reset', methods=['POST'])
+def reset_password():
+    username = request.form.get('username')
+    otp_code = request.form.get('otp')
+    new_password = request.form.get('new_password')
+
+    if not all([username, otp_code, new_password]):
+        return render_template('reset_password.html', error="Alle Felder ausfüllen!")
+
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+
+    if not user:
+        return render_template('reset_password.html', error="Benutzer existiert nicht.")
+
+    if not user['otp_secret']:
+        return render_template('reset_password.html', error="Kein OTP eingerichtet.")
+
+    if not pyotp.TOTP(user['otp_secret']).verify(otp_code):
+        return render_template('reset_password.html', error="OTP ungültig.")
+
+    # Neues Passwort setzen
+    new_hash = generate_password_hash(new_password)
+    db.execute('UPDATE users SET password_hash = ? WHERE username = ?', (new_hash, username))
+    db.commit()
+
+    #return render_template('reset_password.html', success="Passwort erfolgreich geändert!")
+    return redirect(url_for('login'))
+
+@app.route('/api/otp/disable', methods=['POST'])
+@login_required
+def disable_otp():
+    username = session.get('username')
+    db = get_db()
+
+    # OTP löschen
+    db.execute('UPDATE users SET otp_secret = NULL WHERE username = ?', (username,))
+    db.commit()
+    return jsonify({'disabled': True}), 200
+
+@app.route('/api/otp/status', methods=['GET'])
+@login_required
+def otp_status():
+    username = session.get('username')
+    db = get_db()
+    user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
+    return jsonify({'enabled': bool(user and user['otp_secret'])})
 
 if __name__ == '__main__':
     init_db()
