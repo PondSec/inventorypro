@@ -33,14 +33,11 @@
                 </a>
             </div>
             <nav class="p-4 space-y-2">
-                <a href="/login" class="block px-4 py-2 rounded hover:bg-gray-100">
-                    <i data-feather="lock" class="inline mr-2 w-4 h-4"></i> Login
-                </a>
-                <a href="/stats" class="block px-4 py-2 bg-blue-50 text-blue-600 rounded">
-                    <i data-feather="bar-chart-2" class="inline mr-2 w-4 h-4"></i> Statistiken
-                </a>
                 <a href="/" class="block px-4 py-2 rounded hover:bg-gray-100">
                     <i data-feather="layers" class="inline mr-2 w-4 h-4"></i> Kategorien
+                </a>
+				<a href="/stats" class="block px-4 py-2 bg-blue-50 text-blue-600 rounded">
+                    <i data-feather="bar-chart-2" class="inline mr-2 w-4 h-4"></i> Statistiken
                 </a>
             </nav>
         </div>
@@ -466,7 +463,7 @@
 					label: 'Geräte',
 					data: Object.values(statusData),
 					backgroundColor: [
-						'#10B981', '#F59E0B', '#EF4444'
+						'#EF4444', '#F59E0B', '#10B981'
 					]
 				}]
 			}

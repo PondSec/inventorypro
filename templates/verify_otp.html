@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>OTP Verifizierung</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 2em;
+        }
+        input {
+            font-size: 1.2em;
+            padding: 0.3em;
+            width: 120px;
+            text-align: center;
+        }
+        button {
+            font-size: 1em;
+            padding: 0.5em 1em;
+            margin-left: 10px;
+        }
+        #result {
+            margin-top: 1em;
+            font-size: 1.2em;
+        }
+    </style>
+    <script>
+        async function verifyOTP() {
+            const code = document.getElementById("otp").value;
+            const output = document.getElementById("result");
+
+            try {
+                const response = await fetch("/api/otp/verify", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    credentials: "same-origin", // wichtig für Session-Cookie
+                    body: JSON.stringify({ code: code })
+                });
+
+                if (response.redirected) {
+                    window.location.href = response.url;
+                    return;
+                }
+
+                const result = await response.json();
+
+                if (response.ok && result.verified) {
+                    output.textContent = "✅ Verifiziert!";
+                    output.style.color = "green";
+                } else {
+                    output.textContent = "❌ Verifizierung fehlgeschlagen!";
+                    output.style.color = "red";
+                }
+            } catch (err) {
+                output.textContent = "⚠️ Fehler: " + err.message;
+                output.style.color = "red";
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>OTP-Verifizierung</h1>
+    <p>Bitte gib den aktuellen Code aus deinem Authenticator ein:</p>
+    <input type="text" id="otp" maxlength="6" placeholder="123456" />
+    <button onclick="verifyOTP()">Verifizieren</button>
+    <p id="result"></p>
+</body>
+</html>

@@ -5,6 +5,11 @@ import sqlite3
 import json
 from functools import wraps
 import os
+import pyotp
+import qrcode
+import qrcode.image.svg
+from io import BytesIO
+
 
 app = Flask(__name__)
 CORS(app)
@@ -35,7 +40,8 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL
+                password_hash TEXT NOT NULL,
+                otp_secret TEXT
             )
         ''')
 
@@ -73,7 +79,7 @@ def init_db():
             INSERT OR IGNORE INTO categories (name, icon, fields)
             VALUES (?, ?, ?)
         ''', default_categories)
-
+        
         db.commit()
 
 # Setup-Funktion zum Benutzer erstellen
@@ -356,6 +362,92 @@ def stats():
     }
     
     return render_template('stats.html', **context)
+
+@app.route('/api/otp/setup', methods=['POST'])
+@login_required
+def setup_otp():
+    # 1. Neues Secret generieren
+    secret = pyotp.random_base32()
+
+    # 2. Username aus Session holen
+    username = session.get('username')
+
+    # 3. In der DB speichern
+    db = get_db()
+    db.execute("UPDATE users SET otp_secret = ? WHERE username = ?", (secret, username))
+    db.commit()
+
+    # 4. QR-Code generieren
+    issuer_name = "DeinSystemname"
+    otp_uri = pyotp.TOTP(secret).provisioning_uri(
+        name=username,
+        issuer_name=issuer_name
+    )
+    factory = qrcode.image.svg.SvgImage
+    img = qrcode.make(otp_uri, image_factory=factory)
+    stream = BytesIO()
+    img.save(stream)
+    qr_code = stream.getvalue().decode()
+
+    # 5. Secret + QR zurückgeben
+    return jsonify({
+        'secret': secret,
+        'qr_code': qr_code
+    })
+
+
+@app.route('/verify')
+@login_required
+def verify():
+    return render_template('verify_otp.html')
+
+@app.route('/api/otp/verify', methods=['POST'])
+@login_required
+def verify_otp():
+    code = request.json.get('code')
+    username = session.get('username')
+
+    db = get_db()
+    user = db.execute('SELECT otp_secret FROM users WHERE username = ?', (username,)).fetchone()
+
+    if user and pyotp.TOTP(user['otp_secret']).verify(code):
+        return jsonify({"verified": True}), 200
+    else:
+        return jsonify({"verified": False}), 401
+
+@app.route('/reset', methods=['GET'])
+def reset_page():
+    return render_template('reset_password.html')
+
+@app.route('/reset', methods=['POST'])
+def reset_password():
+    username = request.form.get('username')
+    otp_code = request.form.get('otp')
+    new_password = request.form.get('new_password')
+
+    if not all([username, otp_code, new_password]):
+        return render_template('reset_password.html', error="Alle Felder ausfüllen!")
+
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+
+    if not user:
+        return render_template('reset_password.html', error="Benutzer existiert nicht.")
+
+    if not user['otp_secret']:
+        return render_template('reset_password.html', error="Kein OTP eingerichtet.")
+
+    if not pyotp.TOTP(user['otp_secret']).verify(otp_code):
+        return render_template('reset_password.html', error="OTP ungültig.")
+
+    # Neues Passwort setzen
+    new_hash = generate_password_hash(new_password)
+    db.execute('UPDATE users SET password_hash = ? WHERE username = ?', (new_hash, username))
+    db.commit()
+
+    #return render_template('reset_password.html', success="Passwort erfolgreich geändert!")
+    return redirect(url_for('login'))
+
 
 if __name__ == '__main__':
     init_db()
