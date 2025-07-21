@@ -9,6 +9,7 @@ import pyotp
 import qrcode
 import qrcode.image.svg
 from io import BytesIO
+import base64
 
 
 app = Flask(__name__)
@@ -366,33 +367,39 @@ def stats():
 @app.route('/api/otp/setup', methods=['POST'])
 @login_required
 def setup_otp():
-    # 1. Neues Secret generieren
-    secret = pyotp.random_base32()
-
-    # 2. Username aus Session holen
     username = session.get('username')
-
-    # 3. In der DB speichern
     db = get_db()
+
+    # 1. Vorher prüfen, ob bereits ein OTP eingerichtet ist
+    user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
+    if user and user['otp_secret']:
+        # Bereits eingerichtet – nur Status zurückgeben
+        return jsonify({'enabled': True}), 200
+
+    # 2. Wenn nicht vorhanden, neues Secret generieren und speichern
+    secret = pyotp.random_base32()
     db.execute("UPDATE users SET otp_secret = ? WHERE username = ?", (secret, username))
     db.commit()
 
-    # 4. QR-Code generieren
-    issuer_name = "DeinSystemname"
-    otp_uri = pyotp.TOTP(secret).provisioning_uri(
-        name=username,
-        issuer_name=issuer_name
-    )
+    # 3. QR-Code generieren
+    issuer_name = "Inventory Pro"
+    otp_uri = pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=issuer_name)
     factory = qrcode.image.svg.SvgImage
     img = qrcode.make(otp_uri, image_factory=factory)
     stream = BytesIO()
     img.save(stream)
     qr_code = stream.getvalue().decode()
+    
+    qr_img = qrcode.make(otp_uri)
+    buffered = BytesIO()
+    qr_img.save(buffered, format="PNG")
+    img_str = "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode()
 
-    # 5. Secret + QR zurückgeben
+    # 4. Secret + QR zurückgeben
     return jsonify({
+        'enabled': False,
         'secret': secret,
-        'qr_code': qr_code
+        'qr_code': img_str
     })
 
 
@@ -448,6 +455,24 @@ def reset_password():
     #return render_template('reset_password.html', success="Passwort erfolgreich geändert!")
     return redirect(url_for('login'))
 
+@app.route('/api/otp/disable', methods=['POST'])
+@login_required
+def disable_otp():
+    username = session.get('username')
+    db = get_db()
+
+    # OTP löschen
+    db.execute('UPDATE users SET otp_secret = NULL WHERE username = ?', (username,))
+    db.commit()
+    return jsonify({'disabled': True}), 200
+
+@app.route('/api/otp/status', methods=['GET'])
+@login_required
+def otp_status():
+    username = session.get('username')
+    db = get_db()
+    user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
+    return jsonify({'enabled': bool(user and user['otp_secret'])})
 
 if __name__ == '__main__':
     init_db()
