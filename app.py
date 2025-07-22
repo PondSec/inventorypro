@@ -36,7 +36,7 @@ def init_db():
         db = get_db()
         c = db.cursor()
 
-        # Benutzer-Tabelle
+        # Tabellen erstellen (wie zuvor)
         c.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +46,6 @@ def init_db():
             )
         ''')
 
-        # Kategorien-Tabelle
         c.execute('''
             CREATE TABLE IF NOT EXISTS categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +56,6 @@ def init_db():
             )
         ''')
 
-        # Geräte-Tabelle
         c.execute('''
             CREATE TABLE IF NOT EXISTS devices (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,7 +78,21 @@ def init_db():
             INSERT OR IGNORE INTO categories (name, icon, fields)
             VALUES (?, ?, ?)
         ''', default_categories)
-        
+
+        # Temporären Setup-Admin erstellen (nur wenn noch kein anderer User existiert)
+        existing_users = c.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+        if existing_users == 0:
+            password_hash = generate_password_hash('admin')
+            try:
+                c.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', 
+                         ('admin', password_hash))
+                print("\n[!] TEMPORÄRER ADMIN ERSTELLT:")
+                print("    Benutzername: admin")
+                print("    Passwort:    admin")
+                print("    WICHTIG: Diesen Account nach dem Setup löschen!\n")
+            except sqlite3.IntegrityError:
+                pass
+
         db.commit()
 
 # Setup-Funktion zum Benutzer erstellen
