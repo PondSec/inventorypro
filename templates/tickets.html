@@ -108,6 +108,10 @@
                         <span data-theme-icon aria-hidden="true">🌙</span>
                         <span data-theme-label>Dark Mode</span>
                     </button>
+                    <button onclick="logout()" class="inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:w-auto">
+                        <i data-feather="log-out" class="w-4 h-4"></i>
+                        Abmelden
+                    </button>
                     {% if 'tickets.create' in permissions %}
                     <button @click="openNewTicket" class="inline-flex w-full items-center justify-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 shadow-sm hover:bg-amber-100 sm:w-auto">
                         <i data-feather="plus-circle" class="w-4 h-4"></i>
@@ -484,6 +488,26 @@
     </div>
 
     <script src="https://unpkg.com/feather-icons"></script>
+    <script>
+        async function logout() {
+            try {
+                const response = await fetch('/logout', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (response.ok) {
+                    window.location.href = '/login';
+                } else {
+                    const data = await response.json();
+                    alert('Logout failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Network error: ' + error.message);
+            }
+        }
+    </script>
     <script src="/static/tickets.js"></script>
     <script src="/static/ui.js"></script>
     <script src="/static/theme.js"></script>
