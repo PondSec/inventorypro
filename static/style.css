@@ -8,14 +8,14 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   scroll-behavior: smooth;
-  color: #1d1d1f;
 }
 
 body {
-  background-color: #fff;
+  background-color: #f8fafc;
   line-height: 1.6;
   font-size: 16px;
   font-weight: 400;
+  color: #0f172a;
 }
 
 /* Container zentriert & max width */
