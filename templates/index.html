@@ -185,6 +185,7 @@
 				</div>
 
 				<!-- Statistiken -->
+				<a href="/stats"
 				<a href="https://inv.pondsec.com/stats"
 				   class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
 				  <span class="flex items-center">
@@ -195,6 +196,28 @@
 				  </span>
 				  <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
 				</a>
+
+					<a href="/users"
+					   class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
+					  <span class="flex items-center">
+						<span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
+						  <i data-feather="users" class="w-4 h-4"></i>
+						</span>
+						Benutzer
+					  </span>
+					  <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
+					</a>
+
+					<a href="/locations"
+					   class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
+					  <span class="flex items-center">
+						<span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
+						  <i data-feather="map-pin" class="w-4 h-4"></i>
+						</span>
+						Standorte
+					  </span>
+					  <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
+					</a>
 				
 				<!-- OTP Setup Button -->
 				<button @click="setupOTP()"
@@ -349,6 +372,7 @@
 					</div>
 				</section>
 
+				<section class="grid gap-4 lg:grid-cols-4">
 				<section class="grid gap-4 lg:grid-cols-3">
 					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
 						<div class="flex items-center justify-between">
@@ -425,6 +449,17 @@
 								<span class="font-semibold text-slate-900" x-text="filteredDevices.length"></span>
 							</div>
 							<div class="flex items-center justify-between">
+								<span>Wartungen (Pro)</span>
+								<span class="font-semibold text-slate-900" x-text="maintenanceSummary.pro_locked ? 'Gesperrt' : maintenanceSummary.open"></span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Überfällig</span>
+								<span class="font-semibold text-rose-600" x-text="maintenanceSummary.pro_locked ? '-' : maintenanceSummary.overdue"></span>
+							</div>
+							<div class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+								<i data-feather="lock" class="w-3 h-3"></i>
+								<span x-show="maintenanceSummary.pro_locked">Upgrade für Wartungen</span>
+								<span x-show="!maintenanceSummary.pro_locked">Pro aktiv</span>
 								<span>Letztes Update</span>
 								<span class="font-semibold text-slate-900" x-text="new Date().toLocaleDateString('de-DE')"></span>
 							</div>
@@ -450,6 +485,29 @@
 							<a href="/stats" class="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
 								Statistiken ansehen
 							</a>
+							<a href="/api/export/devices" class="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
+								Export (Pro)
+							</a>
+						</div>
+					</div>
+					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm font-semibold text-slate-900">Aktivitäten</p>
+								<p class="text-xs text-slate-500">Letzte Änderungen im System</p>
+							</div>
+							<span class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-500">
+								<i data-feather="list" class="h-4 w-4"></i>
+							</span>
+						</div>
+						<div class="mt-4 space-y-3 text-sm text-slate-600">
+							<template x-for="item in activityFeed" :key="item.created_at">
+								<div class="flex items-start justify-between gap-2">
+									<span class="font-semibold text-slate-800" x-text="formatActivity(item)"></span>
+									<span class="text-xs text-slate-400" x-text="item.created_at.slice(11, 16)"></span>
+								</div>
+							</template>
+							<p x-show="activityFeed.length === 0" class="text-xs text-slate-400">Noch keine Aktivitäten.</p>
 						</div>
 					</div>
 				</section>
@@ -473,6 +531,9 @@
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 													d="M15.232 5.232l3.536 3.536M4 20h4l10-10-4-4L4 16v4z" />
 											</svg>
+										</button>
+										<button @click="openDeviceDetail(device)" class="p-2 hover:bg-blue-100 rounded-xl text-blue-600">
+											<i data-feather="info" class="w-5 h-5"></i>
 										</button>
 										<button @click="deleteDevice(device.id)" class="p-2 hover:bg-rose-100 rounded-xl">
 											<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -529,6 +590,14 @@
 							<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
 								<p class="text-sm font-semibold text-slate-700">Kurzprofil</p>
 								<div class="mt-3 grid gap-2 text-sm text-slate-600">
+										<div class="flex justify-between">
+											<span>Kategorie</span>
+											<span class="font-semibold text-slate-900" x-text="selectedDevice?.category_name"></span>
+										</div>
+										<div class="flex justify-between">
+											<span>Standort</span>
+											<span class="font-semibold text-slate-900" x-text="selectedDevice?.location_name || '-'"></span>
+										</div>
 									<div class="flex justify-between">
 										<span>Kategorie</span>
 										<span class="font-semibold text-slate-900" x-text="selectedDevice?.category_name"></span>
@@ -748,11 +817,22 @@
 							</select>
 						</div>
 						
-						<div class="form-group">
-							<label class="block text-sm font-medium text-gray-700 mb-1">Owner</label>
-							<input type="text" x-model="currentDevice.serial_number"
-								class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-						</div>
+							<div class="form-group">
+								<label class="block text-sm font-medium text-gray-700 mb-1">Owner</label>
+								<input type="text" x-model="currentDevice.serial_number"
+									class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+							</div>
+
+							<div class="form-group">
+								<label class="block text-sm font-medium text-gray-700 mb-1">Standort</label>
+								<select x-model="currentDevice.location_id"
+									class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+									<option value="">-- Standort wählen --</option>
+									<template x-for="location in locations" :key="location.id">
+										<option :value="location.id" x-text="location.name"></option>
+									</template>
+								</select>
+							</div>
 						
 						<div class="form-group">
 							<label class="block text-sm font-medium text-gray-700 mb-1">Spezifikationen</label>
