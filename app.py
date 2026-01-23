@@ -479,6 +479,58 @@ def get_devices():
     devices = db.execute(query, params).fetchall()
     return jsonify([dict(row) for row in devices])
 
+@app.route('/api/locations', methods=['GET', 'POST'])
+@login_required
+def manage_locations():
+    db = get_db()
+    if request.method == 'POST':
+        data = request.get_json()
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            db.execute('''
+                INSERT INTO locations (name, description)
+                VALUES (?, ?)
+            ''', (name, description))
+            log_activity(db, "create", "location", details={"name": name})
+            db.commit()
+            return jsonify({"status": "created"}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Standort existiert bereits"}), 400
+
+    locations = db.execute('SELECT * FROM locations ORDER BY name').fetchall()
+    return jsonify([dict(row) for row in locations])
+
+@app.route('/api/locations/<int:location_id>', methods=['PUT', 'DELETE'])
+@login_required
+def update_location(location_id):
+    db = get_db()
+    if request.method == 'PUT':
+        data = request.get_json()
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        result = db.execute('''
+            UPDATE locations
+            SET name = ?, description = ?
+            WHERE id = ?
+        ''', (name, description, location_id))
+        if result.rowcount == 0:
+            return jsonify({"error": "Standort nicht gefunden"}), 404
+        log_activity(db, "update", "location", location_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    result = db.execute('DELETE FROM locations WHERE id = ?', (location_id,))
+    if result.rowcount == 0:
+        return jsonify({"error": "Standort nicht gefunden"}), 404
+    log_activity(db, "delete", "location", location_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
 @app.route('/api/features', methods=['GET'])
 @login_required
 def feature_flags():
