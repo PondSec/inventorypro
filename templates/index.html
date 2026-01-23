@@ -716,13 +716,30 @@
                 <div>
                     <label class="text-sm font-semibold text-slate-700">Spezifikationen</label>
                     <div class="mt-2 space-y-2">
-                        <template x-for="(fieldType, fieldName) in getCategoryFields(currentDevice.category_id) || {}" :key="fieldName">
+                        <template x-for="(fieldConfig, fieldName) in getCategoryFields(currentDevice.category_id) || {}" :key="fieldName">
                             <div>
                                 <label class="block text-xs font-semibold text-slate-500 mb-1" x-text="fieldName"></label>
-                                <template x-if="fieldType === 'number'">
+                                <template x-if="fieldConfig.type === 'number'">
                                     <input type="number" x-model="currentDevice.specs[fieldName]" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                                 </template>
-                                <template x-if="fieldType !== 'number'">
+                                <template x-if="fieldConfig.type === 'date'">
+                                    <input type="date" x-model="currentDevice.specs[fieldName]" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                </template>
+                                <template x-if="fieldConfig.type === 'select'">
+                                    <select x-model="currentDevice.specs[fieldName]" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                        <option value="">-- Auswahl --</option>
+                                        <template x-for="option in fieldConfig.options" :key="option">
+                                            <option :value="option" x-text="option"></option>
+                                        </template>
+                                    </select>
+                                </template>
+                                <template x-if="fieldConfig.type === 'checkbox'">
+                                    <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                        <input type="checkbox" x-model="currentDevice.specs[fieldName]" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                        <span>Aktiv</span>
+                                    </label>
+                                </template>
+                                <template x-if="fieldConfig.type !== 'number' && fieldConfig.type !== 'date' && fieldConfig.type !== 'select' && fieldConfig.type !== 'checkbox'">
                                     <input type="text" x-model="currentDevice.specs[fieldName]" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                                 </template>
                             </div>
