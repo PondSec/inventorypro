@@ -35,12 +35,422 @@ FREE_FEATURES = [
     "activity_feed"
 ]
 
+DEFAULT_ROLE_NAME = "Mitarbeiter"
+PERMISSIONS = [
+    {
+        "key": "categories.view",
+        "label": "Kategorien anzeigen",
+        "description": "Kategorien und Inventarübersicht einsehen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "categories.manage",
+        "label": "Kategorien verwalten",
+        "description": "Kategorien erstellen, bearbeiten und löschen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "devices.view",
+        "label": "Geräte anzeigen",
+        "description": "Geräteübersicht einsehen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "devices.manage",
+        "label": "Geräte verwalten",
+        "description": "Geräte erstellen, bearbeiten und löschen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "assets.view",
+        "label": "Assets anzeigen",
+        "description": "Assets und Zuweisungen einsehen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "assets.manage",
+        "label": "Assets verwalten",
+        "description": "Assets erstellen, bearbeiten und löschen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "locations.view",
+        "label": "Standorte anzeigen",
+        "description": "Standorte und Details einsehen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "locations.manage",
+        "label": "Standorte verwalten",
+        "description": "Standorte erstellen, bearbeiten und löschen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "maintenance.view",
+        "label": "Wartungen anzeigen",
+        "description": "Wartungsaufgaben und Status einsehen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "maintenance.manage",
+        "label": "Wartungen verwalten",
+        "description": "Wartungsaufgaben erstellen und aktualisieren.",
+        "group": "Inventar"
+    },
+    {
+        "key": "tickets.view_all",
+        "label": "Alle Tickets anzeigen",
+        "description": "Zugriff auf alle Tickets im System.",
+        "group": "Tickets"
+    },
+    {
+        "key": "tickets.view_own",
+        "label": "Eigene Tickets anzeigen",
+        "description": "Nur eigene Tickets einsehen.",
+        "group": "Tickets"
+    },
+    {
+        "key": "tickets.create",
+        "label": "Tickets erstellen",
+        "description": "Tickets anlegen und einreichen.",
+        "group": "Tickets"
+    },
+    {
+        "key": "tickets.update",
+        "label": "Tickets bearbeiten",
+        "description": "Tickets bearbeiten und Status ändern.",
+        "group": "Tickets"
+    },
+    {
+        "key": "tickets.update_own",
+        "label": "Eigene Tickets bearbeiten",
+        "description": "Eigene Tickets bearbeiten.",
+        "group": "Tickets"
+    },
+    {
+        "key": "tickets.delete",
+        "label": "Tickets löschen",
+        "description": "Tickets löschen.",
+        "group": "Tickets"
+    },
+    {
+        "key": "tickets.delete_own",
+        "label": "Eigene Tickets löschen",
+        "description": "Eigene Tickets löschen.",
+        "group": "Tickets"
+    },
+    {
+        "key": "tickets.comment",
+        "label": "Kommentare schreiben",
+        "description": "Kommentare zu allen Tickets hinzufügen.",
+        "group": "Tickets"
+    },
+    {
+        "key": "tickets.comment_own",
+        "label": "Eigene Tickets kommentieren",
+        "description": "Kommentare auf eigene Tickets schreiben.",
+        "group": "Tickets"
+    },
+    {
+        "key": "tickets.comment_internal",
+        "label": "Interne Kommentare",
+        "description": "Interne Ticket-Kommentare verfassen.",
+        "group": "Tickets"
+    },
+    {
+        "key": "tickets.watch",
+        "label": "Watcher verwalten",
+        "description": "Watcher für alle Tickets verwalten.",
+        "group": "Tickets"
+    },
+    {
+        "key": "tickets.watch_own",
+        "label": "Eigene Watcher",
+        "description": "Watcher für eigene Tickets verwalten.",
+        "group": "Tickets"
+    },
+    {
+        "key": "ticket_categories.manage",
+        "label": "Ticket-Kategorien verwalten",
+        "description": "Ticket-Kategorien erstellen und bearbeiten.",
+        "group": "Tickets"
+    },
+    {
+        "key": "ticket_alerts.manage",
+        "label": "Ticket-Alerts verwalten",
+        "description": "Alert-Regeln konfigurieren.",
+        "group": "Tickets"
+    },
+    {
+        "key": "notifications.manage",
+        "label": "Benachrichtigungen verwalten",
+        "description": "E-Mail-Benachrichtigungen konfigurieren.",
+        "group": "Tickets"
+    },
+    {
+        "key": "users.manage",
+        "label": "Benutzer verwalten",
+        "description": "Benutzer anlegen, löschen und Passwörter zurücksetzen.",
+        "group": "Administration"
+    },
+    {
+        "key": "roles.manage",
+        "label": "Rollen verwalten",
+        "description": "Rollen erstellen, bearbeiten und löschen.",
+        "group": "Administration"
+    },
+    {
+        "key": "roles.assign",
+        "label": "Rollen zuweisen",
+        "description": "Rollen Benutzern zuweisen.",
+        "group": "Administration"
+    },
+    {
+        "key": "stats.view",
+        "label": "Statistiken anzeigen",
+        "description": "Dashboards und Statistiken einsehen.",
+        "group": "Reporting"
+    },
+    {
+        "key": "activity.view",
+        "label": "Aktivitätslog anzeigen",
+        "description": "Aktivitätslog einsehen.",
+        "group": "Reporting"
+    }
+]
+
+DEFAULT_ROLES = [
+    {
+        "name": "Admin",
+        "description": "Voller Zugriff auf alle Funktionen.",
+        "is_system": 1,
+        "is_superuser": 1,
+        "permissions": "ALL"
+    },
+    {
+        "name": "Mitarbeiter",
+        "description": "Interne Mitarbeitende mit Zugriff auf Inventar und Tickets.",
+        "is_system": 1,
+        "is_superuser": 0,
+        "permissions": [
+            "categories.view",
+            "categories.manage",
+            "devices.view",
+            "devices.manage",
+            "assets.view",
+            "assets.manage",
+            "locations.view",
+            "locations.manage",
+            "maintenance.view",
+            "maintenance.manage",
+            "tickets.view_all",
+            "tickets.create",
+            "tickets.update",
+            "tickets.delete",
+            "tickets.comment",
+            "tickets.comment_internal",
+            "tickets.watch",
+            "ticket_categories.manage",
+            "ticket_alerts.manage",
+            "notifications.manage",
+            "stats.view",
+            "activity.view"
+        ]
+    },
+    {
+        "name": "Kunde",
+        "description": "Externe Kunden mit Zugriff auf eigene Tickets.",
+        "is_system": 1,
+        "is_superuser": 0,
+        "permissions": [
+            "tickets.view_own",
+            "tickets.create",
+            "tickets.comment_own",
+            "tickets.watch_own"
+        ]
+    }
+]
+
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DATABASE)
         db.row_factory = sqlite3.Row
     return db
+
+def seed_permissions(db):
+    for perm in PERMISSIONS:
+        db.execute('''
+            INSERT OR IGNORE INTO permissions (key, label, description, group_name)
+            VALUES (?, ?, ?, ?)
+        ''', (perm["key"], perm["label"], perm["description"], perm["group"]))
+        db.execute('''
+            UPDATE permissions
+            SET label = ?, description = ?, group_name = ?
+            WHERE key = ?
+        ''', (perm["label"], perm["description"], perm["group"], perm["key"]))
+
+def seed_roles(db):
+    for role in DEFAULT_ROLES:
+        db.execute('''
+            INSERT OR IGNORE INTO roles (name, description, is_system, is_superuser)
+            VALUES (?, ?, ?, ?)
+        ''', (role["name"], role["description"], role["is_system"], role["is_superuser"]))
+        db.execute('''
+            UPDATE roles
+            SET description = ?, is_system = ?, is_superuser = ?
+            WHERE name = ?
+        ''', (role["description"], role["is_system"], role["is_superuser"], role["name"]))
+
+    role_rows = db.execute('SELECT id, name, is_superuser FROM roles').fetchall()
+    role_map = {row["name"]: row for row in role_rows}
+    permission_rows = db.execute('SELECT id, key FROM permissions').fetchall()
+    permission_map = {row["key"]: row["id"] for row in permission_rows}
+
+    for role in DEFAULT_ROLES:
+        role_row = role_map.get(role["name"])
+        if not role_row:
+            continue
+        role_id = role_row["id"]
+        if role.get("permissions") == "ALL":
+            permission_ids = list(permission_map.values())
+        else:
+            permission_ids = [permission_map[key] for key in role.get("permissions", []) if key in permission_map]
+        for permission_id in permission_ids:
+            db.execute('''
+                INSERT OR IGNORE INTO role_permissions (role_id, permission_id)
+                VALUES (?, ?)
+            ''', (role_id, permission_id))
+
+def assign_user_role(db, user_id, role_name):
+    role = db.execute('SELECT id FROM roles WHERE name = ?', (role_name,)).fetchone()
+    if not role:
+        return
+    db.execute('''
+        INSERT OR IGNORE INTO user_roles (user_id, role_id)
+        VALUES (?, ?)
+    ''', (user_id, role["id"]))
+
+def ensure_default_roles(db):
+    default_role = db.execute('SELECT id FROM roles WHERE name = ?', (DEFAULT_ROLE_NAME,)).fetchone()
+    if not default_role:
+        return
+    users_without_role = db.execute('''
+        SELECT u.id FROM users u
+        LEFT JOIN user_roles ur ON ur.user_id = u.id
+        WHERE ur.user_id IS NULL
+    ''').fetchall()
+    for user in users_without_role:
+        db.execute('''
+            INSERT INTO user_roles (user_id, role_id)
+            VALUES (?, ?)
+        ''', (user["id"], default_role["id"]))
+
+def ensure_bootstrap_admin(db):
+    admin_role = db.execute("SELECT id FROM roles WHERE name = 'Admin'").fetchone()
+    if not admin_role:
+        return
+    existing_admin = db.execute('''
+        SELECT u.id
+        FROM users u
+        JOIN user_roles ur ON ur.user_id = u.id
+        WHERE ur.role_id = ?
+        LIMIT 1
+    ''', (admin_role["id"],)).fetchone()
+    if existing_admin:
+        return
+    username = "admin"
+    username_exists = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+    if username_exists:
+        username = f"admin-{os.urandom(3).hex()}"
+    raw_password = base64.urlsafe_b64encode(os.urandom(12)).decode().rstrip('=')
+    password_hash = generate_password_hash(raw_password)
+    cursor = db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, password_hash))
+    assign_user_role(db, cursor.lastrowid, "Admin")
+    print("\n[!] BOOTSTRAP-ADMIN ERSTELLT:")
+    print(f"    Benutzername: {username}")
+    print(f"    Passwort:    {raw_password}")
+    print("    WICHTIG: Passwort nach dem Login ändern!\n")
+
+def get_user_access(db):
+    if hasattr(g, 'user_access'):
+        return g.user_access
+    username = session.get('username')
+    if not username:
+        g.user_access = {
+            "user": None,
+            "roles": [],
+            "permissions": set(),
+            "is_superuser": False
+        }
+        return g.user_access
+    user = db.execute('SELECT id, username FROM users WHERE username = ?', (username,)).fetchone()
+    if not user:
+        g.user_access = {
+            "user": None,
+            "roles": [],
+            "permissions": set(),
+            "is_superuser": False
+        }
+        return g.user_access
+    roles = db.execute('''
+        SELECT r.id, r.name, r.is_superuser
+        FROM roles r
+        JOIN user_roles ur ON ur.role_id = r.id
+        WHERE ur.user_id = ?
+        ORDER BY r.name
+    ''', (user["id"],)).fetchall()
+    is_superuser = any(role["is_superuser"] for role in roles)
+    if is_superuser:
+        permission_rows = db.execute('SELECT key FROM permissions').fetchall()
+        permissions = {row["key"] for row in permission_rows}
+    else:
+        permission_rows = db.execute('''
+            SELECT DISTINCT p.key
+            FROM permissions p
+            JOIN role_permissions rp ON rp.permission_id = p.id
+            JOIN user_roles ur ON ur.role_id = rp.role_id
+            WHERE ur.user_id = ?
+        ''', (user["id"],)).fetchall()
+        permissions = {row["key"] for row in permission_rows}
+    g.user_access = {
+        "user": dict(user),
+        "roles": [dict(role) for role in roles],
+        "permissions": permissions,
+        "is_superuser": is_superuser
+    }
+    return g.user_access
+
+def user_can(permission_key):
+    access = get_user_access(get_db())
+    return access["is_superuser"] or permission_key in access["permissions"]
+
+def require_permissions(*permission_keys):
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            access = get_user_access(get_db())
+            if access["is_superuser"]:
+                return f(*args, **kwargs)
+            if not any(key in access["permissions"] for key in permission_keys):
+                return jsonify({"error": "Keine Berechtigung"}), 403
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator
+
+def require_permission(permission_key):
+    return require_permissions(permission_key)
+
+def ensure_ticket_access(ticket, access, require_owner_permission=False):
+    if access["is_superuser"]:
+        return True
+    if "tickets.view_all" in access["permissions"]:
+        return True
+    if "tickets.view_own" in access["permissions"]:
+        return ticket and ticket.get("created_by") == session.get('username')
+    if require_owner_permission:
+        return ticket and ticket.get("created_by") == session.get('username')
+    return False
 
 @app.teardown_appcontext
 def close_connection(exception):
@@ -60,6 +470,50 @@ def init_db():
                 username TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
                 otp_secret TEXT
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS roles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                is_system INTEGER DEFAULT 0,
+                is_superuser INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS permissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL,
+                description TEXT,
+                group_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS role_permissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                role_id INTEGER NOT NULL,
+                permission_id INTEGER NOT NULL,
+                UNIQUE(role_id, permission_id),
+                FOREIGN KEY (role_id) REFERENCES roles(id),
+                FOREIGN KEY (permission_id) REFERENCES permissions(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS user_roles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                role_id INTEGER NOT NULL,
+                UNIQUE(user_id, role_id),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (role_id) REFERENCES roles(id)
             )
         ''')
 
@@ -368,6 +822,11 @@ def init_db():
             except sqlite3.IntegrityError:
                 pass
 
+        seed_permissions(db)
+        seed_roles(db)
+        ensure_default_roles(db)
+        ensure_bootstrap_admin(db)
+
         db.commit()
 
 # Setup-Funktion zum Benutzer erstellen
@@ -376,7 +835,8 @@ def create_user(username, password):
         db = get_db()
         password_hash = generate_password_hash(password)
         try:
-            db.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, password_hash))
+            cursor = db.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, password_hash))
+            assign_user_role(db, cursor.lastrowid, DEFAULT_ROLE_NAME)
             db.commit()
             print(f"[+] Benutzer '{username}' erstellt.")
         except sqlite3.IntegrityError:
@@ -726,7 +1186,8 @@ def login():
             existing_user = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
             if not existing_user:
                 placeholder_password = generate_password_hash(os.urandom(24).hex())
-                db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, placeholder_password))
+                cursor = db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, placeholder_password))
+                assign_user_role(db, cursor.lastrowid, DEFAULT_ROLE_NAME)
                 existing_user = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
             session['logged_in'] = True
             session['username'] = username
@@ -768,28 +1229,38 @@ def logout():
 
 @app.route('/')
 @login_required
+@require_permissions('categories.view', 'categories.manage')
 def index():
-    return render_template('index.html', username=session.get('username'))
+    access = get_user_access(get_db())
+    return render_template('index.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/users')
 @login_required
+@require_permission('users.manage')
 def users_page():
-    return render_template('users.html', username=session.get('username'))
+    access = get_user_access(get_db())
+    return render_template('users.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/locations')
 @login_required
+@require_permissions('locations.view', 'locations.manage')
 def locations_page():
-    return render_template('locations.html', username=session.get('username'))
+    access = get_user_access(get_db())
+    return render_template('locations.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/tickets')
 @login_required
+@require_permissions('tickets.view_all', 'tickets.view_own', 'tickets.create')
 def tickets_page():
-    return render_template('tickets.html', username=session.get('username'))
+    access = get_user_access(get_db())
+    return render_template('tickets.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/api/categories/<int:category_id>', methods=['PUT', 'DELETE'])
 @login_required
 def handle_category(category_id):
     db = get_db()
+    if not user_can('categories.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
 
     if request.method == 'PUT':
         try:
@@ -839,6 +1310,8 @@ def handle_category(category_id):
 def handle_categories():
     db = get_db()
     if request.method == 'POST':
+        if not user_can('categories.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json()
         try:
             db.execute('''
@@ -851,6 +1324,8 @@ def handle_categories():
         except sqlite3.IntegrityError:
             return jsonify({"error": "Kategorie existiert bereits"}), 400
     
+    if not (user_can('categories.view') or user_can('categories.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     categories = db.execute('SELECT * FROM categories ORDER BY name').fetchall()
     return jsonify([dict(row) for row in categories])
 
@@ -858,6 +1333,8 @@ def handle_categories():
 @login_required
 def handle_device(device_id):
     db = get_db()
+    if not user_can('devices.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
 
     if request.method == 'PUT':
         try:
@@ -897,6 +1374,8 @@ def handle_device(device_id):
 @login_required
 def handle_devices():
     db = get_db()
+    if not user_can('devices.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     try:
         data = request.get_json()
         required_fields = ['name', 'category_id']
@@ -926,6 +1405,8 @@ def handle_devices():
 @login_required
 def get_devices():
     db = get_db()
+    if not (user_can('devices.view') or user_can('devices.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     category_id = request.args.get('category_id')
     search_query = request.args.get('search', '').strip()
 
@@ -959,6 +1440,8 @@ def get_devices():
 def manage_assets():
     db = get_db()
     if request.method == 'POST':
+        if not user_can('assets.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json()
         name = (data.get('name') or '').strip()
         notes = (data.get('notes') or '').strip()
@@ -983,6 +1466,8 @@ def manage_assets():
         except sqlite3.Error as e:
             return jsonify({"error": f"Datenbankfehler: {str(e)}"}), 500
 
+    if not (user_can('assets.view') or user_can('assets.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     assets = db.execute('''
         SELECT a.*, COUNT(ad.device_id) as device_count
         FROM assets a
@@ -1009,6 +1494,8 @@ def asset_detail(asset_id):
         return jsonify({"error": "Asset nicht gefunden"}), 404
 
     if request.method == 'GET':
+        if not (user_can('assets.view') or user_can('assets.manage')):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         device_rows = db.execute('''
             SELECT d.*, c.name as category_name, c.icon as category_icon, l.name as location_name
             FROM devices d
@@ -1027,6 +1514,8 @@ def asset_detail(asset_id):
         return jsonify(asset)
 
     if request.method == 'PUT':
+        if not user_can('assets.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json()
         name = (data.get('name') or '').strip()
         notes = (data.get('notes') or '').strip()
@@ -1049,6 +1538,8 @@ def asset_detail(asset_id):
         db.commit()
         return jsonify({"status": "updated"}), 200
 
+    if not user_can('assets.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
     db.execute('DELETE FROM assets WHERE id = ?', (asset_id,))
     log_activity(db, "delete", "asset", asset_id)
@@ -1060,6 +1551,8 @@ def asset_detail(asset_id):
 def manage_locations():
     db = get_db()
     if request.method == 'POST':
+        if not user_can('locations.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json()
         name = (data.get('name') or '').strip()
         description = (data.get('description') or '').strip()
@@ -1076,6 +1569,8 @@ def manage_locations():
         except sqlite3.IntegrityError:
             return jsonify({"error": "Standort existiert bereits"}), 400
 
+    if not (user_can('locations.view') or user_can('locations.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     locations = db.execute('SELECT * FROM locations ORDER BY name').fetchall()
     return jsonify([dict(row) for row in locations])
 
@@ -1084,6 +1579,8 @@ def manage_locations():
 def update_location(location_id):
     db = get_db()
     if request.method == 'PUT':
+        if not user_can('locations.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json()
         name = (data.get('name') or '').strip()
         description = (data.get('description') or '').strip()
@@ -1100,6 +1597,8 @@ def update_location(location_id):
         db.commit()
         return jsonify({"status": "updated"}), 200
 
+    if not user_can('locations.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     result = db.execute('DELETE FROM locations WHERE id = ?', (location_id,))
     if result.rowcount == 0:
         return jsonify({"error": "Standort nicht gefunden"}), 404
@@ -1112,6 +1611,8 @@ def update_location(location_id):
 def ticket_categories():
     db = get_db()
     if request.method == 'POST':
+        if not user_can('ticket_categories.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         name = (data.get('name') or '').strip()
         description = (data.get('description') or '').strip()
@@ -1131,6 +1632,8 @@ def ticket_categories():
         except sqlite3.IntegrityError:
             return jsonify({"error": "Kategorie existiert bereits"}), 400
 
+    if not (user_can('tickets.view_all') or user_can('tickets.view_own') or user_can('tickets.create')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     categories = db.execute('SELECT * FROM ticket_categories ORDER BY name').fetchall()
     return jsonify([dict(row) for row in categories])
 
@@ -1139,6 +1642,8 @@ def ticket_categories():
 def ticket_category_detail(category_id):
     db = get_db()
     if request.method == 'PUT':
+        if not user_can('ticket_categories.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         name = (data.get('name') or '').strip()
         description = (data.get('description') or '').strip()
@@ -1158,6 +1663,8 @@ def ticket_category_detail(category_id):
         db.commit()
         return jsonify({"status": "updated"}), 200
 
+    if not user_can('ticket_categories.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     result = db.execute('DELETE FROM ticket_categories WHERE id = ?', (category_id,))
     if result.rowcount == 0:
         return jsonify({"error": "Kategorie nicht gefunden"}), 404
@@ -1169,7 +1676,10 @@ def ticket_category_detail(category_id):
 @login_required
 def tickets():
     db = get_db()
+    access = get_user_access(db)
     if request.method == 'POST':
+        if not user_can('tickets.create'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         title = (data.get('title') or '').strip()
         description = (data.get('description') or '').strip()
@@ -1181,6 +1691,11 @@ def tickets():
         assignee = (data.get('assignee') or '').strip()
         assignee_email = (data.get('assignee_email') or '').strip()
         due_date = (data.get('due_date') or '').strip()
+        if not user_can('tickets.update'):
+            status = 'open'
+            assignee = ''
+            assignee_email = ''
+            due_date = ''
         tags = json.dumps(data.get('tags') or [])
         custom_fields = json.dumps(data.get('custom_fields') or [])
         if not title or not description:
@@ -1204,6 +1719,8 @@ def tickets():
             trigger_ticket_notifications(db, "created", ticket)
         return jsonify({"status": "created", "id": ticket_id}), 201
 
+    if not (user_can('tickets.view_all') or user_can('tickets.view_own')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     filters = []
     params = []
     status = request.args.get('status')
@@ -1226,6 +1743,9 @@ def tickets():
         filters.append('t.assignee = ?')
         params.append(assignee)
     if mine:
+        filters.append('t.created_by = ?')
+        params.append(session.get('username'))
+    if not access["is_superuser"] and 'tickets.view_all' not in access["permissions"]:
         filters.append('t.created_by = ?')
         params.append(session.get('username'))
     if search:
@@ -1252,6 +1772,9 @@ def ticket_detail(ticket_id):
     ticket = fetch_ticket(db, ticket_id)
     if not ticket:
         return jsonify({"error": "Ticket nicht gefunden"}), 404
+    access = get_user_access(db)
+    if not ensure_ticket_access(ticket, access):
+        return jsonify({"error": "Keine Berechtigung"}), 403
 
     if request.method == 'GET':
         ticket = normalize_ticket_row(ticket)
@@ -1272,6 +1795,10 @@ def ticket_detail(ticket_id):
         return jsonify(ticket)
 
     if request.method == 'PUT':
+        can_update = user_can('tickets.update')
+        can_update_own = user_can('tickets.update_own')
+        if not can_update and not (can_update_own and ticket.get('created_by') == session.get('username')):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         title = (data.get('title') or ticket['title']).strip()
         description = (data.get('description') or ticket['description']).strip()
@@ -1307,6 +1834,10 @@ def ticket_detail(ticket_id):
                 trigger_ticket_notifications(db, "status_changed", normalized)
         return jsonify({"status": "updated"}), 200
 
+    can_delete = user_can('tickets.delete')
+    can_delete_own = user_can('tickets.delete_own')
+    if not can_delete and not (can_delete_own and ticket.get('created_by') == session.get('username')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     db.execute('DELETE FROM ticket_comments WHERE ticket_id = ?', (ticket_id,))
     db.execute('DELETE FROM ticket_watchers WHERE ticket_id = ?', (ticket_id,))
     db.execute('DELETE FROM tickets WHERE id = ?', (ticket_id,))
@@ -1318,10 +1849,21 @@ def ticket_detail(ticket_id):
 @login_required
 def ticket_comments(ticket_id):
     db = get_db()
+    ticket = fetch_ticket(db, ticket_id)
+    if not ticket:
+        return jsonify({"error": "Ticket nicht gefunden"}), 404
+    access = get_user_access(db)
+    if not ensure_ticket_access(ticket, access):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     if request.method == 'POST':
+        can_comment = user_can('tickets.comment')
+        can_comment_own = user_can('tickets.comment_own')
+        if not can_comment and not (can_comment_own and ticket.get('created_by') == session.get('username')):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         body = (data.get('body') or '').strip()
-        is_internal = 1 if data.get('is_internal') else 0
+        allow_internal = user_can('tickets.comment_internal')
+        is_internal = 1 if allow_internal and data.get('is_internal') else 0
         if not body:
             return jsonify({"error": "Kommentar darf nicht leer sein"}), 400
         db.execute('''
@@ -1349,7 +1891,17 @@ def ticket_comments(ticket_id):
 @login_required
 def ticket_watchers(ticket_id):
     db = get_db()
+    ticket = fetch_ticket(db, ticket_id)
+    if not ticket:
+        return jsonify({"error": "Ticket nicht gefunden"}), 404
+    access = get_user_access(db)
+    if not ensure_ticket_access(ticket, access):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     if request.method == 'POST':
+        can_watch = user_can('tickets.watch')
+        can_watch_own = user_can('tickets.watch_own')
+        if not can_watch and not (can_watch_own and ticket.get('created_by') == session.get('username')):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         email = (data.get('email') or '').strip()
         if not email:
@@ -1374,6 +1926,16 @@ def ticket_watchers(ticket_id):
 @login_required
 def delete_ticket_watcher(ticket_id, watcher_id):
     db = get_db()
+    ticket = fetch_ticket(db, ticket_id)
+    if not ticket:
+        return jsonify({"error": "Ticket nicht gefunden"}), 404
+    access = get_user_access(db)
+    if not ensure_ticket_access(ticket, access):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    can_watch = user_can('tickets.watch')
+    can_watch_own = user_can('tickets.watch_own')
+    if not can_watch and not (can_watch_own and ticket.get('created_by') == session.get('username')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     result = db.execute('''
         DELETE FROM ticket_watchers
         WHERE id = ? AND ticket_id = ?
@@ -1389,6 +1951,8 @@ def delete_ticket_watcher(ticket_id, watcher_id):
 def ticket_alerts():
     db = get_db()
     if request.method == 'POST':
+        if not user_can('ticket_alerts.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         name = (data.get('name') or '').strip()
         event_type = (data.get('event_type') or '').strip()
@@ -1407,6 +1971,8 @@ def ticket_alerts():
         db.commit()
         return jsonify({"status": "created"}), 201
 
+    if not user_can('ticket_alerts.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     alerts = db.execute('SELECT * FROM ticket_alerts ORDER BY created_at DESC').fetchall()
     return jsonify([dict(row) for row in alerts])
 
@@ -1415,6 +1981,8 @@ def ticket_alerts():
 def ticket_alert_detail(alert_id):
     db = get_db()
     if request.method == 'PUT':
+        if not user_can('ticket_alerts.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         name = (data.get('name') or '').strip()
         event_type = (data.get('event_type') or '').strip()
@@ -1436,6 +2004,8 @@ def ticket_alert_detail(alert_id):
         db.commit()
         return jsonify({"status": "updated"}), 200
 
+    if not user_can('ticket_alerts.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     result = db.execute('DELETE FROM ticket_alerts WHERE id = ?', (alert_id,))
     if result.rowcount == 0:
         return jsonify({"error": "Alert nicht gefunden"}), 404
@@ -1447,6 +2017,8 @@ def ticket_alert_detail(alert_id):
 @login_required
 def notification_settings():
     db = get_db()
+    if not user_can('notifications.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     if request.method == 'POST':
         data = request.get_json() or {}
         enabled = 1 if data.get('enabled') else 0
@@ -1483,6 +2055,8 @@ def notification_settings():
 @login_required
 def notification_test():
     db = get_db()
+    if not user_can('notifications.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     data = request.get_json() or {}
     recipients = data.get('recipients')
     settings = get_notification_settings(db)
@@ -1510,6 +2084,8 @@ def feature_flags():
 @login_required
 def activity_feed():
     db = get_db()
+    if not user_can('activity.view'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     limit = int(request.args.get('limit', 8))
     rows = db.execute('''
         SELECT username, action, entity_type, entity_id, details, created_at
@@ -1529,20 +2105,34 @@ def activity_feed():
 
 @app.route('/api/users', methods=['GET', 'POST'])
 @login_required
+@require_permission('users.manage')
 def manage_users():
     db = get_db()
     if request.method == 'POST':
         data = request.get_json()
         username = (data.get('username') or '').strip()
         password = data.get('password') or ''
+        role_ids = data.get('role_ids') or []
         if not username or not password:
             return jsonify({"error": "Benutzername und Passwort sind erforderlich"}), 400
+        if role_ids and not user_can('roles.assign'):
+            return jsonify({"error": "Keine Berechtigung für Rollen"}), 403
         password_hash = generate_password_hash(password)
         try:
-            db.execute('''
+            cursor = db.execute('''
                 INSERT INTO users (username, password_hash)
                 VALUES (?, ?)
             ''', (username, password_hash))
+            user_id = cursor.lastrowid
+            if role_ids:
+                db.execute('DELETE FROM user_roles WHERE user_id = ?', (user_id,))
+                for role_id in role_ids:
+                    db.execute('''
+                        INSERT OR IGNORE INTO user_roles (user_id, role_id)
+                        VALUES (?, ?)
+                    ''', (user_id, role_id))
+            else:
+                assign_user_role(db, user_id, DEFAULT_ROLE_NAME)
             log_activity(db, "create", "user", details={"username": username})
             db.commit()
             return jsonify({"status": "created"}), 201
@@ -1554,11 +2144,20 @@ def manage_users():
     for user in users:
         entry = dict(user)
         entry['otp_enabled'] = bool(entry.pop('otp_secret'))
+        roles = db.execute('''
+            SELECT r.id, r.name
+            FROM roles r
+            JOIN user_roles ur ON ur.role_id = r.id
+            WHERE ur.user_id = ?
+            ORDER BY r.name
+        ''', (entry["id"],)).fetchall()
+        entry['roles'] = [dict(role) for role in roles]
         result.append(entry)
     return jsonify(result)
 
 @app.route('/api/users/<int:user_id>', methods=['DELETE'])
 @login_required
+@require_permission('users.manage')
 def remove_user(user_id):
     db = get_db()
     current = db.execute('SELECT id FROM users WHERE username = ?', (session.get('username'),)).fetchone()
@@ -1573,6 +2172,7 @@ def remove_user(user_id):
 
 @app.route('/api/users/<int:user_id>/password', methods=['POST'])
 @login_required
+@require_permission('users.manage')
 def reset_user_password(user_id):
     db = get_db()
     data = request.get_json()
@@ -1591,10 +2191,154 @@ def reset_user_password(user_id):
     db.commit()
     return jsonify({"status": "updated"}), 200
 
+@app.route('/api/permissions', methods=['GET'])
+@login_required
+@require_permission('roles.manage')
+def list_permissions():
+    db = get_db()
+    rows = db.execute('''
+        SELECT id, key, label, description, group_name
+        FROM permissions
+        ORDER BY group_name, label
+    ''').fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/roles', methods=['GET', 'POST'])
+@login_required
+def manage_roles():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('roles.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        permission_ids = data.get('permission_ids') or []
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO roles (name, description, is_system, is_superuser)
+                VALUES (?, ?, 0, 0)
+            ''', (name, description))
+            role_id = cursor.lastrowid
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Rolle existiert bereits"}), 400
+        for permission_id in permission_ids:
+            db.execute('''
+                INSERT OR IGNORE INTO role_permissions (role_id, permission_id)
+                VALUES (?, ?)
+            ''', (role_id, permission_id))
+        log_activity(db, "create", "role", role_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "created", "id": role_id}), 201
+
+    if not (user_can('roles.manage') or user_can('roles.assign')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    roles = db.execute('SELECT id, name, description, is_system, is_superuser FROM roles ORDER BY name').fetchall()
+    results = []
+    for role in roles:
+        permissions = db.execute('''
+            SELECT p.id, p.key, p.label
+            FROM permissions p
+            JOIN role_permissions rp ON rp.permission_id = p.id
+            WHERE rp.role_id = ?
+            ORDER BY p.label
+        ''', (role["id"],)).fetchall()
+        entry = dict(role)
+        entry["permissions"] = [dict(row) for row in permissions]
+        results.append(entry)
+    return jsonify(results)
+
+@app.route('/api/roles/<int:role_id>', methods=['PUT', 'DELETE'])
+@login_required
+@require_permission('roles.manage')
+def role_detail(role_id):
+    db = get_db()
+    role = db.execute('SELECT id, name, is_system FROM roles WHERE id = ?', (role_id,)).fetchone()
+    if not role:
+        return jsonify({"error": "Rolle nicht gefunden"}), 404
+    if request.method == 'DELETE':
+        if role["is_system"]:
+            return jsonify({"error": "Systemrollen können nicht gelöscht werden"}), 400
+        db.execute('DELETE FROM role_permissions WHERE role_id = ?', (role_id,))
+        db.execute('DELETE FROM user_roles WHERE role_id = ?', (role_id,))
+        db.execute('DELETE FROM roles WHERE id = ?', (role_id,))
+        log_activity(db, "delete", "role", role_id, {"name": role["name"]})
+        db.commit()
+        return jsonify({"status": "deleted"}), 200
+
+    data = request.get_json() or {}
+    name = (data.get('name') or '').strip()
+    description = (data.get('description') or '').strip()
+    permission_ids = data.get('permission_ids') or []
+    if not name:
+        return jsonify({"error": "Name ist erforderlich"}), 400
+    db.execute('''
+        UPDATE roles
+        SET name = ?, description = ?
+        WHERE id = ?
+    ''', (name, description, role_id))
+    db.execute('DELETE FROM role_permissions WHERE role_id = ?', (role_id,))
+    for permission_id in permission_ids:
+        db.execute('''
+            INSERT OR IGNORE INTO role_permissions (role_id, permission_id)
+            VALUES (?, ?)
+        ''', (role_id, permission_id))
+    log_activity(db, "update", "role", role_id, {"name": name})
+    db.commit()
+    return jsonify({"status": "updated"}), 200
+
+@app.route('/api/me', methods=['GET'])
+@login_required
+def current_user_info():
+    db = get_db()
+    access = get_user_access(db)
+    if not access["user"]:
+        return jsonify({"error": "Benutzer nicht gefunden"}), 404
+    return jsonify({
+        "id": access["user"]["id"],
+        "username": access["user"]["username"],
+        "roles": access["roles"],
+        "permissions": sorted(access["permissions"]),
+        "is_superuser": access["is_superuser"]
+    })
+
+@app.route('/api/users/<int:user_id>/roles', methods=['PUT'])
+@login_required
+@require_permission('roles.assign')
+def update_user_roles(user_id):
+    db = get_db()
+    data = request.get_json() or {}
+    role_ids = data.get('role_ids') or []
+    if not isinstance(role_ids, list):
+        return jsonify({"error": "Rollenliste ungültig"}), 400
+    existing_user = db.execute('SELECT id, username FROM users WHERE id = ?', (user_id,)).fetchone()
+    if not existing_user:
+        return jsonify({"error": "Benutzer nicht gefunden"}), 404
+    db.execute('DELETE FROM user_roles WHERE user_id = ?', (user_id,))
+    for role_id in role_ids:
+        db.execute('''
+            INSERT OR IGNORE INTO user_roles (user_id, role_id)
+            VALUES (?, ?)
+        ''', (user_id, role_id))
+    log_activity(db, "update", "user_roles", user_id, {"roles": role_ids})
+    db.commit()
+    roles = db.execute('''
+        SELECT r.id, r.name
+        FROM roles r
+        JOIN user_roles ur ON ur.role_id = r.id
+        WHERE ur.user_id = ?
+        ORDER BY r.name
+    ''', (user_id,)).fetchall()
+    return jsonify({"status": "updated", "roles": [dict(role) for role in roles]}), 200
+
 @app.route('/api/ad/settings', methods=['GET'])
 @login_required
 def ad_settings():
     db = get_db()
+    if not user_can('users.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     settings = get_ad_settings(db)
     return jsonify(serialize_ad_settings(settings))
 
@@ -1602,6 +2346,8 @@ def ad_settings():
 @login_required
 def quick_connect_ad():
     db = get_db()
+    if not user_can('users.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     data = request.get_json() or {}
     server_url = (data.get('server_url') or '').strip()
     domain = (data.get('domain') or '').strip()
@@ -1653,6 +2399,8 @@ def quick_connect_ad():
 @login_required
 def connect_ad():
     db = get_db()
+    if not user_can('users.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     data = request.get_json() or {}
     server_url = (data.get('server_url') or '').strip()
     base_dn = (data.get('base_dn') or '').strip()
@@ -1707,6 +2455,8 @@ def connect_ad():
 @login_required
 def disconnect_ad():
     db = get_db()
+    if not user_can('users.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     db.execute('''
         UPDATE ad_settings
         SET enabled = 0,
@@ -1722,7 +2472,11 @@ def disconnect_ad():
 @login_required
 def device_tags(device_id):
     db = get_db()
+    if not (user_can('devices.manage') or user_can('devices.view')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     if request.method == 'POST':
+        if not user_can('devices.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json()
         tag = (data.get('tag') or '').strip()
         if not tag:
@@ -1747,6 +2501,8 @@ def device_tags(device_id):
 @login_required
 def delete_device_tag(device_id, tag_id):
     db = get_db()
+    if not user_can('devices.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     result = db.execute('''
         DELETE FROM device_tags
         WHERE id = ? AND device_id = ?
@@ -1761,7 +2517,11 @@ def delete_device_tag(device_id, tag_id):
 @login_required
 def device_notes(device_id):
     db = get_db()
+    if not (user_can('devices.manage') or user_can('devices.view')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     if request.method == 'POST':
+        if not user_can('devices.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json()
         note = (data.get('note') or '').strip()
         if not note:
@@ -1786,6 +2546,8 @@ def device_notes(device_id):
 @login_required
 def delete_device_note(device_id, note_id):
     db = get_db()
+    if not user_can('devices.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     result = db.execute('''
         DELETE FROM device_notes
         WHERE id = ? AND device_id = ?
@@ -1802,6 +2564,8 @@ def delete_device_note(device_id, note_id):
 def maintenance_tasks():
     db = get_db()
     if request.method == 'POST':
+        if not user_can('maintenance.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json()
         device_id = data.get('device_id')
         title = (data.get('title') or '').strip()
@@ -1816,6 +2580,8 @@ def maintenance_tasks():
         db.commit()
         return jsonify({"status": "created"}), 201
 
+    if not (user_can('maintenance.view') or user_can('maintenance.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     device_id = request.args.get('device_id')
     params = []
     query = '''
@@ -1835,6 +2601,8 @@ def maintenance_tasks():
 @pro_required
 def update_maintenance(task_id):
     db = get_db()
+    if not user_can('maintenance.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     data = request.get_json()
     status = (data.get('status') or '').strip().lower()
     if status not in {'open', 'done'}:
@@ -1854,6 +2622,8 @@ def update_maintenance(task_id):
 @login_required
 def maintenance_summary():
     db = get_db()
+    if not (user_can('maintenance.view') or user_can('maintenance.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     open_count = db.execute('''
         SELECT COUNT(*) FROM maintenance_tasks WHERE status = 'open'
     ''').fetchone()[0]
@@ -1868,6 +2638,8 @@ def maintenance_summary():
 @pro_required
 def export_devices():
     db = get_db()
+    if not (user_can('devices.view') or user_can('devices.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     devices = db.execute('''
         SELECT d.id, d.name, d.serial_number, d.specs, d.created_at, c.name as category_name
         FROM devices d
@@ -1895,8 +2667,10 @@ def export_devices():
 
 @app.route('/stats')
 @login_required
+@require_permission('stats.view')
 def stats():
     db = get_db()
+    access = get_user_access(db)
     
     # 1. Grundstatistiken mit Default-Werten
     total_devices = db.execute('SELECT COUNT(*) FROM devices').fetchone()[0] or 0
@@ -2063,7 +2837,9 @@ def stats():
         'activity_summary': activity_summary_data,
         'top_categories': top_categories,
         'recent_devices': recent_devices_data,
-        'username': session.get('username', '')
+        'username': session.get('username', ''),
+        'permissions': sorted(access["permissions"]),
+        'is_superuser': access["is_superuser"]
     }
     
     return render_template('stats.html', **context)

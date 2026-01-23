@@ -181,6 +181,7 @@
                 </div>
 
                 <div class="space-y-3 sidebar-primary-links">
+                    {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
                     <a href="/tickets" class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
                         <span class="flex items-center">
                             <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-amber-50 text-amber-600 mr-3">
@@ -190,6 +191,8 @@
                         </span>
                         <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
                     </a>
+                    {% endif %}
+                    {% if 'stats.view' in permissions %}
                     <a href="/stats" class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
                         <span class="flex items-center">
                             <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 mr-3">
@@ -199,7 +202,8 @@
                         </span>
                         <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
                     </a>
-
+                    {% endif %}
+                    {% if 'users.manage' in permissions %}
                     <a href="/users" class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
                         <span class="flex items-center">
                             <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
@@ -209,7 +213,8 @@
                         </span>
                         <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
                     </a>
-
+                    {% endif %}
+                    {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
                     <a href="/locations" class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
                         <span class="flex items-center">
                             <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
@@ -219,6 +224,7 @@
                         </span>
                         <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
                     </a>
+                    {% endif %}
                 </div>
 
                 <div class="space-y-3 sidebar-compact-hidden">
