@@ -305,12 +305,29 @@ document.addEventListener('alpine:init', () => {
                 category_id: this.activeCategory,
                 serial_number: '',
                 location_id: '',
-                specs: {}
+                specs: {},
+                extraSpecs: []
             };
             this.isDeviceModalOpen = true;
         },
 
         openEditDeviceModal(device) {
+            const specs = JSON.parse(device.specs || '{}');
+            const categoryFields = this.getCategoryFields(device.category_id) || {};
+            const baseSpecs = {};
+            const extraSpecs = [];
+
+            Object.entries(specs).forEach(([key, value]) => {
+                if (categoryFields && Object.prototype.hasOwnProperty.call(categoryFields, key)) {
+                    baseSpecs[key] = value;
+                } else {
+                    extraSpecs.push({
+                        id: crypto.randomUUID(),
+                        name: key,
+                        value
+                    });
+                }
+            });
             this.editingDevice = true;
             this.currentDevice = {
                 id: device.id,
@@ -318,7 +335,8 @@ document.addEventListener('alpine:init', () => {
                 category_id: device.category_id,
                 serial_number: device.serial_number,
                 location_id: device.location_id || '',
-                specs: JSON.parse(device.specs || '{}')
+                specs: baseSpecs,
+                extraSpecs
             };
             this.isDeviceModalOpen = true;
         },
@@ -327,14 +345,33 @@ document.addEventListener('alpine:init', () => {
             this.isDeviceModalOpen = false;
         },
 
+        addExtraSpec() {
+            this.currentDevice.extraSpecs.push({
+                id: crypto.randomUUID(),
+                name: '',
+                value: ''
+            });
+        },
+
+        removeExtraSpec(specId) {
+            this.currentDevice.extraSpecs = this.currentDevice.extraSpecs.filter(spec => spec.id !== specId);
+        },
+
         async saveDevice() {
             try {
+                const specs = { ...this.currentDevice.specs };
+                this.currentDevice.extraSpecs.forEach((spec) => {
+                    const trimmedName = spec.name.trim();
+                    if (!trimmedName) return;
+                    specs[trimmedName] = spec.value;
+                });
+
                 const deviceData = {
                     name: this.currentDevice.name,
                     category_id: this.currentDevice.category_id || this.activeCategory,
                     serial_number: this.currentDevice.serial_number,
                     location_id: this.currentDevice.location_id || null,
-                    specs: this.currentDevice.specs
+                    specs
                 };
 
                 let response;
