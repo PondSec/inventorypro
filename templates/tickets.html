@@ -265,6 +265,39 @@
                                         </div>
                                     </div>
 
+                                    <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                                        <div class="flex items-center justify-between">
+                                            <div>
+                                                <p class="text-xs uppercase text-slate-400">Assets</p>
+                                                <p class="text-sm font-semibold text-slate-700">Betroffene Assets</p>
+                                            </div>
+                                            <i data-feather="package" class="w-4 h-4 text-slate-400"></i>
+                                        </div>
+                                        <div class="mt-3 grid gap-2">
+                                            <template x-for="asset in assets" :key="asset.id">
+                                                <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                                                    <input type="checkbox" :value="asset.id" x-model="selectedTicket.asset_ids" @change="updateTicket" :disabled="!(can('tickets.update') || can('tickets.update_own'))" class="rounded border-slate-300 text-amber-600 focus:ring-amber-500">
+                                                    <span class="truncate" x-text="asset.name"></span>
+                                                </label>
+                                            </template>
+                                            <p x-show="assets.length === 0" class="text-xs text-slate-400">Keine Assets verfügbar.</p>
+                                        </div>
+                                        <div class="mt-4 space-y-2 text-xs text-slate-500">
+                                            <template x-for="asset in selectedTicket.assets || []" :key="asset.id">
+                                                <div class="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                                                    <div class="flex items-center justify-between">
+                                                        <p class="font-semibold text-slate-800" x-text="asset.name"></p>
+                                                        <span class="text-[11px] text-slate-500" x-text="asset.warranty_status || 'Unbekannt'"></span>
+                                                    </div>
+                                                    <p class="text-[11px] text-slate-500" x-text="asset.manufacturer ? `Hersteller: ${asset.manufacturer}` : 'Hersteller: -'"></p>
+                                                    <p class="text-[11px] text-slate-500" x-text="asset.serial_numbers?.length ? `Seriennummern: ${asset.serial_numbers.join(', ')}` : 'Seriennummern: -'"></p>
+                                                    <p class="text-[11px] text-slate-500" x-text="asset.locations?.length ? `Standorte: ${asset.locations.join(', ')}` : 'Standorte: -'"></p>
+                                                </div>
+                                            </template>
+                                            <p x-show="(selectedTicket.assets || []).length === 0" class="text-xs text-slate-400">Noch keine Assets zugewiesen.</p>
+                                        </div>
+                                    </div>
+
                                     <div class="mt-5" x-show="can('tickets.watch') || can('tickets.watch_own')">
                                         <p class="text-xs uppercase text-slate-400">Watcher</p>
                                         <div class="flex flex-wrap gap-2 mt-2">
@@ -468,6 +501,39 @@
                 </div>
                 <input type="date" x-model="newTicket.due_date" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm" x-show="can('tickets.update')">
                 <input type="text" x-model="newTicket.tags" placeholder="Tags (kommagetrennt)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+
+                <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs uppercase text-slate-400">Assets</p>
+                            <p class="text-sm font-semibold text-slate-700">Ticket verknüpfen</p>
+                        </div>
+                        <i data-feather="package" class="w-4 h-4 text-slate-400"></i>
+                    </div>
+                    <div class="mt-3 grid gap-2">
+                        <template x-for="asset in assets" :key="asset.id">
+                            <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                                <input type="checkbox" :value="asset.id" x-model="newTicket.asset_ids" class="rounded border-slate-300 text-amber-600 focus:ring-amber-500">
+                                <span class="truncate" x-text="asset.name"></span>
+                            </label>
+                        </template>
+                        <p x-show="assets.length === 0" class="text-xs text-slate-400">Keine Assets verfügbar.</p>
+                    </div>
+                    <div class="mt-4 space-y-2 text-xs text-slate-500">
+                        <template x-for="asset in selectedAssetsForNewTicket()" :key="asset.id">
+                            <div class="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                                <div class="flex items-center justify-between">
+                                    <p class="font-semibold text-slate-800" x-text="asset.name"></p>
+                                    <span class="text-[11px] text-slate-500" x-text="asset.warranty_status || 'Unbekannt'"></span>
+                                </div>
+                                <p class="text-[11px] text-slate-500" x-text="asset.manufacturer ? `Hersteller: ${asset.manufacturer}` : 'Hersteller: -'"></p>
+                                <p class="text-[11px] text-slate-500" x-text="asset.serial_numbers?.length ? `Seriennummern: ${asset.serial_numbers.join(', ')}` : 'Seriennummern: -'"></p>
+                                <p class="text-[11px] text-slate-500" x-text="asset.locations?.length ? `Standorte: ${asset.locations.join(', ')}` : 'Standorte: -'"></p>
+                            </div>
+                        </template>
+                        <p x-show="selectedAssetsForNewTicket().length === 0" class="text-xs text-slate-400">Keine Assets ausgewählt.</p>
+                    </div>
+                </div>
 
                 <div class="space-y-2">
                     <p class="text-xs uppercase text-slate-400">Benutzerdefinierte Felder</p>

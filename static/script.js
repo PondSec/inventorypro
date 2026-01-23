@@ -7,6 +7,7 @@ document.addEventListener('alpine:init', () => {
         filteredDevices: [],
         allDevices: [],
         assets: [],
+        relationTypes: [],
         activeCategory: null,
         searchQuery: '',
         sortDropdownOpen: false,
@@ -69,7 +70,14 @@ document.addEventListener('alpine:init', () => {
             name: '',
             notes: '',
             specs: [],
-            device_ids: []
+            device_ids: [],
+            acquisition_date: '',
+            commissioning_date: '',
+            warranty_end: '',
+            depreciation_months: '',
+            retirement_date: '',
+            retirement_reason: '',
+            relations: []
         },
 
         // Initialization
@@ -79,6 +87,7 @@ document.addEventListener('alpine:init', () => {
             await this.loadAllDevices();
             await this.loadDevices();
             await this.loadAssets();
+            await this.loadRelationTypes();
             await this.loadFeatureFlags();
             await this.loadMaintenanceSummary();
             await this.loadActivityFeed();
@@ -173,6 +182,13 @@ document.addEventListener('alpine:init', () => {
             const response = await fetch('/api/assets');
             if (response.ok) {
                 this.assets = await response.json();
+            }
+        },
+
+        async loadRelationTypes() {
+            const response = await fetch('/api/asset-relation-types');
+            if (response.ok) {
+                this.relationTypes = await response.json();
             }
         },
 
@@ -702,10 +718,20 @@ document.addEventListener('alpine:init', () => {
                 name: '',
                 notes: '',
                 specs: [],
-                device_ids: []
+                device_ids: [],
+                acquisition_date: '',
+                commissioning_date: '',
+                warranty_end: '',
+                depreciation_months: '',
+                retirement_date: '',
+                retirement_reason: '',
+                relations: []
             };
             if (this.allDevices.length === 0) {
                 await this.loadAllDevices();
+            }
+            if (this.relationTypes.length === 0) {
+                await this.loadRelationTypes();
             }
             this.isAssetModalOpen = true;
         },
@@ -727,8 +753,24 @@ document.addEventListener('alpine:init', () => {
                         name: key,
                         value
                     })),
-                    device_ids: (data.devices || []).map(device => device.id)
+                    device_ids: (data.devices || []).map(device => device.id),
+                    acquisition_date: data.acquisition_date || '',
+                    commissioning_date: data.commissioning_date || '',
+                    warranty_end: data.warranty_end || '',
+                    depreciation_months: data.depreciation_months ?? '',
+                    retirement_date: data.retirement_date || '',
+                    retirement_reason: data.retirement_reason || '',
+                    relations: (data.relations || [])
+                        .filter(relation => relation.direction === 'outgoing')
+                        .map((relation) => ({
+                            id: relation.id || crypto.randomUUID(),
+                            related_asset_id: relation.related_asset_id,
+                            relation_type_id: relation.relation_type_id || ''
+                        }))
                 };
+                if (this.relationTypes.length === 0) {
+                    await this.loadRelationTypes();
+                }
                 this.isAssetModalOpen = true;
             } catch (error) {
                 console.error('Error loading asset:', error);
@@ -752,6 +794,18 @@ document.addEventListener('alpine:init', () => {
             this.currentAsset.specs = this.currentAsset.specs.filter(spec => spec.id !== specId);
         },
 
+        addAssetRelation() {
+            this.currentAsset.relations.push({
+                id: crypto.randomUUID(),
+                related_asset_id: '',
+                relation_type_id: ''
+            });
+        },
+
+        removeAssetRelation(relationId) {
+            this.currentAsset.relations = this.currentAsset.relations.filter(relation => relation.id !== relationId);
+        },
+
         async saveAsset() {
             try {
                 const specs = {};
@@ -765,7 +819,19 @@ document.addEventListener('alpine:init', () => {
                     name: this.currentAsset.name,
                     notes: this.currentAsset.notes,
                     specs,
-                    device_ids: this.currentAsset.device_ids
+                    device_ids: this.currentAsset.device_ids,
+                    acquisition_date: this.currentAsset.acquisition_date,
+                    commissioning_date: this.currentAsset.commissioning_date,
+                    warranty_end: this.currentAsset.warranty_end,
+                    depreciation_months: this.currentAsset.depreciation_months || null,
+                    retirement_date: this.currentAsset.retirement_date,
+                    retirement_reason: this.currentAsset.retirement_reason,
+                    relations: this.currentAsset.relations
+                        .filter(relation => relation.related_asset_id)
+                        .map((relation) => ({
+                            related_asset_id: relation.related_asset_id,
+                            relation_type_id: relation.relation_type_id || null
+                        }))
                 };
 
                 let response;
