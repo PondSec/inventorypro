@@ -3,6 +3,7 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import json
+from datetime import datetime
 from functools import wraps
 import os
 import csv
@@ -825,6 +826,31 @@ def stats():
     # 1. Grundstatistiken mit Default-Werten
     total_devices = db.execute('SELECT COUNT(*) FROM devices').fetchone()[0] or 0
     total_categories = db.execute('SELECT COUNT(*) FROM categories').fetchone()[0] or 0
+    total_locations = db.execute('SELECT COUNT(*) FROM locations').fetchone()[0] or 0
+    total_tags = db.execute('SELECT COUNT(*) FROM device_tags').fetchone()[0] or 0
+    total_notes = db.execute('SELECT COUNT(*) FROM device_notes').fetchone()[0] or 0
+    total_maintenance = db.execute('SELECT COUNT(*) FROM maintenance_tasks').fetchone()[0] or 0
+    open_maintenance = db.execute(
+        "SELECT COUNT(*) FROM maintenance_tasks WHERE status = 'open'"
+    ).fetchone()[0] or 0
+    done_maintenance = db.execute(
+        "SELECT COUNT(*) FROM maintenance_tasks WHERE status = 'done'"
+    ).fetchone()[0] or 0
+    overdue_maintenance = db.execute('''
+        SELECT COUNT(*) FROM maintenance_tasks
+        WHERE status = 'open' AND due_date != '' AND date(due_date) < date('now')
+    ''').fetchone()[0] or 0
+    due_soon_maintenance = db.execute('''
+        SELECT COUNT(*) FROM maintenance_tasks
+        WHERE status = 'open' AND due_date != ''
+        AND date(due_date) >= date('now') AND date(due_date) <= date('now', '+7 days')
+    ''').fetchone()[0] or 0
+    devices_recent_7 = db.execute('''
+        SELECT COUNT(*) FROM devices WHERE date(created_at) >= date('now', '-7 days')
+    ''').fetchone()[0] or 0
+    devices_recent_30 = db.execute('''
+        SELECT COUNT(*) FROM devices WHERE date(created_at) >= date('now', '-30 days')
+    ''').fetchone()[0] or 0
     
     # 2. Kategorieverteilung mit sicherer Abfrage
     categories = db.execute('''
@@ -836,21 +862,95 @@ def stats():
     categories_data = [dict(c) for c in categories] if categories else []
     
     # 3. Verbesserte Statusverteilung mit Default-Werten
-    status_data = {'Verwendet': 0, 'Lager': 0, 'Defekt': 0}
+    status_data = {'Verwendet': 0, 'Lager': 0, 'Defekt': 0, 'Unbekannt': 0}
     devices = db.execute('SELECT specs FROM devices').fetchall()
     for device in devices:
         try:
             specs = json.loads(device['specs']) if device['specs'] else {}
-            status = specs.get('Status', 'Verwendet')
+            status = specs.get('Status') or specs.get('status') or 'Verwendet'
             # Normalisiere den Status (entferne Leerzeichen, mache erste Buchstabe groß)
             status = status.strip().capitalize()
             # Falls der Status nicht in unserer Liste ist, zählen wir als "Verwendet"
             if status in status_data:
                 status_data[status] += 1
             else:
-                status_data['Verwendet'] += 1
+                status_data['Unbekannt'] += 1
         except json.JSONDecodeError:
-            status_data['Verwendet'] += 1
+            status_data['Unbekannt'] += 1
+
+    # 3b. Standortverteilung
+    locations = db.execute('''
+        SELECT l.id, l.name, COUNT(d.id) as device_count
+        FROM locations l
+        LEFT JOIN devices d ON l.id = d.location_id
+        GROUP BY l.id
+    ''').fetchall()
+    locations_data = [dict(l) for l in locations] if locations else []
+    unknown_location_count = db.execute('''
+        SELECT COUNT(*) FROM devices WHERE location_id IS NULL
+    ''').fetchone()[0] or 0
+
+    # 3c. Gerätezugang letzte 6 Monate
+    monthly_rows = db.execute('''
+        SELECT strftime('%Y-%m', created_at) as month, COUNT(*) as device_count
+        FROM devices
+        WHERE date(created_at) >= date('now', '-5 months', 'start of month')
+        GROUP BY month
+        ORDER BY month
+    ''').fetchall()
+    monthly_counts = {row['month']: row['device_count'] for row in monthly_rows}
+    now = datetime.utcnow()
+    current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    months = []
+    for offset in range(-5, 1):
+        year = current_month_start.year + (current_month_start.month - 1 + offset) // 12
+        month = (current_month_start.month - 1 + offset) % 12 + 1
+        label = f"{year:04d}-{month:02d}"
+        months.append({'month': label, 'count': monthly_counts.get(label, 0)})
+
+    # 3d. Gerätealter-Buckets
+    age_buckets = {
+        '0-30 Tage': 0,
+        '31-90 Tage': 0,
+        '91-180 Tage': 0,
+        '181-365 Tage': 0,
+        '365+ Tage': 0
+    }
+    device_dates = db.execute('SELECT created_at FROM devices').fetchall()
+    for row in device_dates:
+        if not row['created_at']:
+            continue
+        try:
+            created_at = datetime.fromisoformat(row['created_at'])
+        except ValueError:
+            continue
+        age_days = (now - created_at).days
+        if age_days <= 30:
+            age_buckets['0-30 Tage'] += 1
+        elif age_days <= 90:
+            age_buckets['31-90 Tage'] += 1
+        elif age_days <= 180:
+            age_buckets['91-180 Tage'] += 1
+        elif age_days <= 365:
+            age_buckets['181-365 Tage'] += 1
+        else:
+            age_buckets['365+ Tage'] += 1
+
+    # 3e. Zusatz-KPIs
+    devices_with_tags = db.execute('SELECT COUNT(DISTINCT device_id) FROM device_tags').fetchone()[0] or 0
+    devices_with_notes = db.execute('SELECT COUNT(DISTINCT device_id) FROM device_notes').fetchone()[0] or 0
+    tag_coverage = round((devices_with_tags / total_devices) * 100) if total_devices else 0
+    note_coverage = round((devices_with_notes / total_devices) * 100) if total_devices else 0
+    activity_summary = db.execute('''
+        SELECT action, COUNT(*) as total
+        FROM activity_log
+        WHERE date(created_at) >= date('now', '-7 days')
+        GROUP BY action
+        ORDER BY total DESC
+        LIMIT 5
+    ''').fetchall()
+    activity_summary_data = [dict(row) for row in activity_summary] if activity_summary else []
+    top_categories = sorted(categories_data, key=lambda x: x['device_count'], reverse=True)[:5]
     
     # 4. Letzte Geräte mit sicherer Abfrage
     recent_devices = db.execute('''
@@ -865,8 +965,28 @@ def stats():
     context = {
         'total_devices': total_devices,
         'total_categories': total_categories,
+        'total_locations': total_locations,
+        'total_tags': total_tags,
+        'total_notes': total_notes,
+        'total_maintenance': total_maintenance,
+        'open_maintenance': open_maintenance,
+        'done_maintenance': done_maintenance,
+        'overdue_maintenance': overdue_maintenance,
+        'due_soon_maintenance': due_soon_maintenance,
+        'devices_recent_7': devices_recent_7,
+        'devices_recent_30': devices_recent_30,
         'categories': categories_data,
         'status_data': status_data,
+        'locations': locations_data,
+        'unknown_location_count': unknown_location_count,
+        'devices_by_month': months,
+        'age_buckets': age_buckets,
+        'devices_with_tags': devices_with_tags,
+        'devices_with_notes': devices_with_notes,
+        'tag_coverage': tag_coverage,
+        'note_coverage': note_coverage,
+        'activity_summary': activity_summary_data,
+        'top_categories': top_categories,
         'recent_devices': recent_devices_data,
         'username': session.get('username', '')
     }
