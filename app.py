@@ -135,6 +135,50 @@ def init_db():
             )
         ''')
 
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS device_tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                tag TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS device_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                note TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS maintenance_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                due_date TEXT,
+                status TEXT DEFAULT 'open',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT,
+                action TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                details TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Default-Kategorien
         default_categories = [
             ("CPU", "cpu", '{"cores":"number","clock":"text","manufacturer":"text"}'),
@@ -435,58 +479,6 @@ def get_devices():
     devices = db.execute(query, params).fetchall()
     return jsonify([dict(row) for row in devices])
 
-@app.route('/api/locations', methods=['GET', 'POST'])
-@login_required
-def manage_locations():
-    db = get_db()
-    if request.method == 'POST':
-        data = request.get_json()
-        name = (data.get('name') or '').strip()
-        description = (data.get('description') or '').strip()
-        if not name:
-            return jsonify({"error": "Name ist erforderlich"}), 400
-        try:
-            db.execute('''
-                INSERT INTO locations (name, description)
-                VALUES (?, ?)
-            ''', (name, description))
-            log_activity(db, "create", "location", details={"name": name})
-            db.commit()
-            return jsonify({"status": "created"}), 201
-        except sqlite3.IntegrityError:
-            return jsonify({"error": "Standort existiert bereits"}), 400
-
-    locations = db.execute('SELECT * FROM locations ORDER BY name').fetchall()
-    return jsonify([dict(row) for row in locations])
-
-@app.route('/api/locations/<int:location_id>', methods=['PUT', 'DELETE'])
-@login_required
-def update_location(location_id):
-    db = get_db()
-    if request.method == 'PUT':
-        data = request.get_json()
-        name = (data.get('name') or '').strip()
-        description = (data.get('description') or '').strip()
-        if not name:
-            return jsonify({"error": "Name ist erforderlich"}), 400
-        result = db.execute('''
-            UPDATE locations
-            SET name = ?, description = ?
-            WHERE id = ?
-        ''', (name, description, location_id))
-        if result.rowcount == 0:
-            return jsonify({"error": "Standort nicht gefunden"}), 404
-        log_activity(db, "update", "location", location_id, {"name": name})
-        db.commit()
-        return jsonify({"status": "updated"}), 200
-
-    result = db.execute('DELETE FROM locations WHERE id = ?', (location_id,))
-    if result.rowcount == 0:
-        return jsonify({"error": "Standort nicht gefunden"}), 404
-    log_activity(db, "delete", "location", location_id)
-    db.commit()
-    return jsonify({"status": "deleted"}), 200
-
 @app.route('/api/features', methods=['GET'])
 @login_required
 def feature_flags():
@@ -740,6 +732,7 @@ def export_devices():
         ORDER BY d.created_at DESC
     ''').fetchall()
     output = StringIO()
+    output = BytesIO()
     writer = csv.writer(output)
     writer.writerow(["ID", "Name", "Kategorie", "Besitzer", "Spezifikationen", "Erstellt"])
     for device in devices:
@@ -754,6 +747,7 @@ def export_devices():
     output.seek(0)
     return Response(
         output.getvalue().encode('utf-8'),
+        output.getvalue(),
         mimetype='text/csv',
         headers={'Content-Disposition': 'attachment; filename=devices.csv'}
     )
