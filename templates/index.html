@@ -84,7 +84,7 @@
                         alert('Ein Fehler ist aufgetreten');
                     }
                 }
-            }" class="p-4 overflow-y-auto max-h-[calc(100vh-8rem)] space-y-4 sidebar-scroll">
+            }" class="p-4 overflow-y-auto max-h-[calc(100vh-8rem)] space-y-4 sidebar-scroll scrollbar-hide">
                 <div class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm sidebar-compact-hidden">
                     <p class="text-xs uppercase tracking-widest text-slate-400 sidebar-text">Willkommen zurück</p>
                     <p class="text-lg font-semibold text-slate-900 sidebar-text">{{ username }}</p>
@@ -231,7 +231,7 @@
                 </div>
 
                 <div x-show="otpModalOpen" x-transition class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div @click.away="otpModalOpen = false" class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
+                    <div @click.away="otpModalOpen = false" class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 scrollbar-hide">
                         <div class="flex justify-between items-center mb-4">
                             <h3 class="text-lg font-medium text-gray-900">Google Authenticator einrichten</h3>
                             <button @click="otpModalOpen = false" class="text-gray-500 hover:text-gray-700">
@@ -451,7 +451,7 @@
                             Asset hinzufügen
                         </button>
                     </div>
-                    <div class="overflow-x-hidden">
+                    <div class="overflow-x-hidden scrollbar-hide">
                         <table class="w-full table-fixed text-sm">
                             <thead class="text-left text-slate-500">
                                 <tr class="border-b border-slate-200">
@@ -500,7 +500,7 @@
                             <span x-text="filteredDevices.length"></span> Einträge
                         </span>
                     </div>
-                    <div class="overflow-x-hidden">
+                    <div class="overflow-x-hidden scrollbar-hide">
                         <table class="w-full table-fixed text-sm">
                             <thead class="text-left text-slate-500">
                                 <tr class="border-b border-slate-200">
@@ -555,7 +555,7 @@
     </div>
 
     <div x-show="deviceDetailOpen" @click.away="closeDeviceDetail()" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Geräteübersicht</p>
@@ -724,7 +724,7 @@
     </div>
 
     <div x-show="assetDetailOpen" @click.away="closeAssetDetail()" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Assetübersicht</p>
@@ -794,7 +794,7 @@
     </div>
 
     <div x-show="isAssetModalOpen" @click.away="closeAssetModal()" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Asset</p>
@@ -870,7 +870,7 @@
     </div>
 
     <div x-show="isCategoryModalOpen" @click.away="closeCategoryModal()" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Kategorie</p>
@@ -887,21 +887,30 @@
                 </div>
                 <div>
                     <label class="text-sm font-semibold text-slate-700">Icon*</label>
-                    <select x-model="currentCategory.icon" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
-                        <option value="cpu">CPU</option>
-                        <option value="gpu">GPU</option>
-                        <option value="memory">RAM</option>
-                        <option value="hard-drive">Festplatte</option>
-                        <option value="server">Server</option>
-                        <option value="monitor">Monitor</option>
-                        <option value="printer">Drucker</option>
-                        <option value="wind">Kühlsystem</option>
-                        <option value="grid">Mainboard</option>
-                        <option value="zap">Netzteil</option>
-                        <option value="sliders">RAM</option>
-                        <option value="wifi">Netzwerk</option>
-                        <option value="code">Raspberry Pi</option>
-                    </select>
+                    <div class="mt-2 space-y-3">
+                        <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div class="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white">
+                                <div x-html="feather.icons[currentCategory.icon]?.toSvg({ class: 'w-5 h-5 text-slate-600' })"></div>
+                            </div>
+                            <div class="flex-1">
+                                <input type="text" x-model="iconSearch" placeholder="Icon suchen (z. B. box, camera, tool)" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                <p class="mt-1 text-xs text-slate-400">Aktuell: <span class="font-semibold text-slate-600" x-text="currentCategory.icon"></span></p>
+                            </div>
+                        </div>
+                        <div class="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 scrollbar-hide">
+                            <div class="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                                <template x-for="iconName in filteredIconCatalog()" :key="iconName">
+                                    <button type="button" @click="selectIcon(iconName)" class="flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide transition"
+                                        :class="currentCategory.icon === iconName ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'">
+                                        <div x-html="feather.icons[iconName]?.toSvg({ class: 'w-4 h-4' })"></div>
+                                        <span class="w-full truncate" x-text="iconName"></span>
+                                    </button>
+                                </template>
+                            </div>
+                            <p x-show="filteredIconCatalog().length === 0" class="p-4 text-center text-xs text-slate-400">Keine Icons gefunden.</p>
+                        </div>
+                        <p class="text-xs text-slate-500">Tipp: Nutze die Suche für eine große Auswahl an passenden Symbolen.</p>
+                    </div>
                 </div>
                 <div>
                     <div class="flex items-center justify-between">
@@ -955,7 +964,7 @@
     </div>
 
     <div x-show="isDeviceModalOpen" @click.away="closeDeviceModal()" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Gerät</p>
