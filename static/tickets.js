@@ -3,7 +3,10 @@ document.addEventListener('alpine:init', () => {
         tickets: [],
         categories: [],
         alerts: [],
+        assets: [],
         selectedTicket: null,
+        userPermissions: window.inventoryPermissions || [],
+        isSuperuser: window.inventoryIsSuperuser || false,
         filters: {
             status: '',
             priority: '',
@@ -39,7 +42,8 @@ document.addEventListener('alpine:init', () => {
             assignee_email: '',
             due_date: '',
             tags: '',
-            custom_fields: []
+            custom_fields: [],
+            asset_ids: []
         },
         newComment: '',
         internalComment: false,
@@ -76,11 +80,20 @@ document.addEventListener('alpine:init', () => {
 
         async init() {
             await this.loadCategories();
+            await this.loadAssets();
             await this.loadTickets();
-            await this.loadAlerts();
-            await this.loadNotificationSettings();
+            if (this.can('ticket_alerts.manage')) {
+                await this.loadAlerts();
+            }
+            if (this.can('notifications.manage')) {
+                await this.loadNotificationSettings();
+            }
             await this.loadStats();
             this.$nextTick(() => feather.replace());
+        },
+
+        can(permissionKey) {
+            return this.isSuperuser || this.userPermissions.includes(permissionKey);
         },
 
         openNewTicket() {
@@ -118,6 +131,13 @@ document.addEventListener('alpine:init', () => {
             this.$nextTick(() => feather.replace());
         },
 
+        async loadAssets() {
+            const response = await fetch('/api/assets');
+            if (response.ok) {
+                this.assets = await response.json();
+            }
+        },
+
         async loadStats() {
             const response = await fetch('/api/tickets');
             if (!response.ok) return;
@@ -135,6 +155,9 @@ document.addEventListener('alpine:init', () => {
             const response = await fetch(`/api/tickets/${ticket.id}`);
             if (response.ok) {
                 this.selectedTicket = await response.json();
+                if (!this.selectedTicket.asset_ids) {
+                    this.selectedTicket.asset_ids = (this.selectedTicket.assets || []).map((asset) => asset.id);
+                }
                 this.newComment = '';
                 this.internalComment = false;
                 this.newWatcher = '';
@@ -160,7 +183,8 @@ document.addEventListener('alpine:init', () => {
                 assignee_email: this.selectedTicket.assignee_email,
                 due_date: this.selectedTicket.due_date,
                 tags: this.selectedTicket.tags,
-                custom_fields: this.selectedTicket.custom_fields
+                custom_fields: this.selectedTicket.custom_fields,
+                asset_ids: this.selectedTicket.asset_ids
             };
             const response = await fetch(`/api/tickets/${this.selectedTicket.id}`, {
                 method: 'PUT',
@@ -168,6 +192,7 @@ document.addEventListener('alpine:init', () => {
                 body: JSON.stringify(payload)
             });
             if (response.ok) {
+                await this.selectTicket(this.selectedTicket);
                 await this.loadTickets();
                 await this.loadStats();
             }
@@ -191,7 +216,8 @@ document.addEventListener('alpine:init', () => {
                 assignee_email: this.newTicket.assignee_email,
                 due_date: this.newTicket.due_date,
                 tags,
-                custom_fields: customFields
+                custom_fields: customFields,
+                asset_ids: this.newTicket.asset_ids
             };
 
             const response = await fetch('/api/tickets', {
@@ -213,7 +239,8 @@ document.addEventListener('alpine:init', () => {
                     assignee_email: '',
                     due_date: '',
                     tags: '',
-                    custom_fields: []
+                    custom_fields: [],
+                    asset_ids: []
                 };
                 await this.loadTickets();
                 await this.loadStats();
@@ -247,6 +274,11 @@ document.addEventListener('alpine:init', () => {
                 await this.selectTicket(this.selectedTicket);
                 this.newWatcher = '';
             }
+        },
+
+        selectedAssetsForNewTicket() {
+            const selectedIds = new Set(this.newTicket.asset_ids || []);
+            return this.assets.filter((asset) => selectedIds.has(asset.id));
         },
 
         async removeWatcher(watcherId) {
