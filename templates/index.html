@@ -187,6 +187,7 @@
 
 				<!-- Statistiken -->
 				<a href="/stats"
+				<a href="https://inv.pondsec.com/stats"
 				   class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
 				  <span class="flex items-center">
 					<span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 mr-3">
@@ -349,28 +350,28 @@
 						</div>
 						<div class="grid w-full max-w-sm grid-cols-2 gap-4">
 							<div class="rounded-2xl bg-white/10 p-4 backdrop-blur">
-							<p class="text-xs uppercase tracking-widest text-slate-300">Geräte</p>
-							<p class="mt-2 text-2xl font-semibold" x-text="overview.totals.devices"></p>
-							<p class="text-xs text-slate-300">Gesamt im System</p>
-						</div>
-						<div class="rounded-2xl bg-white/10 p-4 backdrop-blur">
-							<p class="text-xs uppercase tracking-widest text-slate-300">Kategorien</p>
-							<p class="mt-2 text-2xl font-semibold" x-text="overview.totals.categories"></p>
-							<p class="text-xs text-slate-300">Aktiv gepflegt</p>
-						</div>
-						<div class="rounded-2xl bg-white/10 p-4 backdrop-blur">
-							<p class="text-xs uppercase tracking-widest text-slate-300">Standorte</p>
-							<p class="mt-2 text-2xl font-semibold" x-text="overview.totals.locations"></p>
-							<p class="text-xs text-slate-300">Aktive Locations</p>
-						</div>
-						<div class="rounded-2xl bg-white/10 p-4 backdrop-blur">
-							<p class="text-xs uppercase tracking-widest text-slate-300">Status</p>
-							<p class="mt-2 text-lg font-semibold" x-text="overview.status.Verwendet"></p>
-							<p class="text-xs text-slate-300">Verwendet</p>
+								<p class="text-xs uppercase tracking-widest text-slate-300">Geräte</p>
+								<p class="mt-2 text-2xl font-semibold" x-text="devices.length"></p>
+								<p class="text-xs text-slate-300">Gesamt im System</p>
+							</div>
+							<div class="rounded-2xl bg-white/10 p-4 backdrop-blur">
+								<p class="text-xs uppercase tracking-widest text-slate-300">Kategorien</p>
+								<p class="mt-2 text-2xl font-semibold" x-text="categories.length"></p>
+								<p class="text-xs text-slate-300">Aktiv gepflegt</p>
+							</div>
+							<div class="rounded-2xl bg-white/10 p-4 backdrop-blur">
+								<p class="text-xs uppercase tracking-widest text-slate-300">Treffer</p>
+								<p class="mt-2 text-2xl font-semibold" x-text="filteredDevices.length"></p>
+								<p class="text-xs text-slate-300">Aktuell gefiltert</p>
+							</div>
+							<div class="rounded-2xl bg-white/10 p-4 backdrop-blur">
+								<p class="text-xs uppercase tracking-widest text-slate-300">Kategorie</p>
+								<p class="mt-2 text-lg font-semibold" x-text="activeCategory ? getCategoryName(activeCategory) : 'Alle'"></p>
+								<p class="text-xs text-slate-300">Aktiver Fokus</p>
+							</div>
 						</div>
 					</div>
-				</div>
-			</section>
+				</section>
 
 				<section class="grid gap-4 lg:grid-cols-4">
 					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -431,8 +432,8 @@
 					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
 						<div class="flex items-center justify-between">
 							<div>
-								<p class="text-sm font-semibold text-slate-900">Live Überblick</p>
-								<p class="text-xs text-slate-500">Aktuelle Bestandslage</p>
+								<p class="text-sm font-semibold text-slate-900">Insights</p>
+								<p class="text-xs text-slate-500">Letzte Aktivität</p>
 							</div>
 							<span class="inline-flex items-center justify-center rounded-full bg-indigo-50 p-2 text-indigo-500">
 								<i data-feather="activity" class="h-4 w-4"></i>
@@ -456,8 +457,9 @@
 								<span class="font-semibold text-rose-600" x-text="maintenanceSummary.pro_locked ? '-' : maintenanceSummary.overdue"></span>
 							</div>
 							<div class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
-								<i data-feather="refresh-cw" class="w-3 h-3"></i>
-								<span>Live-Refresh aktiv</span>
+								<i data-feather="lock" class="w-3 h-3"></i>
+								<span x-show="maintenanceSummary.pro_locked">Upgrade für Wartungen</span>
+								<span x-show="!maintenanceSummary.pro_locked">Pro aktiv</span>
 							</div>
 						</div>
 					</div>
@@ -465,7 +467,7 @@
 						<div class="flex items-center justify-between">
 							<div>
 								<p class="text-sm font-semibold text-slate-900">Schnellaktionen</p>
-								<p class="text-xs text-slate-500">Häufige Workflows</p>
+								<p class="text-xs text-slate-500">Arbeitsabläufe beschleunigen</p>
 							</div>
 							<span class="inline-flex items-center justify-center rounded-full bg-emerald-50 p-2 text-emerald-500">
 								<i data-feather="zap" class="h-4 w-4"></i>
@@ -484,20 +486,16 @@
 							<a href="/api/export/devices" class="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
 								Export (Pro)
 							</a>
-							<a href="/locations" class="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
-								Standorte verwalten
-							</a>
 						</div>
 					</div>
 					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
 						<div class="flex items-center justify-between">
 							<div>
-								<p class="text-sm font-semibold text-slate-900">Live Feed</p>
+								<p class="text-sm font-semibold text-slate-900">Aktivitäten</p>
 								<p class="text-xs text-slate-500">Letzte Änderungen im System</p>
 							</div>
-							<span class="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
-								<i data-feather="radio" class="h-3 w-3"></i>
-								Live
+							<span class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-500">
+								<i data-feather="list" class="h-4 w-4"></i>
 							</span>
 						</div>
 						<div class="mt-4 space-y-3 text-sm text-slate-600">
@@ -508,40 +506,6 @@
 								</div>
 							</template>
 							<p x-show="activityFeed.length === 0" class="text-xs text-slate-400">Noch keine Aktivitäten.</p>
-						</div>
-					</div>
-				</section>
-
-				<section class="grid gap-4 lg:grid-cols-[2fr_1fr]">
-					<div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-						<div class="flex items-center justify-between mb-4">
-							<div>
-								<h3 class="text-lg font-semibold text-slate-900">Live Device Trend</h3>
-								<p class="text-sm text-slate-500">Neue Geräte der letzten 7 Tage.</p>
-							</div>
-							<span class="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">
-								<i data-feather="trending-up" class="h-3 w-3"></i>
-								Auto-Update
-							</span>
-						</div>
-						<canvas id="liveTrendChart" height="120"></canvas>
-					</div>
-					<div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-						<div class="flex items-center justify-between mb-4">
-							<div>
-								<h3 class="text-lg font-semibold text-slate-900">Top Kategorien</h3>
-								<p class="text-sm text-slate-500">Häufigste Asset-Typen.</p>
-							</div>
-							<i data-feather="layers" class="w-4 h-4 text-slate-400"></i>
-						</div>
-						<div class="space-y-3 text-sm">
-							<template x-for="item in overview.top_categories" :key="item.name">
-								<div class="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-									<span class="font-semibold text-slate-700" x-text="item.name"></span>
-									<span class="text-xs font-semibold text-slate-500" x-text="item.count"></span>
-								</div>
-							</template>
-							<p x-show="overview.top_categories.length === 0" class="text-xs text-slate-400">Keine Kategorien verfügbar.</p>
 						</div>
 					</div>
 				</section>
@@ -617,6 +581,148 @@
             </main>
         </div>
 			</div>
+					</div>
+				</section>
+
+				<section class="grid gap-4 lg:grid-cols-4">
+				<section class="grid gap-4 lg:grid-cols-3">
+					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm font-semibold text-slate-900">Geräte durchsuchen</p>
+								<p class="text-xs text-slate-500">Schneller Zugriff auf Assets</p>
+							</div>
+							<span class="inline-flex items-center justify-center rounded-full bg-blue-50 p-2 text-blue-500">
+								<i data-feather="search" class="h-4 w-4"></i>
+							</span>
+						</div>
+						<div class="mt-4">
+							<div class="relative w-full">
+								<input 
+								  type="text" 
+								  placeholder="Gerät, Besitzer oder Spezifikation suchen..." 
+								  class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm text-slate-700 shadow-inner focus:border-blue-500 focus:ring-blue-500"
+								  x-model="searchQuery" @input.debounce.300ms="searchDevices()"
+								>
+								<button 
+								  @click="toggleSortDropdown()" 
+								  aria-label="Sort options"
+								  class="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-600 shadow-sm hover:bg-slate-50"
+								>
+								  <i data-feather="filter" class="w-4 h-4"></i>
+								</button>
+
+								<div 
+								  x-show="sortDropdownOpen" 
+								  @click.away="sortDropdownOpen = false"
+								  class="absolute right-0 mt-3 w-56 rounded-2xl bg-white border border-slate-200 shadow-xl z-50 overflow-hidden"
+								  style="display: none;"
+								  x-transition
+								>
+								  <div class="divide-y divide-slate-100">
+									<a href="#" @click.prevent="sortDevices('name', 'asc')"
+									   class="block px-5 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+									  Name (A–Z)
+									</a>
+									<a href="#" @click.prevent="sortDevices('name', 'desc')"
+									   class="block px-5 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+									  Name (Z–A)
+									</a>
+									<a href="#" @click.prevent="sortDevices('serial_number', 'asc')"
+									   class="block px-5 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+									  Owner (aufsteigend)
+									</a>
+									<a href="#" @click.prevent="sortDevices('serial_number', 'desc')"
+									   class="block px-5 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+									  Owner (absteigend)
+									</a>
+								  </div>
+								</div>
+							  </div>
+						</div>
+					</div>
+					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm font-semibold text-slate-900">Insights</p>
+								<p class="text-xs text-slate-500">Letzte Aktivität</p>
+							</div>
+							<span class="inline-flex items-center justify-center rounded-full bg-indigo-50 p-2 text-indigo-500">
+								<i data-feather="activity" class="h-4 w-4"></i>
+							</span>
+						</div>
+						<div class="mt-4 space-y-3 text-sm text-slate-600">
+							<div class="flex items-center justify-between">
+								<span>Aktive Kategorie</span>
+								<span class="font-semibold text-slate-900" x-text="activeCategory ? getCategoryName(activeCategory) : 'Alle Geräte'"></span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Geräte im Fokus</span>
+								<span class="font-semibold text-slate-900" x-text="filteredDevices.length"></span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Wartungen (Pro)</span>
+								<span class="font-semibold text-slate-900" x-text="maintenanceSummary.pro_locked ? 'Gesperrt' : maintenanceSummary.open"></span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Überfällig</span>
+								<span class="font-semibold text-rose-600" x-text="maintenanceSummary.pro_locked ? '-' : maintenanceSummary.overdue"></span>
+							</div>
+							<div class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+								<i data-feather="lock" class="w-3 h-3"></i>
+								<span x-show="maintenanceSummary.pro_locked">Upgrade für Wartungen</span>
+								<span x-show="!maintenanceSummary.pro_locked">Pro aktiv</span>
+								<span>Letztes Update</span>
+								<span class="font-semibold text-slate-900" x-text="new Date().toLocaleDateString('de-DE')"></span>
+							</div>
+						</div>
+					</div>
+					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm font-semibold text-slate-900">Schnellaktionen</p>
+								<p class="text-xs text-slate-500">Arbeitsabläufe beschleunigen</p>
+							</div>
+							<span class="inline-flex items-center justify-center rounded-full bg-emerald-50 p-2 text-emerald-500">
+								<i data-feather="zap" class="h-4 w-4"></i>
+							</span>
+						</div>
+						<div class="mt-4 space-y-3">
+							<button @click="openAddDeviceModal()" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
+								Gerät hinzufügen
+							</button>
+							<button @click="openAddCategoryModal()" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
+								Kategorie erstellen
+							</button>
+							<a href="/stats" class="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
+								Statistiken ansehen
+							</a>
+							<a href="/api/export/devices" class="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
+								Export (Pro)
+							</a>
+						</div>
+					</div>
+					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm font-semibold text-slate-900">Aktivitäten</p>
+								<p class="text-xs text-slate-500">Letzte Änderungen im System</p>
+							</div>
+							<span class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-500">
+								<i data-feather="list" class="h-4 w-4"></i>
+							</span>
+						</div>
+						<div class="mt-4 space-y-3 text-sm text-slate-600">
+							<template x-for="item in activityFeed" :key="item.created_at">
+								<div class="flex items-start justify-between gap-2">
+									<span class="font-semibold text-slate-800" x-text="formatActivity(item)"></span>
+									<span class="text-xs text-slate-400" x-text="item.created_at.slice(11, 16)"></span>
+								</div>
+							</template>
+							<p x-show="activityFeed.length === 0" class="text-xs text-slate-400">Noch keine Aktivitäten.</p>
+						</div>
+					</div>
+				</section>
 
 			<!-- Device Detail Modal -->
 			<div x-show="deviceDetailOpen" @click.away="closeDeviceDetail()"
@@ -645,6 +751,195 @@
 											<span>Standort</span>
 											<span class="font-semibold text-slate-900" x-text="selectedDevice?.location_name || '-'"></span>
 										</div>
+									<div class="flex justify-between">
+										<span>Owner</span>
+										<span class="font-semibold text-slate-900" x-text="selectedDevice?.serial_number || '-'"></span>
+									</div>
+									<div class="flex justify-between">
+										<span>Erstellt</span>
+										<span class="font-semibold text-slate-900" x-text="selectedDevice?.created_at?.slice(0, 10) || '-'"></span>
+									</div>
+								</div>
+							</div>
+
+							<div class="rounded-2xl border border-slate-200 bg-white p-4">
+								<div class="flex items-center justify-between">
+									<div>
+										<p class="text-sm font-semibold text-slate-900">Notizen</p>
+										<p class="text-xs text-slate-500">Freigabe für alle Nutzer</p>
+									</div>
+									<i data-feather="file-text" class="w-4 h-4 text-slate-400"></i>
+								</div>
+								<div class="mt-3 flex gap-2">
+									<input type="text" placeholder="Neue Notiz hinzufügen" x-model="newNote"
+										   class="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+									<button @click="addNote()" class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Speichern</button>
+								</div>
+								<div class="mt-4 space-y-3">
+									<template x-for="note in deviceNotes" :key="note.id">
+										<div class="flex items-start justify-between rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+											<div>
+												<p class="text-sm text-slate-700" x-text="note.note"></p>
+												<p class="text-xs text-slate-400" x-text="note.created_at.slice(0, 10)"></p>
+											</div>
+											<button @click="deleteNote(note.id)" class="text-slate-400 hover:text-rose-500">
+												<i data-feather="trash-2" class="w-4 h-4"></i>
+											</button>
+										</div>
+									</template>
+									<p x-show="deviceNotes.length === 0" class="text-xs text-slate-400">Noch keine Notizen.</p>
+								</div>
+							</div>
+						</div>
+
+						<div class="space-y-6">
+							<div class="rounded-2xl border border-slate-200 bg-white p-4">
+								<div class="flex items-center justify-between">
+									<div>
+										<p class="text-sm font-semibold text-slate-900">Tags</p>
+										<p class="text-xs text-slate-500">Freie Labels für Ordnung</p>
+									</div>
+									<i data-feather="tag" class="w-4 h-4 text-slate-400"></i>
+								</div>
+								<div class="mt-3 flex gap-2">
+									<input type="text" placeholder="Tag hinzufügen" x-model="newTag"
+										   class="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+									<button @click="addTag()" class="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Add</button>
+								</div>
+								<div class="mt-4 flex flex-wrap gap-2">
+									<template x-for="tag in deviceTags" :key="tag.id">
+										<span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+											<span x-text="tag.tag"></span>
+											<button @click="removeTag(tag.id)" class="text-slate-400 hover:text-rose-500">
+												<i data-feather="x" class="w-3 h-3"></i>
+											</button>
+										</span>
+									</template>
+									<p x-show="deviceTags.length === 0" class="text-xs text-slate-400">Noch keine Tags.</p>
+								</div>
+							</div>
+
+							<div class="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+								<div class="flex items-center justify-between">
+									<div>
+										<p class="text-sm font-semibold text-indigo-700">Wartungsplan (Pro)</p>
+										<p class="text-xs text-indigo-500">Erinnerungen &amp; Checklisten</p>
+									</div>
+									<i data-feather="shield" class="w-4 h-4 text-indigo-400"></i>
+								</div>
+								<div class="mt-3 space-y-3" :class="maintenanceSummary.pro_locked ? 'opacity-60' : ''">
+									<div class="flex gap-2">
+										<input type="text" placeholder="Wartungstitel" x-model="newMaintenance.title"
+											   class="flex-1 rounded-2xl border border-indigo-100 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:ring-indigo-400">
+									</div>
+									<div class="flex gap-2">
+										<input type="date" x-model="newMaintenance.due_date"
+											   class="flex-1 rounded-2xl border border-indigo-100 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:ring-indigo-400">
+										<button @click="addMaintenanceTask()" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
+											Planen
+										</button>
+									</div>
+								</div>
+								<div class="mt-4 space-y-3">
+									<template x-for="task in maintenanceTasks" :key="task.id">
+										<div class="flex items-start justify-between rounded-2xl border border-indigo-100 bg-white px-3 py-2 text-sm">
+											<div>
+												<p class="font-semibold text-slate-800" x-text="task.title"></p>
+												<p class="text-xs text-slate-400" x-text="task.due_date ? `Fällig: ${task.due_date}` : 'Kein Datum'"></p>
+											</div>
+											<button @click="updateMaintenanceStatus(task.id, task.status === 'open' ? 'done' : 'open')"
+													class="text-xs font-semibold text-indigo-600">
+												<span x-text="task.status === 'open' ? 'Erledigt' : 'Offen'"></span>
+											</button>
+						<div class="device-card bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all hover:shadow-lg hover:-translate-y-0.5">
+							<div class="p-5">
+								<div class="flex justify-between items-start">
+									<div>
+										<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide"
+											:class="getCategoryColor(device.category_name)">
+											<span x-text="device.category_name"></span>
+										</span>
+										<h3 class="mt-3 text-lg font-semibold text-slate-900" x-text="device.name"></h3>
+									</div>
+									<div class="flex items-center space-x-2 text-slate-500 hover:text-slate-900">
+										<button @click="openEditDeviceModal(device)" class="p-2 hover:bg-slate-100 rounded-xl">
+											<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+													d="M15.232 5.232l3.536 3.536M4 20h4l10-10-4-4L4 16v4z" />
+											</svg>
+										</button>
+										<button @click="openDeviceDetail(device)" class="p-2 hover:bg-blue-100 rounded-xl text-blue-600">
+											<i data-feather="info" class="w-5 h-5"></i>
+										</button>
+										<button @click="deleteDevice(device.id)" class="p-2 hover:bg-rose-100 rounded-xl">
+											<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+													d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22" />
+											</svg>
+										</button>
+									</div>
+								</div>
+								
+								<div class="mt-4 space-y-2 rounded-2xl bg-slate-50 p-3">
+									<template x-if="device.serial_number">
+										<div class="flex justify-between text-sm">
+											<span class="text-slate-500">Owner</span>
+											<span class="font-semibold text-slate-800" x-text="device.serial_number"></span>
+										</div>
+									</template>
+									
+									<template x-for="(value, key) in JSON.parse(device.specs || '{}')" :key="key">
+										<div class="flex justify-between text-sm">
+											<span class="text-slate-500" x-text="key"></span>
+											<span class="font-semibold text-slate-800" x-text="value"></span>
+										</div>
+									</template>
+									<p x-show="maintenanceSummary.pro_locked" class="text-xs text-indigo-500">Pro-Funktion aktivieren, um Wartungen zu planen.</p>
+									<p x-show="!maintenanceSummary.pro_locked && maintenanceTasks.length === 0" class="text-xs text-slate-400">Keine Wartungen geplant.</p>
+								</div>
+							</div>
+						</div>
+						
+						
+						
+						
+                    </template>
+                </div>
+            </main>
+        </div>
+			</div>
+
+			<!-- Device Detail Modal -->
+			<div x-show="deviceDetailOpen" @click.away="closeDeviceDetail()"
+				 class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6"
+				 x-transition>
+				<div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden">
+					<div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+						<div>
+							<p class="text-xs uppercase tracking-[0.2em] text-slate-400">Geräteübersicht</p>
+							<h3 class="text-xl font-semibold text-slate-900" x-text="selectedDevice?.name"></h3>
+						</div>
+						<button @click="closeDeviceDetail()" class="text-slate-400 hover:text-slate-600">
+							<i data-feather="x" class="w-6 h-6"></i>
+						</button>
+					</div>
+					<div class="grid gap-6 p-6 lg:grid-cols-3">
+						<div class="lg:col-span-2 space-y-6">
+							<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+								<p class="text-sm font-semibold text-slate-700">Kurzprofil</p>
+								<div class="mt-3 grid gap-2 text-sm text-slate-600">
+										<div class="flex justify-between">
+											<span>Kategorie</span>
+											<span class="font-semibold text-slate-900" x-text="selectedDevice?.category_name"></span>
+										</div>
+										<div class="flex justify-between">
+											<span>Standort</span>
+											<span class="font-semibold text-slate-900" x-text="selectedDevice?.location_name || '-'"></span>
+										</div>
+									<div class="flex justify-between">
+										<span>Kategorie</span>
+										<span class="font-semibold text-slate-900" x-text="selectedDevice?.category_name"></span>
+									</div>
 									<div class="flex justify-between">
 										<span>Owner</span>
 										<span class="font-semibold text-slate-900" x-text="selectedDevice?.serial_number || '-'"></span>
