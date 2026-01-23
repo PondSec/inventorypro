@@ -432,70 +432,6 @@ def activity_feed():
         activity.append(entry)
     return jsonify(activity)
 
-@app.route('/api/users', methods=['GET', 'POST'])
-@login_required
-def manage_users():
-    db = get_db()
-    if request.method == 'POST':
-        data = request.get_json()
-        username = (data.get('username') or '').strip()
-        password = data.get('password') or ''
-        if not username or not password:
-            return jsonify({"error": "Benutzername und Passwort sind erforderlich"}), 400
-        password_hash = generate_password_hash(password)
-        try:
-            db.execute('''
-                INSERT INTO users (username, password_hash)
-                VALUES (?, ?)
-            ''', (username, password_hash))
-            log_activity(db, "create", "user", details={"username": username})
-            db.commit()
-            return jsonify({"status": "created"}), 201
-        except sqlite3.IntegrityError:
-            return jsonify({"error": "Benutzername existiert bereits"}), 400
-
-    users = db.execute('SELECT id, username, otp_secret FROM users ORDER BY username').fetchall()
-    result = []
-    for user in users:
-        entry = dict(user)
-        entry['otp_enabled'] = bool(entry.pop('otp_secret'))
-        result.append(entry)
-    return jsonify(result)
-
-@app.route('/api/users/<int:user_id>', methods=['DELETE'])
-@login_required
-def remove_user(user_id):
-    db = get_db()
-    current = db.execute('SELECT id FROM users WHERE username = ?', (session.get('username'),)).fetchone()
-    if current and current['id'] == user_id:
-        return jsonify({"error": "Eigenes Konto kann nicht gelöscht werden"}), 400
-    result = db.execute('DELETE FROM users WHERE id = ?', (user_id,))
-    if result.rowcount == 0:
-        return jsonify({"error": "Benutzer nicht gefunden"}), 404
-    log_activity(db, "delete", "user", user_id)
-    db.commit()
-    return jsonify({"status": "deleted"}), 200
-
-@app.route('/api/users/<int:user_id>/password', methods=['POST'])
-@login_required
-def reset_user_password(user_id):
-    db = get_db()
-    data = request.get_json()
-    password = data.get('password') or ''
-    if not password:
-        return jsonify({"error": "Passwort ist erforderlich"}), 400
-    password_hash = generate_password_hash(password)
-    result = db.execute('''
-        UPDATE users
-        SET password_hash = ?
-        WHERE id = ?
-    ''', (password_hash, user_id))
-    if result.rowcount == 0:
-        return jsonify({"error": "Benutzer nicht gefunden"}), 404
-    log_activity(db, "update", "user_password", user_id)
-    db.commit()
-    return jsonify({"status": "updated"}), 200
-
 @app.route('/api/devices/<int:device_id>/tags', methods=['GET', 'POST'])
 @login_required
 def device_tags(device_id):
@@ -654,7 +590,7 @@ def export_devices():
         JOIN categories c ON d.category_id = c.id
         ORDER BY d.created_at DESC
     ''').fetchall()
-    output = StringIO()
+    output = BytesIO()
     writer = csv.writer(output)
     writer.writerow(["ID", "Name", "Kategorie", "Besitzer", "Spezifikationen", "Erstellt"])
     for device in devices:
@@ -668,7 +604,7 @@ def export_devices():
         ])
     output.seek(0)
     return Response(
-        output.getvalue().encode('utf-8'),
+        output.getvalue(),
         mimetype='text/csv',
         headers={'Content-Disposition': 'attachment; filename=devices.csv'}
     )
