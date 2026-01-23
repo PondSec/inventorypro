@@ -4,6 +4,8 @@ document.addEventListener('alpine:init', () => {
         categories: [],
         alerts: [],
         selectedTicket: null,
+        userPermissions: window.inventoryPermissions || [],
+        isSuperuser: window.inventoryIsSuperuser || false,
         filters: {
             status: '',
             priority: '',
@@ -77,10 +79,18 @@ document.addEventListener('alpine:init', () => {
         async init() {
             await this.loadCategories();
             await this.loadTickets();
-            await this.loadAlerts();
-            await this.loadNotificationSettings();
+            if (this.can('ticket_alerts.manage')) {
+                await this.loadAlerts();
+            }
+            if (this.can('notifications.manage')) {
+                await this.loadNotificationSettings();
+            }
             await this.loadStats();
             this.$nextTick(() => feather.replace());
+        },
+
+        can(permissionKey) {
+            return this.isSuperuser || this.userPermissions.includes(permissionKey);
         },
 
         openNewTicket() {
