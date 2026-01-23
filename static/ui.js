@@ -14,17 +14,31 @@ const setSidebarCollapsed = (collapsed) => {
   });
 };
 
-const storedSidebarState = localStorage.getItem(sidebarStorageKey);
-if (storedSidebarState !== null) {
-  setSidebarCollapsed(storedSidebarState === 'true');
-} else if (window.matchMedia('(max-width: 1024px)').matches) {
-  setSidebarCollapsed(true);
-}
+const mobileQuery = window.matchMedia('(max-width: 1024px)');
+
+const applyResponsiveSidebarState = () => {
+  if (mobileQuery.matches) {
+    setSidebarCollapsed(true);
+    return;
+  }
+
+  const storedSidebarState = localStorage.getItem(sidebarStorageKey);
+  if (storedSidebarState !== null) {
+    setSidebarCollapsed(storedSidebarState === 'true');
+  } else {
+    setSidebarCollapsed(false);
+  }
+};
+
+applyResponsiveSidebarState();
+mobileQuery.addEventListener('change', applyResponsiveSidebarState);
 
 sidebarToggleButtons.forEach((button) => {
   button.addEventListener('click', () => {
     const nextState = !bodyElement.classList.contains('sidebar-collapsed');
     setSidebarCollapsed(nextState);
-    localStorage.setItem(sidebarStorageKey, String(nextState));
+    if (!mobileQuery.matches) {
+      localStorage.setItem(sidebarStorageKey, String(nextState));
+    }
   });
 });
