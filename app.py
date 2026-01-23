@@ -135,6 +135,50 @@ def init_db():
             )
         ''')
 
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS device_tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                tag TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS device_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                note TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS maintenance_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                due_date TEXT,
+                status TEXT DEFAULT 'open',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT,
+                action TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                details TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Default-Kategorien
         default_categories = [
             ("CPU", "cpu", '{"cores":"number","clock":"text","manufacturer":"text"}'),
@@ -525,62 +569,6 @@ def activity_feed():
         activity.append(entry)
     return jsonify(activity)
 
-@app.route('/api/dashboard/overview', methods=['GET'])
-@login_required
-def dashboard_overview():
-    db = get_db()
-    total_devices = db.execute('SELECT COUNT(*) FROM devices').fetchone()[0] or 0
-    total_categories = db.execute('SELECT COUNT(*) FROM categories').fetchone()[0] or 0
-    total_locations = db.execute('SELECT COUNT(*) FROM locations').fetchone()[0] or 0
-
-    status_data = {'Verwendet': 0, 'Lager': 0, 'Defekt': 0}
-    devices = db.execute('SELECT specs FROM devices').fetchall()
-    for device in devices:
-        try:
-            specs = json.loads(device['specs']) if device['specs'] else {}
-            status = specs.get('Status', 'Verwendet').strip().capitalize()
-            status_data[status] = status_data.get(status, 0) + 1
-        except json.JSONDecodeError:
-            status_data['Verwendet'] += 1
-
-    trend_rows = db.execute('''
-        SELECT date(created_at) as day, COUNT(*) as count
-        FROM devices
-        WHERE date(created_at) >= date('now', '-6 days')
-        GROUP BY date(created_at)
-        ORDER BY date(created_at)
-    ''').fetchall()
-    trend_map = {row['day']: row['count'] for row in trend_rows}
-    trend_labels = []
-    trend_counts = []
-    for offset in range(6, -1, -1):
-        day = db.execute("SELECT date('now', ?)", (f'-{offset} days',)).fetchone()[0]
-        trend_labels.append(day)
-        trend_counts.append(trend_map.get(day, 0))
-
-    top_categories = db.execute('''
-        SELECT c.name as name, COUNT(d.id) as count
-        FROM categories c
-        LEFT JOIN devices d ON d.category_id = c.id
-        GROUP BY c.id
-        ORDER BY count DESC, c.name ASC
-        LIMIT 5
-    ''').fetchall()
-
-    return jsonify({
-        "totals": {
-            "devices": total_devices,
-            "categories": total_categories,
-            "locations": total_locations
-        },
-        "status": status_data,
-        "trend": {
-            "labels": trend_labels,
-            "counts": trend_counts
-        },
-        "top_categories": [dict(row) for row in top_categories]
-    })
-
 @app.route('/api/users', methods=['GET', 'POST'])
 @login_required
 def manage_users():
@@ -804,6 +792,7 @@ def export_devices():
         ORDER BY d.created_at DESC
     ''').fetchall()
     output = StringIO()
+    output = BytesIO()
     writer = csv.writer(output)
     writer.writerow(["ID", "Name", "Kategorie", "Besitzer", "Spezifikationen", "Erstellt"])
     for device in devices:
@@ -818,6 +807,7 @@ def export_devices():
     output.seek(0)
     return Response(
         output.getvalue().encode('utf-8'),
+        output.getvalue(),
         mimetype='text/csv',
         headers={'Content-Disposition': 'attachment; filename=devices.csv'}
     )
