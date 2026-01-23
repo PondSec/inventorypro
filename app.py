@@ -12,6 +12,7 @@ import qrcode
 import qrcode.image.svg
 from io import BytesIO, StringIO
 import base64
+import secrets
 from ldap3 import Server, Connection, BASE, ALL
 from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
@@ -345,6 +346,32 @@ def ensure_default_roles(db):
             INSERT INTO user_roles (user_id, role_id)
             VALUES (?, ?)
         ''', (user["id"], default_role["id"]))
+
+def ensure_admin_user(db):
+    admin_exists = db.execute('''
+        SELECT 1
+        FROM users u
+        JOIN user_roles ur ON ur.user_id = u.id
+        JOIN roles r ON r.id = ur.role_id
+        WHERE r.is_superuser = 1
+        LIMIT 1
+    ''').fetchone()
+    if admin_exists:
+        return
+
+    username = "admin"
+    while db.execute('SELECT 1 FROM users WHERE username = ?', (username,)).fetchone():
+        username = f"admin-{secrets.token_hex(3)}"
+
+    password = secrets.token_urlsafe(12)
+    password_hash = generate_password_hash(password)
+    cursor = db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, password_hash))
+    assign_user_role(db, cursor.lastrowid, "Admin")
+
+    print("\n[!] ADMIN-KONTO ERSTELLT (kein Admin vorhanden):")
+    print(f"    Benutzername: {username}")
+    print(f"    Passwort:    {password}")
+    print("    WICHTIG: Passwort nach dem ersten Login ändern!\n")
 
 def get_user_access(db):
     if hasattr(g, 'user_access'):
@@ -782,27 +809,10 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
-        # Temporären Setup-Admin erstellen (nur wenn noch kein anderer User existiert)
-        existing_users = c.execute('SELECT COUNT(*) FROM users').fetchone()[0]
-        if existing_users == 0:
-            password_hash = generate_password_hash('admin')
-            try:
-                c.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', 
-                         ('admin', password_hash))
-                print("\n[!] TEMPORÄRER ADMIN ERSTELLT:")
-                print("    Benutzername: admin")
-                print("    Passwort:    admin")
-                print("    WICHTIG: Diesen Account nach dem Setup löschen!\n")
-            except sqlite3.IntegrityError:
-                pass
-
         seed_permissions(db)
         seed_roles(db)
         ensure_default_roles(db)
-
-        admin_user = c.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()
-        if admin_user:
-            assign_user_role(db, admin_user["id"], "Admin")
+        ensure_admin_user(db)
 
         db.commit()
 
