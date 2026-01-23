@@ -2,6 +2,7 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('app', () => ({
         // State
         categories: [],
+        locations: [],
         devices: [],
         filteredDevices: [],
         activeCategory: null,
@@ -67,6 +68,7 @@ document.addEventListener('alpine:init', () => {
         // Initialization
         async init() {
             await this.loadCategories();
+            await this.loadLocations();
             await this.loadDevices();
             await this.loadFeatureFlags();
             await this.loadMaintenanceSummary();
@@ -112,6 +114,13 @@ document.addEventListener('alpine:init', () => {
         async loadCategories() {
             const response = await fetch('/api/categories');
             this.categories = await response.json();
+        },
+
+        async loadLocations() {
+            const response = await fetch('/api/locations');
+            if (response.ok) {
+                this.locations = await response.json();
+            }
         },
 
         async loadDevices(categoryId = null) {
@@ -279,6 +288,7 @@ document.addEventListener('alpine:init', () => {
                 name: '',
                 category_id: this.activeCategory,
                 serial_number: '',
+                location_id: '',
                 specs: {}
             };
             this.isDeviceModalOpen = true;
@@ -291,6 +301,7 @@ document.addEventListener('alpine:init', () => {
                 name: device.name,
                 category_id: device.category_id,
                 serial_number: device.serial_number,
+                location_id: device.location_id || '',
                 specs: JSON.parse(device.specs || '{}')
             };
             this.isDeviceModalOpen = true;
@@ -306,6 +317,7 @@ document.addEventListener('alpine:init', () => {
                     name: this.currentDevice.name,
                     category_id: this.currentDevice.category_id || this.activeCategory,
                     serial_number: this.currentDevice.serial_number,
+                    location_id: this.currentDevice.location_id || null,
                     specs: this.currentDevice.specs
                 };
 
