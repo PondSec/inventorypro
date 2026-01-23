@@ -284,3 +284,277 @@ footer {
   padding-left: 0.5rem;
   padding-right: 0.5rem;
 }
+
+/* =========================================
+   Modern UI/UX Redesign Theme
+   ========================================= */
+:root {
+  --ui-bg: #f3f6fb;
+  --ui-surface: #ffffff;
+  --ui-surface-elevated: #f8fafc;
+  --ui-surface-muted: #eef2ff;
+  --ui-border: rgba(148, 163, 184, 0.35);
+  --ui-text: #0f172a;
+  --ui-muted: #64748b;
+  --ui-primary: #5b6bff;
+  --ui-primary-strong: #3f4cf5;
+  --ui-accent: #22d3ee;
+  --ui-success: #10b981;
+  --ui-danger: #f43f5e;
+  --ui-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+  --ui-shadow-soft: 0 12px 24px rgba(15, 23, 42, 0.08);
+}
+
+.ui-theme {
+  background: radial-gradient(circle at top left, rgba(91, 107, 255, 0.12), transparent 55%),
+    radial-gradient(circle at 20% 10%, rgba(34, 211, 238, 0.12), transparent 45%),
+    radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.12), transparent 45%),
+    var(--ui-bg);
+  color: var(--ui-text);
+}
+
+.sidebar-surface {
+  background: rgba(255, 255, 255, 0.85);
+  border-right: 1px solid var(--ui-border);
+  box-shadow: var(--ui-shadow-soft);
+  backdrop-filter: blur(18px);
+}
+
+.app-header--frost {
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid var(--ui-border);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.surface-card {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: 24px;
+  box-shadow: var(--ui-shadow-soft);
+}
+
+.surface-panel {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.92));
+  color: #fff;
+  border-radius: 28px;
+  box-shadow: var(--ui-shadow);
+}
+
+.surface-panel .muted {
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.hero-panel {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(99, 102, 241, 0.25));
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 28px;
+  box-shadow: var(--ui-shadow);
+  color: var(--ui-text);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 24px;
+  backdrop-filter: blur(16px);
+  box-shadow: var(--ui-shadow-soft);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.4rem;
+  border-radius: 999px;
+  font-weight: 600;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--ui-primary), var(--ui-accent));
+  color: #fff;
+  box-shadow: 0 16px 32px rgba(59, 130, 246, 0.35);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 20px 40px rgba(59, 130, 246, 0.4);
+}
+
+.btn-outline {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: var(--ui-border);
+  color: var(--ui-text);
+}
+
+.btn-outline:hover {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ui-muted);
+}
+
+.btn-ghost:hover {
+  color: var(--ui-text);
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.btn-danger {
+  background: rgba(244, 63, 94, 0.12);
+  color: var(--ui-danger);
+  border-color: rgba(244, 63, 94, 0.3);
+}
+
+.btn-danger:hover {
+  background: rgba(244, 63, 94, 0.18);
+}
+
+.form-input,
+.form-textarea,
+.form-select {
+  width: 100%;
+  border-radius: 18px;
+  border: 1px solid var(--ui-border);
+  background: rgba(248, 250, 252, 0.9);
+  padding: 0.8rem 1rem;
+  font-size: 0.95rem;
+  color: var(--ui-text);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-input:focus,
+.form-textarea:focus,
+.form-select:focus {
+  outline: none;
+  border-color: rgba(91, 107, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(91, 107, 255, 0.2);
+}
+
+.app-body input,
+.app-body textarea,
+.app-body select {
+  border-radius: 18px;
+  border: 1px solid var(--ui-border);
+  background: rgba(248, 250, 252, 0.9);
+  padding: 0.7rem 0.9rem;
+  font-size: 0.95rem;
+  color: var(--ui-text);
+}
+
+.app-body input:focus,
+.app-body textarea:focus,
+.app-body select:focus {
+  outline: none;
+  border-color: rgba(91, 107, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(91, 107, 255, 0.2);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--ui-muted);
+}
+
+.badge-success {
+  background: rgba(16, 185, 129, 0.16);
+  color: var(--ui-success);
+}
+
+.badge-danger {
+  background: rgba(244, 63, 94, 0.16);
+  color: var(--ui-danger);
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-radius: 18px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+  color: var(--ui-text);
+  box-shadow: var(--ui-shadow-soft);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.nav-link:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.nav-link--active {
+  background: linear-gradient(135deg, rgba(91, 107, 255, 0.15), rgba(34, 211, 238, 0.15));
+  border-color: rgba(91, 107, 255, 0.4);
+  color: var(--ui-primary-strong);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.data-table th {
+  text-align: left;
+  color: var(--ui-muted);
+  font-weight: 600;
+  padding: 0.75rem 0;
+}
+
+.data-table td {
+  padding: 0.75rem 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  color: var(--ui-text);
+}
+
+.data-table tr:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.stat-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--ui-shadow);
+}
+
+.auth-body {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  background: radial-gradient(circle at top left, rgba(91, 107, 255, 0.18), transparent 55%),
+    radial-gradient(circle at bottom right, rgba(34, 211, 238, 0.2), transparent 50%),
+    #f8fafc;
+  color: var(--ui-text);
+}
+
+.auth-card {
+  border-radius: 32px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  box-shadow: var(--ui-shadow);
+  padding: 2.5rem;
+}
+
+.auth-divider {
+  height: 1px;
+  background: rgba(148, 163, 184, 0.3);
+  margin: 1.5rem 0;
+}
