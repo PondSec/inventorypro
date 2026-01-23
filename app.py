@@ -135,6 +135,50 @@ def init_db():
             )
         ''')
 
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS device_tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                tag TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS device_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                note TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS maintenance_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                due_date TEXT,
+                status TEXT DEFAULT 'open',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT,
+                action TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                details TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Default-Kategorien
         default_categories = [
             ("CPU", "cpu", '{"cores":"number","clock":"text","manufacturer":"text"}'),
@@ -740,6 +784,7 @@ def export_devices():
         ORDER BY d.created_at DESC
     ''').fetchall()
     output = StringIO()
+    output = BytesIO()
     writer = csv.writer(output)
     writer.writerow(["ID", "Name", "Kategorie", "Besitzer", "Spezifikationen", "Erstellt"])
     for device in devices:
@@ -754,6 +799,7 @@ def export_devices():
     output.seek(0)
     return Response(
         output.getvalue().encode('utf-8'),
+        output.getvalue(),
         mimetype='text/csv',
         headers={'Content-Disposition': 'attachment; filename=devices.csv'}
     )
