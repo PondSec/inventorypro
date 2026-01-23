@@ -4,6 +4,7 @@ const bodyElement = document.body;
 
 const setSidebarCollapsed = (collapsed) => {
   bodyElement.classList.toggle('sidebar-collapsed', collapsed);
+  bodyElement.classList.toggle('sidebar-open', !collapsed);
   sidebarToggleButtons.forEach((button) => {
     button.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
     button.setAttribute(
