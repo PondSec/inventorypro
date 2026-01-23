@@ -9,7 +9,7 @@ import csv
 import pyotp
 import qrcode
 import qrcode.image.svg
-from io import BytesIO
+from io import BytesIO, StringIO
 import base64
 
 
@@ -242,6 +242,11 @@ def logout():
 @login_required
 def index():
     return render_template('index.html', username=session.get('username'))
+
+@app.route('/users')
+@login_required
+def users_page():
+    return render_template('users.html', username=session.get('username'))
 
 @app.route('/api/categories/<int:category_id>', methods=['PUT', 'DELETE'])
 @login_required
