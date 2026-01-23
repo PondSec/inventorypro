@@ -442,6 +442,21 @@ def require_permissions(*permission_keys):
 def require_permission(permission_key):
     return require_permissions(permission_key)
 
+def get_post_login_redirect(access):
+    if access["is_superuser"]:
+        return url_for('index')
+    landing_targets = [
+        (("categories.view", "categories.manage"), "index"),
+        (("tickets.view_all", "tickets.view_own", "tickets.create"), "tickets_page"),
+        (("stats.view",), "stats"),
+        (("users.manage",), "users_page"),
+        (("locations.view", "locations.manage"), "locations_page")
+    ]
+    for permissions, endpoint in landing_targets:
+        if any(permission in access["permissions"] for permission in permissions):
+            return url_for(endpoint)
+    return url_for('index')
+
 def ensure_ticket_access(ticket, access, require_owner_permission=False):
     if access["is_superuser"]:
         return True
@@ -1164,9 +1179,10 @@ def login():
         if user and check_password_hash(user['password_hash'], password):
             session['logged_in'] = True
             session['username'] = username
+            access = get_user_access(db)
             log_activity(db, "login", "user", user['id'], {"username": username})
             db.commit()
-            return redirect(url_for('index'))
+            return redirect(get_post_login_redirect(access))
 
         ad_settings = get_ad_settings(db)
         if authenticate_ad_user(username, password, ad_settings):
@@ -1178,9 +1194,10 @@ def login():
                 existing_user = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
             session['logged_in'] = True
             session['username'] = username
+            access = get_user_access(db)
             log_activity(db, "login", "user", existing_user['id'], {"username": username, "source": "ad"})
             db.commit()
-            return redirect(url_for('index'))
+            return redirect(get_post_login_redirect(access))
 
         log_activity(db, "login_failed", "user", details={"username": username})
         db.commit()
