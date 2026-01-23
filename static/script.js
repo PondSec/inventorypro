@@ -19,13 +19,6 @@ document.addEventListener('alpine:init', () => {
             overdue: 0
         },
         activityFeed: [],
-        overview: {
-            totals: { devices: 0, categories: 0, locations: 0 },
-            status: { Verwendet: 0, Lager: 0, Defekt: 0 },
-            trend: { labels: [], counts: [] },
-            top_categories: []
-        },
-        liveChart: null,
         selectedDevice: null,
         deviceDetailOpen: false,
         deviceTags: [],
@@ -70,7 +63,6 @@ document.addEventListener('alpine:init', () => {
             await this.loadFeatureFlags();
             await this.loadMaintenanceSummary();
             await this.loadActivityFeed();
-            await this.loadOverview();
             this.$watch('searchQuery', () => this.searchDevices());
             feather.replace();
             this.startLiveRefresh();
@@ -127,6 +119,39 @@ document.addEventListener('alpine:init', () => {
                 await this.loadMaintenanceSummary();
                 await this.loadOverview();
             }, 15000);
+        },
+
+        async loadFeatureFlags() {
+            try {
+                const response = await fetch('/api/features');
+                if (response.ok) {
+                    this.featureFlags = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading feature flags:', error);
+            }
+        },
+
+        async loadMaintenanceSummary() {
+            try {
+                const response = await fetch('/api/maintenance/summary');
+                if (response.ok) {
+                    this.maintenanceSummary = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading maintenance summary:', error);
+            }
+        },
+
+        async loadActivityFeed() {
+            try {
+                const response = await fetch('/api/activity?limit=6');
+                if (response.ok) {
+                    this.activityFeed = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading activity feed:', error);
+            }
         },
 		
         // Data Loading
@@ -555,42 +580,6 @@ document.addEventListener('alpine:init', () => {
             const name = item.details?.name || item.details?.tag || '';
             const label = `${item.action} ${item.entity_type}`.replace('_', ' ');
             return `${label}${name ? ` • ${name}` : ''}`;
-        },
-
-        updateLiveChart() {
-            if (!window.Chart || !document.getElementById('liveTrendChart')) return;
-            const labels = this.overview.trend.labels;
-            const data = this.overview.trend.counts;
-            if (this.liveChart) {
-                this.liveChart.data.labels = labels;
-                this.liveChart.data.datasets[0].data = data;
-                this.liveChart.update();
-                return;
-            }
-            const ctx = document.getElementById('liveTrendChart').getContext('2d');
-            this.liveChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels,
-                    datasets: [{
-                        label: 'Neue Geräte',
-                        data,
-                        borderColor: '#2563eb',
-                        backgroundColor: 'rgba(37, 99, 235, 0.15)',
-                        tension: 0.3,
-                        fill: true
-                    }]
-                },
-                options: {
-                    plugins: {
-                        legend: { display: false }
-                    },
-                    scales: {
-                        x: { grid: { display: false } },
-                        y: { grid: { color: 'rgba(148, 163, 184, 0.2)' }, ticks: { precision: 0 } }
-                    }
-                }
-            });
         },
 
         // Helper Methods
