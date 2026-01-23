@@ -84,7 +84,7 @@
                         alert('Ein Fehler ist aufgetreten');
                     }
                 }
-            }" class="p-4 overflow-y-auto max-h-[calc(100vh-8rem)] space-y-4 sidebar-scroll">
+            }" class="p-4 overflow-y-auto max-h-[calc(100vh-8rem)] space-y-4 sidebar-scroll scrollbar-hide">
                 <div class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm sidebar-compact-hidden">
                     <p class="text-xs uppercase tracking-widest text-slate-400 sidebar-text">Willkommen zurück</p>
                     <p class="text-lg font-semibold text-slate-900 sidebar-text">{{ username }}</p>
@@ -231,7 +231,7 @@
                 </div>
 
                 <div x-show="otpModalOpen" x-transition class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div @click.away="otpModalOpen = false" class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
+                    <div @click.away="otpModalOpen = false" class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 scrollbar-hide">
                         <div class="flex justify-between items-center mb-4">
                             <h3 class="text-lg font-medium text-gray-900">Google Authenticator einrichten</h3>
                             <button @click="otpModalOpen = false" class="text-gray-500 hover:text-gray-700">
@@ -451,7 +451,7 @@
                             Asset hinzufügen
                         </button>
                     </div>
-                    <div class="overflow-x-hidden">
+                    <div class="overflow-x-hidden scrollbar-hide">
                         <table class="w-full table-fixed text-sm">
                             <thead class="text-left text-slate-500">
                                 <tr class="border-b border-slate-200">
@@ -500,7 +500,7 @@
                             <span x-text="filteredDevices.length"></span> Einträge
                         </span>
                     </div>
-                    <div class="overflow-x-hidden">
+                    <div class="overflow-x-hidden scrollbar-hide">
                         <table class="w-full table-fixed text-sm">
                             <thead class="text-left text-slate-500">
                                 <tr class="border-b border-slate-200">
@@ -555,7 +555,7 @@
     </div>
 
     <div x-show="deviceDetailOpen" @click.away="closeDeviceDetail()" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Geräteübersicht</p>
@@ -724,7 +724,7 @@
     </div>
 
     <div x-show="assetDetailOpen" @click.away="closeAssetDetail()" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Assetübersicht</p>
@@ -794,7 +794,7 @@
     </div>
 
     <div x-show="isAssetModalOpen" @click.away="closeAssetModal()" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Asset</p>
@@ -870,7 +870,7 @@
     </div>
 
     <div x-show="isCategoryModalOpen" @click.away="closeCategoryModal()" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Kategorie</p>
@@ -964,7 +964,7 @@
     </div>
 
     <div x-show="isDeviceModalOpen" @click.away="closeDeviceModal()" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Gerät</p>

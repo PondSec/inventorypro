@@ -105,7 +105,7 @@
                 </script>
             </header>
 
-            <main class="flex-1 overflow-auto p-8 pt-24 space-y-8">
+            <main class="flex-1 overflow-auto p-8 pt-24 space-y-8 scrollbar-hide">
             <section class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-8 py-10 text-white shadow-2xl shadow-slate-300/50">
                 <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                     <div>
@@ -149,7 +149,7 @@
                             2FA Status sichtbar
                         </span>
                     </div>
-                    <div class="overflow-x-auto">
+                    <div class="overflow-x-auto scrollbar-hide">
                         <table class="min-w-full text-sm">
                             <thead class="text-left text-slate-500">
                                 <tr class="border-b border-slate-200">
@@ -192,7 +192,7 @@
 
     <!-- Reset Password Modal -->
     <div x-show="resetModalOpen" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 scrollbar-hide">
             <div class="flex items-center justify-between mb-4">
                 <h4 class="text-lg font-semibold text-slate-900">Passwort zurücksetzen</h4>
                 <button @click="resetModalOpen = false" class="text-slate-400 hover:text-slate-600">
