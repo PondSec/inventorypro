@@ -1,10 +1,11 @@
-from flask import Flask, render_template, jsonify, request, g, redirect, url_for, session
+from flask import Flask, render_template, jsonify, request, g, redirect, url_for, session, Response
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import json
 from functools import wraps
 import os
+import csv
 import pyotp
 import qrcode
 import qrcode.image.svg
@@ -17,6 +18,17 @@ CORS(app)
 app.secret_key = os.urandom(24).hex()
 
 DATABASE = 'inventory.db'
+PRO_ENABLED = os.getenv('INVENTORY_PRO_ENABLED', '0') == '1'
+PRO_FEATURES = [
+    "maintenance_schedule",
+    "csv_export",
+    "advanced_analytics"
+]
+FREE_FEATURES = [
+    "tags",
+    "notes",
+    "activity_feed"
+]
 
 def get_db():
     db = getattr(g, '_database', None)
@@ -65,6 +77,50 @@ def init_db():
                 specs TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (category_id) REFERENCES categories(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS device_tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                tag TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS device_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                note TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS maintenance_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                due_date TEXT,
+                status TEXT DEFAULT 'open',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT,
+                action TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                details TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
 
@@ -126,6 +182,21 @@ def login_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
+def log_activity(db, action, entity_type, entity_id=None, details=None):
+    username = session.get('username', 'system')
+    db.execute('''
+        INSERT INTO activity_log (username, action, entity_type, entity_id, details)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (username, action, entity_type, entity_id, json.dumps(details or {})))
+
+def pro_required(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not PRO_ENABLED:
+            return jsonify({"error": "Pro feature locked"}), 403
+        return f(*args, **kwargs)
+    return wrapped
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -193,6 +264,7 @@ def handle_category(category_id):
             if result.rowcount == 0:
                 return jsonify({"error": "Kategorie nicht gefunden"}), 404
 
+            log_activity(db, "update", "category", category_id, {"name": name})
             db.commit()
             return jsonify({"status": "updated"}), 200
 
@@ -204,6 +276,7 @@ def handle_category(category_id):
         if result.rowcount == 0:
             return jsonify({"error": "Kategorie nicht gefunden"}), 404
 
+        log_activity(db, "delete", "category", category_id)
         db.commit()
         return jsonify({"status": "deleted"}), 200
 
@@ -218,6 +291,7 @@ def handle_categories():
                 INSERT INTO categories (name, icon, fields)
                 VALUES (?, ?, ?)
             ''', (data['name'], data.get('icon', 'cpu'), json.dumps(data['fields'])))
+            log_activity(db, "create", "category", details={"name": data['name']})
             db.commit()
             return jsonify({"status": "success"}), 201
         except sqlite3.IntegrityError:
@@ -248,6 +322,7 @@ def handle_device(device_id):
             if result.rowcount == 0:
                 return jsonify({"error": "Gerät nicht gefunden"}), 404
 
+            log_activity(db, "update", "device", device_id, {"name": name})
             db.commit()
             return jsonify({"status": "updated"}), 200
 
@@ -259,6 +334,7 @@ def handle_device(device_id):
         if result.rowcount == 0:
             return jsonify({"error": "Gerät nicht gefunden"}), 404
 
+        log_activity(db, "delete", "device", device_id)
         db.commit()
         return jsonify({"status": "deleted"}), 200
 
@@ -281,6 +357,7 @@ def handle_devices():
             data.get('serial_number', '').strip(),
             json.dumps(data.get('specs', {}))
         ))
+        log_activity(db, "create", "device", details={"name": data['name']})
         db.commit()
         return jsonify({"status": "created"}), 201
 
@@ -319,6 +396,213 @@ def get_devices():
     
     devices = db.execute(query, params).fetchall()
     return jsonify([dict(row) for row in devices])
+
+@app.route('/api/features', methods=['GET'])
+@login_required
+def feature_flags():
+    return jsonify({
+        "pro_enabled": PRO_ENABLED,
+        "pro_features": PRO_FEATURES,
+        "free_features": FREE_FEATURES
+    })
+
+@app.route('/api/activity', methods=['GET'])
+@login_required
+def activity_feed():
+    db = get_db()
+    limit = int(request.args.get('limit', 8))
+    rows = db.execute('''
+        SELECT username, action, entity_type, entity_id, details, created_at
+        FROM activity_log
+        ORDER BY created_at DESC
+        LIMIT ?
+    ''', (limit,)).fetchall()
+    activity = []
+    for row in rows:
+        entry = dict(row)
+        try:
+            entry['details'] = json.loads(entry.get('details') or '{}')
+        except json.JSONDecodeError:
+            entry['details'] = {}
+        activity.append(entry)
+    return jsonify(activity)
+
+@app.route('/api/devices/<int:device_id>/tags', methods=['GET', 'POST'])
+@login_required
+def device_tags(device_id):
+    db = get_db()
+    if request.method == 'POST':
+        data = request.get_json()
+        tag = (data.get('tag') or '').strip()
+        if not tag:
+            return jsonify({"error": "Tag darf nicht leer sein"}), 400
+        db.execute('''
+            INSERT INTO device_tags (device_id, tag)
+            VALUES (?, ?)
+        ''', (device_id, tag))
+        log_activity(db, "create", "tag", device_id, {"tag": tag})
+        db.commit()
+        return jsonify({"status": "created"}), 201
+
+    tags = db.execute('''
+        SELECT id, tag, created_at
+        FROM device_tags
+        WHERE device_id = ?
+        ORDER BY created_at DESC
+    ''', (device_id,)).fetchall()
+    return jsonify([dict(row) for row in tags])
+
+@app.route('/api/devices/<int:device_id>/tags/<int:tag_id>', methods=['DELETE'])
+@login_required
+def delete_device_tag(device_id, tag_id):
+    db = get_db()
+    result = db.execute('''
+        DELETE FROM device_tags
+        WHERE id = ? AND device_id = ?
+    ''', (tag_id, device_id))
+    if result.rowcount == 0:
+        return jsonify({"error": "Tag nicht gefunden"}), 404
+    log_activity(db, "delete", "tag", device_id, {"tag_id": tag_id})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/devices/<int:device_id>/notes', methods=['GET', 'POST'])
+@login_required
+def device_notes(device_id):
+    db = get_db()
+    if request.method == 'POST':
+        data = request.get_json()
+        note = (data.get('note') or '').strip()
+        if not note:
+            return jsonify({"error": "Notiz darf nicht leer sein"}), 400
+        db.execute('''
+            INSERT INTO device_notes (device_id, note)
+            VALUES (?, ?)
+        ''', (device_id, note))
+        log_activity(db, "create", "note", device_id)
+        db.commit()
+        return jsonify({"status": "created"}), 201
+
+    notes = db.execute('''
+        SELECT id, note, created_at
+        FROM device_notes
+        WHERE device_id = ?
+        ORDER BY created_at DESC
+    ''', (device_id,)).fetchall()
+    return jsonify([dict(row) for row in notes])
+
+@app.route('/api/devices/<int:device_id>/notes/<int:note_id>', methods=['DELETE'])
+@login_required
+def delete_device_note(device_id, note_id):
+    db = get_db()
+    result = db.execute('''
+        DELETE FROM device_notes
+        WHERE id = ? AND device_id = ?
+    ''', (note_id, device_id))
+    if result.rowcount == 0:
+        return jsonify({"error": "Notiz nicht gefunden"}), 404
+    log_activity(db, "delete", "note", device_id, {"note_id": note_id})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/maintenance', methods=['GET', 'POST'])
+@login_required
+@pro_required
+def maintenance_tasks():
+    db = get_db()
+    if request.method == 'POST':
+        data = request.get_json()
+        device_id = data.get('device_id')
+        title = (data.get('title') or '').strip()
+        due_date = (data.get('due_date') or '').strip()
+        if not device_id or not title:
+            return jsonify({"error": "Gerät und Titel sind erforderlich"}), 400
+        db.execute('''
+            INSERT INTO maintenance_tasks (device_id, title, due_date, status)
+            VALUES (?, ?, ?, ?)
+        ''', (device_id, title, due_date, 'open'))
+        log_activity(db, "create", "maintenance", device_id, {"title": title})
+        db.commit()
+        return jsonify({"status": "created"}), 201
+
+    device_id = request.args.get('device_id')
+    params = []
+    query = '''
+        SELECT m.id, m.device_id, m.title, m.due_date, m.status, m.created_at, d.name as device_name
+        FROM maintenance_tasks m
+        JOIN devices d ON d.id = m.device_id
+    '''
+    if device_id:
+        query += ' WHERE m.device_id = ?'
+        params.append(device_id)
+    query += ' ORDER BY m.created_at DESC'
+    tasks = db.execute(query, params).fetchall()
+    return jsonify([dict(row) for row in tasks])
+
+@app.route('/api/maintenance/<int:task_id>', methods=['PATCH'])
+@login_required
+@pro_required
+def update_maintenance(task_id):
+    db = get_db()
+    data = request.get_json()
+    status = (data.get('status') or '').strip().lower()
+    if status not in {'open', 'done'}:
+        return jsonify({"error": "Ungültiger Status"}), 400
+    result = db.execute('''
+        UPDATE maintenance_tasks
+        SET status = ?
+        WHERE id = ?
+    ''', (status, task_id))
+    if result.rowcount == 0:
+        return jsonify({"error": "Wartung nicht gefunden"}), 404
+    log_activity(db, "update", "maintenance", task_id, {"status": status})
+    db.commit()
+    return jsonify({"status": "updated"}), 200
+
+@app.route('/api/maintenance/summary', methods=['GET'])
+@login_required
+def maintenance_summary():
+    if not PRO_ENABLED:
+        return jsonify({"pro_locked": True, "open": 0, "overdue": 0})
+    db = get_db()
+    open_count = db.execute('''
+        SELECT COUNT(*) FROM maintenance_tasks WHERE status = 'open'
+    ''').fetchone()[0]
+    overdue_count = db.execute('''
+        SELECT COUNT(*) FROM maintenance_tasks
+        WHERE status = 'open' AND due_date != '' AND date(due_date) < date('now')
+    ''').fetchone()[0]
+    return jsonify({"pro_locked": False, "open": open_count, "overdue": overdue_count})
+
+@app.route('/api/export/devices', methods=['GET'])
+@login_required
+@pro_required
+def export_devices():
+    db = get_db()
+    devices = db.execute('''
+        SELECT d.id, d.name, d.serial_number, d.specs, d.created_at, c.name as category_name
+        FROM devices d
+        JOIN categories c ON d.category_id = c.id
+        ORDER BY d.created_at DESC
+    ''').fetchall()
+    output = BytesIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Name", "Kategorie", "Besitzer", "Spezifikationen", "Erstellt"])
+    for device in devices:
+        writer.writerow([
+            device['id'],
+            device['name'],
+            device['category_name'],
+            device['serial_number'] or '',
+            device['specs'] or '',
+            device['created_at']
+        ])
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=devices.csv'}
+    )
 
 @app.route('/stats')
 @login_required
