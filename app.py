@@ -134,6 +134,16 @@ def init_db():
             )
         ''')
 
+        try:
+            c.execute('ALTER TABLE assets ADD COLUMN notes TEXT')
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            c.execute('ALTER TABLE assets ADD COLUMN specs TEXT')
+        except sqlite3.OperationalError:
+            pass
+
         c.execute('''
             CREATE TABLE IF NOT EXISTS asset_devices (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
