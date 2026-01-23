@@ -390,18 +390,6 @@ def authenticate_ad_user(username, password, settings):
     except Exception:
         return False
 
-def build_ad_settings_payload(server_url, base_dn, user_attribute, domain, use_ssl):
-    return {
-        "enabled": True,
-        "server_url": server_url,
-        "base_dn": base_dn,
-        "bind_dn": "",
-        "bind_password": "",
-        "user_attribute": user_attribute or "sAMAccountName",
-        "domain": domain or "",
-        "use_ssl": bool(use_ssl)
-    }
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -950,49 +938,6 @@ def connect_ad():
         1 if use_ssl else 0
     ))
     log_activity(db, "update", "ad_settings", details={"enabled": True, "server_url": server_url})
-    db.commit()
-    settings = get_ad_settings(db)
-    return jsonify(serialize_ad_settings(settings))
-
-@app.route('/api/ad/connect/simple', methods=['POST'])
-@login_required
-def connect_ad_simple():
-    db = get_db()
-    data = request.get_json() or {}
-    server_url = (data.get('server_url') or '').strip()
-    base_dn = (data.get('base_dn') or '').strip()
-    domain = (data.get('domain') or '').strip()
-    username = (data.get('username') or '').strip()
-    password = data.get('password') or ''
-    use_ssl = bool(data.get('use_ssl'))
-
-    if not server_url or not base_dn or not username or not password:
-        return jsonify({"error": "Server-URL, Base DN, Benutzername und Passwort sind erforderlich"}), 400
-
-    temp_settings = build_ad_settings_payload(server_url, base_dn, "sAMAccountName", domain, use_ssl)
-    if not authenticate_ad_user(username, password, temp_settings):
-        return jsonify({"error": "AD-Anmeldung fehlgeschlagen. Bitte Zugangsdaten prüfen."}), 400
-
-    db.execute('''
-        UPDATE ad_settings
-        SET enabled = 1,
-            server_url = ?,
-            base_dn = ?,
-            bind_dn = '',
-            bind_password = '',
-            user_attribute = ?,
-            domain = ?,
-            use_ssl = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = 1
-    ''', (
-        server_url,
-        base_dn,
-        "sAMAccountName",
-        domain,
-        1 if use_ssl else 0
-    ))
-    log_activity(db, "update", "ad_settings", details={"enabled": True, "server_url": server_url, "mode": "simple"})
     db.commit()
     settings = get_ad_settings(db)
     return jsonify(serialize_ad_settings(settings))
