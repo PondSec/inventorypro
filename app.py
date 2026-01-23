@@ -12,7 +12,7 @@ import qrcode
 import qrcode.image.svg
 from io import BytesIO, StringIO
 import base64
-from ldap3 import Server, Connection
+from ldap3 import Server, Connection, BASE, ALL
 from ldap3.utils.conv import escape_filter_chars
 
 
@@ -345,6 +345,35 @@ def serialize_ad_settings(settings):
         "use_ssl": bool(settings["use_ssl"]),
         "has_bind_password": bool(settings["bind_password"])
     }
+
+def domain_to_base_dn(domain):
+    parts = [part for part in (domain or "").split('.') if part]
+    if not parts:
+        return ""
+    return ",".join(f"DC={part}" for part in parts)
+
+def discover_base_dn(server, connection, domain):
+    base_dn = ""
+    try:
+        naming_contexts = (
+            server.info.other.get("defaultNamingContext")
+            or server.info.other.get("defaultNamingContexts")
+            or []
+        )
+        if naming_contexts:
+            base_dn = naming_contexts[0]
+    except Exception:
+        base_dn = ""
+    if not base_dn:
+        try:
+            connection.search("", "(objectClass=*)", search_scope=BASE, attributes=["defaultNamingContext"])
+            if connection.entries:
+                base_dn = connection.entries[0].defaultNamingContext.value
+        except Exception:
+            base_dn = ""
+    if not base_dn:
+        base_dn = domain_to_base_dn(domain)
+    return base_dn
 
 def authenticate_ad_user(username, password, settings):
     if not settings or not settings["enabled"]:
@@ -885,6 +914,57 @@ def reset_user_password(user_id):
 @login_required
 def ad_settings():
     db = get_db()
+    settings = get_ad_settings(db)
+    return jsonify(serialize_ad_settings(settings))
+
+@app.route('/api/ad/quick-connect', methods=['POST'])
+@login_required
+def quick_connect_ad():
+    db = get_db()
+    data = request.get_json() or {}
+    server_url = (data.get('server_url') or '').strip()
+    domain = (data.get('domain') or '').strip()
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    use_ssl = bool(data.get('use_ssl'))
+
+    if not server_url:
+        return jsonify({"error": "Server-URL ist erforderlich"}), 400
+    if not username or not password:
+        return jsonify({"error": "AD-Benutzername und Passwort sind erforderlich"}), 400
+
+    user_principal = f"{username}@{domain}" if domain else username
+    server = Server(server_url, use_ssl=use_ssl, get_info=ALL)
+    try:
+        user_conn = Connection(server, user=user_principal, password=password, auto_bind=True)
+    except Exception:
+        return jsonify({"error": "Anmeldung am Active Directory fehlgeschlagen"}), 400
+
+    base_dn = discover_base_dn(server, user_conn, domain)
+    user_conn.unbind()
+    if not base_dn:
+        return jsonify({"error": "Base DN konnte nicht ermittelt werden. Bitte im Expertenmodus eintragen."}), 400
+
+    db.execute('''
+        UPDATE ad_settings
+        SET enabled = 1,
+            server_url = ?,
+            base_dn = ?,
+            bind_dn = '',
+            bind_password = '',
+            user_attribute = 'sAMAccountName',
+            domain = ?,
+            use_ssl = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1
+    ''', (
+        server_url,
+        base_dn,
+        domain,
+        1 if use_ssl else 0
+    ))
+    log_activity(db, "update", "ad_settings", details={"enabled": True, "server_url": server_url, "mode": "quick"})
+    db.commit()
     settings = get_ad_settings(db)
     return jsonify(serialize_ad_settings(settings))
 
