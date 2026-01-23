@@ -273,6 +273,14 @@
                                     <i data-feather="folder-plus" class="w-4 h-4"></i>
                                     Kategorie anlegen
                                 </button>
+                                <button x-show="activeCategory && getCategoryById(activeCategory)" @click="editCategoryModal(getCategoryById(activeCategory))" class="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 text-sm font-semibold text-white/90 hover:bg-white/10">
+                                    <i data-feather="edit" class="w-4 h-4"></i>
+                                    Kategorie bearbeiten
+                                </button>
+                                <button x-show="activeCategory && getCategoryById(activeCategory)" @click="deleteCategory(activeCategory)" class="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 text-sm font-semibold text-white/90 hover:bg-white/10">
+                                    <i data-feather="trash-2" class="w-4 h-4"></i>
+                                    Kategorie löschen
+                                </button>
                                 <a href="/stats" class="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 text-sm font-semibold text-white/90 hover:bg-white/10">
                                     <i data-feather="bar-chart-2" class="w-4 h-4"></i>
                                     Dashboard öffnen
