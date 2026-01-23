@@ -1,20 +1,99 @@
-# Inventarisierungssoftware für Hardwarekomponenten
+# Inventory Pro – Inventarisierung & Helpdesk
 
-## Projektbeschreibung
-
-Diese Webanwendung dient der strukturierten Inventarisierung von Hardwarekomponenten in einer IT-Umgebung. Ziel des Projekts ist die Entwicklung eines erweiterbaren, webbasierten Systems zur Erfassung, Kategorisierung und Auswertung von Hardwaredaten. Das System ermöglicht es, über eine Weboberfläche individuelle Kategorien zu erstellen und die zugehörigen Datenfelder flexibel über JSON-Definitionen zu konfigurieren. Zusätzlich wurde ein Sicherheitsmechanismus zur Benutzerauthentifizierung mit optionaler Zwei-Faktor-Authentifizierung (TOTP) implementiert.
+Inventory Pro ist eine professionelle Webplattform zur Verwaltung von Hardwarebeständen und Support-Tickets. Die Anwendung kombiniert eine flexible Inventarisierung, ein integriertes Helpdesk-System und ein rollenbasiertes Sicherheitskonzept. Damit eignet sie sich sowohl für IT-Abteilungen als auch für Managed-Service-Provider, die Asset- und Ticketdaten zentral und nachvollziehbar steuern möchten.
 
 ---
 
-## Funktionsumfang
+## Inhaltsverzeichnis
 
-### 1. Kategoriebasierte Inventarisierung
+- [Produktüberblick](#produktüberblick)
+- [Hauptfunktionen](#hauptfunktionen)
+- [Technischer Stack](#technischer-stack)
+- [Architektur & Datenmodell](#architektur--datenmodell)
+- [Installation](#installation)
+- [Konfiguration](#konfiguration)
+- [Betrieb & Deployment](#betrieb--deployment)
+- [Sicherheit](#sicherheit)
+- [Wartung & Betriebshinweise](#wartung--betriebshinweise)
+- [Lizenz](#lizenz)
+- [Kontakt](#kontakt)
 
-* Kategorien können über die Weboberfläche erstellt, bearbeitet und gelöscht werden.
-* Jede Kategorie enthält beliebig viele Geräte/Objekte.
-* Pro Kategorie können individuelle Datenfelder definiert werden, welche als JSON-Struktur gespeichert sind.
+---
 
-**Beispielhafte JSON-Felddaten:**
+## Produktüberblick
+
+Inventory Pro bietet eine konsolidierte Oberfläche zur Inventarisierung von IT-Komponenten sowie zur Bearbeitung von Support-Anfragen. Kategorien und Felder lassen sich dynamisch definieren, sodass Sie die Datenstruktur ohne Quellcodeänderung an Ihre Umgebung anpassen können. Gleichzeitig sorgt das Ticket-System für eine strukturierte Bearbeitung mit Status, Prioritäten, Kommentaren, Watchern und SLA-Informationen.
+
+---
+
+## Hauptfunktionen
+
+### Inventarisierung
+- **Dynamische Kategorien**: Frei definierbare Kategorien mit eigenen Felddefinitionen pro Asset-Typ.
+- **Formulargenerierung**: Eingabeformulare werden automatisch aus den JSON-Definitionen erstellt.
+- **Status-Tracking**: Statusinformationen werden für Auswertungen und Berichte genutzt.
+
+### Helpdesk / Tickets
+- **Ticket-Management**: Erstellung, Priorisierung, Statuswechsel und Zuweisungen.
+- **SLA-Informationen**: Tickets können mit Fälligkeits- und SLA-Daten geführt werden.
+- **Kommentare & Watcher**: Interne und externe Kommentare sowie Benachrichtigungsempfänger.
+- **Alerts & Benachrichtigungen**: Automationsregeln für Ereignisse (Statuswechsel, Kommentare etc.).
+
+### Benutzer & Sicherheit
+- **Authentifizierung**: Benutzername/Passwort mit Passwort-Hashing.
+- **2FA (TOTP)**: Optionale Zwei-Faktor-Authentifizierung.
+- **Sicheres Passwort-Reset**: Reset via TOTP oder im eingeloggten Zustand.
+
+### UX & Bedienung
+- **Responsive Oberfläche**: Optimiert für Desktop und mobile Geräte.
+- **Dark Mode**: Integriertes Theme-System für helle und dunkle Darstellung.
+- **Moderne UI-Komponenten**: Klar strukturierte Bereiche, schnelle Navigation und konsistente Bedienelemente.
+
+---
+
+## Technischer Stack
+
+| Ebene | Technologie |
+| --- | --- |
+| Frontend | HTML5, CSS3, JavaScript (Vanilla), Alpine.js, Tailwind via CDN |
+| Backend | Python 3.12, Flask |
+| Datenhaltung | SQLite |
+| Authentifizierung | bcrypt, TOTP (RFC 6238) |
+| API | RESTful, JSON-basiert |
+
+---
+
+## Architektur & Datenmodell
+
+- **Trennung von UI & Backend**: UI-Templates und REST-Endpunkte sind klar getrennt.
+- **Dynamische Felder**: Kategorien speichern Felddefinitionen als JSON, Einträge übernehmen diese Struktur.
+- **Ticket-Datenmodell**: Enthält Status, Priorität, Kategorie, SLA/Deadline, Kommentare, Watcher und Benachrichtigungsregeln.
+
+---
+
+## Installation
+
+```bash
+# 1) Virtuelle Umgebung erstellen
+python -m venv venv
+source venv/bin/activate
+
+# 2) Abhängigkeiten installieren
+pip install -r requirements.txt
+
+# 3) Anwendung starten
+python app.py
+```
+
+Nach dem Start ist die Anwendung in der Regel unter `http://localhost:5000` erreichbar.
+
+---
+
+## Konfiguration
+
+- **SMTP / Benachrichtigungen**: Über das Ticket-Admin-Panel konfigurierbar.
+- **2FA aktivieren**: In der Benutzerverwaltung aktivieren und TOTP-Seed in einer Authenticator-App hinterlegen.
+- **JSON-Felder**: Kategorien definieren Felder über JSON, z. B.:
 
 ```json
 {
@@ -26,97 +105,35 @@ Diese Webanwendung dient der strukturierten Inventarisierung von Hardwarekompone
 }
 ```
 
-* Die Feldnamen sind frei wählbar, wobei "Status" (Großschreibung beachten) eine besondere Bedeutung für die statistische Auswertung hat.
+Der Feldname **"Status"** hat eine besondere Bedeutung für die Auswertungslogik.
 
 ---
 
-### 2. Datenverwaltung
+## Betrieb & Deployment
 
-* Für jede Kategorie lassen sich neue Einträge (z. B. Hardwaregeräte) hinzufügen, bearbeiten oder löschen.
-* Die Eingabe erfolgt über automatisch generierte Formulare, basierend auf den JSON-Definitionen.
-* Änderungen an den Felddefinitionen wirken sich sofort auf alle zugehörigen Formulare und Datensätze aus.
+Empfohlene Vorgehensweise für Produktionsumgebungen:
 
----
-
-### 3. Statistikmodul
-
-* Basierend auf dem "Status"-Feld werden die Zustände der Geräte automatisch ausgewertet und grafisch/statistisch dargestellt.
-* Unterstützte Statuswerte sind u. a.:
-
-  * "Verwendung"
-  * "Defekt"
-  * "Lager"
-* Die Darstellung erfolgt aggregiert je Kategorie.
+- **WSGI-Server nutzen** (z. B. Gunicorn oder uWSGI).
+- **Reverse Proxy** (z. B. Nginx) für SSL-Termination und Caching.
+- **Datenbank-Backup** regelmäßig einplanen.
+- **Secrets schützen** (SMTP-Credentials, TOTP-Secrets).
 
 ---
 
-### 4. Authentifizierung und Sicherheit
+## Sicherheit
 
-* Zugriff auf die Webanwendung erfolgt über ein Benutzerkonto (Benutzername + Passwort).
-* Zusätzlich kann ein TOTP-basierter Zwei-Faktor-Authentifizierungsmechanismus (2FA) aktiviert werden.
-* TOTP kann über einen QR-Code oder manuell durch einen Schlüssel in Authenticator-Apps (z. B. Google Authenticator) hinzugefügt werden.
-* Bei aktivierter 2FA kann das Passwort zurückgesetzt werden, sofern ein gültiger TOTP-Code eingegeben wird.
-* Alternativ ist das Zurücksetzen direkt innerhalb der Anwendung (bei bestehender Sitzung) möglich.
-
----
-
-### 5. Benutzeroberfläche
-
-* Die Webanwendung ist vollständig responsiv und im hellen, minimalistischen Stil mit abgerundeten UI-Elementen gestaltet.
-* Die Benutzeroberfläche ist modern und orientiert sich an aktuellen Designstandards im Bereich UI/UX.
+- Passwort-Hashing mit **bcrypt**.
+- **TOTP-basierte Zwei-Faktor-Authentifizierung** (RFC 6238).
+- Session- und Rollenlogik in der Applikationsschicht.
+- Empfohlene Ergänzungen: TLS, regelmäßige Updates, Restriktionen für Admin-Zugriffe.
 
 ---
 
-## Technische Architektur
+## Wartung & Betriebshinweise
 
-| Komponente             | Technologie                                    |
-| ---------------------- | ---------------------------------------------- |
-| **Frontend**           | HTML5, CSS3, JavaScript (Vanilla), Alpine.js   |
-| **Backend**            | Python 3.12 mit Flask                          |
-| **Datenhaltung**       | SQLite                                         |
-| **Authentifizierung**  | Passwort-Hashing (bcrypt), TOTP gemäß RFC 6238 |
-| **API-Schnittstellen** | REST-konform, JSON-basiert                     |
-
----
-
-## Systemanforderungen
-
-* Python 3.12
-* Webserver mit WSGI-Support (z. B. Gunicorn, uWSGI)
-* Webbrowser mit aktiviertem JavaScript
-
----
-
-## Projektumfang
-
-* **Frontend-Code:** \~3000 Zeilen (inkl. Formularlogik, dynamisches Rendering, UX-Komponenten)
-* **Backend-Code:** \~600 Zeilen (REST-API, Authentifizierung, Datenpersistenz)
-* **Datenmodell:** dynamisch, JSON-basiert pro Kategorie
-* **Sicherheitsmodul:** Integration von TOTP und Passwort-Reset-Funktionalität
-
----
-
-## Einrichtung
-
-```bash
-# Voraussetzungen
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# Starten der Anwendung
-python app.py
-```
-
-> ⚠️ Die genaue Installationsanleitung kann je nach Hostingumgebung angepasst werden.
-
----
-
-## Weiterentwicklung & Erweiterbarkeit
-
-* Modularer Aufbau erlaubt spätere Erweiterung (z. B. Exportfunktionen, Gerätegruppen, Benutzerrollen)
-* JSON-basierte Felddefinition ermöglicht individuelle Anpassung ohne Codeänderung
-* Trennung von Frontend und Backend durch API-Architektur
+- **Backups**: SQLite-Datei regelmäßig sichern (auch vor Updates).
+- **Monitoring**: Verfügbarkeit, Fehlerraten und Logs überwachen.
+- **Updates**: Abhängigkeiten regelmäßig prüfen und aktualisieren.
 
 ---
 
@@ -124,18 +141,17 @@ python app.py
 
 Dieses Projekt steht unter der GNU Affero General Public License Version 3 (AGPL-3.0).
 
-Sie dürfen diese Software verwenden, verändern und verbreiten, solange alle Änderungen und Erweiterungen unter denselben Bedingungen (AGPL-3.0) veröffentlicht werden, insbesondere bei Nutzung über ein Netzwerk (z. B. als Webanwendung).
+Sie dürfen diese Software verwenden, verändern und verbreiten, solange alle Änderungen und Erweiterungen unter denselben Bedingungen (AGPL-3.0) veröffentlicht werden, insbesondere bei Nutzung über ein Netzwerk (z. B. als Webanwendung).
 
-Für die kommerzielle Nutzung ohne Offenlegungspflicht (z. B. in geschlossenen Systemen oder als SaaS ohne Quellcodeveröffentlichung) ist eine separate Lizenzvereinbarung notwendig.
+Für die kommerzielle Nutzung ohne Offenlegungspflicht (z. B. in geschlossenen Systemen oder als SaaS ohne Quellcodeveröffentlichung) ist eine separate Lizenzvereinbarung notwendig.
 
-Kontakt für kommerzielle Lizenzen: [joshua@pondsec.com](mailto:joshua@pondsec.com)
-
-Der vollständige Lizenztext ist verfügbar unter: [https://www.gnu.org/licenses/agpl-3.0.de.html](https://www.gnu.org/licenses/agpl-3.0.de.html)
+Der vollständige Lizenztext: https://www.gnu.org/licenses/agpl-3.0.de.html
 
 ---
 
-## Autor
+## Kontakt
 
 Joshua Pond
 Fachinformatiker für Systemintegration
+E-Mail: joshua@pondsec.com
 Stand: Juli 2025
