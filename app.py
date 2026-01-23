@@ -411,13 +411,14 @@ def authenticate_ad_user(username, password, settings):
         except Exception:
             return False
 
-    user_principal = f"{username}@{domain}" if domain else username
-    try:
-        user_conn = Connection(server, user=user_principal, password=password, auto_bind=True)
-        user_conn.unbind()
-        return True
-    except Exception:
-        return False
+    for user_principal in build_ad_principals(username, domain):
+        try:
+            user_conn = Connection(server, user=user_principal, password=password, auto_bind=True)
+            user_conn.unbind()
+            return True
+        except Exception:
+            continue
+    return False
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
