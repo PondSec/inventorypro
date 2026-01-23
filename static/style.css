@@ -311,6 +311,10 @@ footer {
   background-color: rgba(17, 24, 39, 0.7);
 }
 
+.dark .bg-white\/50 {
+  background-color: rgba(17, 24, 39, 0.5);
+}
+
 .dark .bg-white\/80 {
   background-color: rgba(17, 24, 39, 0.8);
 }
@@ -349,6 +353,10 @@ footer {
 
 .dark .bg-emerald-50 {
   background-color: rgba(16, 185, 129, 0.15);
+}
+
+.dark .bg-emerald-50\/70 {
+  background-color: rgba(5, 46, 22, 0.6);
 }
 
 .dark .glass-card {
