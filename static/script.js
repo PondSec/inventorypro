@@ -31,16 +31,6 @@ document.addEventListener('alpine:init', () => {
             due_date: ''
         },
         currentSort: { field: null, direction: null },
-		
-		showSortMenu: false,
-		currentSort: null,
-		sortOptions: [
-			{ value: 'clock_asc', label: 'Clock ▲', field: 'clock', order: 'asc' },
-			{ value: 'clock_desc', label: 'Clock ▼', field: 'clock', order: 'desc' },
-			{ value: 'name_asc', label: 'Name A-Z', field: 'name', order: 'asc' },
-			{ value: 'name_desc', label: 'Name Z-A', field: 'name', order: 'desc' },
-			{ value: 'none', label: 'No sorting' }
-		],
         
         // Modals
         isCategoryModalOpen: false,
