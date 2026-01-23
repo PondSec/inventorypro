@@ -654,19 +654,11 @@
                                     <select x-model="field.type" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
                                         <option value="text">Text</option>
                                         <option value="number">Zahl</option>
-                                        <option value="date">Datum</option>
-                                        <option value="select">Dropdown</option>
-                                        <option value="checkbox">Checkbox</option>
                                     </select>
                                 </div>
                                 <button type="button" @click="removeCategoryField(field.id)" class="self-start rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 sm:self-center">
                                     Entfernen
                                 </button>
-                                <div class="w-full sm:w-full" x-show="field.type === 'select'">
-                                    <label class="text-xs font-semibold text-slate-500">Dropdown Optionen</label>
-                                    <input type="text" x-model="field.optionsText" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" placeholder="z. B. Klein, Mittel, Groß">
-                                    <p class="mt-1 text-xs text-slate-400">Optionen durch Kommas trennen.</p>
-                                </div>
                             </div>
                         </template>
                         <p x-show="currentCategory.fields.length === 0" class="text-xs text-slate-400">Noch keine Felder definiert. Füge eigene Spezifikationen hinzu.</p>
