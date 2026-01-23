@@ -7,46 +7,37 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
-<body class="auth-body">
+<body class="app-body">
     <div class="auth-shell">
-        <div class="auth-topbar">
-            <a href="/login" class="brand">
-                <span class="brand-badge">
+        <header class="auth-header">
+            <div class="auth-brand">
+                <span class="auth-logo">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 2v6l4 2M6.75 7.5v10.5a3 3 0 003 3h4.5a3 3 0 003-3V7.5" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11V7a4 4 0 00-8 0v4a2 2 0 002 2h4a2 2 0 002-2z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11h8a4 4 0 014 4v2a4 4 0 01-4 4H8a4 4 0 01-4-4v-2a4 4 0 014-4z" />
                     </svg>
                 </span>
                 <div>
-                    <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Inventory Pro</p>
-                    <p class="text-lg font-semibold">Secure Verify</p>
+                    <p class="text-xs uppercase tracking-[0.35em] text-muted">Security</p>
+                    <h1 class="text-xl font-semibold">OTP-Verifizierung</h1>
                 </div>
-            </a>
-            <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false">
-                <span class="theme-toggle__icon theme-toggle__icon--light">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="4"></circle>
-                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
-                    </svg>
+            </div>
+            <label class="theme-switch" aria-label="Theme umschalten">
+                <input type="checkbox" data-theme-toggle>
+                <span class="theme-switch__track">
+                    <span class="theme-switch__thumb"></span>
+                    <span class="theme-switch__icon theme-switch__icon--sun">☀</span>
+                    <span class="theme-switch__icon theme-switch__icon--moon">🌙</span>
                 </span>
-                <span class="theme-toggle__icon theme-toggle__icon--dark">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path>
-                    </svg>
-                </span>
-                <span data-theme-label>Dark Mode</span>
-            </button>
-        </div>
+            </label>
+        </header>
 
         <div class="auth-card">
-            <div class="mb-6">
-                <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Security</p>
-                <h1 class="text-2xl font-semibold">OTP-Verifizierung</h1>
-                <p class="mt-2 text-sm text-slate-500">Bitte gib den aktuellen Code aus deinem Authenticator ein.</p>
-            </div>
+            <p class="section-subtitle">Bitte gib den aktuellen Code aus deinem Authenticator ein.</p>
 
-            <div class="space-y-4">
+            <div class="space-y-4 mt-6">
                 <input type="text" id="otp" maxlength="6" placeholder="123456"
-                       class="input w-full text-center text-lg tracking-widest">
+                       class="input text-center text-lg tracking-widest">
                 <button onclick="verifyOTP()" class="btn btn-primary w-full">
                     Verifizieren
                 </button>
@@ -80,17 +71,20 @@
 
                 if (response.ok && result.verified) {
                     output.textContent = "✅ Verifiziert!";
-                    output.className = "mt-4 text-sm text-emerald-600";
+                    output.className = "mt-4 text-sm";
+                    output.style.color = "var(--success)";
                 } else {
                     output.textContent = "❌ Verifizierung fehlgeschlagen!";
-                    output.className = "mt-4 text-sm text-rose-600";
+                    output.className = "mt-4 text-sm";
+                    output.style.color = "var(--danger)";
                 }
             } catch (err) {
                 output.textContent = "⚠️ Fehler: " + err.message;
-                output.className = "mt-4 text-sm text-rose-600";
+                output.className = "mt-4 text-sm";
+                output.style.color = "var(--danger)";
             }
         }
     </script>
-    <script src="/static/theme.js"></script>
+    <script src="/static/ui.js"></script>
 </body>
 </html>
