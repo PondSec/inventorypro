@@ -16,6 +16,8 @@ const setSidebarCollapsed = (collapsed) => {
 const storedSidebarState = localStorage.getItem(sidebarStorageKey);
 if (storedSidebarState !== null) {
   setSidebarCollapsed(storedSidebarState === 'true');
+} else if (window.matchMedia('(max-width: 1024px)').matches) {
+  setSidebarCollapsed(true);
 }
 
 sidebarToggleButtons.forEach((button) => {
