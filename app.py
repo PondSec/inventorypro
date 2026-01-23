@@ -346,27 +346,6 @@ def serialize_ad_settings(settings):
         "has_bind_password": bool(settings["bind_password"])
     }
 
-def build_ad_principals(username, domain):
-    if not username:
-        return []
-    if "@" in username or "\\" in username:
-        return [username]
-    if not domain:
-        return [username]
-    netbios = domain.split(".")[0]
-    candidates = [
-        f"{username}@{domain}",
-        f"{netbios}\\{username}",
-        username
-    ]
-    seen = set()
-    unique = []
-    for value in candidates:
-        if value and value not in seen:
-            seen.add(value)
-            unique.append(value)
-    return unique
-
 def domain_to_base_dn(domain):
     parts = [part for part in (domain or "").split('.') if part]
     if not parts:
@@ -955,20 +934,12 @@ def quick_connect_ad():
     if not username or not password:
         return jsonify({"error": "AD-Benutzername und Passwort sind erforderlich"}), 400
 
+    user_principal = f"{username}@{domain}" if domain else username
     server = Server(server_url, use_ssl=use_ssl, get_info=ALL)
-    user_conn = None
-    for user_principal in build_ad_principals(username, domain):
-        try:
-            user_conn = Connection(server, user=user_principal, password=password, auto_bind=True)
-            break
-        except Exception:
-            user_conn = None
-            continue
-    if not user_conn:
-        return jsonify({
-            "error": "Anmeldung am Active Directory fehlgeschlagen. "
-                     "Bitte Benutzername im Format user@domain oder DOMAIN\\user testen."
-        }), 400
+    try:
+        user_conn = Connection(server, user=user_principal, password=password, auto_bind=True)
+    except Exception:
+        return jsonify({"error": "Anmeldung am Active Directory fehlgeschlagen"}), 400
 
     base_dn = discover_base_dn(server, user_conn, domain)
     user_conn.unbind()
