@@ -375,6 +375,34 @@ def discover_base_dn(server, connection, domain):
         base_dn = domain_to_base_dn(domain)
     return base_dn
 
+def build_ad_principals(username, domain):
+    principals = []
+    if not username:
+        return principals
+    username = username.strip()
+    if not username:
+        return principals
+
+    principals.append(username)
+
+    if "\\" in username:
+        if domain:
+            account_name = username.split("\\", 1)[1]
+            principals.append(f"{account_name}@{domain}")
+        return list(dict.fromkeys(principals))
+
+    if "@" in username:
+        if domain:
+            account_name = username.split("@", 1)[0]
+            principals.append(f"{domain}\\{account_name}")
+        return list(dict.fromkeys(principals))
+
+    if domain:
+        principals.append(f"{username}@{domain}")
+        principals.append(f"{domain}\\{username}")
+
+    return list(dict.fromkeys(principals))
+
 def authenticate_ad_user(username, password, settings):
     if not settings or not settings["enabled"]:
         return False
