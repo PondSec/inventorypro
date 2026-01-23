@@ -7,6 +7,28 @@ document.addEventListener('alpine:init', () => {
         activeCategory: null,
         searchQuery: '',
         sortDropdownOpen: false,
+        featureFlags: {
+            pro_enabled: false,
+            pro_features: [],
+            free_features: []
+        },
+        maintenanceSummary: {
+            pro_locked: true,
+            open: 0,
+            overdue: 0
+        },
+        activityFeed: [],
+        selectedDevice: null,
+        deviceDetailOpen: false,
+        deviceTags: [],
+        deviceNotes: [],
+        maintenanceTasks: [],
+        newTag: '',
+        newNote: '',
+        newMaintenance: {
+            title: '',
+            due_date: ''
+        },
         currentSort: { field: null, direction: null },
 		
 		showSortMenu: false,
@@ -46,8 +68,44 @@ document.addEventListener('alpine:init', () => {
         async init() {
             await this.loadCategories();
             await this.loadDevices();
+            await this.loadFeatureFlags();
+            await this.loadMaintenanceSummary();
+            await this.loadActivityFeed();
             this.$watch('searchQuery', () => this.searchDevices());
             feather.replace();
+        },
+
+        async loadFeatureFlags() {
+            try {
+                const response = await fetch('/api/features');
+                if (response.ok) {
+                    this.featureFlags = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading feature flags:', error);
+            }
+        },
+
+        async loadMaintenanceSummary() {
+            try {
+                const response = await fetch('/api/maintenance/summary');
+                if (response.ok) {
+                    this.maintenanceSummary = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading maintenance summary:', error);
+            }
+        },
+
+        async loadActivityFeed() {
+            try {
+                const response = await fetch('/api/activity?limit=6');
+                if (response.ok) {
+                    this.activityFeed = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading activity feed:', error);
+            }
         },
 		
         // Data Loading
@@ -65,6 +123,12 @@ document.addEventListener('alpine:init', () => {
             const response = await fetch(url);
             this.devices = await response.json();
             this.filteredDevices = this.devices;
+            if (this.selectedDevice) {
+                const updated = this.devices.find(device => device.id === this.selectedDevice.id);
+                if (updated) {
+                    this.selectedDevice = updated;
+                }
+            }
         },
 
         // Search and Sort
@@ -169,6 +233,7 @@ document.addEventListener('alpine:init', () => {
                 if (response.ok) {
                     await this.loadCategories();
                     this.closeCategoryModal();
+                    await this.loadActivityFeed();
                 } else {
                     const error = await response.json();
                     throw new Error(error.error || 'Failed to save category');
@@ -190,6 +255,7 @@ document.addEventListener('alpine:init', () => {
                         await this.loadDevices();
                     }
                     this.categoryMenuOpen = null; // Menü schließen nach Löschen
+                    await this.loadActivityFeed();
                 } else {
                     const error = await response.json();
                     alert('Error deleting category: ' + (error.error || 'Unknown error'));
@@ -261,6 +327,7 @@ document.addEventListener('alpine:init', () => {
                 if (response.ok) {
                     await this.loadDevices(this.activeCategory);
                     this.closeDeviceModal();
+                    await this.loadActivityFeed();
                 } else {
                     const error = await response.json();
                     throw new Error(error.error || 'Failed to save device');
@@ -278,6 +345,7 @@ document.addEventListener('alpine:init', () => {
                 });
                 if (response.ok) {
                     await this.loadDevices(this.activeCategory);
+                    await this.loadActivityFeed();
                 } else {
                     const error = await response.json();
                     alert('Error deleting device: ' + (error.error || 'Unknown error'));
@@ -291,6 +359,171 @@ document.addEventListener('alpine:init', () => {
             if (this.openDeviceId !== null) {
                 this.categoryMenuOpen = null;
             }
+        },
+
+        async openDeviceDetail(device) {
+            this.selectedDevice = device;
+            this.deviceDetailOpen = true;
+            await this.loadDeviceExtras(device.id);
+        },
+
+        closeDeviceDetail() {
+            this.deviceDetailOpen = false;
+            this.selectedDevice = null;
+            this.deviceTags = [];
+            this.deviceNotes = [];
+            this.maintenanceTasks = [];
+        },
+
+        async loadDeviceExtras(deviceId) {
+            try {
+                const [tagsRes, notesRes] = await Promise.all([
+                    fetch(`/api/devices/${deviceId}/tags`),
+                    fetch(`/api/devices/${deviceId}/notes`)
+                ]);
+                if (tagsRes.ok) {
+                    this.deviceTags = await tagsRes.json();
+                }
+                if (notesRes.ok) {
+                    this.deviceNotes = await notesRes.json();
+                }
+            } catch (error) {
+                console.error('Error loading device extras:', error);
+            }
+
+            if (this.featureFlags.pro_enabled) {
+                try {
+                    const maintenanceRes = await fetch(`/api/maintenance?device_id=${deviceId}`);
+                    if (maintenanceRes.ok) {
+                        this.maintenanceTasks = await maintenanceRes.json();
+                    }
+                } catch (error) {
+                    console.error('Error loading maintenance tasks:', error);
+                }
+            }
+        },
+
+        async addTag() {
+            if (!this.newTag.trim() || !this.selectedDevice) return;
+            try {
+                const response = await fetch(`/api/devices/${this.selectedDevice.id}/tags`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tag: this.newTag.trim() })
+                });
+                if (response.ok) {
+                    this.newTag = '';
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadActivityFeed();
+                } else {
+                    const error = await response.json();
+                    alert(error.error || 'Tag konnte nicht gespeichert werden');
+                }
+            } catch (error) {
+                console.error('Error adding tag:', error);
+            }
+        },
+
+        async removeTag(tagId) {
+            if (!this.selectedDevice) return;
+            try {
+                const response = await fetch(`/api/devices/${this.selectedDevice.id}/tags/${tagId}`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadActivityFeed();
+                }
+            } catch (error) {
+                console.error('Error removing tag:', error);
+            }
+        },
+
+        async addNote() {
+            if (!this.newNote.trim() || !this.selectedDevice) return;
+            try {
+                const response = await fetch(`/api/devices/${this.selectedDevice.id}/notes`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ note: this.newNote.trim() })
+                });
+                if (response.ok) {
+                    this.newNote = '';
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadActivityFeed();
+                } else {
+                    const error = await response.json();
+                    alert(error.error || 'Notiz konnte nicht gespeichert werden');
+                }
+            } catch (error) {
+                console.error('Error adding note:', error);
+            }
+        },
+
+        async deleteNote(noteId) {
+            if (!this.selectedDevice) return;
+            try {
+                const response = await fetch(`/api/devices/${this.selectedDevice.id}/notes/${noteId}`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadActivityFeed();
+                }
+            } catch (error) {
+                console.error('Error deleting note:', error);
+            }
+        },
+
+        async addMaintenanceTask() {
+            if (!this.featureFlags.pro_enabled || !this.selectedDevice) return;
+            if (!this.newMaintenance.title.trim()) return;
+            try {
+                const response = await fetch('/api/maintenance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        device_id: this.selectedDevice.id,
+                        title: this.newMaintenance.title.trim(),
+                        due_date: this.newMaintenance.due_date
+                    })
+                });
+                if (response.ok) {
+                    this.newMaintenance = { title: '', due_date: '' };
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadMaintenanceSummary();
+                    await this.loadActivityFeed();
+                } else {
+                    const error = await response.json();
+                    alert(error.error || 'Wartung konnte nicht gespeichert werden');
+                }
+            } catch (error) {
+                console.error('Error adding maintenance task:', error);
+            }
+        },
+
+        async updateMaintenanceStatus(taskId, status) {
+            if (!this.featureFlags.pro_enabled) return;
+            try {
+                const response = await fetch(`/api/maintenance/${taskId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                });
+                if (response.ok) {
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadMaintenanceSummary();
+                    await this.loadActivityFeed();
+                }
+            } catch (error) {
+                console.error('Error updating maintenance task:', error);
+            }
+        },
+
+        formatActivity(item) {
+            const name = item.details?.name || item.details?.tag || '';
+            const label = `${item.action} ${item.entity_type}`.replace('_', ' ');
+            return `${label}${name ? ` • ${name}` : ''}`;
         },
 
         // Helper Methods
@@ -353,4 +586,3 @@ document.addEventListener('alpine:init', () => {
 		
     }));
 });
-
