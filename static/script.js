@@ -52,6 +52,7 @@ document.addEventListener('alpine:init', () => {
             name: '',
             category_id: null,
             serial_number: '',
+            location_id: '',
             specs: {}
         },
 
@@ -90,74 +91,19 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        async loadActivityFeed() {
-            try {
-                const response = await fetch('/api/activity?limit=6');
-                if (response.ok) {
-                    this.activityFeed = await response.json();
-                }
-            } catch (error) {
-                console.error('Error loading activity feed:', error);
-            }
-        },
-
-        async loadOverview() {
-            try {
-                const response = await fetch('/api/dashboard/overview');
-                if (response.ok) {
-                    this.overview = await response.json();
-                    this.updateLiveChart();
-                }
-            } catch (error) {
-                console.error('Error loading dashboard overview:', error);
-            }
-        },
-
         startLiveRefresh() {
             setInterval(async () => {
                 await this.loadActivityFeed();
                 await this.loadMaintenanceSummary();
-                await this.loadOverview();
             }, 15000);
-        },
-
-        async loadFeatureFlags() {
-            try {
-                const response = await fetch('/api/features');
-                if (response.ok) {
-                    this.featureFlags = await response.json();
-                }
-            } catch (error) {
-                console.error('Error loading feature flags:', error);
-            }
-        },
-
-        async loadMaintenanceSummary() {
-            try {
-                const response = await fetch('/api/maintenance/summary');
-                if (response.ok) {
-                    this.maintenanceSummary = await response.json();
-                }
-            } catch (error) {
-                console.error('Error loading maintenance summary:', error);
-            }
-        },
-
-        async loadActivityFeed() {
-            try {
-                const response = await fetch('/api/activity?limit=6');
-                if (response.ok) {
-                    this.activityFeed = await response.json();
-                }
-            } catch (error) {
-                console.error('Error loading activity feed:', error);
-            }
         },
 		
         // Data Loading
         async loadCategories() {
             const response = await fetch('/api/categories');
-            this.categories = await response.json();
+            if (response.ok) {
+                this.categories = await response.json();
+            }
         },
 
         async loadLocations() {
@@ -174,8 +120,10 @@ document.addEventListener('alpine:init', () => {
                 : '/api/devices';
             
             const response = await fetch(url);
-            this.devices = await response.json();
-            this.filteredDevices = this.devices;
+            if (response.ok) {
+                this.devices = await response.json();
+                this.filteredDevices = this.devices;
+            }
             if (this.selectedDevice) {
                 const updated = this.devices.find(device => device.id === this.selectedDevice.id);
                 if (updated) {
@@ -283,14 +231,14 @@ document.addEventListener('alpine:init', () => {
                     });
                 }
 
-                if (response.ok) {
-                    await this.loadCategories();
-                    this.closeCategoryModal();
-                    await this.loadActivityFeed();
-                } else {
+                if (!response.ok) {
                     const error = await response.json();
                     throw new Error(error.error || 'Failed to save category');
                 }
+
+                await this.loadCategories();
+                this.closeCategoryModal();
+                await this.loadActivityFeed();
             } catch (error) {
                 console.error('Error saving category:', error);
                 alert('Error saving category: ' + error.message);
@@ -380,14 +328,14 @@ document.addEventListener('alpine:init', () => {
                     });
                 }
 
-                if (response.ok) {
-                    await this.loadDevices(this.activeCategory);
-                    this.closeDeviceModal();
-                    await this.loadActivityFeed();
-                } else {
+                if (!response.ok) {
                     const error = await response.json();
                     throw new Error(error.error || 'Failed to save device');
                 }
+
+                await this.loadDevices(this.activeCategory);
+                this.closeDeviceModal();
+                await this.loadActivityFeed();
             } catch (error) {
                 console.error('Error saving device:', error);
                 alert('Error saving device: ' + error.message);
@@ -447,15 +395,13 @@ document.addEventListener('alpine:init', () => {
                 console.error('Error loading device extras:', error);
             }
 
-            if (this.featureFlags.pro_enabled) {
-                try {
-                    const maintenanceRes = await fetch(`/api/maintenance?device_id=${deviceId}`);
-                    if (maintenanceRes.ok) {
-                        this.maintenanceTasks = await maintenanceRes.json();
-                    }
-                } catch (error) {
-                    console.error('Error loading maintenance tasks:', error);
+            try {
+                const maintenanceRes = await fetch(`/api/maintenance?device_id=${deviceId}`);
+                if (maintenanceRes.ok) {
+                    this.maintenanceTasks = await maintenanceRes.json();
                 }
+            } catch (error) {
+                console.error('Error loading maintenance tasks:', error);
             }
         },
 
@@ -532,7 +478,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async addMaintenanceTask() {
-            if (!this.featureFlags.pro_enabled || !this.selectedDevice) return;
+            if (!this.selectedDevice) return;
             if (!this.newMaintenance.title.trim()) return;
             try {
                 const response = await fetch('/api/maintenance', {
@@ -559,7 +505,6 @@ document.addEventListener('alpine:init', () => {
         },
 
         async updateMaintenanceStatus(taskId, status) {
-            if (!this.featureFlags.pro_enabled) return;
             try {
                 const response = await fetch(`/api/maintenance/${taskId}`, {
                     method: 'PATCH',
