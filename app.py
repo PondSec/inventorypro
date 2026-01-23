@@ -604,6 +604,12 @@ def init_db():
                 name TEXT NOT NULL,
                 notes TEXT,
                 specs TEXT,
+                acquisition_date TEXT,
+                commissioning_date TEXT,
+                warranty_end TEXT,
+                depreciation_months INTEGER,
+                retirement_date TEXT,
+                retirement_reason TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -618,6 +624,19 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+        for column, column_type in (
+            ("acquisition_date", "TEXT"),
+            ("commissioning_date", "TEXT"),
+            ("warranty_end", "TEXT"),
+            ("depreciation_months", "INTEGER"),
+            ("retirement_date", "TEXT"),
+            ("retirement_reason", "TEXT"),
+        ):
+            try:
+                c.execute(f'ALTER TABLE assets ADD COLUMN {column} {column_type}')
+            except sqlite3.OperationalError:
+                pass
+
         c.execute('''
             CREATE TABLE IF NOT EXISTS asset_devices (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -626,6 +645,41 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (asset_id) REFERENCES assets(id),
                 FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_relation_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_relations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                related_asset_id INTEGER NOT NULL,
+                relation_type_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(asset_id, related_asset_id, relation_type_id),
+                FOREIGN KEY (asset_id) REFERENCES assets(id),
+                FOREIGN KEY (related_asset_id) REFERENCES assets(id),
+                FOREIGN KEY (relation_type_id) REFERENCES asset_relation_types(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS ticket_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket_id INTEGER NOT NULL,
+                asset_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ticket_id, asset_id),
+                FOREIGN KEY (ticket_id) REFERENCES tickets(id),
+                FOREIGN KEY (asset_id) REFERENCES assets(id)
             )
         ''')
 
@@ -818,6 +872,18 @@ def init_db():
             INSERT OR IGNORE INTO ticket_categories (name, description, color, sla_hours, is_default)
             VALUES (?, ?, ?, ?, ?)
         ''', default_ticket_categories)
+
+        default_relation_types = [
+            ("hostet", "Asset stellt Ressourcen für ein anderes bereit"),
+            ("nutzt", "Asset nutzt ein anderes Asset"),
+            ("verbunden mit", "Direkte technische Verbindung"),
+            ("gehört zu", "Asset ist Teil eines größeren Systems"),
+            ("ersetzt", "Asset ersetzt ein anderes")
+        ]
+        c.executemany('''
+            INSERT OR IGNORE INTO asset_relation_types (name, description)
+            VALUES (?, ?)
+        ''', default_relation_types)
 
         try:
             c.execute('ALTER TABLE devices ADD COLUMN location_id INTEGER')
@@ -1033,6 +1099,80 @@ def normalize_ticket_row(row):
     except json.JSONDecodeError:
         ticket['custom_fields'] = []
     return ticket
+
+def parse_date(value):
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(value).date()
+    except ValueError:
+        return None
+
+def warranty_status(warranty_end):
+    parsed = parse_date(warranty_end)
+    if not parsed:
+        return "Unbekannt"
+    today = datetime.utcnow().date()
+    return "Aktiv" if parsed >= today else "Abgelaufen"
+
+def extract_manufacturer(specs):
+    for key in ("Hersteller", "Manufacturer", "Vendor", "Marke"):
+        value = specs.get(key)
+        if value:
+            return value
+    return None
+
+def summarize_device_info(device_rows):
+    serials = []
+    locations = []
+    for row in device_rows:
+        serial_number = row.get("serial_number") if isinstance(row, dict) else row["serial_number"]
+        location_name = row.get("location_name") if isinstance(row, dict) else row["location_name"]
+        if serial_number and serial_number not in serials:
+            serials.append(serial_number)
+        if location_name and location_name not in locations:
+            locations.append(location_name)
+    return serials, locations
+
+def get_asset_devices_info(db, asset_id):
+    rows = db.execute('''
+        SELECT d.serial_number, l.name as location_name
+        FROM devices d
+        JOIN asset_devices ad ON ad.device_id = d.id
+        LEFT JOIN locations l ON d.location_id = l.id
+        WHERE ad.asset_id = ?
+    ''', (asset_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+def build_asset_summary(db, asset_row, device_rows=None):
+    asset = dict(asset_row)
+    try:
+        asset_specs = json.loads(asset.get('specs') or '{}')
+    except json.JSONDecodeError:
+        asset_specs = {}
+    asset['specs'] = asset_specs
+    device_rows = device_rows if device_rows is not None else get_asset_devices_info(db, asset["id"])
+    serials, locations = summarize_device_info(device_rows)
+    asset['serial_numbers'] = serials
+    asset['locations'] = locations
+    asset['manufacturer'] = extract_manufacturer(asset_specs)
+    asset['warranty_status'] = warranty_status(asset.get("warranty_end"))
+    return asset
+
+def fetch_ticket_assets(db, ticket_id):
+    rows = db.execute('''
+        SELECT a.*
+        FROM assets a
+        JOIN ticket_assets ta ON ta.asset_id = a.id
+        WHERE ta.ticket_id = ?
+        ORDER BY a.name
+    ''', (ticket_id,)).fetchall()
+    return [build_asset_summary(db, row) for row in rows]
 
 def get_ad_settings(db):
     settings = db.execute('SELECT * FROM ad_settings WHERE id = 1').fetchone()
@@ -1450,20 +1590,49 @@ def manage_assets():
         name = (data.get('name') or '').strip()
         notes = (data.get('notes') or '').strip()
         specs = json.dumps(data.get('specs', {}))
+        acquisition_date = (data.get('acquisition_date') or '').strip() or None
+        commissioning_date = (data.get('commissioning_date') or '').strip() or None
+        warranty_end = (data.get('warranty_end') or '').strip() or None
+        depreciation_months = data.get('depreciation_months')
+        retirement_date = (data.get('retirement_date') or '').strip() or None
+        retirement_reason = (data.get('retirement_reason') or '').strip()
         device_ids = data.get('device_ids') or []
+        relations = data.get('relations') or []
         if not name:
             return jsonify({"error": "Name ist erforderlich"}), 400
         try:
             cursor = db.execute('''
-                INSERT INTO assets (name, notes, specs)
-                VALUES (?, ?, ?)
-            ''', (name, notes, specs))
+                INSERT INTO assets (
+                    name, notes, specs, acquisition_date, commissioning_date,
+                    warranty_end, depreciation_months, retirement_date, retirement_reason
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                name,
+                notes,
+                specs,
+                acquisition_date,
+                commissioning_date,
+                warranty_end,
+                depreciation_months,
+                retirement_date,
+                retirement_reason
+            ))
             asset_id = cursor.lastrowid
             for device_id in device_ids:
                 db.execute('''
                     INSERT INTO asset_devices (asset_id, device_id)
                     VALUES (?, ?)
                 ''', (asset_id, device_id))
+            for relation in relations:
+                related_asset_id = relation.get("related_asset_id")
+                relation_type_id = relation.get("relation_type_id")
+                if not related_asset_id or related_asset_id == asset_id:
+                    continue
+                db.execute('''
+                    INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id)
+                    VALUES (?, ?, ?)
+                ''', (asset_id, related_asset_id, relation_type_id))
             log_activity(db, "create", "asset", asset_id, {"name": name})
             db.commit()
             return jsonify({"status": "created", "id": asset_id}), 201
@@ -1481,11 +1650,7 @@ def manage_assets():
     ''').fetchall()
     result = []
     for row in assets:
-        asset = dict(row)
-        try:
-            asset['specs'] = json.loads(asset.get('specs') or '{}')
-        except json.JSONDecodeError:
-            asset['specs'] = {}
+        asset = build_asset_summary(db, row)
         result.append(asset)
     return jsonify(result)
 
@@ -1509,12 +1674,33 @@ def asset_detail(asset_id):
             WHERE ad.asset_id = ?
             ORDER BY d.created_at DESC
         ''', (asset_id,)).fetchall()
-        asset = dict(asset_row)
-        try:
-            asset['specs'] = json.loads(asset.get('specs') or '{}')
-        except json.JSONDecodeError:
-            asset['specs'] = {}
+        asset = build_asset_summary(db, asset_row, device_rows=[dict(row) for row in device_rows])
         asset['devices'] = [dict(row) for row in device_rows]
+        relation_rows = db.execute('''
+            SELECT ar.id, ar.asset_id, ar.related_asset_id, ar.relation_type_id,
+                   rt.name as relation_type_name,
+                   a.name as asset_name, ra.name as related_asset_name
+            FROM asset_relations ar
+            LEFT JOIN asset_relation_types rt ON ar.relation_type_id = rt.id
+            LEFT JOIN assets a ON ar.asset_id = a.id
+            LEFT JOIN assets ra ON ar.related_asset_id = ra.id
+            WHERE ar.asset_id = ? OR ar.related_asset_id = ?
+            ORDER BY ar.created_at DESC
+        ''', (asset_id, asset_id)).fetchall()
+        relations = []
+        for row in relation_rows:
+            item = dict(row)
+            item["direction"] = "outgoing" if item["asset_id"] == asset_id else "incoming"
+            relations.append(item)
+        asset["relations"] = relations
+        open_ticket_rows = db.execute('''
+            SELECT t.id, t.title, t.status, t.priority, t.created_at
+            FROM tickets t
+            JOIN ticket_assets ta ON ta.ticket_id = t.id
+            WHERE ta.asset_id = ? AND t.status NOT IN ('resolved', 'closed')
+            ORDER BY t.created_at DESC
+        ''', (asset_id,)).fetchall()
+        asset["open_tickets"] = [dict(row) for row in open_ticket_rows]
         return jsonify(asset)
 
     if request.method == 'PUT':
@@ -1524,31 +1710,75 @@ def asset_detail(asset_id):
         name = (data.get('name') or '').strip()
         notes = (data.get('notes') or '').strip()
         specs = json.dumps(data.get('specs', {}))
+        acquisition_date = (data.get('acquisition_date') or '').strip() or None
+        commissioning_date = (data.get('commissioning_date') or '').strip() or None
+        warranty_end = (data.get('warranty_end') or '').strip() or None
+        depreciation_months = data.get('depreciation_months')
+        retirement_date = (data.get('retirement_date') or '').strip() or None
+        retirement_reason = (data.get('retirement_reason') or '').strip()
         device_ids = data.get('device_ids') or []
+        relations = data.get('relations') or []
         if not name:
             return jsonify({"error": "Name ist erforderlich"}), 400
         db.execute('''
             UPDATE assets
-            SET name = ?, notes = ?, specs = ?
+            SET name = ?, notes = ?, specs = ?, acquisition_date = ?, commissioning_date = ?,
+                warranty_end = ?, depreciation_months = ?, retirement_date = ?, retirement_reason = ?
             WHERE id = ?
-        ''', (name, notes, specs, asset_id))
+        ''', (
+            name,
+            notes,
+            specs,
+            acquisition_date,
+            commissioning_date,
+            warranty_end,
+            depreciation_months,
+            retirement_date,
+            retirement_reason,
+            asset_id
+        ))
         db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
         for device_id in device_ids:
             db.execute('''
                 INSERT INTO asset_devices (asset_id, device_id)
                 VALUES (?, ?)
             ''', (asset_id, device_id))
+        db.execute('DELETE FROM asset_relations WHERE asset_id = ?', (asset_id,))
+        for relation in relations:
+            related_asset_id = relation.get("related_asset_id")
+            relation_type_id = relation.get("relation_type_id")
+            if not related_asset_id or related_asset_id == asset_id:
+                continue
+            db.execute('''
+                INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id)
+                VALUES (?, ?, ?)
+            ''', (asset_id, related_asset_id, relation_type_id))
         log_activity(db, "update", "asset", asset_id, {"name": name})
         db.commit()
         return jsonify({"status": "updated"}), 200
 
     if not user_can('assets.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    db.execute('DELETE FROM ticket_assets WHERE asset_id = ?', (asset_id,))
     db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
+    db.execute('DELETE FROM asset_relations WHERE asset_id = ? OR related_asset_id = ?', (asset_id, asset_id))
     db.execute('DELETE FROM assets WHERE id = ?', (asset_id,))
     log_activity(db, "delete", "asset", asset_id)
     db.commit()
     return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/asset-relation-types', methods=['GET'])
+@login_required
+def asset_relation_types():
+    db = get_db()
+    if not (user_can('assets.view') or user_can('assets.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('''
+        SELECT id, name, description
+        FROM asset_relation_types
+        ORDER BY name
+    ''').fetchall()
+    return jsonify([dict(row) for row in rows])
 
 @app.route('/api/locations', methods=['GET', 'POST'])
 @login_required
@@ -1702,6 +1932,7 @@ def tickets():
             due_date = ''
         tags = json.dumps(data.get('tags') or [])
         custom_fields = json.dumps(data.get('custom_fields') or [])
+        asset_ids = data.get('asset_ids') or []
         if not title or not description:
             return jsonify({"error": "Titel und Beschreibung sind erforderlich"}), 400
         cursor = db.execute('''
@@ -1715,6 +1946,11 @@ def tickets():
             session.get('username'), assignee, assignee_email, due_date, tags, custom_fields
         ))
         ticket_id = cursor.lastrowid
+        for asset_id in asset_ids:
+            db.execute('''
+                INSERT OR IGNORE INTO ticket_assets (ticket_id, asset_id)
+                VALUES (?, ?)
+            ''', (ticket_id, asset_id))
         log_activity(db, "create", "ticket", ticket_id, {"title": title})
         db.commit()
         ticket = fetch_ticket(db, ticket_id)
@@ -1796,6 +2032,9 @@ def ticket_detail(ticket_id):
         ''', (ticket_id,)).fetchall()
         ticket['comments'] = [dict(row) for row in comments]
         ticket['watchers'] = [dict(row) for row in watchers]
+        ticket_assets = fetch_ticket_assets(db, ticket_id)
+        ticket['assets'] = ticket_assets
+        ticket['asset_ids'] = [asset["id"] for asset in ticket_assets]
         return jsonify(ticket)
 
     if request.method == 'PUT':
@@ -1816,6 +2055,7 @@ def ticket_detail(ticket_id):
         due_date = (data.get('due_date') or ticket.get('due_date') or '').strip()
         tags = json.dumps(data.get('tags') or json.loads(ticket.get('tags') or '[]'))
         custom_fields = json.dumps(data.get('custom_fields') or json.loads(ticket.get('custom_fields') or '[]'))
+        asset_ids = data.get('asset_ids')
         status_changed = status != ticket.get('status')
 
         db.execute('''
@@ -1828,6 +2068,13 @@ def ticket_detail(ticket_id):
             title, description, category_id, priority, status, requester_name, requester_email,
             assignee, assignee_email, due_date, tags, custom_fields, ticket_id
         ))
+        if asset_ids is not None:
+            db.execute('DELETE FROM ticket_assets WHERE ticket_id = ?', (ticket_id,))
+            for asset_id in asset_ids:
+                db.execute('''
+                    INSERT OR IGNORE INTO ticket_assets (ticket_id, asset_id)
+                    VALUES (?, ?)
+                ''', (ticket_id, asset_id))
         log_activity(db, "update", "ticket", ticket_id, {"title": title})
         db.commit()
         updated_ticket = fetch_ticket(db, ticket_id)
@@ -1844,6 +2091,7 @@ def ticket_detail(ticket_id):
         return jsonify({"error": "Keine Berechtigung"}), 403
     db.execute('DELETE FROM ticket_comments WHERE ticket_id = ?', (ticket_id,))
     db.execute('DELETE FROM ticket_watchers WHERE ticket_id = ?', (ticket_id,))
+    db.execute('DELETE FROM ticket_assets WHERE ticket_id = ?', (ticket_id,))
     db.execute('DELETE FROM tickets WHERE id = ?', (ticket_id,))
     log_activity(db, "delete", "ticket", ticket_id)
     db.commit()
