@@ -240,6 +240,7 @@ footer {
 .app-sidebar .sidebar-scroll {
   max-height: calc(100vh - 8rem);
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .app-main--fixed {
