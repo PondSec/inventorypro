@@ -4,3 +4,4 @@ werkzeug
 pyotp
 qrcode
 pillow
+ldap3

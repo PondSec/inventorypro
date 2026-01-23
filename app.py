@@ -12,6 +12,8 @@ import qrcode
 import qrcode.image.svg
 from io import BytesIO, StringIO
 import base64
+from ldap3 import Server, Connection
+from ldap3.utils.conv import escape_filter_chars
 
 
 app = Flask(__name__)
@@ -168,6 +170,22 @@ def init_db():
         ''')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS ad_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                enabled INTEGER DEFAULT 0,
+                server_url TEXT,
+                base_dn TEXT,
+                bind_dn TEXT,
+                bind_password TEXT,
+                user_attribute TEXT DEFAULT 'sAMAccountName',
+                domain TEXT,
+                use_ssl INTEGER DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        c.execute('INSERT OR IGNORE INTO ad_settings (id) VALUES (1)')
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS device_tags (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 device_id INTEGER NOT NULL,
@@ -297,6 +315,93 @@ def pro_required(f):
         return f(*args, **kwargs)
     return wrapped
 
+def get_ad_settings(db):
+    settings = db.execute('SELECT * FROM ad_settings WHERE id = 1').fetchone()
+    if not settings:
+        db.execute('INSERT INTO ad_settings (id) VALUES (1)')
+        db.commit()
+        settings = db.execute('SELECT * FROM ad_settings WHERE id = 1').fetchone()
+    return settings
+
+def serialize_ad_settings(settings):
+    if not settings:
+        return {
+            "enabled": False,
+            "server_url": "",
+            "base_dn": "",
+            "bind_dn": "",
+            "user_attribute": "sAMAccountName",
+            "domain": "",
+            "use_ssl": False,
+            "has_bind_password": False
+        }
+    return {
+        "enabled": bool(settings["enabled"]),
+        "server_url": settings["server_url"] or "",
+        "base_dn": settings["base_dn"] or "",
+        "bind_dn": settings["bind_dn"] or "",
+        "user_attribute": settings["user_attribute"] or "sAMAccountName",
+        "domain": settings["domain"] or "",
+        "use_ssl": bool(settings["use_ssl"]),
+        "has_bind_password": bool(settings["bind_password"])
+    }
+
+def authenticate_ad_user(username, password, settings):
+    if not settings or not settings["enabled"]:
+        return False
+    server_url = settings["server_url"] or ""
+    base_dn = settings["base_dn"] or ""
+    if not server_url or not base_dn:
+        return False
+    if not password:
+        return False
+
+    server = Server(server_url, use_ssl=bool(settings["use_ssl"]))
+    bind_dn = settings["bind_dn"] or ""
+    bind_password = settings["bind_password"] or ""
+    user_attribute = settings["user_attribute"] or "sAMAccountName"
+    domain = settings["domain"] or ""
+
+    if bind_dn:
+        try:
+            admin_conn = Connection(server, user=bind_dn, password=bind_password, auto_bind=True)
+        except Exception:
+            return False
+        safe_username = escape_filter_chars(username)
+        search_filter = f"({user_attribute}={safe_username})"
+        admin_conn.search(base_dn, search_filter, attributes=["distinguishedName"])
+        if not admin_conn.entries:
+            admin_conn.unbind()
+            return False
+        user_dn = admin_conn.entries[0].entry_dn
+        admin_conn.unbind()
+        try:
+            user_conn = Connection(server, user=user_dn, password=password, auto_bind=True)
+            user_conn.unbind()
+            return True
+        except Exception:
+            return False
+
+    user_principal = f"{username}@{domain}" if domain else username
+    try:
+        user_conn = Connection(server, user=user_principal, password=password, auto_bind=True)
+        user_conn.unbind()
+        return True
+    except Exception:
+        return False
+
+def build_ad_settings_payload(server_url, base_dn, user_attribute, domain, use_ssl):
+    return {
+        "enabled": True,
+        "server_url": server_url,
+        "base_dn": base_dn,
+        "bind_dn": "",
+        "bind_password": "",
+        "user_attribute": user_attribute or "sAMAccountName",
+        "domain": domain or "",
+        "use_ssl": bool(use_ssl)
+    }
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -310,6 +415,19 @@ def login():
             session['logged_in'] = True
             session['username'] = username
             log_activity(db, "login", "user", user['id'], {"username": username})
+            db.commit()
+            return redirect(url_for('index'))
+
+        ad_settings = get_ad_settings(db)
+        if authenticate_ad_user(username, password, ad_settings):
+            existing_user = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+            if not existing_user:
+                placeholder_password = generate_password_hash(os.urandom(24).hex())
+                db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, placeholder_password))
+                existing_user = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+            session['logged_in'] = True
+            session['username'] = username
+            log_activity(db, "login", "user", existing_user['id'], {"username": username, "source": "ad"})
             db.commit()
             return redirect(url_for('index'))
 
@@ -774,6 +892,125 @@ def reset_user_password(user_id):
     log_activity(db, "update", "user_password", user_id)
     db.commit()
     return jsonify({"status": "updated"}), 200
+
+@app.route('/api/ad/settings', methods=['GET'])
+@login_required
+def ad_settings():
+    db = get_db()
+    settings = get_ad_settings(db)
+    return jsonify(serialize_ad_settings(settings))
+
+@app.route('/api/ad/connect', methods=['POST'])
+@login_required
+def connect_ad():
+    db = get_db()
+    data = request.get_json() or {}
+    server_url = (data.get('server_url') or '').strip()
+    base_dn = (data.get('base_dn') or '').strip()
+    bind_dn = (data.get('bind_dn') or '').strip()
+    bind_password = data.get('bind_password') or ''
+    user_attribute = (data.get('user_attribute') or 'sAMAccountName').strip()
+    domain = (data.get('domain') or '').strip()
+    use_ssl = bool(data.get('use_ssl'))
+
+    if not server_url or not base_dn:
+        return jsonify({"error": "Server-URL und Base DN sind erforderlich"}), 400
+
+    existing = get_ad_settings(db)
+    if not bind_password and existing:
+        bind_password = existing["bind_password"] or ''
+
+    server = Server(server_url, use_ssl=use_ssl)
+    if bind_dn:
+        try:
+            test_conn = Connection(server, user=bind_dn, password=bind_password, auto_bind=True)
+            test_conn.unbind()
+        except Exception:
+            return jsonify({"error": "Bind zum Active Directory fehlgeschlagen"}), 400
+
+    db.execute('''
+        UPDATE ad_settings
+        SET enabled = 1,
+            server_url = ?,
+            base_dn = ?,
+            bind_dn = ?,
+            bind_password = ?,
+            user_attribute = ?,
+            domain = ?,
+            use_ssl = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1
+    ''', (
+        server_url,
+        base_dn,
+        bind_dn,
+        bind_password,
+        user_attribute,
+        domain,
+        1 if use_ssl else 0
+    ))
+    log_activity(db, "update", "ad_settings", details={"enabled": True, "server_url": server_url})
+    db.commit()
+    settings = get_ad_settings(db)
+    return jsonify(serialize_ad_settings(settings))
+
+@app.route('/api/ad/connect/simple', methods=['POST'])
+@login_required
+def connect_ad_simple():
+    db = get_db()
+    data = request.get_json() or {}
+    server_url = (data.get('server_url') or '').strip()
+    base_dn = (data.get('base_dn') or '').strip()
+    domain = (data.get('domain') or '').strip()
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    use_ssl = bool(data.get('use_ssl'))
+
+    if not server_url or not base_dn or not username or not password:
+        return jsonify({"error": "Server-URL, Base DN, Benutzername und Passwort sind erforderlich"}), 400
+
+    temp_settings = build_ad_settings_payload(server_url, base_dn, "sAMAccountName", domain, use_ssl)
+    if not authenticate_ad_user(username, password, temp_settings):
+        return jsonify({"error": "AD-Anmeldung fehlgeschlagen. Bitte Zugangsdaten prüfen."}), 400
+
+    db.execute('''
+        UPDATE ad_settings
+        SET enabled = 1,
+            server_url = ?,
+            base_dn = ?,
+            bind_dn = '',
+            bind_password = '',
+            user_attribute = ?,
+            domain = ?,
+            use_ssl = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1
+    ''', (
+        server_url,
+        base_dn,
+        "sAMAccountName",
+        domain,
+        1 if use_ssl else 0
+    ))
+    log_activity(db, "update", "ad_settings", details={"enabled": True, "server_url": server_url, "mode": "simple"})
+    db.commit()
+    settings = get_ad_settings(db)
+    return jsonify(serialize_ad_settings(settings))
+
+@app.route('/api/ad/disconnect', methods=['POST'])
+@login_required
+def disconnect_ad():
+    db = get_db()
+    db.execute('''
+        UPDATE ad_settings
+        SET enabled = 0,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1
+    ''')
+    log_activity(db, "update", "ad_settings", details={"enabled": False})
+    db.commit()
+    settings = get_ad_settings(db)
+    return jsonify(serialize_ad_settings(settings))
 
 @app.route('/api/devices/<int:device_id>/tags', methods=['GET', 'POST'])
 @login_required
