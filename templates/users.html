@@ -186,6 +186,120 @@
                     </div>
                 </div>
             </section>
+
+            <section class="grid gap-6 lg:grid-cols-3">
+                <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-3">
+                    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h3 class="text-lg font-semibold text-slate-900">Active Directory</h3>
+                            <p class="text-sm text-slate-500">Verbinde ein AD, um Benutzer zentral anzumelden.</p>
+                        </div>
+                        <span class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold"
+                              :class="adSettings.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">
+                            <i data-feather="link" x-show="adSettings.enabled" class="w-3 h-3"></i>
+                            <i data-feather="unlink" x-show="!adSettings.enabled" class="w-3 h-3"></i>
+                            <span x-text="adSettings.enabled ? 'Verbunden' : 'Getrennt'"></span>
+                        </span>
+                    </div>
+
+                    <div class="mt-6 rounded-2xl border border-slate-200/70 bg-slate-50/60 p-5">
+                        <h4 class="text-base font-semibold text-slate-900">Schnell verbinden</h4>
+                        <p class="mt-1 text-sm text-slate-500">Einmal mit einem AD-Benutzer anmelden und die Verbindung aktivieren.</p>
+                        <form class="mt-4 grid gap-4 lg:grid-cols-2" @submit.prevent="connectAdSimple()">
+                            <div>
+                                <label class="text-sm font-semibold text-slate-700">Server-URL</label>
+                                <input type="text" x-model="adQuick.server_url" placeholder="ldap://ad.firma.local"
+                                       class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
+                            </div>
+                            <div>
+                                <label class="text-sm font-semibold text-slate-700">Base DN</label>
+                                <input type="text" x-model="adQuick.base_dn" placeholder="DC=firma,DC=local"
+                                       class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
+                            </div>
+                            <div>
+                                <label class="text-sm font-semibold text-slate-700">Domain (optional)</label>
+                                <input type="text" x-model="adQuick.domain" placeholder="firma.local"
+                                       class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <input id="ad-quick-ssl" type="checkbox" x-model="adQuick.use_ssl"
+                                       class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                <label for="ad-quick-ssl" class="text-sm text-slate-600">SSL/TLS verwenden</label>
+                            </div>
+                            <div>
+                                <label class="text-sm font-semibold text-slate-700">AD Benutzername</label>
+                                <input type="text" x-model="adQuick.username" placeholder="Supporter"
+                                       class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
+                            </div>
+                            <div>
+                                <label class="text-sm font-semibold text-slate-700">AD Passwort</label>
+                                <input type="password" x-model="adQuick.password" placeholder="Passwort"
+                                       class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <button type="submit" class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                                    Jetzt verbinden
+                                </button>
+                                <button type="button" @click="disconnectAd()" class="rounded-2xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50">
+                                    Trennen
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <details class="mt-6 rounded-2xl border border-slate-200 p-4">
+                        <summary class="cursor-pointer text-sm font-semibold text-slate-700">Erweiterte Einstellungen</summary>
+                        <form class="mt-4 grid gap-4 lg:grid-cols-2" @submit.prevent="connectAd()">
+                            <div>
+                                <label class="text-sm font-semibold text-slate-700">Server-URL</label>
+                                <input type="text" x-model="adSettings.server_url" placeholder="ldap://ad.firma.local"
+                                       class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
+                            </div>
+                            <div>
+                                <label class="text-sm font-semibold text-slate-700">Base DN</label>
+                                <input type="text" x-model="adSettings.base_dn" placeholder="DC=firma,DC=local"
+                                       class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
+                            </div>
+                            <div>
+                                <label class="text-sm font-semibold text-slate-700">Bind DN (optional)</label>
+                                <input type="text" x-model="adSettings.bind_dn" placeholder="CN=ldap-bind,OU=Service,DC=firma,DC=local"
+                                       class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="text-sm font-semibold text-slate-700">Bind Passwort (optional)</label>
+                                <input type="password" x-model="adSettings.bind_password" placeholder="Nur bei Änderung neu eingeben"
+                                       class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                <p class="mt-1 text-xs text-slate-400" x-show="adSettings.has_bind_password && !adSettings.bind_password">
+                                    Gespeichertes Passwort bleibt erhalten.
+                                </p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-semibold text-slate-700">Benutzer-Attribut</label>
+                                <input type="text" x-model="adSettings.user_attribute" placeholder="sAMAccountName"
+                                       class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="text-sm font-semibold text-slate-700">Domain (optional)</label>
+                                <input type="text" x-model="adSettings.domain" placeholder="firma.local"
+                                       class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <input id="ad-ssl" type="checkbox" x-model="adSettings.use_ssl"
+                                       class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                <label for="ad-ssl" class="text-sm text-slate-600">SSL/TLS verwenden</label>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-3 justify-end lg:justify-start">
+                                <button type="submit" class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                                    Verbinden &amp; speichern
+                                </button>
+                            </div>
+                        </form>
+                    </details>
+
+                    <p class="mt-3 text-xs text-rose-500" x-text="adError" x-show="adError"></p>
+                    <p class="mt-3 text-xs text-emerald-600" x-text="adMessage" x-show="adMessage"></p>
+                </div>
+            </section>
             </main>
         </div>
     </div>
@@ -220,9 +334,31 @@
                 resetPassword: '',
                 errorMessage: '',
                 successMessage: '',
+                adSettings: {
+                    enabled: false,
+                    server_url: '',
+                    base_dn: '',
+                    bind_dn: '',
+                    bind_password: '',
+                    user_attribute: 'sAMAccountName',
+                    domain: '',
+                    use_ssl: false,
+                    has_bind_password: false
+                },
+                adQuick: {
+                    server_url: '',
+                    base_dn: '',
+                    domain: '',
+                    username: '',
+                    password: '',
+                    use_ssl: false
+                },
+                adMessage: '',
+                adError: '',
 
                 async init() {
                     await this.loadUsers();
+                    await this.loadAdSettings();
                     feather.replace();
                 },
 
@@ -283,6 +419,79 @@
                         const error = await response.json();
                         alert(error.error || 'Fehler beim Löschen');
                     }
+                },
+
+                async loadAdSettings() {
+                    const response = await fetch('/api/ad/settings');
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.adSettings = { ...this.adSettings, ...data, bind_password: '' };
+                        this.adQuick = {
+                            ...this.adQuick,
+                            server_url: data.server_url || '',
+                            base_dn: data.base_dn || '',
+                            domain: data.domain || '',
+                            use_ssl: data.use_ssl || false
+                        };
+                    }
+                    this.$nextTick(() => feather.replace());
+                },
+
+                async connectAdSimple() {
+                    this.adMessage = '';
+                    this.adError = '';
+                    const payload = { ...this.adQuick };
+                    const response = await fetch('/api/ad/connect/simple', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.adSettings = { ...this.adSettings, ...data, bind_password: '' };
+                        this.adQuick.password = '';
+                        this.adMessage = 'Active Directory verbunden.';
+                    } else {
+                        const error = await response.json();
+                        this.adError = error.error || 'Verbindung fehlgeschlagen.';
+                    }
+                    this.$nextTick(() => feather.replace());
+                },
+
+                async connectAd() {
+                    this.adMessage = '';
+                    this.adError = '';
+                    const payload = { ...this.adSettings };
+                    const response = await fetch('/api/ad/connect', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.adSettings = { ...this.adSettings, ...data, bind_password: '' };
+                        this.adMessage = 'Active Directory verbunden.';
+                    } else {
+                        const error = await response.json();
+                        this.adError = error.error || 'Verbindung fehlgeschlagen.';
+                    }
+                    this.$nextTick(() => feather.replace());
+                },
+
+                async disconnectAd() {
+                    this.adMessage = '';
+                    this.adError = '';
+                    const response = await fetch('/api/ad/disconnect', { method: 'POST' });
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.adSettings = { ...this.adSettings, ...data, bind_password: '' };
+                        this.adQuick.password = '';
+                        this.adMessage = 'Active Directory getrennt.';
+                    } else {
+                        const error = await response.json();
+                        this.adError = error.error || 'Trennen fehlgeschlagen.';
+                    }
+                    this.$nextTick(() => feather.replace());
                 }
             }));
         });
