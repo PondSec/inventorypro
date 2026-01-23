@@ -42,3 +42,16 @@ sidebarToggleButtons.forEach((button) => {
     }
   });
 });
+
+document.addEventListener('click', (event) => {
+  if (!mobileQuery.matches || bodyElement.classList.contains('sidebar-collapsed')) {
+    return;
+  }
+
+  const target = event.target;
+  if (target.closest('[data-sidebar-toggle]') || target.closest('.app-sidebar')) {
+    return;
+  }
+
+  setSidebarCollapsed(true);
+});
