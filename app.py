@@ -715,12 +715,17 @@ def init_db():
                 category_id INTEGER,
                 priority TEXT DEFAULT 'normal',
                 status TEXT DEFAULT 'open',
+                escalation_level INTEGER DEFAULT 0,
                 requester_name TEXT,
                 requester_email TEXT,
                 created_by TEXT,
                 assignee TEXT,
                 assignee_email TEXT,
                 due_date TEXT,
+                resolved_at TEXT,
+                resolution_action TEXT,
+                resolution_outcome TEXT,
+                resolution_notes TEXT,
                 tags TEXT,
                 custom_fields TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -728,6 +733,18 @@ def init_db():
                 FOREIGN KEY (category_id) REFERENCES ticket_categories(id)
             )
         ''')
+
+        for column, column_type in (
+            ("escalation_level", "INTEGER DEFAULT 0"),
+            ("resolved_at", "TEXT"),
+            ("resolution_action", "TEXT"),
+            ("resolution_outcome", "TEXT"),
+            ("resolution_notes", "TEXT"),
+        ):
+            try:
+                c.execute(f'ALTER TABLE tickets ADD COLUMN {column} {column_type}')
+            except sqlite3.OperationalError:
+                pass
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS ticket_comments (
@@ -738,6 +755,83 @@ def init_db():
                 is_internal INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (ticket_id) REFERENCES tickets(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS services (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                owner TEXT,
+                sla_hours INTEGER DEFAULT 72,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_services (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                service_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(asset_id, service_id),
+                FOREIGN KEY (asset_id) REFERENCES assets(id),
+                FOREIGN KEY (service_id) REFERENCES services(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                user_identifier TEXT NOT NULL,
+                location_id INTEGER,
+                service_id INTEGER,
+                assigned_at TEXT,
+                released_at TEXT,
+                is_primary INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (asset_id) REFERENCES assets(id),
+                FOREIGN KEY (location_id) REFERENCES locations(id),
+                FOREIGN KEY (service_id) REFERENCES services(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_lifecycle_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                event_date TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (asset_id) REFERENCES assets(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS rule_overrides (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_key TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                decision TEXT NOT NULL,
+                reason TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS rule_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_key TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                outcome TEXT NOT NULL,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
 
@@ -1112,6 +1206,22 @@ def parse_date(value):
         return datetime.fromisoformat(value).date()
     except ValueError:
         return None
+
+def parse_datetime(value):
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+def is_closed_status(status):
+    return (status or "").strip().lower() in {"closed", "resolved", "done"}
 
 def warranty_status(warranty_end):
     parsed = parse_date(warranty_end)
@@ -1920,30 +2030,41 @@ def tickets():
         category_id = data.get('category_id')
         priority = (data.get('priority') or 'normal').strip()
         status = (data.get('status') or 'open').strip()
+        escalation_level = int(data.get('escalation_level') or 0)
         requester_name = (data.get('requester_name') or session.get('username') or '').strip()
         requester_email = (data.get('requester_email') or '').strip()
         assignee = (data.get('assignee') or '').strip()
         assignee_email = (data.get('assignee_email') or '').strip()
         due_date = (data.get('due_date') or '').strip()
+        resolution_action = (data.get('resolution_action') or '').strip()
+        resolution_outcome = (data.get('resolution_outcome') or '').strip()
+        resolution_notes = (data.get('resolution_notes') or '').strip()
         if not user_can('tickets.update'):
             status = 'open'
             assignee = ''
             assignee_email = ''
             due_date = ''
+            escalation_level = 0
+            resolution_action = ''
+            resolution_outcome = ''
+            resolution_notes = ''
         tags = json.dumps(data.get('tags') or [])
         custom_fields = json.dumps(data.get('custom_fields') or [])
         asset_ids = data.get('asset_ids') or []
+        resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
         if not title or not description:
             return jsonify({"error": "Titel und Beschreibung sind erforderlich"}), 400
         cursor = db.execute('''
             INSERT INTO tickets (
                 title, description, category_id, priority, status, requester_name,
-                requester_email, created_by, assignee, assignee_email, due_date, tags, custom_fields
+                requester_email, created_by, assignee, assignee_email, due_date, escalation_level,
+                resolved_at, resolution_action, resolution_outcome, resolution_notes, tags, custom_fields
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             title, description, category_id, priority, status, requester_name, requester_email,
-            session.get('username'), assignee, assignee_email, due_date, tags, custom_fields
+            session.get('username'), assignee, assignee_email, due_date, escalation_level,
+            resolved_at, resolution_action, resolution_outcome, resolution_notes, tags, custom_fields
         ))
         ticket_id = cursor.lastrowid
         for asset_id in asset_ids:
@@ -2048,25 +2169,38 @@ def ticket_detail(ticket_id):
         category_id = data.get('category_id')
         priority = (data.get('priority') or ticket['priority']).strip()
         status = (data.get('status') or ticket['status']).strip()
+        escalation_level = int(data.get('escalation_level') or ticket.get('escalation_level') or 0)
         requester_name = (data.get('requester_name') or ticket.get('requester_name') or '').strip()
         requester_email = (data.get('requester_email') or ticket.get('requester_email') or '').strip()
         assignee = (data.get('assignee') or ticket.get('assignee') or '').strip()
         assignee_email = (data.get('assignee_email') or ticket.get('assignee_email') or '').strip()
         due_date = (data.get('due_date') or ticket.get('due_date') or '').strip()
+        resolution_action = (data.get('resolution_action') or ticket.get('resolution_action') or '').strip()
+        resolution_outcome = (data.get('resolution_outcome') or ticket.get('resolution_outcome') or '').strip()
+        resolution_notes = (data.get('resolution_notes') or ticket.get('resolution_notes') or '').strip()
         tags = json.dumps(data.get('tags') or json.loads(ticket.get('tags') or '[]'))
         custom_fields = json.dumps(data.get('custom_fields') or json.loads(ticket.get('custom_fields') or '[]'))
         asset_ids = data.get('asset_ids')
         status_changed = status != ticket.get('status')
+        resolved_at = ticket.get('resolved_at')
+        if status_changed:
+            if is_closed_status(status):
+                resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                resolved_at = None
 
         db.execute('''
             UPDATE tickets
             SET title = ?, description = ?, category_id = ?, priority = ?, status = ?,
+                escalation_level = ?,
                 requester_name = ?, requester_email = ?, assignee = ?, assignee_email = ?,
-                due_date = ?, tags = ?, custom_fields = ?, updated_at = CURRENT_TIMESTAMP
+                due_date = ?, resolved_at = ?, resolution_action = ?, resolution_outcome = ?, resolution_notes = ?,
+                tags = ?, custom_fields = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         ''', (
-            title, description, category_id, priority, status, requester_name, requester_email,
-            assignee, assignee_email, due_date, tags, custom_fields, ticket_id
+            title, description, category_id, priority, status, escalation_level, requester_name, requester_email,
+            assignee, assignee_email, due_date, resolved_at, resolution_action, resolution_outcome, resolution_notes,
+            tags, custom_fields, ticket_id
         ))
         if asset_ids is not None:
             db.execute('DELETE FROM ticket_assets WHERE ticket_id = ?', (ticket_id,))
@@ -3062,6 +3196,210 @@ def stats():
         LIMIT 5
     ''').fetchall()
     recent_devices_data = [dict(d) for d in recent_devices] if recent_devices else []
+
+    # 5. Asset-, Ticket- und Nutzeranalysen (proaktive Phase 1-3)
+    total_assets = db.execute('SELECT COUNT(*) FROM assets').fetchone()[0] or 0
+    retired_assets = db.execute('''
+        SELECT COUNT(*) FROM assets
+        WHERE retirement_date IS NOT NULL AND retirement_date != ''
+    ''').fetchone()[0] or 0
+    active_assets = total_assets - retired_assets
+
+    ticket_total = db.execute('SELECT COUNT(*) FROM tickets').fetchone()[0] or 0
+    ticket_closed = db.execute('''
+        SELECT COUNT(*) FROM tickets
+        WHERE status IN ('closed', 'resolved', 'done')
+    ''').fetchone()[0] or 0
+    ticket_open = ticket_total - ticket_closed
+
+    ticket_type_rows = db.execute('''
+        SELECT COALESCE(tc.name, 'Unkategorisiert') as name, COUNT(*) as total
+        FROM tickets t
+        LEFT JOIN ticket_categories tc ON t.category_id = tc.id
+        GROUP BY tc.name
+        ORDER BY total DESC
+    ''').fetchall()
+    ticket_type_breakdown = [dict(row) for row in ticket_type_rows] if ticket_type_rows else []
+
+    escalation_rows = db.execute('''
+        SELECT escalation_level as level, COUNT(*) as total
+        FROM tickets
+        GROUP BY escalation_level
+        ORDER BY escalation_level
+    ''').fetchall()
+    escalation_breakdown = [dict(row) for row in escalation_rows] if escalation_rows else []
+
+    closed_ticket_rows = db.execute('''
+        SELECT created_at, COALESCE(resolved_at, updated_at) as resolved_at
+        FROM tickets
+        WHERE status IN ('closed', 'resolved', 'done')
+    ''').fetchall()
+    total_resolution_hours = 0
+    resolved_count = 0
+    for row in closed_ticket_rows:
+        created_at = parse_datetime(row['created_at'])
+        resolved_at = parse_datetime(row['resolved_at'])
+        if created_at and resolved_at:
+            total_resolution_hours += max(0, (resolved_at - created_at).total_seconds() / 3600)
+            resolved_count += 1
+    avg_resolution_hours = round(total_resolution_hours / resolved_count, 1) if resolved_count else 0
+
+    action_rows = db.execute('''
+        SELECT resolution_action,
+               SUM(CASE WHEN resolution_outcome = 'success' THEN 1 ELSE 0 END) as success_count,
+               COUNT(*) as total
+        FROM tickets
+        WHERE resolution_action IS NOT NULL AND resolution_action != ''
+        GROUP BY resolution_action
+        ORDER BY total DESC
+        LIMIT 5
+    ''').fetchall()
+    action_success_rates = []
+    for row in action_rows:
+        total = row['total'] or 0
+        success = row['success_count'] or 0
+        rate = round((success / total) * 100) if total else 0
+        action_success_rates.append({
+            "action": row['resolution_action'],
+            "total": total,
+            "success": success,
+            "rate": rate
+        })
+
+    asset_ticket_rows = db.execute('''
+        SELECT a.id, a.name, a.acquisition_date, a.commissioning_date, a.warranty_end,
+               COUNT(ta.ticket_id) as ticket_count,
+               (
+                   SELECT aa.user_identifier
+                   FROM asset_assignments aa
+                   WHERE aa.asset_id = a.id AND (aa.released_at IS NULL OR aa.released_at = '')
+                   ORDER BY aa.assigned_at DESC, aa.created_at DESC
+                   LIMIT 1
+               ) as assigned_user
+        FROM assets a
+        LEFT JOIN ticket_assets ta ON ta.asset_id = a.id
+        GROUP BY a.id
+        ORDER BY ticket_count DESC, a.name
+        LIMIT 8
+    ''').fetchall()
+    asset_ticket_stats = []
+    today = datetime.utcnow().date()
+    ticket_counts = []
+    for row in asset_ticket_rows:
+        commissioning_date = parse_date(row['commissioning_date']) or parse_date(row['acquisition_date'])
+        age_months = None
+        if commissioning_date:
+            age_months = round((today - commissioning_date).days / 30.4, 1)
+        ticket_counts.append(row['ticket_count'] or 0)
+        asset_ticket_stats.append({
+            "id": row["id"],
+            "name": row["name"],
+            "ticket_count": row["ticket_count"] or 0,
+            "assigned_user": row["assigned_user"] or "—",
+            "age_months": age_months,
+            "warranty_status": warranty_status(row["warranty_end"])
+        })
+
+    reporter_rows = db.execute('''
+        SELECT t.id,
+               COALESCE(t.created_by, t.requester_name, 'Unbekannt') as reporter,
+               t.priority,
+               COUNT(tc.id) as comment_count
+        FROM tickets t
+        LEFT JOIN ticket_comments tc ON tc.ticket_id = t.id
+        GROUP BY t.id
+    ''').fetchall()
+    reporter_stats = {}
+    priority_weights = {"low": 1, "normal": 2, "high": 3, "urgent": 4}
+    for row in reporter_rows:
+        reporter = row["reporter"] or "Unbekannt"
+        stats = reporter_stats.setdefault(reporter, {"tickets": 0, "comments": 0, "priority_score": 0})
+        stats["tickets"] += 1
+        stats["comments"] += row["comment_count"] or 0
+        stats["priority_score"] += priority_weights.get((row["priority"] or "normal").lower(), 2)
+    user_behavior_stats = []
+    for reporter, stats in reporter_stats.items():
+        avg_comments = round(stats["comments"] / stats["tickets"], 1) if stats["tickets"] else 0
+        avg_priority = round(stats["priority_score"] / stats["tickets"], 1) if stats["tickets"] else 0
+        user_behavior_stats.append({
+            "reporter": reporter,
+            "tickets": stats["tickets"],
+            "avg_comments": avg_comments,
+            "avg_priority": avg_priority
+        })
+    user_behavior_stats.sort(key=lambda item: item["tickets"], reverse=True)
+    user_behavior_stats = user_behavior_stats[:6]
+
+    proactive_insights = []
+    if ticket_counts:
+        avg_tickets = sum(ticket_counts) / len(ticket_counts)
+        variance = sum((count - avg_tickets) ** 2 for count in ticket_counts) / len(ticket_counts)
+        threshold = max(3, avg_tickets + variance ** 0.5)
+        noisy_assets = [a for a in asset_ticket_stats if a["ticket_count"] >= threshold]
+        if noisy_assets:
+            top_asset = noisy_assets[0]
+            proactive_insights.append({
+                "title": f"Hohe Ticketlast bei {top_asset['name']}",
+                "severity": "warning",
+                "description": f"{top_asset['ticket_count']} Tickets (Ø {avg_tickets:.1f}) – Empfehlung: Austausch prüfen oder Ursachenanalyse starten.",
+                "evidence": f"Aktuell zugewiesen an {top_asset['assigned_user']}."
+            })
+
+    warranty_rows = db.execute('SELECT id, name, warranty_end, retirement_date FROM assets').fetchall()
+    expiring_assets = []
+    for row in warranty_rows:
+        if row["retirement_date"]:
+            continue
+        warranty_end = parse_date(row["warranty_end"])
+        if not warranty_end:
+            continue
+        days_left = (warranty_end - today).days
+        if 0 <= days_left <= 45:
+            expiring_assets.append((row["name"], days_left))
+    if expiring_assets:
+        expiring_assets.sort(key=lambda item: item[1])
+        name, days_left = expiring_assets[0]
+        proactive_insights.append({
+            "title": "Garantie läuft aus",
+            "severity": "info",
+            "description": f"{len(expiring_assets)} Assets haben eine auslaufende Garantie in den nächsten 45 Tagen.",
+            "evidence": f"Nächstes Asset: {name} (in {days_left} Tagen)."
+        })
+
+    sla_risk_rows = db.execute('''
+        SELECT t.id, t.title, t.created_at, t.status, tc.sla_hours, tc.name as category_name
+        FROM tickets t
+        LEFT JOIN ticket_categories tc ON t.category_id = tc.id
+        WHERE t.status NOT IN ('closed', 'resolved', 'done')
+    ''').fetchall()
+    sla_risks = []
+    for row in sla_risk_rows:
+        created_at = parse_datetime(row["created_at"])
+        if not created_at:
+            continue
+        sla_hours = row["sla_hours"] or 72
+        age_hours = (datetime.utcnow() - created_at).total_seconds() / 3600
+        if age_hours > sla_hours:
+            sla_risks.append(row)
+    if sla_risks:
+        sample = sla_risks[0]
+        proactive_insights.append({
+            "title": "SLA-Risiko bei offenen Tickets",
+            "severity": "critical",
+            "description": f"{len(sla_risks)} offene Tickets überschreiten aktuell die SLA-Zeit.",
+            "evidence": f"Beispiel: #{sample['id']} ({sample['category_name'] or 'Unkategorisiert'})."
+        })
+
+    if user_behavior_stats:
+        avg_reporter_tickets = sum(item["tickets"] for item in user_behavior_stats) / len(user_behavior_stats)
+        top_reporter = user_behavior_stats[0]
+        if top_reporter["tickets"] >= max(3, avg_reporter_tickets * 1.5):
+            proactive_insights.append({
+                "title": "Auffälliges Nutzerverhalten",
+                "severity": "warning",
+                "description": f"{top_reporter['reporter']} meldet überdurchschnittlich viele Tickets.",
+                "evidence": f"{top_reporter['tickets']} Tickets vs. Ø {avg_reporter_tickets:.1f}."
+            })
     
     context = {
         'total_devices': total_devices,
@@ -3089,6 +3427,19 @@ def stats():
         'activity_summary': activity_summary_data,
         'top_categories': top_categories,
         'recent_devices': recent_devices_data,
+        'total_assets': total_assets,
+        'active_assets': active_assets,
+        'retired_assets': retired_assets,
+        'ticket_total': ticket_total,
+        'ticket_open': ticket_open,
+        'ticket_closed': ticket_closed,
+        'avg_resolution_hours': avg_resolution_hours,
+        'ticket_type_breakdown': ticket_type_breakdown,
+        'escalation_breakdown': escalation_breakdown,
+        'action_success_rates': action_success_rates,
+        'asset_ticket_stats': asset_ticket_stats,
+        'user_behavior_stats': user_behavior_stats,
+        'proactive_insights': proactive_insights,
         'username': session.get('username', ''),
         'permissions': sorted(access["permissions"]),
         'is_superuser': access["is_superuser"]
