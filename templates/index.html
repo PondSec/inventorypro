@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Pro</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
     <link rel="stylesheet" href="/static/style.css">
@@ -268,6 +272,10 @@
                     <button @click="openAddDeviceModal()" class="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-blue-200 hover:from-blue-500 hover:to-indigo-500">
                         <i data-feather="plus" class="w-4 h-4"></i>
                         <span>Neues Gerät</span>
+                    </button>
+                    <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                        <span data-theme-icon aria-hidden="true">🌙</span>
+                        <span data-theme-label>Dark Mode</span>
                     </button>
                     <button onclick="logout()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
                         <i data-feather="log-out" class="w-4 h-4"></i>
