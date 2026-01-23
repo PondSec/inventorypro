@@ -1,43 +1,45 @@
-const themeStorageKey = 'inventorypro.theme';
-const themeToggleButtons = document.querySelectorAll('[data-theme-toggle]');
-const themeLabelSelector = '[data-theme-label]';
+(() => {
+  const root = document.documentElement;
+  const stored = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const initial = stored || (prefersDark ? 'dark' : 'light');
 
-const getSystemTheme = () => {
-  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    return 'dark';
-  }
-  return 'light';
-};
-
-const applyTheme = (theme, persist = true) => {
-  document.body.dataset.theme = theme;
-  if (persist) {
-    localStorage.setItem(themeStorageKey, theme);
+  if (initial === 'dark') {
+    root.classList.add('dark');
   }
 
-  themeToggleButtons.forEach((button) => {
-    button.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
-    const label = button.querySelector(themeLabelSelector);
-    if (label) {
-      label.textContent = theme === 'dark' ? 'Light Mode' : 'Dark Mode';
+  const updateButtons = () => {
+    const isDark = root.classList.contains('dark');
+    document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(isDark));
+      const label = button.querySelector('[data-theme-label]');
+      const icon = button.querySelector('[data-theme-icon]');
+      if (label) {
+        label.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+      }
+      if (icon) {
+        icon.textContent = isDark ? '☀️' : '🌙';
+      }
+    });
+  };
+
+  const setTheme = (mode) => {
+    if (mode === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
     }
-  });
-};
+    localStorage.setItem('theme', mode);
+    updateButtons();
+  };
 
-const storedTheme = localStorage.getItem(themeStorageKey);
-applyTheme(storedTheme || getSystemTheme(), false);
+  window.InventoryTheme = {
+    toggle() {
+      const next = root.classList.contains('dark') ? 'light' : 'dark';
+      setTheme(next);
+    },
+    set: setTheme,
+  };
 
-if (!storedTheme && window.matchMedia) {
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  mediaQuery.addEventListener('change', (event) => {
-    applyTheme(event.matches ? 'dark' : 'light', false);
-  });
-}
-
-themeToggleButtons.forEach((button) => {
-  button.addEventListener('click', () => {
-    const currentTheme = document.body.dataset.theme === 'dark' ? 'dark' : 'light';
-    const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    applyTheme(nextTheme);
-  });
-});
+  document.addEventListener('DOMContentLoaded', updateButtons);
+})();
