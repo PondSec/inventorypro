@@ -347,6 +347,14 @@ footer {
   background-color: rgba(99, 102, 241, 0.25);
 }
 
+.dark .bg-amber-50 {
+  background-color: rgba(120, 53, 15, 0.35);
+}
+
+.dark .bg-amber-100 {
+  background-color: rgba(120, 53, 15, 0.45);
+}
+
 .dark .bg-rose-50 {
   background-color: rgba(225, 29, 72, 0.15);
 }
@@ -387,6 +395,14 @@ footer {
   color: #94a3b8;
 }
 
+.dark .text-amber-700 {
+  color: #fcd34d;
+}
+
+.dark .text-amber-600 {
+  color: #fbbf24;
+}
+
 .dark .text-indigo-700 {
   color: #c7d2fe;
 }
@@ -413,6 +429,14 @@ footer {
 
 .dark .border-indigo-100 {
   border-color: rgba(99, 102, 241, 0.4);
+}
+
+.dark .border-amber-100 {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.dark .border-amber-200 {
+  border-color: rgba(251, 191, 36, 0.45);
 }
 
 .dark .border-rose-100 {
