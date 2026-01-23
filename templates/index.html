@@ -897,7 +897,7 @@
                                 <p class="mt-1 text-xs text-slate-400">Aktuell: <span class="font-semibold text-slate-600" x-text="currentCategory.icon"></span></p>
                             </div>
                         </div>
-                        <div class="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 scrollbar-hide">
+                        <div class="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2">
                             <div class="grid grid-cols-4 gap-2 sm:grid-cols-6">
                                 <template x-for="iconName in filteredIconCatalog()" :key="iconName">
                                     <button type="button" @click="selectIcon(iconName)" class="flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide transition"
