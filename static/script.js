@@ -299,21 +299,31 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteCategory(categoryId) {
-            if (confirm('Are you sure you want to delete this category and all its devices?')) {
-                const response = await fetch(`/api/categories/${categoryId}`, {
-                    method: 'DELETE'
-                });
-                if (response.ok) {
-                    await this.loadCategories();
-                    if (this.activeCategory === categoryId) {
-                        await this.loadDevices();
-                    }
-                    this.categoryMenuOpen = null; // Menü schließen nach Löschen
-                    await this.loadActivityFeed();
-                } else {
-                    const error = await response.json();
-                    alert('Error deleting category: ' + (error.error || 'Unknown error'));
+            if (!confirm('Are you sure you want to delete this category and all its devices?')) {
+                return false;
+            }
+            const response = await fetch(`/api/categories/${categoryId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                await this.loadCategories();
+                if (this.activeCategory === categoryId) {
+                    await this.loadDevices();
                 }
+                this.categoryMenuOpen = null; // Menü schließen nach Löschen
+                await this.loadActivityFeed();
+                return true;
+            }
+            const error = await response.json();
+            alert('Error deleting category: ' + (error.error || 'Unknown error'));
+            return false;
+        },
+
+        async confirmDeleteCategory() {
+            if (!this.currentCategory.id) return;
+            const deleted = await this.deleteCategory(this.currentCategory.id);
+            if (deleted) {
+                this.closeCategoryModal();
             }
         },
 
