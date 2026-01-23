@@ -346,32 +346,6 @@ def ensure_default_roles(db):
             VALUES (?, ?)
         ''', (user["id"], default_role["id"]))
 
-def ensure_bootstrap_admin(db):
-    admin_role = db.execute("SELECT id FROM roles WHERE name = 'Admin'").fetchone()
-    if not admin_role:
-        return
-    existing_admin = db.execute('''
-        SELECT u.id
-        FROM users u
-        JOIN user_roles ur ON ur.user_id = u.id
-        WHERE ur.role_id = ?
-        LIMIT 1
-    ''', (admin_role["id"],)).fetchone()
-    if existing_admin:
-        return
-    username = "admin"
-    username_exists = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
-    if username_exists:
-        username = f"admin-{os.urandom(3).hex()}"
-    raw_password = base64.urlsafe_b64encode(os.urandom(12)).decode().rstrip('=')
-    password_hash = generate_password_hash(raw_password)
-    cursor = db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, password_hash))
-    assign_user_role(db, cursor.lastrowid, "Admin")
-    print("\n[!] BOOTSTRAP-ADMIN ERSTELLT:")
-    print(f"    Benutzername: {username}")
-    print(f"    Passwort:    {raw_password}")
-    print("    WICHTIG: Passwort nach dem Login ändern!\n")
-
 def get_user_access(db):
     if hasattr(g, 'user_access'):
         return g.user_access
@@ -825,7 +799,10 @@ def init_db():
         seed_permissions(db)
         seed_roles(db)
         ensure_default_roles(db)
-        ensure_bootstrap_admin(db)
+
+        admin_user = c.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()
+        if admin_user:
+            assign_user_role(db, admin_user["id"], "Admin")
 
         db.commit()
 
