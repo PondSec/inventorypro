@@ -45,7 +45,7 @@ document.addEventListener('alpine:init', () => {
             id: null,
             name: '',
             icon: 'cpu',
-            fields: '{}'
+            fields: []
         },
         currentDevice: {
             id: null,
@@ -186,19 +186,24 @@ document.addEventListener('alpine:init', () => {
                 id: null,
                 name: '',
                 icon: 'cpu',
-                fields: '{}'
+                fields: []
             };
             this.isCategoryModalOpen = true;
             this.categoryMenuOpen = null; // Menü schließen beim Öffnen des Modals
         },
 
 		editCategoryModal(category) {  // <-- Parameter korrekt entgegennehmen
+            const fieldsObject = JSON.parse(category.fields || '{}');
 			this.editingCategory = true;
 			this.currentCategory = {
 				id: category.id,
 				name: category.name,
 				icon: category.icon,
-				fields: JSON.stringify(JSON.parse(category.fields), null, 2)
+				fields: Object.entries(fieldsObject).map(([fieldName, fieldType]) => ({
+                    id: crypto.randomUUID(),
+                    name: fieldName,
+                    type: fieldType
+                }))
 			};
 			this.isCategoryModalOpen = true;
 			this.categoryMenuOpen = null; // Menü schließen beim Öffnen des Modals
@@ -208,12 +213,31 @@ document.addEventListener('alpine:init', () => {
             this.isCategoryModalOpen = false;
         },
 
+        addCategoryField() {
+            this.currentCategory.fields.push({
+                id: crypto.randomUUID(),
+                name: '',
+                type: 'text'
+            });
+        },
+
+        removeCategoryField(fieldId) {
+            this.currentCategory.fields = this.currentCategory.fields.filter(field => field.id !== fieldId);
+        },
+
         async saveCategory() {
             try {
+                const fields = {};
+                for (const field of this.currentCategory.fields) {
+                    const trimmedName = field.name.trim();
+                    if (!trimmedName) continue;
+                    fields[trimmedName] = field.type;
+                }
+
                 const categoryData = {
                     name: this.currentCategory.name,
                     icon: this.currentCategory.icon,
-                    fields: JSON.parse(this.currentCategory.fields)
+                    fields
                 };
 
                 let response;
