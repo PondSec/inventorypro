@@ -279,8 +279,12 @@ def login():
         if user and check_password_hash(user['password_hash'], password):
             session['logged_in'] = True
             session['username'] = username
+            log_activity(db, "login", "user", user['id'], {"username": username})
+            db.commit()
             return redirect(url_for('index'))
 
+        log_activity(db, "login_failed", "user", details={"username": username})
+        db.commit()
         return render_template('login.html', error="Ungültige Anmeldedaten")
 
     return render_template('login.html')
@@ -290,6 +294,10 @@ def logout():
     # Sicherstellen, dass der User eingeloggt war
     if not session.get('logged_in'):
         return jsonify({"error": "Not logged in"}), 401
+
+    db = get_db()
+    log_activity(db, "logout", "user", details={"username": session.get('username')})
+    db.commit()
     
     # Session bereinigen
     session.clear()
@@ -875,6 +883,7 @@ def setup_otp():
     # 2. Wenn nicht vorhanden, neues Secret generieren und speichern
     secret = pyotp.random_base32()
     db.execute("UPDATE users SET otp_secret = ? WHERE username = ?", (secret, username))
+    log_activity(db, "otp_setup", "user", details={"username": username})
     db.commit()
 
     # 3. QR-Code generieren
@@ -914,8 +923,12 @@ def verify_otp():
     user = db.execute('SELECT otp_secret FROM users WHERE username = ?', (username,)).fetchone()
 
     if user and pyotp.TOTP(user['otp_secret']).verify(code):
+        log_activity(db, "otp_verify", "user", details={"username": username})
+        db.commit()
         return jsonify({"verified": True}), 200
     else:
+        log_activity(db, "otp_failed", "user", details={"username": username})
+        db.commit()
         return jsonify({"verified": False}), 401
 
 @app.route('/reset', methods=['GET'])
@@ -946,6 +959,7 @@ def reset_password():
     # Neues Passwort setzen
     new_hash = generate_password_hash(new_password)
     db.execute('UPDATE users SET password_hash = ? WHERE username = ?', (new_hash, username))
+    log_activity(db, "password_reset", "user", details={"username": username})
     db.commit()
 
     #return render_template('reset_password.html', success="Passwort erfolgreich geändert!")
@@ -959,6 +973,7 @@ def disable_otp():
 
     # OTP löschen
     db.execute('UPDATE users SET otp_secret = NULL WHERE username = ?', (username,))
+    log_activity(db, "otp_disabled", "user", details={"username": username})
     db.commit()
     return jsonify({'disabled': True}), 200
 
