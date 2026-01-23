@@ -53,7 +53,8 @@ document.addEventListener('alpine:init', () => {
             category_id: null,
             serial_number: '',
             location_id: '',
-            specs: {}
+            specs: {},
+            extraSpecs: []
         },
 
         // Initialization
