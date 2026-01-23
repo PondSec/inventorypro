@@ -116,9 +116,9 @@
                     <div x-show="categoriesOpen" x-transition class="bg-slate-50 px-2 py-2 space-y-1 text-sm text-slate-800">
                         <template x-for="category in categories" :key="category.id">
                             <div class="group flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white transition-colors">
-                                <button @click="loadDevices(category.id)" class="flex items-center gap-2 flex-1 text-left">
+                                <button @click="loadDevices(category.id)" class="flex items-center gap-2 flex-1 min-w-0 text-left">
                                     <div x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-slate-500' })"></div>
-                                    <span class="sidebar-text" x-text="category.name"></span>
+                                    <span class="sidebar-text truncate" x-text="category.name"></span>
                                 </button>
                                 <div class="flex items-center gap-2">
                                     <button @click="editCategoryModal(category)" class="text-slate-500 hover:text-slate-900">
@@ -407,8 +407,8 @@
                             <span x-text="filteredDevices.length"></span> Einträge
                         </span>
                     </div>
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full text-sm">
+                    <div class="overflow-x-hidden">
+                        <table class="w-full table-fixed text-sm">
                             <thead class="text-left text-slate-500">
                                 <tr class="border-b border-slate-200">
                                     <th class="py-3 px-4 sm:px-6 font-semibold">Gerät</th>
@@ -426,13 +426,13 @@
                                             <p class="max-w-[14rem] truncate font-semibold text-slate-900 sm:max-w-none" x-text="device.name"></p>
                                             <p class="text-xs text-slate-500" x-text="device.created_at?.slice(0, 10) || ''"></p>
                                         </td>
-                                        <td class="py-4 px-4 sm:px-6">
-                                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide" :class="getCategoryColor(device.category_name)">
-                                                <span x-text="device.category_name"></span>
+                                        <td class="py-4 px-4 sm:px-6 max-w-0">
+                                            <span class="inline-flex max-w-full items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide" :class="getCategoryColor(device.category_name)">
+                                                <span class="truncate max-w-full" x-text="device.category_name"></span>
                                             </span>
                                         </td>
-                                        <td class="py-4 px-4 sm:px-6 text-slate-700" x-text="device.location_name || '-' "></td>
-                                        <td class="hidden md:table-cell py-4 px-4 sm:px-6 text-slate-700" x-text="device.serial_number || '-' "></td>
+                                        <td class="py-4 px-4 sm:px-6 text-slate-700 truncate max-w-0" x-text="device.location_name || '-' "></td>
+                                        <td class="hidden md:table-cell py-4 px-4 sm:px-6 text-slate-700 truncate max-w-0" x-text="device.serial_number || '-' "></td>
                                         <td class="hidden lg:table-cell py-4 px-4 sm:px-6">
                                             <div class="flex flex-wrap gap-2">
                                                 <template x-for="(value, key) in Object.entries(JSON.parse(device.specs || '{}')).slice(0, 3)" :key="key">
