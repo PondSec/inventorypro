@@ -4,294 +4,52 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login | Inventory Pro</title>
-    <style>
-        :root {
-            /* Light Mode */
-            --primary: #0071E3;
-            --background: #F5F5F7;
-            --card-bg: #FFFFFF;
-            --text: #1D1D1F;
-            --border: #D2D2D7;
-            --placeholder: #86868B;
-            --error: #FF3B30;
-            
-            /* Dark Mode */
-            --dark-primary: #0A84FF;
-            --dark-background: #1C1C1E;
-            --dark-card-bg: #2C2C2E;
-            --dark-text: #F5F5F5;
-            --dark-border: #38383A;
-            --dark-placeholder: #8E8E93;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
-
-        body {
-            background-color: var(--background);
-            color: var(--text);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            transition: background 0.5s ease;
-        }
-
-        /* Dark Mode Toggle */
-        .dark-mode-toggle {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: var(--card-bg);
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            cursor: pointer;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            z-index: 100;
-        }
-
-        body.dark-mode {
-            background-color: var(--dark-background);
-            color: var(--dark-text);
-        }
-
-        body.dark-mode .login-container {
-            background-color: var(--dark-card-bg);
-            border-color: var(--dark-border);
-        }
-
-        body.dark-mode input {
-            background-color: var(--dark-card-bg);
-            border-color: var(--dark-border);
-            color: var(--dark-text);
-        }
-
-        body.dark-mode input::placeholder {
-            color: var(--dark-placeholder);
-        }
-
-        body.dark-mode .btn-submit {
-            background-color: var(--dark-primary);
-        }
-
-        /* Login Container */
-        .login-container {
-            width: 90%;
-            max-width: 400px;
-            background-color: var(--card-bg);
-            border-radius: 18px;
-            padding: 2.5rem;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-            border: 1px solid var(--border);
-            transition: all 0.5s ease;
-        }
-
-        h1 {
-            font-size: 28px;
-            font-weight: 600;
-            margin-bottom: 2rem;
-            text-align: center;
-            color: var(--text);
-        }
-
-        /* Input Fields (Apple Style) */
-        .input-group {
-            margin-bottom: 1.5rem;
-            position: relative;
-        }
-
-        input {
-            width: 100%;
-            padding: 14px 16px;
-            font-size: 16px;
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            background-color: var(--card-bg);
-            color: var(--text);
-            transition: all 0.3s ease;
-        }
-
-        input:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.2);
-        }
-
-        input::placeholder {
-            color: var(--placeholder);
-            opacity: 0.8;
-        }
-
-        /* Toggle Password */
-        .toggle-password {
-            position: absolute;
-            right: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: none;
-            border: none;
-            color: var(--placeholder);
-            cursor: pointer;
-        }
-
-        /* Submit Button (Apple Style) */
-        .btn-submit {
-            width: 100%;
-            padding: 14px;
-            background-color: var(--primary);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .btn-submit:hover {
-            background-color: #0062C4;
-            transform: translateY(-1px);
-        }
-
-        .btn-submit:active {
-            transform: translateY(0);
-        }
-
-        /* Error Message */
-        .error-message {
-            color: var(--error);
-            font-size: 14px;
-            margin-top: -10px;
-            margin-bottom: 15px;
-            text-align: center;
-        }
-
-        /* Additional Links */
-        .additional-links {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 1.5rem;
-            font-size: 14px;
-        }
-
-        .additional-links a {
-            color: var(--primary);
-            text-decoration: none;
-        }
-
-        /* Apple Footer Note */
-        .footer-note {
-            text-align: center;
-            margin-top: 2rem;
-            font-size: 12px;
-            color: var(--placeholder);
-        }
-
-        /* Responsive */
-        @media (max-width: 480px) {
-            .login-container {
-                padding: 1.8rem;
-            }
-        }
-    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <!-- Dark Mode Toggle -->
-    <div class="dark-mode-toggle" id="darkModeToggle">
-        <i class="fas fa-moon">⏾</i>
-    </div>
-
-    <!-- Login Container -->
-    <div class="login-container">
-        <h1>Anmelden</h1>
-        
-        {% if error %}
-            <div class="error-message">
-                <i class="fas fa-exclamation-circle"></i> {{ error }}
+<body class="min-h-screen bg-slate-950/5 text-slate-900">
+    <div class="min-h-screen flex items-center justify-center px-4">
+        <div class="w-full max-w-lg rounded-3xl bg-white shadow-2xl shadow-slate-300/40 border border-slate-200 overflow-hidden">
+            <div class="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-8 py-10 text-white">
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/10">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L6 13.25l3.75-3.75M14.25 7L18 10.75 14.25 14.5" />
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.3em] text-slate-300">Inventory Pro</p>
+                        <h1 class="text-2xl font-semibold">Willkommen zurück</h1>
+                    </div>
+                </div>
+                <p class="mt-4 text-sm text-slate-200">Melde dich an, um deine Assets, Kategorien und Dashboards zu verwalten.</p>
             </div>
-        {% endif %}
-        
-        <form class="login-form" method="POST">
-            <div class="input-group">
-                <input 
-                    type="text" 
-                    name="username" 
-                    placeholder="Benutzername oder E-Mail" 
-                    required
-                    autocomplete="username"
-                >
+            <div class="px-8 py-8 space-y-6">
+                {% if error %}
+                <div class="rounded-2xl bg-rose-50 border border-rose-100 px-4 py-3 text-sm text-rose-600">{{ error }}</div>
+                {% endif %}
+                <form method="POST" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-2">Benutzername</label>
+                        <input name="username" type="text" required
+                               class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500"
+                               placeholder="z. B. admin">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-2">Passwort</label>
+                        <input name="password" type="password" required
+                               class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500"
+                               placeholder="••••••••">
+                    </div>
+                    <button type="submit" class="w-full rounded-2xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-md shadow-blue-200 hover:bg-blue-500">
+                        Anmelden
+                    </button>
+                </form>
+                <div class="flex items-center justify-between text-xs text-slate-500">
+                    <span>2FA &amp; Passworthilfe</span>
+                    <a href="/reset" class="text-blue-600 font-semibold hover:text-blue-500">Passwort zurücksetzen</a>
+                </div>
             </div>
-            
-            <div class="input-group">
-                <input 
-                    type="password" 
-                    name="password" 
-                    id="password" 
-                    placeholder="Passwort" 
-                    required
-                    autocomplete="current-password"
-                >
-                <button type="button" class="toggle-password" id="togglePassword">
-                    <i class="far fa-eye"></i>
-                </button>
-            </div>
-            
-            <button type="submit" class="btn-submit">
-                Anmelden
-            </button>
-            
-			<div class="additional-links" style="display: flex; justify-content: center; margin: 1.5rem 0 0 0; padding: 8px 0; font-size: 15px;">
-				<a href="/reset">Passwort vergessen?</a>
-			</div>
-        </form>
-		
-		
-        
-        <div class="footer-note">
-            Hosted by PondSec
         </div>
     </div>
-
-    <!-- Font Awesome für Icons -->
-    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
-    
-    <!-- JavaScript für Interaktivität -->
-    <script>
-        // Dark Mode Toggle
-        const darkModeToggle = document.getElementById('darkModeToggle');
-        const body = document.body;
-        
-        darkModeToggle.addEventListener('click', () => {
-            body.classList.toggle('dark-mode');
-            
-            if (body.classList.contains('dark-mode')) {
-                darkModeToggle.innerHTML = '<i class="fas fa-sun">☀︎</i>';
-            } else {
-                darkModeToggle.innerHTML = '<i class="fas fa-moon">⏾</i>';
-            }
-        });
-        
-        // Toggle Password Visibility
-        const togglePassword = document.getElementById('togglePassword');
-        const passwordInput = document.getElementById('password');
-        
-        togglePassword.addEventListener('click', () => {
-            if (passwordInput.type === 'password') {
-                passwordInput.type = 'text';
-                togglePassword.innerHTML = '<i class="far fa-eye-slash"></i>';
-            } else {
-                passwordInput.type = 'password';
-                togglePassword.innerHTML = '<i class="far fa-eye"></i>';
-            }
-        });
-    </script>
 </body>
 </html>
