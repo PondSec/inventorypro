@@ -664,6 +664,31 @@ document.addEventListener('alpine:init', () => {
             );
         },
 
+        formatSpecValue(value) {
+            if (value === null || value === undefined || value === '') {
+                return '-';
+            }
+            if (typeof value === 'boolean') {
+                return value ? 'Ja' : 'Nein';
+            }
+            return value;
+        },
+
+        getDeviceSpecEntries(device) {
+            if (!device) return [];
+            let parsed;
+            try {
+                parsed = JSON.parse(device.specs || '{}');
+            } catch (error) {
+                console.error('Error parsing device specs:', error);
+                return [];
+            }
+            return Object.entries(parsed).map(([key, value]) => ({
+                key,
+                value: this.formatSpecValue(value)
+            }));
+        },
+
 		getCategoryColor(categoryName) {
 			// 1. Definiere die festen Farben für bekannte Kategorien
 			const predefinedColors = {
