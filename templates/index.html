@@ -411,29 +411,29 @@
                         <table class="min-w-full text-sm">
                             <thead class="text-left text-slate-500">
                                 <tr class="border-b border-slate-200">
-                                    <th class="py-3 px-6 font-semibold">Gerät</th>
-                                    <th class="py-3 px-6 font-semibold">Kategorie</th>
-                                    <th class="py-3 px-6 font-semibold">Standort</th>
-                                    <th class="py-3 px-6 font-semibold">Owner</th>
-                                    <th class="py-3 px-6 font-semibold">Specs</th>
-                                    <th class="py-3 px-6 font-semibold text-right">Aktionen</th>
+                                    <th class="py-3 px-4 sm:px-6 font-semibold">Gerät</th>
+                                    <th class="py-3 px-4 sm:px-6 font-semibold">Kategorie</th>
+                                    <th class="py-3 px-4 sm:px-6 font-semibold">Standort</th>
+                                    <th class="hidden md:table-cell py-3 px-4 sm:px-6 font-semibold">Owner</th>
+                                    <th class="hidden lg:table-cell py-3 px-4 sm:px-6 font-semibold">Specs</th>
+                                    <th class="py-3 px-4 sm:px-6 font-semibold text-right">Aktionen</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
                                 <template x-for="device in filteredDevices" :key="device.id">
                                     <tr class="hover:bg-slate-50">
-                                        <td class="py-4 px-6">
-                                            <p class="font-semibold text-slate-900" x-text="device.name"></p>
+                                        <td class="py-4 px-4 sm:px-6">
+                                            <p class="max-w-[14rem] truncate font-semibold text-slate-900 sm:max-w-none" x-text="device.name"></p>
                                             <p class="text-xs text-slate-500" x-text="device.created_at?.slice(0, 10) || ''"></p>
                                         </td>
-                                        <td class="py-4 px-6">
+                                        <td class="py-4 px-4 sm:px-6">
                                             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide" :class="getCategoryColor(device.category_name)">
                                                 <span x-text="device.category_name"></span>
                                             </span>
                                         </td>
-                                        <td class="py-4 px-6 text-slate-700" x-text="device.location_name || '-' "></td>
-                                        <td class="py-4 px-6 text-slate-700" x-text="device.serial_number || '-' "></td>
-                                        <td class="py-4 px-6">
+                                        <td class="py-4 px-4 sm:px-6 text-slate-700" x-text="device.location_name || '-' "></td>
+                                        <td class="hidden md:table-cell py-4 px-4 sm:px-6 text-slate-700" x-text="device.serial_number || '-' "></td>
+                                        <td class="hidden lg:table-cell py-4 px-4 sm:px-6">
                                             <div class="flex flex-wrap gap-2">
                                                 <template x-for="(value, key) in Object.entries(JSON.parse(device.specs || '{}')).slice(0, 3)" :key="key">
                                                     <span class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
@@ -443,8 +443,8 @@
                                                 <span x-show="Object.keys(JSON.parse(device.specs || '{}')).length === 0" class="text-xs text-slate-400">Keine Specs</span>
                                             </div>
                                         </td>
-                                        <td class="py-4 px-6 text-right">
-                                            <div class="inline-flex items-center gap-2">
+                                        <td class="py-4 px-4 sm:px-6 text-right">
+                                            <div class="flex flex-wrap items-center justify-end gap-2">
                                                 <button @click="openEditDeviceModal(device)" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">Bearbeiten</button>
                                                 <button @click="openDeviceDetail(device)" class="rounded-full border border-blue-100 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50">Details</button>
                                                 <button @click="deleteDevice(device.id)" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Löschen</button>
