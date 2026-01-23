@@ -887,21 +887,30 @@
                 </div>
                 <div>
                     <label class="text-sm font-semibold text-slate-700">Icon*</label>
-                    <select x-model="currentCategory.icon" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
-                        <option value="cpu">CPU</option>
-                        <option value="gpu">GPU</option>
-                        <option value="memory">RAM</option>
-                        <option value="hard-drive">Festplatte</option>
-                        <option value="server">Server</option>
-                        <option value="monitor">Monitor</option>
-                        <option value="printer">Drucker</option>
-                        <option value="wind">Kühlsystem</option>
-                        <option value="grid">Mainboard</option>
-                        <option value="zap">Netzteil</option>
-                        <option value="sliders">RAM</option>
-                        <option value="wifi">Netzwerk</option>
-                        <option value="code">Raspberry Pi</option>
-                    </select>
+                    <div class="mt-2 space-y-3">
+                        <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div class="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white">
+                                <div x-html="feather.icons[currentCategory.icon]?.toSvg({ class: 'w-5 h-5 text-slate-600' })"></div>
+                            </div>
+                            <div class="flex-1">
+                                <input type="text" x-model="iconSearch" placeholder="Icon suchen (z. B. box, camera, tool)" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                <p class="mt-1 text-xs text-slate-400">Aktuell: <span class="font-semibold text-slate-600" x-text="currentCategory.icon"></span></p>
+                            </div>
+                        </div>
+                        <div class="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2">
+                            <div class="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                                <template x-for="iconName in filteredIconCatalog()" :key="iconName">
+                                    <button type="button" @click="selectIcon(iconName)" class="flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide transition"
+                                        :class="currentCategory.icon === iconName ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'">
+                                        <div x-html="feather.icons[iconName]?.toSvg({ class: 'w-4 h-4' })"></div>
+                                        <span class="w-full truncate" x-text="iconName"></span>
+                                    </button>
+                                </template>
+                            </div>
+                            <p x-show="filteredIconCatalog().length === 0" class="p-4 text-center text-xs text-slate-400">Keine Icons gefunden.</p>
+                        </div>
+                        <p class="text-xs text-slate-500">Tipp: Nutze die Suche für eine große Auswahl an passenden Symbolen.</p>
+                    </div>
                 </div>
                 <div>
                     <div class="flex items-center justify-between">

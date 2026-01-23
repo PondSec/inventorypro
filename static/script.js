@@ -45,6 +45,8 @@ document.addEventListener('alpine:init', () => {
         editingAsset: null,
         categoryMenuOpen: null,  // Geändert von openCategoryId zu categoryMenuOpen für Konsistenz
         openDeviceId: null,
+        iconSearch: '',
+        iconCatalog: [],
         
         // Current Items
         currentCategory: {
@@ -80,6 +82,7 @@ document.addEventListener('alpine:init', () => {
             await this.loadFeatureFlags();
             await this.loadMaintenanceSummary();
             await this.loadActivityFeed();
+            this.loadIconCatalog();
             this.$watch('searchQuery', () => this.searchDevices());
             feather.replace();
             this.startLiveRefresh();
@@ -173,6 +176,14 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        loadIconCatalog() {
+            if (!window.feather || !feather.icons) {
+                this.iconCatalog = [];
+                return;
+            }
+            this.iconCatalog = Object.keys(feather.icons).sort();
+        },
+
         // Search and Sort
         searchDevices() {
             if (!this.searchQuery) {
@@ -229,6 +240,7 @@ document.addEventListener('alpine:init', () => {
                 icon: 'cpu',
                 fields: []
             };
+            this.iconSearch = '';
             this.isCategoryModalOpen = true;
             this.categoryMenuOpen = null; // Menü schließen beim Öffnen des Modals
         },
@@ -261,6 +273,7 @@ document.addEventListener('alpine:init', () => {
                     };
                 })
 			};
+            this.iconSearch = '';
 			this.isCategoryModalOpen = true;
 			this.categoryMenuOpen = null; // Menü schließen beim Öffnen des Modals
 		},
@@ -281,6 +294,18 @@ document.addEventListener('alpine:init', () => {
 
         removeCategoryField(fieldId) {
             this.currentCategory.fields = this.currentCategory.fields.filter(field => field.id !== fieldId);
+        },
+
+        filteredIconCatalog() {
+            const query = this.iconSearch.trim().toLowerCase();
+            if (!query) {
+                return this.iconCatalog;
+            }
+            return this.iconCatalog.filter(iconName => iconName.includes(query));
+        },
+
+        selectIcon(iconName) {
+            this.currentCategory.icon = iconName;
         },
 
         async saveCategory() {
