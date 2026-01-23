@@ -125,6 +125,37 @@ def init_db():
         ''')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                notes TEXT,
+                specs TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                device_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (asset_id) REFERENCES assets(id),
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        try:
+            c.execute('ALTER TABLE assets ADD COLUMN notes TEXT')
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            c.execute('ALTER TABLE assets ADD COLUMN specs TEXT')
+        except sqlite3.OperationalError:
+            pass
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS activity_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT,
@@ -496,6 +527,107 @@ def get_devices():
     
     devices = db.execute(query, params).fetchall()
     return jsonify([dict(row) for row in devices])
+
+@app.route('/api/assets', methods=['GET', 'POST'])
+@login_required
+def manage_assets():
+    db = get_db()
+    if request.method == 'POST':
+        data = request.get_json()
+        name = (data.get('name') or '').strip()
+        notes = (data.get('notes') or '').strip()
+        specs = json.dumps(data.get('specs', {}))
+        device_ids = data.get('device_ids') or []
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO assets (name, notes, specs)
+                VALUES (?, ?, ?)
+            ''', (name, notes, specs))
+            asset_id = cursor.lastrowid
+            for device_id in device_ids:
+                db.execute('''
+                    INSERT INTO asset_devices (asset_id, device_id)
+                    VALUES (?, ?)
+                ''', (asset_id, device_id))
+            log_activity(db, "create", "asset", asset_id, {"name": name})
+            db.commit()
+            return jsonify({"status": "created", "id": asset_id}), 201
+        except sqlite3.Error as e:
+            return jsonify({"error": f"Datenbankfehler: {str(e)}"}), 500
+
+    assets = db.execute('''
+        SELECT a.*, COUNT(ad.device_id) as device_count
+        FROM assets a
+        LEFT JOIN asset_devices ad ON a.id = ad.asset_id
+        GROUP BY a.id
+        ORDER BY a.created_at DESC
+    ''').fetchall()
+    result = []
+    for row in assets:
+        asset = dict(row)
+        try:
+            asset['specs'] = json.loads(asset.get('specs') or '{}')
+        except json.JSONDecodeError:
+            asset['specs'] = {}
+        result.append(asset)
+    return jsonify(result)
+
+@app.route('/api/assets/<int:asset_id>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def asset_detail(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT * FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset nicht gefunden"}), 404
+
+    if request.method == 'GET':
+        device_rows = db.execute('''
+            SELECT d.*, c.name as category_name, c.icon as category_icon, l.name as location_name
+            FROM devices d
+            JOIN asset_devices ad ON ad.device_id = d.id
+            JOIN categories c ON d.category_id = c.id
+            LEFT JOIN locations l ON d.location_id = l.id
+            WHERE ad.asset_id = ?
+            ORDER BY d.created_at DESC
+        ''', (asset_id,)).fetchall()
+        asset = dict(asset_row)
+        try:
+            asset['specs'] = json.loads(asset.get('specs') or '{}')
+        except json.JSONDecodeError:
+            asset['specs'] = {}
+        asset['devices'] = [dict(row) for row in device_rows]
+        return jsonify(asset)
+
+    if request.method == 'PUT':
+        data = request.get_json()
+        name = (data.get('name') or '').strip()
+        notes = (data.get('notes') or '').strip()
+        specs = json.dumps(data.get('specs', {}))
+        device_ids = data.get('device_ids') or []
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        db.execute('''
+            UPDATE assets
+            SET name = ?, notes = ?, specs = ?
+            WHERE id = ?
+        ''', (name, notes, specs, asset_id))
+        db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
+        for device_id in device_ids:
+            db.execute('''
+                INSERT INTO asset_devices (asset_id, device_id)
+                VALUES (?, ?)
+            ''', (asset_id, device_id))
+        log_activity(db, "update", "asset", asset_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
+    db.execute('DELETE FROM assets WHERE id = ?', (asset_id,))
+    log_activity(db, "delete", "asset", asset_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
 
 @app.route('/api/locations', methods=['GET', 'POST'])
 @login_required
