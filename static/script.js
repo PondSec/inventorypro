@@ -107,6 +107,17 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async loadActivityFeed() {
+            try {
+                const response = await fetch('/api/activity');
+                if (response.ok) {
+                    this.activityFeed = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading activity feed:', error);
+            }
+        },
+
         startLiveRefresh() {
             setInterval(async () => {
                 await this.loadActivityFeed();
