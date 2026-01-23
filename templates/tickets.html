@@ -102,20 +102,20 @@
                         <h1 class="text-2xl font-semibold text-slate-900">Ticket-System</h1>
                     </div>
                 </div>
-                <div class="flex flex-wrap items-center justify-end gap-3">
-                    <span class="text-sm text-slate-500 w-full sm:w-auto">Angemeldet als {{ username }}</span>
-                    <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:w-auto">
+                <div class="flex items-center justify-end gap-2 sm:gap-3">
+                    <span class="hidden text-sm text-slate-500 sm:inline">Angemeldet als {{ username }}</span>
+                    <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
                         <span data-theme-icon aria-hidden="true">🌙</span>
-                        <span data-theme-label>Dark Mode</span>
+                        <span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
                     </button>
-                    <button onclick="logout()" class="inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:w-auto">
+                    <button onclick="logout()" class="inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
                         <i data-feather="log-out" class="w-4 h-4"></i>
-                        Abmelden
+                        <span class="sr-only sm:not-sr-only">Abmelden</span>
                     </button>
                     {% if 'tickets.create' in permissions %}
-                    <button @click="openNewTicket" class="inline-flex w-full items-center justify-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 shadow-sm hover:bg-amber-100 sm:w-auto">
+                    <button @click="openNewTicket" class="inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-amber-200 bg-amber-50 p-2 text-sm font-semibold text-amber-700 shadow-sm hover:bg-amber-100 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
                         <i data-feather="plus-circle" class="w-4 h-4"></i>
-                        Ticket erstellen
+                        <span class="sr-only sm:not-sr-only">Ticket erstellen</span>
                     </button>
                     {% endif %}
                 </div>
