@@ -77,7 +77,21 @@
                 </div>
                 <div class="flex items-center space-x-4">
                     <span class="text-sm text-slate-500">Angemeldet als {{ username }}</span>
-                    <button onclick="logout()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                    <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false">
+                        <span class="theme-toggle__icon theme-toggle__icon--light">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="4"></circle>
+                                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+                            </svg>
+                        </span>
+                        <span class="theme-toggle__icon theme-toggle__icon--dark">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path>
+                            </svg>
+                        </span>
+                        <span data-theme-label>Dark Mode</span>
+                    </button>
+                    <button onclick="logout()" class="btn btn-outline">
                         <i data-feather="log-out" class="w-4 h-4"></i>
                         Abmelden
                     </button>
@@ -105,7 +119,7 @@
             </header>
 
             <main class="flex-1 overflow-auto p-8 pt-24 space-y-8">
-            <section class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-8 py-10 text-white shadow-2xl shadow-slate-300/50">
+            <section class="hero-panel px-8 py-10">
                 <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <p class="text-xs uppercase tracking-[0.3em] text-slate-300">Locations</p>
@@ -129,10 +143,10 @@
                                class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
                         <textarea x-model="form.description" placeholder="Beschreibung"
                                   class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
-                        <button type="submit" class="w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-500">
+                        <button type="submit" class="btn btn-primary w-full">
                             <span x-text="editing ? 'Aktualisieren' : 'Speichern'"></span>
                         </button>
-                        <button type="button" @click="resetForm()" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-100">
+                        <button type="button" @click="resetForm()" class="btn btn-ghost w-full">
                             Zurücksetzen
                         </button>
                         <p class="text-xs text-rose-500" x-text="errorMessage" x-show="errorMessage"></p>
@@ -159,10 +173,10 @@
                                         <p class="text-sm text-slate-500" x-text="location.description || 'Keine Beschreibung'"></p>
                                     </div>
                                     <div class="flex items-center gap-2">
-                                        <button @click="editLocation(location)" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                                        <button @click="editLocation(location)" class="btn btn-ghost text-xs px-3 py-1">
                                             Bearbeiten
                                         </button>
-                                        <button @click="deleteLocation(location)" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">
+                                        <button @click="deleteLocation(location)" class="btn btn-danger text-xs px-3 py-1">
                                             Löschen
                                         </button>
                                     </div>
@@ -243,5 +257,6 @@
         });
     </script>
     <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
 </body>
 </html>
