@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="de" x-data="ticketsApp()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - Helpdesk</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app-body bg-slate-950/5 text-slate-900">
+    <div class="app-shell">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
+                <a href="/">
+                    <div class="logo flex items-center space-x-3">
+                        <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg">
+                            <i data-feather="cpu" class="w-5 h-5"></i>
+                        </span>
+                        <div>
+                            <p class="text-lg font-semibold text-slate-900 sidebar-text">Inventory Pro</p>
+                            <p class="text-xs text-slate-500 sidebar-text">Smart Asset Hub</p>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            <nav class="p-4 space-y-3 sidebar-scroll sidebar-primary-links">
+                <a href="/" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
+                    <span class="flex items-center">
+                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
+                            <i data-feather="layers" class="w-4 h-4"></i>
+                        </span>
+                        <span class="sidebar-text">Kategorien</span>
+                    </span>
+                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
+                </a>
+                <a href="/tickets" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-amber-100 bg-amber-50 text-sm font-semibold text-amber-700">
+                    <span class="flex items-center">
+                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-amber-100 text-amber-600 mr-3">
+                            <i data-feather="life-buoy" class="w-4 h-4"></i>
+                        </span>
+                        <span class="sidebar-text">Tickets</span>
+                    </span>
+                    <i data-feather="clipboard" class="w-4 h-4 text-amber-400"></i>
+                </a>
+                <a href="/stats" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
+                    <span class="flex items-center">
+                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
+                            <i data-feather="bar-chart-2" class="w-4 h-4"></i>
+                        </span>
+                        <span class="sidebar-text">Statistiken</span>
+                    </span>
+                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
+                </a>
+                <a href="/users" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
+                    <span class="flex items-center">
+                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
+                            <i data-feather="users" class="w-4 h-4"></i>
+                        </span>
+                        <span class="sidebar-text">Benutzer</span>
+                    </span>
+                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
+                </a>
+                <a href="/locations" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
+                    <span class="flex items-center">
+                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
+                            <i data-feather="map-pin" class="w-4 h-4"></i>
+                        </span>
+                        <span class="sidebar-text">Standorte</span>
+                    </span>
+                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
+                </a>
+            </nav>
+        </aside>
+
+        <div class="app-main app-main--fixed">
+            <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
+                <div class="flex items-center gap-4">
+                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                        <i data-feather="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Helpdesk</p>
+                        <h1 class="text-2xl font-semibold text-slate-900">Ticket-System</h1>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm text-slate-500">Angemeldet als {{ username }}</span>
+                    <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                        <span data-theme-icon aria-hidden="true">🌙</span>
+                        <span data-theme-label>Dark Mode</span>
+                    </button>
+                    <button @click="openNewTicket" class="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 shadow-sm hover:bg-amber-100">
+                        <i data-feather="plus-circle" class="w-4 h-4"></i>
+                        Ticket erstellen
+                    </button>
+                </div>
+            </header>
+
+            <main class="flex-1 overflow-auto p-8 pt-24 space-y-8 scrollbar-hide">
+                <section class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-amber-900 px-8 py-8 text-white shadow-2xl shadow-slate-300/50">
+                    <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.3em] text-amber-200">Support</p>
+                            <h2 class="mt-2 text-3xl font-semibold">Professioneller Helpdesk mit SLA, Alerts und Benachrichtigungen.</h2>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                            <div class="rounded-2xl bg-white/10 px-4 py-3">
+                                <p class="text-xs uppercase text-amber-100">Offen</p>
+                                <p class="text-2xl font-semibold" x-text="stats.open"></p>
+                            </div>
+                            <div class="rounded-2xl bg-white/10 px-4 py-3">
+                                <p class="text-xs uppercase text-amber-100">In Bearbeitung</p>
+                                <p class="text-2xl font-semibold" x-text="stats.in_progress"></p>
+                            </div>
+                            <div class="rounded-2xl bg-white/10 px-4 py-3">
+                                <p class="text-xs uppercase text-amber-100">Wartet</p>
+                                <p class="text-2xl font-semibold" x-text="stats.pending"></p>
+                            </div>
+                            <div class="rounded-2xl bg-white/10 px-4 py-3">
+                                <p class="text-xs uppercase text-amber-100">Gelöst</p>
+                                <p class="text-2xl font-semibold" x-text="stats.resolved"></p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+                    <div class="space-y-6">
+                        <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                            <div class="flex flex-wrap items-center gap-4">
+                                <div class="flex-1 min-w-[200px]">
+                                    <label class="text-xs uppercase text-slate-400">Suche</label>
+                                    <input type="text" x-model="filters.search" @input.debounce.300ms="loadTickets" placeholder="Ticket, Kunde, Beschreibung" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm">
+                                </div>
+                                <div class="min-w-[160px]">
+                                    <label class="text-xs uppercase text-slate-400">Status</label>
+                                    <select x-model="filters.status" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                        <option value="">Alle</option>
+                                        <template x-for="status in statusOptions" :key="status">
+                                            <option :value="status" x-text="statusLabels[status] || status"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div class="min-w-[160px]">
+                                    <label class="text-xs uppercase text-slate-400">Priorität</label>
+                                    <select x-model="filters.priority" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                        <option value="">Alle</option>
+                                        <template x-for="priority in priorityOptions" :key="priority">
+                                            <option :value="priority" x-text="priority"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div class="min-w-[180px]">
+                                    <label class="text-xs uppercase text-slate-400">Kategorie</label>
+                                    <select x-model="filters.category_id" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                        <option value="">Alle</option>
+                                        <template x-for="category in categories" :key="category.id">
+                                            <option :value="category.id" x-text="category.name"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                    <input type="checkbox" x-model="filters.mine" @change="loadTickets" class="rounded border-slate-300 text-amber-600">
+                                    Meine Tickets
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <template x-for="ticket in tickets" :key="ticket.id">
+                                <button @click="selectTicket(ticket)" class="w-full text-left rounded-3xl border border-slate-200 bg-white p-5 shadow-sm hover:border-amber-200 hover:shadow-md transition">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-xs uppercase text-slate-400">Ticket #<span x-text="ticket.id"></span></p>
+                                            <h3 class="text-lg font-semibold text-slate-900" x-text="ticket.title"></h3>
+                                            <p class="mt-1 text-sm text-slate-500 line-clamp-2" x-text="ticket.description"></p>
+                                        </div>
+                                        <div class="flex flex-col items-end gap-2">
+                                            <span class="rounded-full px-3 py-1 text-xs font-semibold" :style="`background-color: ${ticket.category_color || '#e2e8f0'}; color: white;`" x-text="ticket.category_name || 'Unbekannt'"></span>
+                                            <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600" x-text="statusLabels[ticket.status] || ticket.status"></span>
+                                            <span class="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700" x-text="ticket.priority"></span>
+                                        </div>
+                                    </div>
+                                    <div class="mt-4 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+                                        <span class="inline-flex items-center gap-1"><i data-feather="user" class="w-3 h-3"></i><span x-text="ticket.requester_name || 'Unbekannt'"></span></span>
+                                        <span class="inline-flex items-center gap-1"><i data-feather="user-check" class="w-3 h-3"></i><span x-text="ticket.assignee || 'Nicht zugewiesen'"></span></span>
+                                        <span class="inline-flex items-center gap-1"><i data-feather="calendar" class="w-3 h-3"></i><span x-text="ticket.due_date || 'Kein SLA'" ></span></span>
+                                    </div>
+                                </button>
+                            </template>
+                            <div x-show="tickets.length === 0" class="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center text-slate-500">
+                                Keine Tickets gefunden. Erstelle das erste Ticket.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-6">
+                        <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm" x-show="selectedTicket">
+                            <template x-if="selectedTicket">
+                                <div>
+                                    <div class="flex items-start justify-between gap-4">
+                                        <div>
+                                            <p class="text-xs uppercase text-slate-400">Ausgewähltes Ticket</p>
+                                            <h3 class="text-xl font-semibold text-slate-900" x-text="selectedTicket.title"></h3>
+                                            <p class="text-sm text-slate-500" x-text="selectedTicket.description"></p>
+                                        </div>
+                                        <button @click="closeTicket" class="text-slate-400 hover:text-slate-700">
+                                            <i data-feather="x" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+
+                                    <div class="mt-4 grid gap-3 text-sm text-slate-600">
+                                        <div class="flex items-center justify-between">
+                                            <span>Status</span>
+                                            <select x-model="selectedTicket.status" @change="updateTicket" class="rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm">
+                                                <template x-for="status in statusOptions" :key="status">
+                                                    <option :value="status" x-text="statusLabels[status] || status"></option>
+                                                </template>
+                                            </select>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>Priorität</span>
+                                            <select x-model="selectedTicket.priority" @change="updateTicket" class="rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm">
+                                                <template x-for="priority in priorityOptions" :key="priority">
+                                                    <option :value="priority" x-text="priority"></option>
+                                                </template>
+                                            </select>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>Zuständig</span>
+                                            <input type="text" x-model="selectedTicket.assignee" @change="updateTicket" placeholder="Team/Name" class="rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm">
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>Assignee E-Mail</span>
+                                            <input type="email" x-model="selectedTicket.assignee_email" @change="updateTicket" placeholder="support@firma.de" class="rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm">
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>Fällig</span>
+                                            <input type="date" x-model="selectedTicket.due_date" @change="updateTicket" class="rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-5">
+                                        <p class="text-xs uppercase text-slate-400">Watcher</p>
+                                        <div class="flex flex-wrap gap-2 mt-2">
+                                            <template x-for="watcher in selectedTicket.watchers" :key="watcher.id">
+                                                <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                                                    <span x-text="watcher.email"></span>
+                                                    <button @click.stop="removeWatcher(watcher.id)" class="text-slate-400 hover:text-slate-700">&times;</button>
+                                                </span>
+                                            </template>
+                                        </div>
+                                        <div class="mt-3 flex gap-2">
+                                            <input type="email" x-model="newWatcher" placeholder="watcher@firma.de" class="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                            <button @click="addWatcher" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Hinzufügen</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6">
+                                        <p class="text-xs uppercase text-slate-400">Kommentare</p>
+                                        <div class="mt-3 space-y-3 max-h-[240px] overflow-auto pr-2">
+                                            <template x-for="comment in selectedTicket.comments" :key="comment.id">
+                                                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                                                    <div class="flex items-center justify-between text-xs text-slate-400">
+                                                        <span x-text="comment.author || 'System'"></span>
+                                                        <span x-text="comment.created_at"></span>
+                                                    </div>
+                                                    <p class="mt-1 text-sm text-slate-700" x-text="comment.body"></p>
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <div class="mt-3 space-y-2">
+                                            <textarea x-model="newComment" rows="3" placeholder="Kommentar hinzufügen" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
+                                            <label class="inline-flex items-center gap-2 text-xs text-slate-500">
+                                                <input type="checkbox" x-model="internalComment" class="rounded border-slate-300 text-amber-600">
+                                                Interner Kommentar
+                                            </label>
+                                            <button @click="addComment" class="w-full rounded-2xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white">Kommentar senden</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-xs uppercase text-slate-400">Administration</p>
+                                    <h3 class="text-lg font-semibold text-slate-900">Einstellungen & Automationen</h3>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button @click="activeAdminTab = 'categories'" :class="activeAdminTab === 'categories' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'" class="rounded-full px-3 py-1 text-xs font-semibold">Kategorien</button>
+                                    <button @click="activeAdminTab = 'alerts'" :class="activeAdminTab === 'alerts' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'" class="rounded-full px-3 py-1 text-xs font-semibold">Alerts</button>
+                                    <button @click="activeAdminTab = 'notifications'" :class="activeAdminTab === 'notifications' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'" class="rounded-full px-3 py-1 text-xs font-semibold">E-Mail</button>
+                                </div>
+                            </div>
+
+                            <div class="mt-4" x-show="activeAdminTab === 'categories'">
+                                <div class="space-y-3">
+                                    <template x-for="category in categories" :key="category.id">
+                                        <div class="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
+                                            <div>
+                                                <p class="font-semibold text-slate-800" x-text="category.name"></p>
+                                                <p class="text-xs text-slate-500" x-text="category.description"></p>
+                                            </div>
+                                            <span class="rounded-full px-3 py-1 text-xs font-semibold" :style="`background-color: ${category.color}; color: white;`" x-text="`${category.sla_hours}h SLA`"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="mt-4 grid gap-3">
+                                    <input type="text" x-model="newCategory.name" placeholder="Kategorie" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                    <textarea x-model="newCategory.description" rows="2" placeholder="Beschreibung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm"></textarea>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <input type="color" x-model="newCategory.color" class="h-10 w-full rounded-2xl border border-slate-200">
+                                        <input type="number" x-model="newCategory.sla_hours" placeholder="SLA (Std.)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                    </div>
+                                    <label class="inline-flex items-center gap-2 text-xs text-slate-500">
+                                        <input type="checkbox" x-model="newCategory.is_default" class="rounded border-slate-300 text-amber-600">
+                                        Standard-Kategorie
+                                    </label>
+                                    <button @click="createCategory" class="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Kategorie speichern</button>
+                                </div>
+                            </div>
+
+                            <div class="mt-4" x-show="activeAdminTab === 'alerts'">
+                                <div class="space-y-3">
+                                    <template x-for="alert in alerts" :key="alert.id">
+                                        <div class="rounded-2xl border border-slate-200 px-4 py-3">
+                                            <div class="flex items-center justify-between">
+                                                <div>
+                                                    <p class="font-semibold text-slate-800" x-text="alert.name"></p>
+                                                    <p class="text-xs text-slate-500">Event: <span x-text="alert.event_type"></span> · Empfänger: <span x-text="alert.recipient_emails"></span></p>
+                                                </div>
+                                                <button @click="deleteAlert(alert.id)" class="text-rose-500 text-xs font-semibold">Löschen</button>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="mt-4 grid gap-3">
+                                    <input type="text" x-model="newAlert.name" placeholder="Alert-Name" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                    <select x-model="newAlert.event_type" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                        <option value="created">Ticket erstellt</option>
+                                        <option value="updated">Ticket aktualisiert</option>
+                                        <option value="status_changed">Status geändert</option>
+                                        <option value="commented">Kommentar</option>
+                                    </select>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <select x-model="newAlert.status_match" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                            <option value="">Status (optional)</option>
+                                            <template x-for="status in statusOptions" :key="status">
+                                                <option :value="status" x-text="statusLabels[status] || status"></option>
+                                            </template>
+                                        </select>
+                                        <select x-model="newAlert.priority_match" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                            <option value="">Priorität (optional)</option>
+                                            <template x-for="priority in priorityOptions" :key="priority">
+                                                <option :value="priority" x-text="priority"></option>
+                                            </template>
+                                        </select>
+                                    </div>
+                                    <select x-model="newAlert.category_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                        <option value="">Kategorie (optional)</option>
+                                        <template x-for="category in categories" :key="category.id">
+                                            <option :value="category.id" x-text="category.name"></option>
+                                        </template>
+                                    </select>
+                                    <textarea x-model="newAlert.recipient_emails" rows="2" placeholder="Empfänger (kommagetrennt)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm"></textarea>
+                                    <label class="inline-flex items-center gap-2 text-xs text-slate-500">
+                                        <input type="checkbox" x-model="newAlert.is_enabled" class="rounded border-slate-300 text-amber-600">
+                                        Alert aktiv
+                                    </label>
+                                    <button @click="createAlert" class="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Alert speichern</button>
+                                </div>
+                            </div>
+
+                            <div class="mt-4" x-show="activeAdminTab === 'notifications'">
+                                <div class="grid gap-3">
+                                    <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                        <input type="checkbox" x-model="notificationSettings.enabled" class="rounded border-slate-300 text-amber-600">
+                                        Benachrichtigungen aktiv
+                                    </label>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <input type="text" x-model="notificationSettings.smtp_host" placeholder="SMTP Host" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                        <input type="number" x-model="notificationSettings.smtp_port" placeholder="Port" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                    </div>
+                                    <input type="text" x-model="notificationSettings.smtp_username" placeholder="SMTP Benutzer" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                    <input type="password" x-model="notificationSettings.smtp_password" placeholder="SMTP Passwort" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                    <input type="email" x-model="notificationSettings.smtp_from" placeholder="Absender E-Mail" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                    <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                        <input type="checkbox" x-model="notificationSettings.use_tls" class="rounded border-slate-300 text-amber-600">
+                                        TLS verwenden
+                                    </label>
+                                    <textarea x-model="notificationSettings.default_recipients" rows="2" placeholder="Standard-Empfänger (kommagetrennt)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm"></textarea>
+                                    <button @click="saveNotificationSettings" class="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Einstellungen speichern</button>
+                                    <div class="flex gap-2">
+                                        <input type="text" x-model="testRecipients" placeholder="Test-Empfänger" class="flex-1 rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                        <button @click="sendTestEmail" class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700">Test senden</button>
+                                    </div>
+                                    <p class="text-xs text-slate-500" x-text="notificationMessage"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div x-show="ticketModalOpen" x-transition class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+        <div @click.away="ticketModalOpen = false" class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6 shadow-xl">
+            <div class="flex items-start justify-between">
+                <div>
+                    <p class="text-xs uppercase text-slate-400">Neues Ticket</p>
+                    <h3 class="text-xl font-semibold text-slate-900">Helpdesk Anfrage</h3>
+                </div>
+                <button @click="ticketModalOpen = false" class="text-slate-400 hover:text-slate-700">
+                    <i data-feather="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="mt-4 grid gap-3">
+                <input type="text" x-model="newTicket.title" placeholder="Titel" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                <textarea x-model="newTicket.description" rows="4" placeholder="Beschreibung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm"></textarea>
+                <div class="grid grid-cols-2 gap-3">
+                    <select x-model="newTicket.category_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                        <option value="">Kategorie</option>
+                        <template x-for="category in categories" :key="category.id">
+                            <option :value="category.id" x-text="category.name"></option>
+                        </template>
+                    </select>
+                    <select x-model="newTicket.priority" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                        <template x-for="priority in priorityOptions" :key="priority">
+                            <option :value="priority" x-text="priority"></option>
+                        </template>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <input type="text" x-model="newTicket.requester_name" placeholder="Anfragender" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                    <input type="email" x-model="newTicket.requester_email" placeholder="Anfragender E-Mail" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <input type="text" x-model="newTicket.assignee" placeholder="Zuständig" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                    <input type="email" x-model="newTicket.assignee_email" placeholder="Assignee E-Mail" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                </div>
+                <input type="date" x-model="newTicket.due_date" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                <input type="text" x-model="newTicket.tags" placeholder="Tags (kommagetrennt)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+
+                <div class="space-y-2">
+                    <p class="text-xs uppercase text-slate-400">Benutzerdefinierte Felder</p>
+                    <template x-for="(field, index) in newTicket.custom_fields" :key="index">
+                        <div class="grid grid-cols-[1fr_1fr_auto] gap-2">
+                            <input type="text" x-model="field.key" placeholder="Feldname" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input type="text" x-model="field.value" placeholder="Wert" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <button @click="removeCustomField(index)" class="rounded-2xl border border-slate-200 px-3 py-2 text-xs">Entfernen</button>
+                        </div>
+                    </template>
+                    <button @click="addCustomField" class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700">Feld hinzufügen</button>
+                </div>
+
+                <button @click="createTicket" class="rounded-2xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white">Ticket speichern</button>
+                <p class="text-xs text-rose-500" x-text="ticketError"></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="/static/tickets.js"></script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
+</body>
+</html>
