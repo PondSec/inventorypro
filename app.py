@@ -357,11 +357,22 @@ def handle_category(category_id):
             return jsonify({"error": f"Ungültige Daten: {str(e)}"}), 400
 
     elif request.method == 'DELETE':
+        device_rows = db.execute('SELECT id FROM devices WHERE category_id = ?', (category_id,)).fetchall()
+        device_ids = [row['id'] for row in device_rows]
+
+        for device_id in device_ids:
+            db.execute('DELETE FROM device_tags WHERE device_id = ?', (device_id,))
+            db.execute('DELETE FROM device_notes WHERE device_id = ?', (device_id,))
+            db.execute('DELETE FROM maintenance_tasks WHERE device_id = ?', (device_id,))
+
+        if device_ids:
+            db.execute('DELETE FROM devices WHERE category_id = ?', (category_id,))
+
         result = db.execute('DELETE FROM categories WHERE id = ?', (category_id,))
         if result.rowcount == 0:
             return jsonify({"error": "Kategorie nicht gefunden"}), 404
 
-        log_activity(db, "delete", "category", category_id)
+        log_activity(db, "delete", "category", category_id, {"deleted_devices": len(device_ids)})
         db.commit()
         return jsonify({"status": "deleted"}), 200
 

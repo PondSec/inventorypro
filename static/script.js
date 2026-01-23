@@ -53,7 +53,8 @@ document.addEventListener('alpine:init', () => {
             category_id: null,
             serial_number: '',
             location_id: '',
-            specs: {}
+            specs: {},
+            extraSpecs: []
         },
 
         // Initialization
@@ -199,11 +200,26 @@ document.addEventListener('alpine:init', () => {
 				id: category.id,
 				name: category.name,
 				icon: category.icon,
-				fields: Object.entries(fieldsObject).map(([fieldName, fieldType]) => ({
-                    id: crypto.randomUUID(),
-                    name: fieldName,
-                    type: fieldType
-                }))
+				fields: Object.entries(fieldsObject).map(([fieldName, fieldConfig]) => {
+                    if (typeof fieldConfig === 'string') {
+                        return {
+                            id: crypto.randomUUID(),
+                            name: fieldName,
+                            type: fieldConfig,
+                            options: [],
+                            optionsText: ''
+                        };
+                    }
+
+                    const options = Array.isArray(fieldConfig?.options) ? fieldConfig.options : [];
+                    return {
+                        id: crypto.randomUUID(),
+                        name: fieldName,
+                        type: fieldConfig?.type || 'text',
+                        options,
+                        optionsText: options.join(', ')
+                    };
+                })
 			};
 			this.isCategoryModalOpen = true;
 			this.categoryMenuOpen = null; // Menü schließen beim Öffnen des Modals
@@ -217,7 +233,9 @@ document.addEventListener('alpine:init', () => {
             this.currentCategory.fields.push({
                 id: crypto.randomUUID(),
                 name: '',
-                type: 'text'
+                type: 'text',
+                options: [],
+                optionsText: ''
             });
         },
 
@@ -231,7 +249,18 @@ document.addEventListener('alpine:init', () => {
                 for (const field of this.currentCategory.fields) {
                     const trimmedName = field.name.trim();
                     if (!trimmedName) continue;
-                    fields[trimmedName] = field.type;
+                    if (field.type === 'select') {
+                        const options = (field.optionsText || '')
+                            .split(',')
+                            .map(option => option.trim())
+                            .filter(Boolean);
+                        fields[trimmedName] = {
+                            type: field.type,
+                            options
+                        };
+                    } else {
+                        fields[trimmedName] = field.type;
+                    }
                 }
 
                 const categoryData = {
@@ -596,7 +625,29 @@ document.addEventListener('alpine:init', () => {
 
         getCategoryFields(categoryId) {
             const category = this.categories.find(c => c.id === categoryId);
-            return category ? JSON.parse(category.fields || '{}') : null;
+            if (!category) return null;
+            let parsed;
+            try {
+                parsed = JSON.parse(category.fields || '{}');
+            } catch (error) {
+                console.error('Error parsing category fields:', error);
+                return null;
+            }
+
+            return Object.fromEntries(
+                Object.entries(parsed).map(([fieldName, fieldConfig]) => {
+                    if (typeof fieldConfig === 'string') {
+                        return [fieldName, { type: fieldConfig, options: [] }];
+                    }
+                    return [
+                        fieldName,
+                        {
+                            type: fieldConfig?.type || 'text',
+                            options: Array.isArray(fieldConfig?.options) ? fieldConfig.options : []
+                        }
+                    ];
+                })
+            );
         },
 
 		getCategoryColor(categoryName) {
