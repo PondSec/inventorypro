@@ -628,13 +628,17 @@ document.addEventListener('alpine:init', () => {
         },
 
         // Helper Methods
+        getCategoryById(categoryId) {
+            return this.categories.find(c => c.id === categoryId) || null;
+        },
+
         getCategoryName(categoryId) {
-            const category = this.categories.find(c => c.id === categoryId);
+            const category = this.getCategoryById(categoryId);
             return category ? category.name : 'Unknown';
         },
 
         getCategoryFields(categoryId) {
-            const category = this.categories.find(c => c.id === categoryId);
+            const category = this.getCategoryById(categoryId);
             if (!category) return null;
             let parsed;
             try {
