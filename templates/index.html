@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
@@ -1205,146 +1206,7 @@
 			</div>
 		</div>
     </div>
-	<script src="/static/script.js"></script>
-	<script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-	<style>
-		:root {
-		  --bg-light: #f9f9fb;
-		  --bg-card: #ffffffcc;
-		  --bg-hover: #f0f0f5;
-		  --text-main: #1c1c1e;
-		  --text-subtle: #555;
-		  --shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
-		  --border: #d1d1d6;
-		  --accent-blue: #007aff;
-		  --accent-red: #ff3b30;
-		}
-
-		body {
-		  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-		  background: var(--bg-light);
-		  color: var(--text-main);
-		  padding: 2rem;
-		  margin: 0;
-		}
-
-		/* Grid */
-		#categories {
-		  display: grid;
-		  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-		  gap: 1.5rem;
-		}
-
-		/* Karten-Stil */
-		.category-card {
-		  background: var(--bg-card);
-		  backdrop-filter: blur(10px);
-		  border-radius: 16px;
-		  padding: 1.25rem 1.5rem;
-		  box-shadow: var(--shadow);
-		  transition: background 0.3s ease, transform 0.2s ease;
-		  border: 1px solid var(--border);
-		}
-
-		.category-card:hover {
-		  background: var(--bg-hover);
-		  transform: translateY(-2px);
-		}
-
-		/* Überschrift */
-		.category-card h3 {
-		  font-size: 1.2rem;
-		  font-weight: 600;
-		  margin: 0 0 0.75rem;
-		}
-
-		/* Icon */
-		.category-card .icon {
-		  font-size: 1.5rem;
-		  margin-right: 0.5rem;
-		  color: var(--accent-blue);
-		}
-
-		/* Buttons */
-		.category-card .actions {
-		  margin-top: 1rem;
-		  display: flex;
-		  gap: 0.5rem;
-		}
-
-		.category-card button {
-		  flex: 1;
-		  padding: 0.5rem 0.75rem;
-		  font-size: 0.9rem;
-		  font-weight: 500;
-		  border: none;
-		  border-radius: 10px;
-		  cursor: pointer;
-		  transition: background 0.2s ease;
-		}
-
-		.category-card button.edit {
-		  background: var(--accent-blue);
-		  color: white;
-		}
-
-		.category-card button.edit:hover {
-		  background: #005fcc;
-		}
-
-		.category-card button.delete {
-		  background: var(--accent-red);
-		  color: white;
-		}
-
-		.category-card button.delete:hover {
-		  background: #c82320;
-		}
-
-		/* Responsive Headline */
-		h2 {
-		  font-size: 1.75rem;
-		  margin-bottom: 1.5rem;
-		}
-		
-		input[type="text"],
-		select {
-		  width: 100%;
-		  padding: 0.6rem 0.75rem;
-		  font-size: 1rem;
-		  border: 1px solid var(--border);
-		  border-radius: 12px;
-		  background-color: #ffffffcc;
-		  backdrop-filter: blur(6px);
-		  box-shadow: 0 2px 5px rgba(0,0,0,0.04);
-		  transition: border 0.2s ease, box-shadow 0.2s ease;
-		  outline: none;
-		  color: var(--text-main);
-		}
-
-		input[type="text"]:focus,
-		select:focus {
-		  border-color: var(--accent-blue);
-		  box-shadow: 0 0 0 3px rgba(0,122,255,0.2);
-		  background-color: #fff;
-		}
-
-		label {
-		  font-weight: 500;
-		  font-size: 0.95rem;
-		  margin-bottom: 0.25rem;
-		  display: block;
-		  color: var(--text-subtle);
-		}
-	</style>
-	<!-- Füge dies im head oder vor dem schließenden body-Tag ein -->
-	<script src="https://unpkg.com/feather-icons"></script>
-	<script src="https://unpkg.com/heroicons@2.0.18/outline/index.js"></script>
-	<script>
-	  document.addEventListener('DOMContentLoaded', function() {
-		feather.replace();
-	  });
-	</script>
-	
+		<script src="/static/script.js"></script>
+		<script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 </body>
 </html>

@@ -75,6 +75,60 @@ document.addEventListener('alpine:init', () => {
             await this.loadActivityFeed();
             this.$watch('searchQuery', () => this.searchDevices());
             feather.replace();
+            this.startLiveRefresh();
+        },
+
+        async loadFeatureFlags() {
+            try {
+                const response = await fetch('/api/features');
+                if (response.ok) {
+                    this.featureFlags = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading feature flags:', error);
+            }
+        },
+
+        async loadMaintenanceSummary() {
+            try {
+                const response = await fetch('/api/maintenance/summary');
+                if (response.ok) {
+                    this.maintenanceSummary = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading maintenance summary:', error);
+            }
+        },
+
+        async loadActivityFeed() {
+            try {
+                const response = await fetch('/api/activity?limit=6');
+                if (response.ok) {
+                    this.activityFeed = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading activity feed:', error);
+            }
+        },
+
+        async loadOverview() {
+            try {
+                const response = await fetch('/api/dashboard/overview');
+                if (response.ok) {
+                    this.overview = await response.json();
+                    this.updateLiveChart();
+                }
+            } catch (error) {
+                console.error('Error loading dashboard overview:', error);
+            }
+        },
+
+        startLiveRefresh() {
+            setInterval(async () => {
+                await this.loadActivityFeed();
+                await this.loadMaintenanceSummary();
+                await this.loadOverview();
+            }, 15000);
         },
 
         async loadFeatureFlags() {
