@@ -316,7 +316,7 @@ footer {
     z-index: 30;
   }
 
-  .app-body:not(.sidebar-collapsed) .app-shell::before {
+  .app-body.sidebar-open .app-shell::before {
     opacity: 1;
   }
 
@@ -328,7 +328,7 @@ footer {
     box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
   }
 
-  .app-body:not(.sidebar-collapsed) .app-sidebar {
+  .app-body.sidebar-open .app-sidebar {
     transform: translateX(0);
   }
 
