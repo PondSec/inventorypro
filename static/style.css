@@ -296,6 +296,62 @@ footer {
   padding-right: 0.5rem;
 }
 
+@media (max-width: 1024px) {
+  .app-body {
+    --sidebar-width: 0px;
+  }
+
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .app-shell::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.35);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    z-index: 30;
+  }
+
+  .app-body:not(.sidebar-collapsed) .app-shell::before {
+    opacity: 1;
+  }
+
+  .app-sidebar {
+    width: min(85vw, 320px);
+    transform: translateX(-120%);
+    transition: transform 0.25s ease;
+    z-index: 40;
+    box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+  }
+
+  .app-body:not(.sidebar-collapsed) .app-sidebar {
+    transform: translateX(0);
+  }
+
+  .app-main--fixed {
+    margin-left: 0;
+  }
+
+  .app-header {
+    left: 0;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    height: auto;
+    padding: 0.75rem 1rem;
+  }
+
+  .app-main--fixed main {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 6.5rem;
+  }
+}
+
 /* Dark mode overrides */
 .dark body,
 .dark .app-body {
