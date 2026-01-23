@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Pro - Statistiken</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="/static/style.css">
@@ -94,7 +98,10 @@
 
 			<!-- Rechte Seite: Button-Gruppe -->
 			<div class="flex items-center space-x-4">
-
+			  <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+				<span data-theme-icon aria-hidden="true">🌙</span>
+				<span data-theme-label>Dark Mode</span>
+			  </button>
 			  <!-- Logout Button -->
 			  <button onclick="logout()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
 				<i data-feather="log-out" class="w-4 h-4"></i>
