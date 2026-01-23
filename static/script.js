@@ -2,22 +2,35 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('app', () => ({
         // State
         categories: [],
+        locations: [],
         devices: [],
         filteredDevices: [],
         activeCategory: null,
         searchQuery: '',
         sortDropdownOpen: false,
+        featureFlags: {
+            pro_enabled: false,
+            pro_features: [],
+            free_features: []
+        },
+        maintenanceSummary: {
+            pro_locked: true,
+            open: 0,
+            overdue: 0
+        },
+        activityFeed: [],
+        selectedDevice: null,
+        deviceDetailOpen: false,
+        deviceTags: [],
+        deviceNotes: [],
+        maintenanceTasks: [],
+        newTag: '',
+        newNote: '',
+        newMaintenance: {
+            title: '',
+            due_date: ''
+        },
         currentSort: { field: null, direction: null },
-		
-		showSortMenu: false,
-		currentSort: null,
-		sortOptions: [
-			{ value: 'clock_asc', label: 'Clock ▲', field: 'clock', order: 'asc' },
-			{ value: 'clock_desc', label: 'Clock ▼', field: 'clock', order: 'desc' },
-			{ value: 'name_asc', label: 'Name A-Z', field: 'name', order: 'asc' },
-			{ value: 'name_desc', label: 'Name Z-A', field: 'name', order: 'desc' },
-			{ value: 'none', label: 'No sorting' }
-		],
         
         // Modals
         isCategoryModalOpen: false,
@@ -32,28 +45,73 @@ document.addEventListener('alpine:init', () => {
             id: null,
             name: '',
             icon: 'cpu',
-            fields: '{}'
+            fields: []
         },
         currentDevice: {
             id: null,
             name: '',
             category_id: null,
             serial_number: '',
-            specs: {}
+            location_id: '',
+            specs: {},
+            extraSpecs: []
         },
 
         // Initialization
         async init() {
             await this.loadCategories();
+            await this.loadLocations();
             await this.loadDevices();
+            await this.loadFeatureFlags();
+            await this.loadMaintenanceSummary();
+            await this.loadActivityFeed();
             this.$watch('searchQuery', () => this.searchDevices());
             feather.replace();
+            this.startLiveRefresh();
+        },
+
+        async loadFeatureFlags() {
+            try {
+                const response = await fetch('/api/features');
+                if (response.ok) {
+                    this.featureFlags = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading feature flags:', error);
+            }
+        },
+
+        async loadMaintenanceSummary() {
+            try {
+                const response = await fetch('/api/maintenance/summary');
+                if (response.ok) {
+                    this.maintenanceSummary = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading maintenance summary:', error);
+            }
+        },
+
+        startLiveRefresh() {
+            setInterval(async () => {
+                await this.loadActivityFeed();
+                await this.loadMaintenanceSummary();
+            }, 15000);
         },
 		
         // Data Loading
         async loadCategories() {
             const response = await fetch('/api/categories');
-            this.categories = await response.json();
+            if (response.ok) {
+                this.categories = await response.json();
+            }
+        },
+
+        async loadLocations() {
+            const response = await fetch('/api/locations');
+            if (response.ok) {
+                this.locations = await response.json();
+            }
         },
 
         async loadDevices(categoryId = null) {
@@ -63,8 +121,16 @@ document.addEventListener('alpine:init', () => {
                 : '/api/devices';
             
             const response = await fetch(url);
-            this.devices = await response.json();
-            this.filteredDevices = this.devices;
+            if (response.ok) {
+                this.devices = await response.json();
+                this.filteredDevices = this.devices;
+            }
+            if (this.selectedDevice) {
+                const updated = this.devices.find(device => device.id === this.selectedDevice.id);
+                if (updated) {
+                    this.selectedDevice = updated;
+                }
+            }
         },
 
         // Search and Sort
@@ -121,19 +187,39 @@ document.addEventListener('alpine:init', () => {
                 id: null,
                 name: '',
                 icon: 'cpu',
-                fields: '{}'
+                fields: []
             };
             this.isCategoryModalOpen = true;
             this.categoryMenuOpen = null; // Menü schließen beim Öffnen des Modals
         },
 
 		editCategoryModal(category) {  // <-- Parameter korrekt entgegennehmen
+            const fieldsObject = JSON.parse(category.fields || '{}');
 			this.editingCategory = true;
 			this.currentCategory = {
 				id: category.id,
 				name: category.name,
 				icon: category.icon,
-				fields: JSON.stringify(JSON.parse(category.fields), null, 2)
+				fields: Object.entries(fieldsObject).map(([fieldName, fieldConfig]) => {
+                    if (typeof fieldConfig === 'string') {
+                        return {
+                            id: crypto.randomUUID(),
+                            name: fieldName,
+                            type: fieldConfig,
+                            options: [],
+                            optionsText: ''
+                        };
+                    }
+
+                    const options = Array.isArray(fieldConfig?.options) ? fieldConfig.options : [];
+                    return {
+                        id: crypto.randomUUID(),
+                        name: fieldName,
+                        type: fieldConfig?.type || 'text',
+                        options,
+                        optionsText: options.join(', ')
+                    };
+                })
 			};
 			this.isCategoryModalOpen = true;
 			this.categoryMenuOpen = null; // Menü schließen beim Öffnen des Modals
@@ -143,12 +229,44 @@ document.addEventListener('alpine:init', () => {
             this.isCategoryModalOpen = false;
         },
 
+        addCategoryField() {
+            this.currentCategory.fields.push({
+                id: crypto.randomUUID(),
+                name: '',
+                type: 'text',
+                options: [],
+                optionsText: ''
+            });
+        },
+
+        removeCategoryField(fieldId) {
+            this.currentCategory.fields = this.currentCategory.fields.filter(field => field.id !== fieldId);
+        },
+
         async saveCategory() {
             try {
+                const fields = {};
+                for (const field of this.currentCategory.fields) {
+                    const trimmedName = field.name.trim();
+                    if (!trimmedName) continue;
+                    if (field.type === 'select') {
+                        const options = (field.optionsText || '')
+                            .split(',')
+                            .map(option => option.trim())
+                            .filter(Boolean);
+                        fields[trimmedName] = {
+                            type: field.type,
+                            options
+                        };
+                    } else {
+                        fields[trimmedName] = field.type;
+                    }
+                }
+
                 const categoryData = {
                     name: this.currentCategory.name,
                     icon: this.currentCategory.icon,
-                    fields: JSON.parse(this.currentCategory.fields)
+                    fields
                 };
 
                 let response;
@@ -166,13 +284,14 @@ document.addEventListener('alpine:init', () => {
                     });
                 }
 
-                if (response.ok) {
-                    await this.loadCategories();
-                    this.closeCategoryModal();
-                } else {
+                if (!response.ok) {
                     const error = await response.json();
                     throw new Error(error.error || 'Failed to save category');
                 }
+
+                await this.loadCategories();
+                this.closeCategoryModal();
+                await this.loadActivityFeed();
             } catch (error) {
                 console.error('Error saving category:', error);
                 alert('Error saving category: ' + error.message);
@@ -180,20 +299,31 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteCategory(categoryId) {
-            if (confirm('Are you sure you want to delete this category and all its devices?')) {
-                const response = await fetch(`/api/categories/${categoryId}`, {
-                    method: 'DELETE'
-                });
-                if (response.ok) {
-                    await this.loadCategories();
-                    if (this.activeCategory === categoryId) {
-                        await this.loadDevices();
-                    }
-                    this.categoryMenuOpen = null; // Menü schließen nach Löschen
-                } else {
-                    const error = await response.json();
-                    alert('Error deleting category: ' + (error.error || 'Unknown error'));
+            if (!confirm('Are you sure you want to delete this category and all its devices?')) {
+                return false;
+            }
+            const response = await fetch(`/api/categories/${categoryId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                await this.loadCategories();
+                if (this.activeCategory === categoryId) {
+                    await this.loadDevices();
                 }
+                this.categoryMenuOpen = null; // Menü schließen nach Löschen
+                await this.loadActivityFeed();
+                return true;
+            }
+            const error = await response.json();
+            alert('Error deleting category: ' + (error.error || 'Unknown error'));
+            return false;
+        },
+
+        async confirmDeleteCategory() {
+            if (!this.currentCategory.id) return;
+            const deleted = await this.deleteCategory(this.currentCategory.id);
+            if (deleted) {
+                this.closeCategoryModal();
             }
         },
 
@@ -213,19 +343,39 @@ document.addEventListener('alpine:init', () => {
                 name: '',
                 category_id: this.activeCategory,
                 serial_number: '',
-                specs: {}
+                location_id: '',
+                specs: {},
+                extraSpecs: []
             };
             this.isDeviceModalOpen = true;
         },
 
         openEditDeviceModal(device) {
+            const specs = JSON.parse(device.specs || '{}');
+            const categoryFields = this.getCategoryFields(device.category_id) || {};
+            const baseSpecs = {};
+            const extraSpecs = [];
+
+            Object.entries(specs).forEach(([key, value]) => {
+                if (categoryFields && Object.prototype.hasOwnProperty.call(categoryFields, key)) {
+                    baseSpecs[key] = value;
+                } else {
+                    extraSpecs.push({
+                        id: crypto.randomUUID(),
+                        name: key,
+                        value
+                    });
+                }
+            });
             this.editingDevice = true;
             this.currentDevice = {
                 id: device.id,
                 name: device.name,
                 category_id: device.category_id,
                 serial_number: device.serial_number,
-                specs: JSON.parse(device.specs || '{}')
+                location_id: device.location_id || '',
+                specs: baseSpecs,
+                extraSpecs
             };
             this.isDeviceModalOpen = true;
         },
@@ -234,13 +384,33 @@ document.addEventListener('alpine:init', () => {
             this.isDeviceModalOpen = false;
         },
 
+        addExtraSpec() {
+            this.currentDevice.extraSpecs.push({
+                id: crypto.randomUUID(),
+                name: '',
+                value: ''
+            });
+        },
+
+        removeExtraSpec(specId) {
+            this.currentDevice.extraSpecs = this.currentDevice.extraSpecs.filter(spec => spec.id !== specId);
+        },
+
         async saveDevice() {
             try {
+                const specs = { ...this.currentDevice.specs };
+                this.currentDevice.extraSpecs.forEach((spec) => {
+                    const trimmedName = spec.name.trim();
+                    if (!trimmedName) return;
+                    specs[trimmedName] = spec.value;
+                });
+
                 const deviceData = {
                     name: this.currentDevice.name,
                     category_id: this.currentDevice.category_id || this.activeCategory,
                     serial_number: this.currentDevice.serial_number,
-                    specs: this.currentDevice.specs
+                    location_id: this.currentDevice.location_id || null,
+                    specs
                 };
 
                 let response;
@@ -258,13 +428,14 @@ document.addEventListener('alpine:init', () => {
                     });
                 }
 
-                if (response.ok) {
-                    await this.loadDevices(this.activeCategory);
-                    this.closeDeviceModal();
-                } else {
+                if (!response.ok) {
                     const error = await response.json();
                     throw new Error(error.error || 'Failed to save device');
                 }
+
+                await this.loadDevices(this.activeCategory);
+                this.closeDeviceModal();
+                await this.loadActivityFeed();
             } catch (error) {
                 console.error('Error saving device:', error);
                 alert('Error saving device: ' + error.message);
@@ -278,6 +449,7 @@ document.addEventListener('alpine:init', () => {
                 });
                 if (response.ok) {
                     await this.loadDevices(this.activeCategory);
+                    await this.loadActivityFeed();
                 } else {
                     const error = await response.json();
                     alert('Error deleting device: ' + (error.error || 'Unknown error'));
@@ -293,15 +465,228 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async openDeviceDetail(device) {
+            this.selectedDevice = device;
+            this.deviceDetailOpen = true;
+            await this.loadDeviceExtras(device.id);
+        },
+
+        closeDeviceDetail() {
+            this.deviceDetailOpen = false;
+            this.selectedDevice = null;
+            this.deviceTags = [];
+            this.deviceNotes = [];
+            this.maintenanceTasks = [];
+        },
+
+        async loadDeviceExtras(deviceId) {
+            try {
+                const [tagsRes, notesRes] = await Promise.all([
+                    fetch(`/api/devices/${deviceId}/tags`),
+                    fetch(`/api/devices/${deviceId}/notes`)
+                ]);
+                if (tagsRes.ok) {
+                    this.deviceTags = await tagsRes.json();
+                }
+                if (notesRes.ok) {
+                    this.deviceNotes = await notesRes.json();
+                }
+            } catch (error) {
+                console.error('Error loading device extras:', error);
+            }
+
+            try {
+                const maintenanceRes = await fetch(`/api/maintenance?device_id=${deviceId}`);
+                if (maintenanceRes.ok) {
+                    this.maintenanceTasks = await maintenanceRes.json();
+                }
+            } catch (error) {
+                console.error('Error loading maintenance tasks:', error);
+            }
+        },
+
+        async addTag() {
+            if (!this.newTag.trim() || !this.selectedDevice) return;
+            try {
+                const response = await fetch(`/api/devices/${this.selectedDevice.id}/tags`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tag: this.newTag.trim() })
+                });
+                if (response.ok) {
+                    this.newTag = '';
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadActivityFeed();
+                } else {
+                    const error = await response.json();
+                    alert(error.error || 'Tag konnte nicht gespeichert werden');
+                }
+            } catch (error) {
+                console.error('Error adding tag:', error);
+            }
+        },
+
+        async removeTag(tagId) {
+            if (!this.selectedDevice) return;
+            try {
+                const response = await fetch(`/api/devices/${this.selectedDevice.id}/tags/${tagId}`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadActivityFeed();
+                }
+            } catch (error) {
+                console.error('Error removing tag:', error);
+            }
+        },
+
+        async addNote() {
+            if (!this.newNote.trim() || !this.selectedDevice) return;
+            try {
+                const response = await fetch(`/api/devices/${this.selectedDevice.id}/notes`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ note: this.newNote.trim() })
+                });
+                if (response.ok) {
+                    this.newNote = '';
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadActivityFeed();
+                } else {
+                    const error = await response.json();
+                    alert(error.error || 'Notiz konnte nicht gespeichert werden');
+                }
+            } catch (error) {
+                console.error('Error adding note:', error);
+            }
+        },
+
+        async deleteNote(noteId) {
+            if (!this.selectedDevice) return;
+            try {
+                const response = await fetch(`/api/devices/${this.selectedDevice.id}/notes/${noteId}`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadActivityFeed();
+                }
+            } catch (error) {
+                console.error('Error deleting note:', error);
+            }
+        },
+
+        async addMaintenanceTask() {
+            if (!this.selectedDevice) return;
+            if (!this.newMaintenance.title.trim()) return;
+            try {
+                const response = await fetch('/api/maintenance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        device_id: this.selectedDevice.id,
+                        title: this.newMaintenance.title.trim(),
+                        due_date: this.newMaintenance.due_date
+                    })
+                });
+                if (response.ok) {
+                    this.newMaintenance = { title: '', due_date: '' };
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadMaintenanceSummary();
+                    await this.loadActivityFeed();
+                } else {
+                    const error = await response.json();
+                    alert(error.error || 'Wartung konnte nicht gespeichert werden');
+                }
+            } catch (error) {
+                console.error('Error adding maintenance task:', error);
+            }
+        },
+
+        async updateMaintenanceStatus(taskId, status) {
+            try {
+                const response = await fetch(`/api/maintenance/${taskId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                });
+                if (response.ok) {
+                    await this.loadDeviceExtras(this.selectedDevice.id);
+                    await this.loadMaintenanceSummary();
+                    await this.loadActivityFeed();
+                }
+            } catch (error) {
+                console.error('Error updating maintenance task:', error);
+            }
+        },
+
+        formatActivity(item) {
+            const name = item.details?.name || item.details?.tag || '';
+            const label = `${item.action} ${item.entity_type}`.replace('_', ' ');
+            return `${label}${name ? ` • ${name}` : ''}`;
+        },
+
         // Helper Methods
+        getCategoryById(categoryId) {
+            return this.categories.find(c => c.id === categoryId) || null;
+        },
+
         getCategoryName(categoryId) {
-            const category = this.categories.find(c => c.id === categoryId);
+            const category = this.getCategoryById(categoryId);
             return category ? category.name : 'Unknown';
         },
 
         getCategoryFields(categoryId) {
-            const category = this.categories.find(c => c.id === categoryId);
-            return category ? JSON.parse(category.fields || '{}') : null;
+            const category = this.getCategoryById(categoryId);
+            if (!category) return null;
+            let parsed;
+            try {
+                parsed = JSON.parse(category.fields || '{}');
+            } catch (error) {
+                console.error('Error parsing category fields:', error);
+                return null;
+            }
+
+            return Object.fromEntries(
+                Object.entries(parsed).map(([fieldName, fieldConfig]) => {
+                    if (typeof fieldConfig === 'string') {
+                        return [fieldName, { type: fieldConfig, options: [] }];
+                    }
+                    return [
+                        fieldName,
+                        {
+                            type: fieldConfig?.type || 'text',
+                            options: Array.isArray(fieldConfig?.options) ? fieldConfig.options : []
+                        }
+                    ];
+                })
+            );
+        },
+
+        formatSpecValue(value) {
+            if (value === null || value === undefined || value === '') {
+                return '-';
+            }
+            if (typeof value === 'boolean') {
+                return value ? 'Ja' : 'Nein';
+            }
+            return value;
+        },
+
+        getDeviceSpecEntries(device) {
+            if (!device) return [];
+            let parsed;
+            try {
+                parsed = JSON.parse(device.specs || '{}');
+            } catch (error) {
+                console.error('Error parsing device specs:', error);
+                return [];
+            }
+            return Object.entries(parsed).map(([key, value]) => ({
+                key,
+                value: this.formatSpecValue(value)
+            }));
         },
 
 		getCategoryColor(categoryName) {
@@ -353,4 +738,3 @@ document.addEventListener('alpine:init', () => {
 		
     }));
 });
-
