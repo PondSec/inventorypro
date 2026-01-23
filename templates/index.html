@@ -17,7 +17,7 @@
             min-height: 100vh;
         }
         .sidebar {
-            width: 240px;
+            width: 280px;
             position: fixed;
             height: 100%;
             left: 0;
@@ -25,24 +25,29 @@
             z-index: 40;
         }
         .main-content {
-            margin-left: 240px;
+            margin-left: 280px;
             flex: 1;
             min-height: 100vh;
         }
         .app-header {
-            width: calc(100% - 240px);
+            width: calc(100% - 280px);
         }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-900">
+<body class="bg-slate-950/5 text-slate-900">
     <div class="app-container">
         <!-- Sidebar -->
-        <div class="sidebar bg-white border-r border-gray-200">
-            <div class="sidebar-header p-6 border-b border-gray-200">
+        <div class="sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
                 <a href="https://inv.pondsec.com">
                 <div class="logo flex items-center space-x-3">
-                    <i data-feather="cpu" class="text-blue-500 w-6 h-6"></i>
-                    <span class="text-xl font-semibold">Inventory Pro</span>
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg">
+                        <i data-feather="cpu" class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <p class="text-lg font-semibold text-slate-900">Inventory Pro</p>
+                        <p class="text-xs text-slate-500">Smart Asset Hub</p>
+                    </div>
                 </div>
                 </a>
             </div>
@@ -113,19 +118,35 @@
 			  }
 			}"
 			class="sidebar-nav p-4 overflow-y-auto max-h-[calc(100vh-8rem)]">
+			  <div class="mb-4 rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+				<p class="text-xs uppercase tracking-widest text-slate-400">Willkommen zurück</p>
+				<p class="text-lg font-semibold text-slate-900">{{ username }}</p>
+				<div class="mt-2 flex items-center gap-2 text-xs text-slate-500">
+				  <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1">
+					<i data-feather="activity" class="w-3 h-3"></i>
+					Live-Übersicht
+				  </span>
+				  <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1">
+					<i data-feather="clock" class="w-3 h-3"></i>
+					<span x-text="new Date().toLocaleDateString('de-DE')"></span>
+				  </span>
+				</div>
+			  </div>
 
-			  <div class="space-y-2">
+			  <div class="space-y-3">
 
 				<!-- Kategorien-Accordion -->
-				<div class="border border-gray-200 rounded-lg overflow-hidden">
+				<div class="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
 				  <div @click="categoriesOpen = !categoriesOpen"
-					   class="flex items-center justify-between px-4 py-3 bg-white hover:bg-gray-100 cursor-pointer transition-colors">
+					   class="flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 cursor-pointer transition-colors">
 					<div class="flex items-center space-x-3">
-					  <i data-feather="layers" class="w-4 h-4 text-gray-500"></i>
-					  <span class="text-sm font-medium text-gray-800">Kategorien</span>
+					  <span class="flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-600">
+						<i data-feather="layers" class="w-4 h-4"></i>
+					  </span>
+					  <span class="text-sm font-semibold text-slate-800">Kategorien</span>
 					</div>
 					<svg :class="{ 'rotate-180': categoriesOpen }"
-						 class="w-4 h-4 text-gray-500 transition-transform duration-200"
+						 class="w-4 h-4 text-slate-500 transition-transform duration-200"
 						 fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 							d="M19 9l-7 7-7-7"/>
@@ -134,22 +155,22 @@
 
 				  <!-- Alle Kategorien im Dropdown -->
 				  <div x-show="categoriesOpen" x-transition
-					   class="bg-gray-50 px-2 py-2 space-y-1 text-sm text-gray-800">
+					   class="bg-slate-50 px-2 py-2 space-y-1 text-sm text-slate-800">
 
 					<template x-for="category in categories" :key="category.id">
-					  <div class="group flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+					  <div class="group flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white transition-colors">
 						<button @click="loadDevices(category.id)" class="flex items-center space-x-2 flex-1 text-left">
 						  <!-- Dynamisches Icon -->
-						  <div x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-gray-500' })"></div>
+						  <div x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-slate-500' })"></div>
 						  <span x-text="category.name"></span>
 						</button>
 						<div class="flex items-center space-x-2">
 						  <button @click="editCategoryModal(category)"
-								  class="text-gray-500 hover:text-black">
+								  class="text-slate-500 hover:text-slate-900">
 							<i data-feather="edit" class="w-4 h-4"></i>
 						  </button>
 						  <button @click="deleteCategory(category.id)"
-								  class="text-red-500 hover:text-red-700">
+								  class="text-rose-500 hover:text-rose-700">
 							<i data-feather="trash-2" class="w-4 h-4"></i>
 						  </button>
 						</div>
@@ -157,7 +178,7 @@
 					</template>
 					<!-- Kategorie hinzufügen -->
 					<button @click="openAddCategoryModal()"
-							class="flex justify-center items-center px-4 py-3 text-sm font-medium text-blue-600 hover:text-blue-800 w-full rounded-lg hover:bg-gray-50 transition-colors">
+							class="flex justify-center items-center px-4 py-3 text-sm font-medium text-blue-600 hover:text-blue-800 w-full rounded-xl hover:bg-white transition-colors">
 					  <i data-feather="plus-circle" class="w-4 h-4 mr-2"></i>
 					</button>
 				  </div>
@@ -165,15 +186,22 @@
 
 				<!-- Statistiken -->
 				<a href="https://inv.pondsec.com/stats"
-				   class="flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:text-black w-full rounded-lg hover:bg-gray-50 transition-colors">
-				  <i data-feather="bar-chart-2" class="w-5 h-5 mr-3"></i>
-				  <span>Statistiken</span>
+				   class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
+				  <span class="flex items-center">
+					<span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 mr-3">
+					  <i data-feather="bar-chart-2" class="w-4 h-4"></i>
+					</span>
+					Statistiken
+				  </span>
+				  <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
 				</a>
 				
 				<!-- OTP Setup Button -->
 				<button @click="setupOTP()"
-						class="flex items-center px-4 py-3 text-sm font-medium text-green-600 hover:text-green-800 w-full rounded-lg hover:bg-gray-50 transition-colors mt-4">
-				  <i data-feather="shield" class="w-5 h-5 mr-3"></i>
+						class="flex items-center px-4 py-3 text-sm font-semibold text-emerald-600 hover:text-emerald-800 w-full rounded-2xl hover:bg-white transition-colors border border-emerald-100 bg-emerald-50/70 mt-4">
+				  <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 mr-3">
+					<i data-feather="shield" class="w-4 h-4"></i>
+				  </span>
 				  <span>2FA Einrichten</span>
 				  <span x-show="otpEnabled" class="ml-2 text-green-500">
 					<i data-feather="check-circle" class="w-4 h-4"></i>
@@ -183,8 +211,11 @@
 				  </span>
 				</button>
 				
-				<a href="/reset" class="block px-4 py-2 rounded hover:bg-gray-100">
-				  <i data-feather="lock" class="inline mr-2 w-4 h-4"></i> Passwort setzen
+				<a href="/reset" class="flex items-center px-4 py-3 text-sm font-semibold text-slate-600 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/50">
+				  <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
+					<i data-feather="lock" class="w-4 h-4"></i>
+				  </span>
+				  Passwort setzen
 				</a>
 
 			  </div>
@@ -228,24 +259,22 @@
         
         <!-- Main Content -->
         <div class="main-content">
-			<header class="app-header bg-white border-b border-gray-200 px-6 flex justify-between items-center fixed top-0 left-[240px] z-30 h-[77px]" style="width: calc(100% - 240px);">
+			<header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 left-[280px] z-30 h-[82px]" style="width: calc(100% - 280px);">
 				<!-- Linke Seite: Titel -->
-				<h1 class="text-2xl font-semibold" x-text="activeCategory ? getCategoryName(activeCategory) : 'All Devices'"></h1>
+				<div>
+					<p class="text-xs uppercase tracking-[0.2em] text-slate-400">Dashboard</p>
+					<h1 class="text-2xl font-semibold text-slate-900" x-text="activeCategory ? getCategoryName(activeCategory) : 'Alle Geräte'"></h1>
+				</div>
 
 				<!-- Rechte Seite: Button-Gruppe -->
-				<div class="flex items-center space-x-4">
-				  <!-- Add Device Button im Logout-Style -->
-				  <button @click="openAddDeviceModal()" class="text-red-600 hover:text-red-800 flex items-center">
-					<i data-feather="plus" class="w-5 h-5 mr-2"></i>
-					<span>Add Device</span>
+				<div class="flex items-center space-x-3">
+				  <button @click="openAddDeviceModal()" class="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-blue-200 hover:from-blue-500 hover:to-indigo-500">
+					<i data-feather="plus" class="w-4 h-4"></i>
+					<span>Neues Gerät</span>
 				  </button>
 
-				  <!-- Trennlinie -->
-				  <div class="h-5 w-px bg-gray-300"></div>
-
-				  <!-- Logout Button -->
-				  <button onclick="logout()" class="text-red-600 hover:text-red-800 flex items-center">
-					<i data-feather="log-out" class="w-5 h-5 mr-2"></i>
+				  <button onclick="logout()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+					<i data-feather="log-out" class="w-4 h-4"></i>
 					Abmelden
 				  </button>
 				</div>
@@ -273,77 +302,215 @@
 				</script>
 			</header>
 
-            <main class="p-6 mt-16">
-				<div class="mb-6 w-full max-w-md mx-auto">
-				  <div class="relative w-full">
-					<input 
-					  type="text" 
-					  placeholder="Search devices..." 
-					  class="w-full pl-10 pr-12 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-					  x-model="searchQuery" @input.debounce.300ms="searchDevices()"
-					>
-					
-
-					<button 
-					  @click="toggleSortDropdown()" 
-					  aria-label="Sort options"
-					  class="absolute right-1 top-1/2 transform -translate-y-1/2 px-3 py-1.5 bg-white border border-gray-300 rounded-md text-gray-700 shadow-sm hover:bg-gray-50 active:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-all duration-200 ease-in-out flex items-center gap-1"
-					>
-
-					  <i data-feather="filter" class="w-4 h-4"></i>
-					</button>
-
-					<div 
-					  x-show="sortDropdownOpen" 
-					  @click.away="sortDropdownOpen = false"
-					  class="absolute right-0 mt-10 w-52 rounded-xl bg-white border border-gray-200 shadow-lg z-50 overflow-hidden transition-all duration-200"
-					  style="display: none;"
-					  x-transition
-					>
-					  <div class="divide-y divide-gray-100">
-						<a href="#" @click.prevent="sortDevices('name', 'asc')"
-						   class="block px-5 py-3 text-sm text-gray-800 hover:bg-gray-50 hover:text-black transition-colors duration-150">
-						  Name (A–Z)
-						</a>
-						<a href="#" @click.prevent="sortDevices('name', 'desc')"
-						   class="block px-5 py-3 text-sm text-gray-800 hover:bg-gray-50 hover:text-black transition-colors duration-150">
-						  Name (Z–A)
-						</a>
-						<a href="#" @click.prevent="sortDevices('serial_number', 'asc')"
-						   class="block px-5 py-3 text-sm text-gray-800 hover:bg-gray-50 hover:text-black transition-colors duration-150">
-						  Owner (aufsteigend)
-						</a>
-						<a href="#" @click.prevent="sortDevices('serial_number', 'desc')"
-						   class="block px-5 py-3 text-sm text-gray-800 hover:bg-gray-50 hover:text-black transition-colors duration-150">
-						  Owner (absteigend)
-						</a>
-					  </div>
+            <main class="p-8 mt-20 space-y-8">
+				<section class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-8 py-10 text-white shadow-2xl shadow-slate-300/50">
+					<div class="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+						<div>
+							<p class="text-sm uppercase tracking-[0.3em] text-slate-300">Inventory Pro</p>
+							<h2 class="mt-2 text-3xl font-semibold leading-tight">Dein smarter Überblick über Assets, Geräte &amp; Kategorien.</h2>
+							<p class="mt-3 max-w-xl text-slate-200">Verfolge Bestände in Echtzeit, behalte Verantwortlichkeiten im Blick und finde Geräte in Sekunden.</p>
+							<div class="mt-6 flex flex-wrap gap-3">
+								<button @click="openAddDeviceModal()" class="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-md hover:bg-slate-100">
+									<i data-feather="plus" class="w-4 h-4"></i>
+									Gerät hinzufügen
+								</button>
+								<button @click="openAddCategoryModal()" class="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 text-sm font-semibold text-white/90 hover:bg-white/10">
+									<i data-feather="folder-plus" class="w-4 h-4"></i>
+									Kategorie anlegen
+								</button>
+								<a href="/stats" class="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 text-sm font-semibold text-white/90 hover:bg-white/10">
+									<i data-feather="bar-chart-2" class="w-4 h-4"></i>
+									Dashboard öffnen
+								</a>
+							</div>
+						</div>
+						<div class="grid w-full max-w-sm grid-cols-2 gap-4">
+							<div class="rounded-2xl bg-white/10 p-4 backdrop-blur">
+								<p class="text-xs uppercase tracking-widest text-slate-300">Geräte</p>
+								<p class="mt-2 text-2xl font-semibold" x-text="devices.length"></p>
+								<p class="text-xs text-slate-300">Gesamt im System</p>
+							</div>
+							<div class="rounded-2xl bg-white/10 p-4 backdrop-blur">
+								<p class="text-xs uppercase tracking-widest text-slate-300">Kategorien</p>
+								<p class="mt-2 text-2xl font-semibold" x-text="categories.length"></p>
+								<p class="text-xs text-slate-300">Aktiv gepflegt</p>
+							</div>
+							<div class="rounded-2xl bg-white/10 p-4 backdrop-blur">
+								<p class="text-xs uppercase tracking-widest text-slate-300">Treffer</p>
+								<p class="mt-2 text-2xl font-semibold" x-text="filteredDevices.length"></p>
+								<p class="text-xs text-slate-300">Aktuell gefiltert</p>
+							</div>
+							<div class="rounded-2xl bg-white/10 p-4 backdrop-blur">
+								<p class="text-xs uppercase tracking-widest text-slate-300">Kategorie</p>
+								<p class="mt-2 text-lg font-semibold" x-text="activeCategory ? getCategoryName(activeCategory) : 'Alle'"></p>
+								<p class="text-xs text-slate-300">Aktiver Fokus</p>
+							</div>
+						</div>
 					</div>
-				  </div>
-				</div>
+				</section>
+
+				<section class="grid gap-4 lg:grid-cols-4">
+					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm font-semibold text-slate-900">Geräte durchsuchen</p>
+								<p class="text-xs text-slate-500">Schneller Zugriff auf Assets</p>
+							</div>
+							<span class="inline-flex items-center justify-center rounded-full bg-blue-50 p-2 text-blue-500">
+								<i data-feather="search" class="h-4 w-4"></i>
+							</span>
+						</div>
+						<div class="mt-4">
+							<div class="relative w-full">
+								<input 
+								  type="text" 
+								  placeholder="Gerät, Besitzer oder Spezifikation suchen..." 
+								  class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm text-slate-700 shadow-inner focus:border-blue-500 focus:ring-blue-500"
+								  x-model="searchQuery" @input.debounce.300ms="searchDevices()"
+								>
+								<button 
+								  @click="toggleSortDropdown()" 
+								  aria-label="Sort options"
+								  class="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-600 shadow-sm hover:bg-slate-50"
+								>
+								  <i data-feather="filter" class="w-4 h-4"></i>
+								</button>
+
+								<div 
+								  x-show="sortDropdownOpen" 
+								  @click.away="sortDropdownOpen = false"
+								  class="absolute right-0 mt-3 w-56 rounded-2xl bg-white border border-slate-200 shadow-xl z-50 overflow-hidden"
+								  style="display: none;"
+								  x-transition
+								>
+								  <div class="divide-y divide-slate-100">
+									<a href="#" @click.prevent="sortDevices('name', 'asc')"
+									   class="block px-5 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+									  Name (A–Z)
+									</a>
+									<a href="#" @click.prevent="sortDevices('name', 'desc')"
+									   class="block px-5 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+									  Name (Z–A)
+									</a>
+									<a href="#" @click.prevent="sortDevices('serial_number', 'asc')"
+									   class="block px-5 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+									  Owner (aufsteigend)
+									</a>
+									<a href="#" @click.prevent="sortDevices('serial_number', 'desc')"
+									   class="block px-5 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+									  Owner (absteigend)
+									</a>
+								  </div>
+								</div>
+							  </div>
+						</div>
+					</div>
+					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm font-semibold text-slate-900">Insights</p>
+								<p class="text-xs text-slate-500">Letzte Aktivität</p>
+							</div>
+							<span class="inline-flex items-center justify-center rounded-full bg-indigo-50 p-2 text-indigo-500">
+								<i data-feather="activity" class="h-4 w-4"></i>
+							</span>
+						</div>
+						<div class="mt-4 space-y-3 text-sm text-slate-600">
+							<div class="flex items-center justify-between">
+								<span>Aktive Kategorie</span>
+								<span class="font-semibold text-slate-900" x-text="activeCategory ? getCategoryName(activeCategory) : 'Alle Geräte'"></span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Geräte im Fokus</span>
+								<span class="font-semibold text-slate-900" x-text="filteredDevices.length"></span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Wartungen (Pro)</span>
+								<span class="font-semibold text-slate-900" x-text="maintenanceSummary.pro_locked ? 'Gesperrt' : maintenanceSummary.open"></span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Überfällig</span>
+								<span class="font-semibold text-rose-600" x-text="maintenanceSummary.pro_locked ? '-' : maintenanceSummary.overdue"></span>
+							</div>
+							<div class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+								<i data-feather="lock" class="w-3 h-3"></i>
+								<span x-show="maintenanceSummary.pro_locked">Upgrade für Wartungen</span>
+								<span x-show="!maintenanceSummary.pro_locked">Pro aktiv</span>
+							</div>
+						</div>
+					</div>
+					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm font-semibold text-slate-900">Schnellaktionen</p>
+								<p class="text-xs text-slate-500">Arbeitsabläufe beschleunigen</p>
+							</div>
+							<span class="inline-flex items-center justify-center rounded-full bg-emerald-50 p-2 text-emerald-500">
+								<i data-feather="zap" class="h-4 w-4"></i>
+							</span>
+						</div>
+						<div class="mt-4 space-y-3">
+							<button @click="openAddDeviceModal()" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
+								Gerät hinzufügen
+							</button>
+							<button @click="openAddCategoryModal()" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
+								Kategorie erstellen
+							</button>
+							<a href="/stats" class="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
+								Statistiken ansehen
+							</a>
+							<a href="/api/export/devices" class="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100">
+								Export (Pro)
+							</a>
+						</div>
+					</div>
+					<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm font-semibold text-slate-900">Aktivitäten</p>
+								<p class="text-xs text-slate-500">Letzte Änderungen im System</p>
+							</div>
+							<span class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-500">
+								<i data-feather="list" class="h-4 w-4"></i>
+							</span>
+						</div>
+						<div class="mt-4 space-y-3 text-sm text-slate-600">
+							<template x-for="item in activityFeed" :key="item.created_at">
+								<div class="flex items-start justify-between gap-2">
+									<span class="font-semibold text-slate-800" x-text="formatActivity(item)"></span>
+									<span class="text-xs text-slate-400" x-text="item.created_at.slice(11, 16)"></span>
+								</div>
+							</template>
+							<p x-show="activityFeed.length === 0" class="text-xs text-slate-400">Noch keine Aktivitäten.</p>
+						</div>
+					</div>
+				</section>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     <template x-for="device in filteredDevices" :key="device.id">
 
-						<div class="device-card bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden transition-all hover:shadow-md">
+						<div class="device-card bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all hover:shadow-lg hover:-translate-y-0.5">
 							<div class="p-5">
 								<div class="flex justify-between items-start">
 									<div>
-										<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+										<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide"
 											:class="getCategoryColor(device.category_name)">
 											<span x-text="device.category_name"></span>
 										</span>
-										<h3 class="mt-2 text-lg font-medium text-gray-900" x-text="device.name"></h3>
+										<h3 class="mt-3 text-lg font-semibold text-slate-900" x-text="device.name"></h3>
 									</div>
-									<div class="flex items-center space-x-2 text-gray-600 hover:text-black">
-										<button @click="openEditDeviceModal(device)" class="p-1 hover:bg-gray-100 rounded">
+									<div class="flex items-center space-x-2 text-slate-500 hover:text-slate-900">
+										<button @click="openEditDeviceModal(device)" class="p-2 hover:bg-slate-100 rounded-xl">
 											<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 													d="M15.232 5.232l3.536 3.536M4 20h4l10-10-4-4L4 16v4z" />
 											</svg>
 										</button>
-										<button @click="deleteDevice(device.id)" class="p-1 hover:bg-red-100 rounded">
-											<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+										<button @click="openDeviceDetail(device)" class="p-2 hover:bg-blue-100 rounded-xl text-blue-600">
+											<i data-feather="info" class="w-5 h-5"></i>
+										</button>
+										<button @click="deleteDevice(device.id)" class="p-2 hover:bg-rose-100 rounded-xl">
+											<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 													d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22" />
 											</svg>
@@ -351,18 +518,18 @@
 									</div>
 								</div>
 								
-								<div class="mt-4 space-y-2">
+								<div class="mt-4 space-y-2 rounded-2xl bg-slate-50 p-3">
 									<template x-if="device.serial_number">
 										<div class="flex justify-between text-sm">
-											<span class="text-gray-500">Owner</span>
-											<span class="font-medium" x-text="device.serial_number"></span>
+											<span class="text-slate-500">Owner</span>
+											<span class="font-semibold text-slate-800" x-text="device.serial_number"></span>
 										</div>
 									</template>
 									
 									<template x-for="(value, key) in JSON.parse(device.specs || '{}')" :key="key">
 										<div class="flex justify-between text-sm">
-											<span class="text-gray-500" x-text="key"></span>
-											<span class="font-medium" x-text="value"></span>
+											<span class="text-slate-500" x-text="key"></span>
+											<span class="font-semibold text-slate-800" x-text="value"></span>
 										</div>
 									</template>
 								</div>
@@ -376,9 +543,143 @@
                 </div>
             </main>
         </div>
-		</div>
-		
-		<!-- Add/Edit Category Modal -->
+			</div>
+
+			<!-- Device Detail Modal -->
+			<div x-show="deviceDetailOpen" @click.away="closeDeviceDetail()"
+				 class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6"
+				 x-transition>
+				<div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden">
+					<div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+						<div>
+							<p class="text-xs uppercase tracking-[0.2em] text-slate-400">Geräteübersicht</p>
+							<h3 class="text-xl font-semibold text-slate-900" x-text="selectedDevice?.name"></h3>
+						</div>
+						<button @click="closeDeviceDetail()" class="text-slate-400 hover:text-slate-600">
+							<i data-feather="x" class="w-6 h-6"></i>
+						</button>
+					</div>
+					<div class="grid gap-6 p-6 lg:grid-cols-3">
+						<div class="lg:col-span-2 space-y-6">
+							<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+								<p class="text-sm font-semibold text-slate-700">Kurzprofil</p>
+								<div class="mt-3 grid gap-2 text-sm text-slate-600">
+									<div class="flex justify-between">
+										<span>Kategorie</span>
+										<span class="font-semibold text-slate-900" x-text="selectedDevice?.category_name"></span>
+									</div>
+									<div class="flex justify-between">
+										<span>Owner</span>
+										<span class="font-semibold text-slate-900" x-text="selectedDevice?.serial_number || '-'"></span>
+									</div>
+									<div class="flex justify-between">
+										<span>Erstellt</span>
+										<span class="font-semibold text-slate-900" x-text="selectedDevice?.created_at?.slice(0, 10) || '-'"></span>
+									</div>
+								</div>
+							</div>
+
+							<div class="rounded-2xl border border-slate-200 bg-white p-4">
+								<div class="flex items-center justify-between">
+									<div>
+										<p class="text-sm font-semibold text-slate-900">Notizen</p>
+										<p class="text-xs text-slate-500">Freigabe für alle Nutzer</p>
+									</div>
+									<i data-feather="file-text" class="w-4 h-4 text-slate-400"></i>
+								</div>
+								<div class="mt-3 flex gap-2">
+									<input type="text" placeholder="Neue Notiz hinzufügen" x-model="newNote"
+										   class="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+									<button @click="addNote()" class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Speichern</button>
+								</div>
+								<div class="mt-4 space-y-3">
+									<template x-for="note in deviceNotes" :key="note.id">
+										<div class="flex items-start justify-between rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+											<div>
+												<p class="text-sm text-slate-700" x-text="note.note"></p>
+												<p class="text-xs text-slate-400" x-text="note.created_at.slice(0, 10)"></p>
+											</div>
+											<button @click="deleteNote(note.id)" class="text-slate-400 hover:text-rose-500">
+												<i data-feather="trash-2" class="w-4 h-4"></i>
+											</button>
+										</div>
+									</template>
+									<p x-show="deviceNotes.length === 0" class="text-xs text-slate-400">Noch keine Notizen.</p>
+								</div>
+							</div>
+						</div>
+
+						<div class="space-y-6">
+							<div class="rounded-2xl border border-slate-200 bg-white p-4">
+								<div class="flex items-center justify-between">
+									<div>
+										<p class="text-sm font-semibold text-slate-900">Tags</p>
+										<p class="text-xs text-slate-500">Freie Labels für Ordnung</p>
+									</div>
+									<i data-feather="tag" class="w-4 h-4 text-slate-400"></i>
+								</div>
+								<div class="mt-3 flex gap-2">
+									<input type="text" placeholder="Tag hinzufügen" x-model="newTag"
+										   class="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+									<button @click="addTag()" class="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Add</button>
+								</div>
+								<div class="mt-4 flex flex-wrap gap-2">
+									<template x-for="tag in deviceTags" :key="tag.id">
+										<span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+											<span x-text="tag.tag"></span>
+											<button @click="removeTag(tag.id)" class="text-slate-400 hover:text-rose-500">
+												<i data-feather="x" class="w-3 h-3"></i>
+											</button>
+										</span>
+									</template>
+									<p x-show="deviceTags.length === 0" class="text-xs text-slate-400">Noch keine Tags.</p>
+								</div>
+							</div>
+
+							<div class="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+								<div class="flex items-center justify-between">
+									<div>
+										<p class="text-sm font-semibold text-indigo-700">Wartungsplan (Pro)</p>
+										<p class="text-xs text-indigo-500">Erinnerungen &amp; Checklisten</p>
+									</div>
+									<i data-feather="shield" class="w-4 h-4 text-indigo-400"></i>
+								</div>
+								<div class="mt-3 space-y-3" :class="maintenanceSummary.pro_locked ? 'opacity-60' : ''">
+									<div class="flex gap-2">
+										<input type="text" placeholder="Wartungstitel" x-model="newMaintenance.title"
+											   class="flex-1 rounded-2xl border border-indigo-100 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:ring-indigo-400">
+									</div>
+									<div class="flex gap-2">
+										<input type="date" x-model="newMaintenance.due_date"
+											   class="flex-1 rounded-2xl border border-indigo-100 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:ring-indigo-400">
+										<button @click="addMaintenanceTask()" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
+											Planen
+										</button>
+									</div>
+								</div>
+								<div class="mt-4 space-y-3">
+									<template x-for="task in maintenanceTasks" :key="task.id">
+										<div class="flex items-start justify-between rounded-2xl border border-indigo-100 bg-white px-3 py-2 text-sm">
+											<div>
+												<p class="font-semibold text-slate-800" x-text="task.title"></p>
+												<p class="text-xs text-slate-400" x-text="task.due_date ? `Fällig: ${task.due_date}` : 'Kein Datum'"></p>
+											</div>
+											<button @click="updateMaintenanceStatus(task.id, task.status === 'open' ? 'done' : 'open')"
+													class="text-xs font-semibold text-indigo-600">
+												<span x-text="task.status === 'open' ? 'Erledigt' : 'Offen'"></span>
+											</button>
+										</div>
+									</template>
+									<p x-show="maintenanceSummary.pro_locked" class="text-xs text-indigo-500">Pro-Funktion aktivieren, um Wartungen zu planen.</p>
+									<p x-show="!maintenanceSummary.pro_locked && maintenanceTasks.length === 0" class="text-xs text-slate-400">Keine Wartungen geplant.</p>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Add/Edit Category Modal -->
 		<div x-show="isCategoryModalOpen" @click.away="closeCategoryModal()"
 			 class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate__animated"
 			 :class="{'animate__fadeIn': isCategoryModalOpen}"
