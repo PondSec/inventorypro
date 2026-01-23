@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="/static/style.css">
     <style>
         .stat-card:hover {
             transform: translateY(-4px);
@@ -18,12 +19,10 @@
         }
     </style>
 </head>
-<body class="bg-slate-950/5 text-slate-900">
-    <div class="flex h-screen">
-	
-	
+<body class="app-body bg-slate-950/5 text-slate-900">
+    <div class="app-shell">
         <!-- Sidebar -->
-        <div class="w-[280px] bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
             <div class="sidebar-header p-6 border-b border-slate-200">
                 <a href="https://inv.pondsec.com">
                 <div class="logo flex items-center space-x-3">
@@ -31,19 +30,19 @@
                         <i data-feather="cpu" class="w-5 h-5"></i>
                     </span>
                     <div>
-                        <p class="text-lg font-semibold text-slate-900">Inventory Pro</p>
-                        <p class="text-xs text-slate-500">Smart Asset Hub</p>
+                        <p class="text-lg font-semibold text-slate-900 sidebar-text">Inventory Pro</p>
+                        <p class="text-xs text-slate-500 sidebar-text">Smart Asset Hub</p>
                     </div>
                 </div>
                 </a>
             </div>
-            <nav class="p-4 space-y-3">
+            <nav class="p-4 space-y-3 sidebar-scroll sidebar-primary-links">
                 <a href="/" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
                     <span class="flex items-center">
                         <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
                             <i data-feather="layers" class="w-4 h-4"></i>
                         </span>
-                        Kategorien
+                        <span class="sidebar-text">Kategorien</span>
                     </span>
                     <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
                 </a>
@@ -52,7 +51,7 @@
                         <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 mr-3">
                             <i data-feather="bar-chart-2" class="w-4 h-4"></i>
                         </span>
-                        Statistiken
+                        <span class="sidebar-text">Statistiken</span>
                     </span>
                     <i data-feather="trending-up" class="w-4 h-4 text-indigo-400"></i>
                 </a>
@@ -61,7 +60,7 @@
                         <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
                             <i data-feather="users" class="w-4 h-4"></i>
                         </span>
-                        Benutzer
+                        <span class="sidebar-text">Benutzer</span>
                     </span>
                     <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
                 </a>
@@ -70,27 +69,24 @@
                         <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
                             <i data-feather="map-pin" class="w-4 h-4"></i>
                         </span>
-                        Standorte
+                        <span class="sidebar-text">Standorte</span>
                     </span>
                     <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
                 </a>
-				<a href="/stats" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-indigo-100 bg-indigo-50 text-sm font-semibold text-indigo-700">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 mr-3">
-                            <i data-feather="bar-chart-2" class="w-4 h-4"></i>
-                        </span>
-                        Statistiken
-                    </span>
-                    <i data-feather="trending-up" class="w-4 h-4 text-indigo-400"></i>
-                </a>
             </nav>
-        </div>
+        </aside>
 		
-		<header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 left-[280px] z-30 h-[82px]" style="width: calc(100% - 280px);">
+        <div class="app-main app-main--fixed">
+		<header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
 			<!-- Linke Seite: Titel -->
-			<div>
-                <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Analytics</p>
-			    <h1 class="text-2xl font-semibold text-slate-900">Bestandsstatistiken</h1>
+            <div class="flex items-center gap-4">
+                <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                    <i data-feather="menu" class="w-4 h-4"></i>
+                </button>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Analytics</p>
+                    <h1 class="text-2xl font-semibold text-slate-900">Bestandsstatistiken</h1>
+                </div>
             </div>
 
 			<!-- Rechte Seite: Button-Gruppe -->
@@ -284,6 +280,7 @@
                     </table>
                 </div>
 			</div>
+        </div>
         </div>
     </div>
 
@@ -590,6 +587,7 @@
 			feather.replace();
 		});
 	</script>
+    <script src="/static/ui.js"></script>
 	
 </body>
 </html>

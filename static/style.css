@@ -206,3 +206,81 @@ footer {
     font-size: 0.9rem;
   }
 }
+
+/* App Layout Enhancements */
+.app-body {
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 88px;
+  --header-height: 82px;
+  min-height: 100vh;
+}
+
+.app-body.sidebar-collapsed {
+  --sidebar-width: var(--sidebar-collapsed-width);
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  position: relative;
+  background: radial-gradient(circle at top left, rgba(99, 102, 241, 0.08), transparent 45%),
+    radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.08), transparent 35%),
+    radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.08), transparent 40%);
+}
+
+.app-sidebar {
+  width: var(--sidebar-width);
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  transition: width 0.25s ease;
+}
+
+.app-sidebar .sidebar-scroll {
+  max-height: calc(100vh - 8rem);
+  overflow-y: auto;
+}
+
+.app-main--fixed {
+  margin-left: var(--sidebar-width);
+  flex: 1;
+  min-height: 100vh;
+  transition: margin-left 0.25s ease;
+}
+
+.app-header {
+  left: var(--sidebar-width);
+  width: calc(100% - var(--sidebar-width));
+  transition: left 0.25s ease, width 0.25s ease;
+}
+
+.sidebar-text {
+  transition: opacity 0.2s ease;
+  white-space: nowrap;
+}
+
+.app-body.sidebar-collapsed .sidebar-text {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.app-body.sidebar-collapsed .sidebar-compact-hidden {
+  display: none;
+}
+
+.app-body.sidebar-collapsed .sidebar-primary-links a {
+  justify-content: center;
+}
+
+.app-body.sidebar-collapsed .sidebar-primary-links a span.inline-flex {
+  margin-right: 0 !important;
+}
+
+.app-body.sidebar-collapsed .sidebar {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
