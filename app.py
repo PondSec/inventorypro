@@ -18,7 +18,7 @@ CORS(app)
 app.secret_key = os.urandom(24).hex()
 
 DATABASE = 'inventory.db'
-PRO_ENABLED = os.getenv('INVENTORY_PRO_ENABLED', '0') == '1'
+PRO_ENABLED = True
 PRO_FEATURES = [
     "maintenance_schedule",
     "csv_export",
@@ -262,8 +262,6 @@ def log_activity(db, action, entity_type, entity_id=None, details=None):
 def pro_required(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
-        if not PRO_ENABLED:
-            return jsonify({"error": "Pro feature locked"}), 403
         return f(*args, **kwargs)
     return wrapped
 
@@ -768,8 +766,6 @@ def update_maintenance(task_id):
 @app.route('/api/maintenance/summary', methods=['GET'])
 @login_required
 def maintenance_summary():
-    if not PRO_ENABLED:
-        return jsonify({"pro_locked": True, "open": 0, "overdue": 0})
     db = get_db()
     open_count = db.execute('''
         SELECT COUNT(*) FROM maintenance_tasks WHERE status = 'open'
@@ -792,7 +788,6 @@ def export_devices():
         ORDER BY d.created_at DESC
     ''').fetchall()
     output = StringIO()
-    output = BytesIO()
     writer = csv.writer(output)
     writer.writerow(["ID", "Name", "Kategorie", "Besitzer", "Spezifikationen", "Erstellt"])
     for device in devices:
@@ -806,7 +801,6 @@ def export_devices():
         ])
     output.seek(0)
     return Response(
-        output.getvalue().encode('utf-8'),
         output.getvalue(),
         mimetype='text/csv',
         headers={'Content-Disposition': 'attachment; filename=devices.csv'}
