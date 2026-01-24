@@ -43,60 +43,108 @@
                 </div>
                 </a>
             </div>
-            <nav class="p-4 space-y-3 sidebar-scroll sidebar-primary-links">
-                {% if 'categories.view' in permissions or 'categories.manage' in permissions %}
-                <a href="/" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
-                            <i data-feather="layers" class="w-4 h-4"></i>
+            <nav x-data="{ appsOpen: false }" class="p-4 space-y-4 sidebar-scroll sidebar-primary-links">
+                <div class="rounded-2xl border border-slate-200 bg-white/80 shadow-sm">
+                    <button @click="appsOpen = !appsOpen" class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+                        <span class="flex items-center gap-3">
+                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                <i data-feather="grid" class="h-4 w-4"></i>
+                            </span>
+                            <span>
+                                <span class="block text-sm font-semibold text-slate-800 sidebar-text">Apps</span>
+                                <span class="block text-xs text-slate-400 sidebar-text">Verwaltung & Services</span>
+                            </span>
                         </span>
-                        <span class="sidebar-text">Kategorien</span>
-                    </span>
-                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                </a>
-                {% endif %}
-                {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
-                <a href="/tickets" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-amber-50 text-amber-600 mr-3">
-                            <i data-feather="life-buoy" class="w-4 h-4"></i>
-                        </span>
-                        <span class="sidebar-text">Tickets</span>
-                    </span>
-                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                </a>
-                {% endif %}
-				<a href="/stats" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-indigo-100 bg-indigo-50 text-sm font-semibold text-indigo-700">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 mr-3">
-                            <i data-feather="bar-chart-2" class="w-4 h-4"></i>
-                        </span>
-                        <span class="sidebar-text">Statistiken</span>
-                    </span>
-                    <i data-feather="trending-up" class="w-4 h-4 text-indigo-400"></i>
-                </a>
-                {% if 'users.manage' in permissions %}
-                <a href="/users" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
-                            <i data-feather="users" class="w-4 h-4"></i>
-                        </span>
-                        <span class="sidebar-text">Benutzer</span>
-                    </span>
-                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                </a>
-                {% endif %}
-                {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
-                <a href="/locations" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
-                            <i data-feather="map-pin" class="w-4 h-4"></i>
-                        </span>
-                        <span class="sidebar-text">Standorte</span>
-                    </span>
-                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                </a>
-                {% endif %}
+                        <svg :class="{ 'rotate-180': appsOpen }" class="h-4 w-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div x-show="appsOpen" x-transition class="bg-slate-50/80 px-3 py-3 space-y-4">
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Verwaltung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'categories.view' in permissions or 'categories.manage' in permissions %}
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="layers" class="h-4 w-4 text-slate-400"></i>
+                                        Kategorien
+                                    </span>
+                                </a>
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="package" class="h-4 w-4 text-slate-400"></i>
+                                        Assets
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'users.manage' in permissions %}
+                                <a href="/users" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="users" class="h-4 w-4 text-slate-400"></i>
+                                        Benutzer
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                                <a href="/locations" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="map-pin" class="h-4 w-4 text-slate-400"></i>
+                                        Standorte
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Services</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                                <a href="/tickets" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="life-buoy" class="h-4 w-4 text-slate-400"></i>
+                                        Ticketsystem
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                                <a href="/roadmap" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="git-merge" class="h-4 w-4 text-slate-400"></i>
+                                        Roadmap
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Auswertung</p>
+                            <div class="mt-2 space-y-1">
+                                <a href="/stats" class="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="bar-chart-2" class="h-4 w-4 text-indigo-500"></i>
+                                        Statistiken
+                                    </span>
+                                </a>
+                                {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                                <a href="/dependencies" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="share-2" class="h-4 w-4 text-slate-400"></i>
+                                        Dependency-Graph
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'timemachine.view' in permissions %}
+                                <a href="/time-machine" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="clock" class="h-4 w-4 text-slate-400"></i>
+                                        Zeitmaschine
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </nav>
         </aside>
 		
@@ -417,6 +465,194 @@
                         {% endfor %}
                         {% if activity_summary|length == 0 %}
                         <p class="text-sm text-slate-500">Keine Aktivitäten in den letzten 7 Tagen.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <div class="xl:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Proaktive Hinweise</h2>
+                            <p class="text-sm text-slate-500">Erklärbare Empfehlungen auf Basis von Regeln & Historie.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-amber-50 p-2 text-amber-600">
+                            <i data-feather="alert-triangle" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-4">
+                        {% for insight in proactive_insights %}
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <span class="text-sm font-semibold text-slate-900">{{ insight.title }}</span>
+                                <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold
+                                    {% if insight.severity == 'critical' %}bg-rose-100 text-rose-700
+                                    {% elif insight.severity == 'warning' %}bg-amber-100 text-amber-700
+                                    {% else %}bg-emerald-100 text-emerald-700{% endif %}">
+                                    {% if insight.severity == 'critical' %}Kritisch{% elif insight.severity == 'warning' %}Warnung{% else %}Info{% endif %}
+                                </span>
+                            </div>
+                            <p class="mt-2 text-sm text-slate-600">{{ insight.description }}</p>
+                            <p class="mt-2 text-xs text-slate-500">Begründung: {{ insight.evidence }}</p>
+                        </div>
+                        {% endfor %}
+                        {% if proactive_insights|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Hinweise – Datenbasis wird aufgebaut.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Asset- & Ticket-KPIs</h2>
+                            <p class="text-sm text-slate-500">Lebenszyklus- und Helpdesk-Status.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-indigo-50 p-2 text-indigo-600">
+                            <i data-feather="trending-up" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-4">
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <p class="text-xs uppercase tracking-widest text-slate-400">Assets aktiv</p>
+                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ active_assets }}</p>
+                            <p class="text-xs text-slate-500">{{ retired_assets }} ausgemustert</p>
+                        </div>
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <p class="text-xs uppercase tracking-widest text-slate-400">Tickets offen</p>
+                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ ticket_open }}</p>
+                            <p class="text-xs text-slate-500">{{ ticket_total }} insgesamt</p>
+                        </div>
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <p class="text-xs uppercase tracking-widest text-slate-400">Ø Lösungszeit</p>
+                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ avg_resolution_hours }}h</p>
+                            <p class="text-xs text-slate-500">{{ ticket_closed }} abgeschlossen</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Ticket-Typen & Eskalationen</h2>
+                            <p class="text-sm text-slate-500">Verteilung nach Kategorie und Eskalationslevel.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="layers" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for item in ticket_type_breakdown %}
+                        <div class="flex items-center rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <span class="text-sm font-semibold text-slate-700">{{ item['name'] }}</span>
+                            <span class="ml-auto text-sm font-semibold text-slate-900">{{ item['total'] }}</span>
+                        </div>
+                        {% endfor %}
+                        {% if ticket_type_breakdown|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Ticketdaten vorhanden.</p>
+                        {% endif %}
+                    </div>
+                    <div class="mt-6 space-y-2">
+                        <p class="text-xs uppercase tracking-widest text-slate-400">Eskalation</p>
+                        <div class="flex flex-wrap gap-2">
+                            {% for item in escalation_breakdown %}
+                            <span class="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600">
+                                Level {{ item['level'] }} · {{ item['total'] }}
+                            </span>
+                            {% endfor %}
+                            {% if escalation_breakdown|length == 0 %}
+                            <span class="text-sm text-slate-500">Keine Eskalationsdaten.</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Erfolgsquote je Maßnahme</h2>
+                            <p class="text-sm text-slate-500">Welche Schritte aktuell am besten funktionieren.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-emerald-50 p-2 text-emerald-600">
+                            <i data-feather="check-circle" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for action in action_success_rates %}
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm font-semibold text-slate-700">{{ action['action'] }}</span>
+                                <span class="text-sm font-semibold text-slate-900">{{ action['rate'] }}%</span>
+                            </div>
+                            <div class="mt-2 h-2 rounded-full bg-slate-200">
+                                <div class="h-2 rounded-full bg-emerald-400" style="width: {{ action['rate'] }}%"></div>
+                            </div>
+                            <p class="mt-1 text-xs text-slate-500">{{ action['success'] }} von {{ action['total'] }} erfolgreich</p>
+                        </div>
+                        {% endfor %}
+                        {% if action_success_rates|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Maßnahmen dokumentiert.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Asset-Tickethistorie</h2>
+                            <p class="text-sm text-slate-500">Assets mit auffälliger Ticketlast und Lebenszyklusdaten.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="activity" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for asset in asset_ticket_stats %}
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm font-semibold text-slate-700">{{ asset['name'] }}</span>
+                                <span class="text-sm font-semibold text-slate-900">{{ asset['ticket_count'] }} Tickets</span>
+                            </div>
+                            <p class="mt-1 text-xs text-slate-500">
+                                Zugewiesen an {{ asset['assigned_user'] }} · Alter {{ asset['age_months'] or 'n/a' }} Monate · Garantie {{ asset['warranty_status'] }}
+                            </p>
+                        </div>
+                        {% endfor %}
+                        {% if asset_ticket_stats|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Asset-Tickets verknüpft.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Benutzerverhalten</h2>
+                            <p class="text-sm text-slate-500">Wer meldet was und mit welcher Komplexität.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="users" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for user in user_behavior_stats %}
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm font-semibold text-slate-700">{{ user['reporter'] }}</span>
+                                <span class="text-sm font-semibold text-slate-900">{{ user['tickets'] }} Tickets</span>
+                            </div>
+                            <p class="mt-1 text-xs text-slate-500">
+                                Ø Kommentare {{ user['avg_comments'] }} · Ø Priorität {{ user['avg_priority'] }}
+                            </p>
+                        </div>
+                        {% endfor %}
+                        {% if user_behavior_stats|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Nutzerstatistiken verfügbar.</p>
                         {% endif %}
                     </div>
                 </div>

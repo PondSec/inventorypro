@@ -22,6 +22,12 @@ document.addEventListener('alpine:init', () => {
             resolved: 'Gelöst',
             closed: 'Geschlossen'
         },
+        roadmapStatusLabels: {
+            planned: 'Geplant',
+            in_progress: 'In Arbeit',
+            blocked: 'Blockiert',
+            done: 'Erledigt'
+        },
         priorityOptions: ['low', 'normal', 'high', 'urgent'],
         stats: {
             open: 0,
@@ -276,6 +282,32 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        defaultRoadmapSteps() {
+            return [
+                { title: 'Analyse & Scope', description: 'Ziele, Anforderungen und Erfolgskriterien definieren.', status: 'planned' },
+                { title: 'Konzept & Design', description: 'Architektur, UI/UX und technische Umsetzung planen.', status: 'planned' },
+                { title: 'Implementierung', description: 'Features entwickeln und integrieren.', status: 'planned' },
+                { title: 'Qualitätssicherung', description: 'Tests, Review und Abnahme durchführen.', status: 'planned' },
+                { title: 'Rollout & Monitoring', description: 'Deployment, Dokumentation und Monitoring vorbereiten.', status: 'planned' }
+            ];
+        },
+
+        async createRoadmapForTicket() {
+            if (!this.selectedTicket) return;
+            const payload = {
+                ticket_id: this.selectedTicket.id,
+                steps: this.defaultRoadmapSteps()
+            };
+            const response = await fetch('/api/roadmaps', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (response.ok) {
+                await this.selectTicket(this.selectedTicket);
+            }
+        },
+
         selectedAssetsForNewTicket() {
             const selectedIds = new Set(this.newTicket.asset_ids || []);
             return this.assets.filter((asset) => selectedIds.has(asset.id));
@@ -308,6 +340,27 @@ document.addEventListener('alpine:init', () => {
             if (response.ok) {
                 this.newCategory = { name: '', description: '', color: '#2563eb', sla_hours: 72, is_default: false };
                 await this.loadCategories();
+            }
+        },
+
+        async deleteCategory(category) {
+            if (!category) return;
+            const confirmed = window.confirm(
+                `Kategorie "${category.name}" löschen? Tickets werden danach ohne Kategorie geführt.`
+            );
+            if (!confirmed) return;
+            const response = await fetch(`/api/ticket-categories/${category.id}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                await this.loadCategories();
+                await this.loadTickets();
+                if (this.selectedTicket) {
+                    await this.selectTicket(this.selectedTicket);
+                }
+            } else {
+                const error = await response.json();
+                alert(error.error || 'Kategorie konnte nicht gelöscht werden.');
             }
         },
 
