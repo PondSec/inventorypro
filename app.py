@@ -2060,7 +2060,7 @@ def tickets():
                 requester_email, created_by, assignee, assignee_email, due_date, escalation_level,
                 resolved_at, resolution_action, resolution_outcome, resolution_notes, tags, custom_fields
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             title, description, category_id, priority, status, requester_name, requester_email,
             session.get('username'), assignee, assignee_email, due_date, escalation_level,
