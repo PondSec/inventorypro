@@ -31,6 +31,7 @@
             <nav x-data="{
                 categoriesOpen: true,
                 assetsOpen: true,
+                appsOpen: false,
                 otpModalOpen: false,
                 otpSecret: '',
                 otpQrCode: '',
@@ -104,22 +105,30 @@
                     </div>
                 </div>
 
-                <div class="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white sidebar-compact-hidden">
-                    <button @click="categoriesOpen = !categoriesOpen"
+                    <div class="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white sidebar-compact-hidden">
+                        <button @click="categoriesOpen = !categoriesOpen"
                             class="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors">
-                        <span class="flex items-center gap-3">
-                            <span class="flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-600">
-                                <i data-feather="layers" class="w-4 h-4"></i>
+                            <span class="flex items-center gap-3">
+                                <span class="flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-600">
+                                    <i data-feather="layers" class="w-4 h-4"></i>
+                                </span>
+                                <span class="text-sm font-semibold text-slate-800 sidebar-text">Kategorien</span>
                             </span>
-                            <span class="text-sm font-semibold text-slate-800 sidebar-text">Kategorien</span>
-                        </span>
-                        <svg :class="{ 'rotate-180': categoriesOpen }" class="w-4 h-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
+                            <svg :class="{ 'rotate-180': categoriesOpen }" class="w-4 h-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
 
                     <div x-show="categoriesOpen" x-transition class="bg-slate-50 px-2 py-2 space-y-1 text-sm text-slate-800">
-                        <template x-for="category in categories" :key="category.id">
+                        <div class="px-3 pb-2">
+                            <div class="relative">
+                                <input type="text" x-model="categorySearchQuery" placeholder="Kategorien filtern..." class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 pr-9 text-xs text-slate-600 focus:border-blue-500 focus:ring-blue-500">
+                                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                                    <i data-feather="search" class="w-3 h-3"></i>
+                                </span>
+                            </div>
+                        </div>
+                        <template x-for="category in filteredCategories()" :key="category.id">
                             <div class="group flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white transition-colors">
                                 <button @click="loadDevices(category.id)" class="flex items-center gap-2 flex-1 min-w-0 text-left">
                                     <div x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-slate-500' })"></div>
@@ -180,51 +189,110 @@
                     </div>
                 </div>
 
-                <div class="space-y-3 sidebar-primary-links">
-                    {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
-                    <a href="/tickets" class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
-                        <span class="flex items-center">
-                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-amber-50 text-amber-600 mr-3">
-                                <i data-feather="life-buoy" class="w-4 h-4"></i>
+                <div class="rounded-2xl border border-slate-200 bg-white/80 shadow-sm sidebar-primary-links">
+                    <button @click="appsOpen = !appsOpen" class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+                        <span class="flex items-center gap-3">
+                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                <i data-feather="grid" class="h-4 w-4"></i>
                             </span>
-                            <span class="sidebar-text">Tickets</span>
-                        </span>
-                        <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                    </a>
-                    {% endif %}
-                    {% if 'stats.view' in permissions %}
-                    <a href="/stats" class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
-                        <span class="flex items-center">
-                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 mr-3">
-                                <i data-feather="bar-chart-2" class="w-4 h-4"></i>
+                            <span>
+                                <span class="block text-sm font-semibold text-slate-800 sidebar-text">Apps</span>
+                                <span class="block text-xs text-slate-400 sidebar-text">Verwaltung & Services</span>
                             </span>
-                            <span class="sidebar-text">Statistiken</span>
                         </span>
-                        <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                    </a>
-                    {% endif %}
-                    {% if 'users.manage' in permissions %}
-                    <a href="/users" class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
-                        <span class="flex items-center">
-                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
-                                <i data-feather="users" class="w-4 h-4"></i>
-                            </span>
-                            <span class="sidebar-text">Benutzer</span>
-                        </span>
-                        <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                    </a>
-                    {% endif %}
-                    {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
-                    <a href="/locations" class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/70 shadow-sm">
-                        <span class="flex items-center">
-                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
-                                <i data-feather="map-pin" class="w-4 h-4"></i>
-                            </span>
-                            <span class="sidebar-text">Standorte</span>
-                        </span>
-                        <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                    </a>
-                    {% endif %}
+                        <svg :class="{ 'rotate-180': appsOpen }" class="h-4 w-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div x-show="appsOpen" x-transition class="bg-slate-50/80 px-3 py-3 space-y-4">
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Verwaltung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'categories.view' in permissions or 'categories.manage' in permissions %}
+                                <a href="/" class="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="layers" class="h-4 w-4 text-indigo-500"></i>
+                                        Kategorien
+                                    </span>
+                                </a>
+                                <a href="/" class="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="package" class="h-4 w-4 text-indigo-500"></i>
+                                        Assets
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'users.manage' in permissions %}
+                                <a href="/users" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="users" class="h-4 w-4 text-slate-400"></i>
+                                        Benutzer
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                                <a href="/locations" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="map-pin" class="h-4 w-4 text-slate-400"></i>
+                                        Standorte
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Services</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                                <a href="/tickets" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="life-buoy" class="h-4 w-4 text-slate-400"></i>
+                                        Ticketsystem
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                                <a href="/roadmap" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="git-merge" class="h-4 w-4 text-slate-400"></i>
+                                        Roadmap
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions %}
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Auswertung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'stats.view' in permissions %}
+                                <a href="/stats" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="bar-chart-2" class="h-4 w-4 text-slate-400"></i>
+                                        Statistiken
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                                <a href="/dependencies" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="share-2" class="h-4 w-4 text-slate-400"></i>
+                                        Dependency-Graph
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'timemachine.view' in permissions %}
+                                <a href="/time-machine" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="clock" class="h-4 w-4 text-slate-400"></i>
+                                        Zeitmaschine
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
 
                 <div class="space-y-3 sidebar-compact-hidden">
@@ -359,19 +427,19 @@
                 </section>
 
                 <section class="grid gap-4 lg:grid-cols-4">
-                    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div class="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm overflow-hidden lg:col-span-2 2xl:col-span-1">
                         <div class="flex items-center justify-between">
                             <div>
                                 <p class="text-sm font-semibold text-slate-900">Geräte durchsuchen</p>
-                                <p class="text-xs text-slate-500">Schneller Zugriff auf Assets</p>
+                                <p class="text-xs text-slate-500">Mehr Kriterien & Filter</p>
                             </div>
                             <span class="inline-flex items-center justify-center rounded-full bg-blue-50 p-2 text-blue-500">
                                 <i data-feather="search" class="h-4 w-4"></i>
                             </span>
                         </div>
-                        <div class="mt-4">
+                        <div class="mt-4 min-w-0 space-y-3 text-xs text-slate-500">
                             <div class="relative w-full">
-                                <input type="text" placeholder="Gerät, Owner oder Spezifikation suchen..." class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm text-slate-700 shadow-inner focus:border-blue-500 focus:ring-blue-500" x-model="searchQuery" @input.debounce.300ms="searchDevices()">
+                                <input type="text" placeholder="Freitext (Gerät, Owner, Kategorie, Standort, Specs...)" class="w-full min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm text-slate-700 shadow-inner focus:border-blue-500 focus:ring-blue-500" x-model="searchQuery" @input.debounce.300ms="searchDevices()">
                                 <button @click="toggleSortDropdown()" aria-label="Sort options" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-600 shadow-sm hover:bg-slate-50">
                                     <i data-feather="filter" class="w-4 h-4"></i>
                                 </button>
@@ -382,6 +450,54 @@
                                         <a href="#" @click.prevent="sortDevices('serial_number', 'asc')" class="block px-5 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">Owner (aufsteigend)</a>
                                         <a href="#" @click.prevent="sortDevices('serial_number', 'desc')" class="block px-5 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">Owner (absteigend)</a>
                                     </div>
+                                </div>
+                            </div>
+                            <button type="button" @click="filtersOpen = !filtersOpen" class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+                                <i data-feather="sliders" class="w-4 h-4"></i>
+                                Filter ein-/ausblenden
+                            </button>
+                            <div x-show="filtersOpen" class="grid min-w-0 gap-3 rounded-2xl border border-slate-200 bg-white p-3" x-transition>
+                                <div class="min-w-0">
+                                    <label class="text-xs font-semibold text-slate-500">Owner enthält</label>
+                                    <input type="text" x-model="ownerQuery" placeholder="z. B. Max Mustermann" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                </div>
+                                <div class="grid min-w-0 gap-3 sm:grid-cols-1 2xl:grid-cols-2">
+                                    <div class="min-w-0">
+                                        <label class="text-xs font-semibold text-slate-500">Kategorie</label>
+                                        <select x-model="categoryFilter" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                            <option value="">Alle Kategorien</option>
+                                            <template x-for="category in categories" :key="category.id">
+                                                <option :value="category.id" x-text="category.name"></option>
+                                            </template>
+                                        </select>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <label class="text-xs font-semibold text-slate-500">Standort</label>
+                                        <select x-model="locationFilter" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                            <option value="">Alle Standorte</option>
+                                            <template x-for="location in locations" :key="location.id">
+                                                <option :value="location.id" x-text="location.name"></option>
+                                            </template>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="grid min-w-0 gap-3 sm:grid-cols-1 2xl:grid-cols-2">
+                                    <div class="min-w-0">
+                                        <label class="text-xs font-semibold text-slate-500">Erstellt von</label>
+                                        <input type="date" x-model="createdFrom" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                    </div>
+                                    <div class="min-w-0">
+                                        <label class="text-xs font-semibold text-slate-500">Erstellt bis</label>
+                                        <input type="date" x-model="createdTo" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                    </div>
+                                </div>
+                                <div class="min-w-0">
+                                    <label class="text-xs font-semibold text-slate-500">Spezifikationen enthalten</label>
+                                    <input type="text" x-model="specQuery" placeholder="z. B. i7, 16GB, SSD" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2 pt-1">
+                                    <button type="button" @click="resetDeviceFilters()" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">Filter zurücksetzen</button>
+                                    <span class="text-[11px] text-slate-400">Treffer: <span class="font-semibold text-slate-600" x-text="filteredDevices.length"></span></span>
                                 </div>
                             </div>
                         </div>
