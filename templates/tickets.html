@@ -181,75 +181,76 @@
 
             <main class="app-content">
                 <div class="page">
-                <section class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-amber-900 px-8 py-8 text-white shadow-2xl shadow-slate-300/50">
-                    <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
                         <div>
-                            <p class="text-xs uppercase tracking-[0.3em] text-amber-200">Support</p>
-                            <h2 class="mt-2 text-3xl font-semibold">Professioneller Helpdesk mit SLA, Alerts und Benachrichtigungen.</h2>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Helpdesk</p>
+                            <h2 class="text-2xl font-semibold text-slate-900">Ticket-System</h2>
+                            <p class="mt-1 text-sm text-slate-500">SLA, Prioritäten und Workflows im Blick behalten.</p>
                         </div>
-                        <div class="grid grid-cols-2 gap-3 text-sm">
-                            <div class="rounded-2xl bg-white/10 px-4 py-3">
-                                <p class="text-xs uppercase text-amber-100">Offen</p>
-                                <p class="text-2xl font-semibold" x-text="stats.open"></p>
+                        <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">Offen</p>
+                                <p class="text-2xl font-semibold text-slate-900" x-text="stats.open"></p>
                             </div>
-                            <div class="rounded-2xl bg-white/10 px-4 py-3">
-                                <p class="text-xs uppercase text-amber-100">In Bearbeitung</p>
-                                <p class="text-2xl font-semibold" x-text="stats.in_progress"></p>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">In Arbeit</p>
+                                <p class="text-2xl font-semibold text-slate-900" x-text="stats.in_progress"></p>
                             </div>
-                            <div class="rounded-2xl bg-white/10 px-4 py-3">
-                                <p class="text-xs uppercase text-amber-100">Wartet</p>
-                                <p class="text-2xl font-semibold" x-text="stats.pending"></p>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">Wartet</p>
+                                <p class="text-2xl font-semibold text-slate-900" x-text="stats.pending"></p>
                             </div>
-                            <div class="rounded-2xl bg-white/10 px-4 py-3">
-                                <p class="text-xs uppercase text-amber-100">Gelöst</p>
-                                <p class="text-2xl font-semibold" x-text="stats.resolved"></p>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">Gelöst</p>
+                                <p class="text-2xl font-semibold text-slate-900" x-text="stats.resolved"></p>
                             </div>
                         </div>
                     </div>
                 </section>
 
+                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <div class="w-full sm:flex-1 sm:min-w-[220px]">
+                            <label class="text-xs uppercase text-slate-400">Suche</label>
+                            <input type="text" x-model="filters.search" @input.debounce.300ms="loadTickets" placeholder="Ticket, Kunde, Beschreibung" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm">
+                        </div>
+                        <div class="w-full sm:min-w-[160px]">
+                            <label class="text-xs uppercase text-slate-400">Status</label>
+                            <select x-model="filters.status" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                <option value="">Alle</option>
+                                <template x-for="status in statusOptions" :key="status">
+                                    <option :value="status" x-text="statusLabels[status] || status"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="w-full sm:min-w-[160px]">
+                            <label class="text-xs uppercase text-slate-400">Priorität</label>
+                            <select x-model="filters.priority" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                <option value="">Alle</option>
+                                <template x-for="priority in priorityOptions" :key="priority">
+                                    <option :value="priority" x-text="priority"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="w-full sm:min-w-[180px]">
+                            <label class="text-xs uppercase text-slate-400">Kategorie</label>
+                            <select x-model="filters.category_id" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                <option value="">Alle</option>
+                                <template x-for="category in categories" :key="category.id">
+                                    <option :value="category.id" x-text="category.name"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <label class="inline-flex w-full items-center gap-2 text-sm text-slate-600 sm:w-auto">
+                            <input type="checkbox" x-model="filters.mine" @change="loadTickets" class="rounded border-slate-300 text-amber-600">
+                            Meine Tickets
+                        </label>
+                    </div>
+                </section>
+
                 <section class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
                     <div class="space-y-6">
-                        <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-                            <div class="flex flex-wrap items-center gap-4">
-                                <div class="w-full sm:flex-1 sm:min-w-[200px]">
-                                    <label class="text-xs uppercase text-slate-400">Suche</label>
-                                    <input type="text" x-model="filters.search" @input.debounce.300ms="loadTickets" placeholder="Ticket, Kunde, Beschreibung" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm">
-                                </div>
-                                <div class="w-full sm:min-w-[160px]">
-                                    <label class="text-xs uppercase text-slate-400">Status</label>
-                                    <select x-model="filters.status" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                                        <option value="">Alle</option>
-                                        <template x-for="status in statusOptions" :key="status">
-                                            <option :value="status" x-text="statusLabels[status] || status"></option>
-                                        </template>
-                                    </select>
-                                </div>
-                                <div class="w-full sm:min-w-[160px]">
-                                    <label class="text-xs uppercase text-slate-400">Priorität</label>
-                                    <select x-model="filters.priority" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                                        <option value="">Alle</option>
-                                        <template x-for="priority in priorityOptions" :key="priority">
-                                            <option :value="priority" x-text="priority"></option>
-                                        </template>
-                                    </select>
-                                </div>
-                                <div class="w-full sm:min-w-[180px]">
-                                    <label class="text-xs uppercase text-slate-400">Kategorie</label>
-                                    <select x-model="filters.category_id" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                                        <option value="">Alle</option>
-                                        <template x-for="category in categories" :key="category.id">
-                                            <option :value="category.id" x-text="category.name"></option>
-                                        </template>
-                                    </select>
-                                </div>
-                                <label class="inline-flex w-full items-center gap-2 text-sm text-slate-600 sm:w-auto">
-                                    <input type="checkbox" x-model="filters.mine" @change="loadTickets" class="rounded border-slate-300 text-amber-600">
-                                    Meine Tickets
-                                </label>
-                            </div>
-                        </div>
-
                         <div class="space-y-4">
                             <template x-for="ticket in tickets" :key="ticket.id">
                                 <button @click="selectTicket(ticket)" class="w-full text-left rounded-3xl border border-slate-200 bg-white p-5 shadow-sm hover:border-amber-200 hover:shadow-md transition">
