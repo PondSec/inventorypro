@@ -340,24 +340,24 @@
                                                                     <i data-feather="trash-2" class="w-4 h-4"></i>
                                                                 </button>
                                                             </div>
-                                                            <div class="grid gap-2 text-xs text-slate-500">
-                                                                <label class="flex flex-col gap-1">
+                                                            <div class="grid gap-2 text-xs text-slate-500 min-w-0">
+                                                                <label class="flex flex-col gap-1 min-w-0">
                                                                     <span class="text-[10px] uppercase text-slate-400">Owner</span>
-                                                                    <input type="text" x-model="step.owner" placeholder="Owner" class="w-full rounded-xl border border-slate-200 bg-white px-2 py-1" :disabled="!can('roadmap.manage')">
+                                                                    <input type="text" x-model="step.owner" placeholder="Owner" class="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1" :disabled="!can('roadmap.manage')">
                                                                 </label>
-                                                                <label class="flex flex-col gap-1">
+                                                                <label class="flex flex-col gap-1 min-w-0">
                                                                     <span class="text-[10px] uppercase text-slate-400">Fällig</span>
-                                                                    <input type="date" x-model="step.due_date" class="w-full rounded-xl border border-slate-200 bg-white px-2 py-1" :disabled="!can('roadmap.manage')">
+                                                                    <input type="date" x-model="step.due_date" class="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1" :disabled="!can('roadmap.manage')">
                                                                 </label>
-                                                                <label class="flex flex-col gap-1">
+                                                                <label class="flex flex-col gap-1 min-w-0">
                                                                     <span class="text-[10px] uppercase text-slate-400">Status</span>
-                                                                    <select x-model="step.ui_status" class="w-full rounded-xl border border-slate-200 bg-white px-2 py-1" :disabled="!can('roadmap.manage')">
+                                                                    <select x-model="step.ui_status" class="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1" :disabled="!can('roadmap.manage')">
                                                                         <template x-for="statusOption in roadmapStatuses" :key="statusOption">
                                                                             <option :value="statusOption" x-text="roadmapStatusLabels[statusOption] || statusOption"></option>
                                                                         </template>
                                                                     </select>
                                                                 </label>
-                                                                <button @click="updateStep(step)" class="w-full rounded-xl bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white" :disabled="!can('roadmap.manage')">Speichern</button>
+                                                                <button @click="updateStep(step)" class="w-full min-w-0 rounded-xl bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white" :disabled="!can('roadmap.manage')">Speichern</button>
                                                             </div>
                                                         </div>
                                                     </template>
