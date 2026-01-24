@@ -343,6 +343,27 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async deleteCategory(category) {
+            if (!category) return;
+            const confirmed = window.confirm(
+                `Kategorie "${category.name}" löschen? Tickets werden danach ohne Kategorie geführt.`
+            );
+            if (!confirmed) return;
+            const response = await fetch(`/api/ticket-categories/${category.id}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                await this.loadCategories();
+                await this.loadTickets();
+                if (this.selectedTicket) {
+                    await this.selectTicket(this.selectedTicket);
+                }
+            } else {
+                const error = await response.json();
+                alert(error.error || 'Kategorie konnte nicht gelöscht werden.');
+            }
+        },
+
         async createAlert() {
             const payload = { ...this.newAlert };
             const response = await fetch('/api/ticket-alerts', {
