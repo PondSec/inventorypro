@@ -1230,6 +1230,25 @@ def fetch_entity_label(db, entity_type, entity_id):
     ).fetchone()
     return row["name"] if row else None
 
+def prune_dependency_links(db):
+    rows = db.execute('''
+        SELECT *
+        FROM dependency_links
+        ORDER BY created_at DESC
+    ''').fetchall()
+    valid_rows = []
+    stale_ids = []
+    for row in rows:
+        if fetch_entity_label(db, row["source_type"], row["source_id"]) and fetch_entity_label(db, row["target_type"], row["target_id"]):
+            valid_rows.append(row)
+        else:
+            stale_ids.append(row["id"])
+    if stale_ids:
+        placeholders = ",".join("?" for _ in stale_ids)
+        db.execute(f'DELETE FROM dependency_links WHERE id IN ({placeholders})', stale_ids)
+        db.commit()
+    return valid_rows
+
 def fetch_entity_options(db):
     options = {}
     for entity_type, meta in DEPENDENCY_ENTITY_TYPES.items():
@@ -1241,11 +1260,7 @@ def fetch_entity_options(db):
 
 def build_dependency_edges(db):
     edges = []
-    link_rows = db.execute('''
-        SELECT id, source_type, source_id, target_type, target_id, relation, criticality, redundancy_group, notes
-        FROM dependency_links
-        ORDER BY created_at DESC
-    ''').fetchall()
+    link_rows = prune_dependency_links(db)
     for row in link_rows:
         edges.append({
             "id": row["id"],
@@ -1260,7 +1275,12 @@ def build_dependency_edges(db):
             "implicit": False
         })
 
-    asset_device_rows = db.execute('SELECT asset_id, device_id FROM asset_devices').fetchall()
+    asset_device_rows = db.execute('''
+        SELECT ad.asset_id, ad.device_id
+        FROM asset_devices ad
+        JOIN assets a ON a.id = ad.asset_id
+        JOIN devices d ON d.id = ad.device_id
+    ''').fetchall()
     for row in asset_device_rows:
         edges.append({
             "source_type": "asset",
@@ -1274,7 +1294,12 @@ def build_dependency_edges(db):
             "implicit": True
         })
 
-    asset_service_rows = db.execute('SELECT asset_id, service_id FROM asset_services').fetchall()
+    asset_service_rows = db.execute('''
+        SELECT ads.asset_id, ads.service_id
+        FROM asset_services ads
+        JOIN assets a ON a.id = ads.asset_id
+        JOIN services s ON s.id = ads.service_id
+    ''').fetchall()
     for row in asset_service_rows:
         edges.append({
             "source_type": "asset",
@@ -1289,23 +1314,26 @@ def build_dependency_edges(db):
         })
 
     assignment_rows = db.execute('''
-        SELECT asset_id, user_identifier, location_id
-        FROM asset_assignments
-        WHERE released_at IS NULL OR released_at = ''
+        SELECT aa.asset_id, aa.user_identifier, aa.location_id
+        FROM asset_assignments aa
+        JOIN assets a ON a.id = aa.asset_id
+        WHERE aa.released_at IS NULL OR aa.released_at = ''
     ''').fetchall()
     for row in assignment_rows:
         if row["location_id"]:
-            edges.append({
-                "source_type": "asset",
-                "source_id": row["asset_id"],
-                "target_type": "location",
-                "target_id": row["location_id"],
-                "relation": "located_at",
-                "criticality": "low",
-                "redundancy_group": None,
-                "notes": None,
-                "implicit": True
-            })
+            location_row = db.execute('SELECT id FROM locations WHERE id = ?', (row["location_id"],)).fetchone()
+            if location_row:
+                edges.append({
+                    "source_type": "asset",
+                    "source_id": row["asset_id"],
+                    "target_type": "location",
+                    "target_id": row["location_id"],
+                    "relation": "located_at",
+                    "criticality": "low",
+                    "redundancy_group": None,
+                    "notes": None,
+                    "implicit": True
+                })
         if row["user_identifier"]:
             user_row = db.execute('SELECT id FROM users WHERE username = ?', (row["user_identifier"],)).fetchone()
             if user_row:
@@ -1322,11 +1350,15 @@ def build_dependency_edges(db):
                 })
 
     installation_rows = db.execute('''
-        SELECT software_id, device_id, asset_id
-        FROM software_installations
+        SELECT si.software_id, si.device_id, si.asset_id
+        FROM software_installations si
+        JOIN software s ON s.id = si.software_id
     ''').fetchall()
     for row in installation_rows:
         if row["device_id"]:
+            device_row = db.execute('SELECT id FROM devices WHERE id = ?', (row["device_id"],)).fetchone()
+            if not device_row:
+                continue
             edges.append({
                 "source_type": "device",
                 "source_id": row["device_id"],
@@ -1339,6 +1371,9 @@ def build_dependency_edges(db):
                 "implicit": True
             })
         if row["asset_id"]:
+            asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (row["asset_id"],)).fetchone()
+            if not asset_row:
+                continue
             edges.append({
                 "source_type": "asset",
                 "source_id": row["asset_id"],
@@ -1381,31 +1416,36 @@ def build_dependency_edges(db):
 
     ticket_asset_rows = db.execute('SELECT ticket_id, asset_id FROM ticket_assets').fetchall()
     for row in ticket_asset_rows:
-        edges.append({
-            "source_type": "ticket",
-            "source_id": row["ticket_id"],
-            "target_type": "asset",
-            "target_id": row["asset_id"],
-            "relation": "related_asset",
-            "criticality": "medium",
-            "redundancy_group": None,
-            "notes": None,
-            "implicit": True
-        })
+        ticket_row = db.execute('SELECT id FROM tickets WHERE id = ?', (row["ticket_id"],)).fetchone()
+        asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (row["asset_id"],)).fetchone()
+        if ticket_row and asset_row:
+            edges.append({
+                "source_type": "ticket",
+                "source_id": row["ticket_id"],
+                "target_type": "asset",
+                "target_id": row["asset_id"],
+                "relation": "related_asset",
+                "criticality": "medium",
+                "redundancy_group": None,
+                "notes": None,
+                "implicit": True
+            })
 
     roadmap_step_rows = db.execute('SELECT id, roadmap_id FROM roadmap_steps WHERE roadmap_id IS NOT NULL').fetchall()
     for row in roadmap_step_rows:
-        edges.append({
-            "source_type": "roadmap_step",
-            "source_id": row["id"],
-            "target_type": "roadmap",
-            "target_id": row["roadmap_id"],
-            "relation": "part_of",
-            "criticality": "low",
-            "redundancy_group": None,
-            "notes": None,
-            "implicit": True
-        })
+        roadmap_row = db.execute('SELECT id FROM roadmaps WHERE id = ?', (row["roadmap_id"],)).fetchone()
+        if roadmap_row:
+            edges.append({
+                "source_type": "roadmap_step",
+                "source_id": row["id"],
+                "target_type": "roadmap",
+                "target_id": row["roadmap_id"],
+                "relation": "part_of",
+                "criticality": "low",
+                "redundancy_group": None,
+                "notes": None,
+                "implicit": True
+            })
 
     return edges
 
@@ -2316,6 +2356,13 @@ def handle_device(device_id):
             return jsonify({"error": f"Ungültige Daten: {str(e)}"}), 400
 
     elif request.method == 'DELETE':
+        db.execute('DELETE FROM asset_devices WHERE device_id = ?', (device_id,))
+        db.execute('DELETE FROM software_installations WHERE device_id = ?', (device_id,))
+        db.execute('''
+            DELETE FROM dependency_links
+            WHERE (source_type = 'device' AND source_id = ?)
+               OR (target_type = 'device' AND target_id = ?)
+        ''', (device_id, device_id))
         result = db.execute('DELETE FROM devices WHERE id = ?', (device_id,))
         if result.rowcount == 0:
             return jsonify({"error": "Gerät nicht gefunden"}), 404
@@ -3311,11 +3358,7 @@ def dependency_links():
 
     if not (user_can('dependencies.view') or user_can('dependencies.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
-    rows = db.execute('''
-        SELECT *
-        FROM dependency_links
-        ORDER BY created_at DESC
-    ''').fetchall()
+    rows = prune_dependency_links(db)
     links = []
     for row in rows:
         source_label = fetch_entity_label(db, row["source_type"], row["source_id"]) or f"{row['source_type']} #{row['source_id']}"
