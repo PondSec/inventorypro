@@ -243,6 +243,12 @@ PERMISSIONS = [
         "group": "Abhängigkeiten"
     },
     {
+        "key": "timemachine.view",
+        "label": "Zeitmaschine anzeigen",
+        "description": "Zeitachsen, Zustände und Simulationen einsehen.",
+        "group": "Zeitmaschine"
+    },
+    {
         "key": "software.view",
         "label": "Software-Inventar anzeigen",
         "description": "Software-Inventar und Installationen einsehen.",
@@ -320,6 +326,7 @@ DEFAULT_ROLES = [
             "roadmap.manage",
             "dependencies.view",
             "dependencies.manage",
+            "timemachine.view",
             "software.view",
             "software.manage",
             "teams.view",
@@ -520,6 +527,7 @@ def get_post_login_redirect(access):
         (("categories.view", "categories.manage"), "index"),
         (("tickets.view_all", "tickets.view_own", "tickets.create"), "tickets_page"),
         (("stats.view",), "stats"),
+        (("timemachine.view",), "time_machine_page"),
         (("users.manage",), "users_page"),
         (("locations.view", "locations.manage"), "locations_page")
     ]
@@ -1205,6 +1213,29 @@ def log_activity(db, action, entity_type, entity_id=None, details=None):
         INSERT INTO activity_log (username, action, entity_type, entity_id, details)
         VALUES (?, ?, ?, ?, ?)
     ''', (username, action, entity_type, entity_id, json.dumps(details or {})))
+
+def parse_time_machine_timestamp(value):
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(value.replace("Z", ""))
+    except ValueError:
+        return None
+
+def format_time_machine_change(entity_label, action_label, details):
+    suffix = ""
+    if details:
+        for key in ("title", "name", "id"):
+            value = details.get(key)
+            if value:
+                suffix = f" · {value}"
+                break
+    return f"{entity_label} {action_label}{suffix}"
 
 DEPENDENCY_ENTITY_TYPES = {
     "asset": {"table": "assets", "label": "Asset", "name_col": "name"},
@@ -2248,6 +2279,13 @@ def roadmap_page():
 def dependencies_page():
     access = get_user_access(get_db())
     return render_template('dependencies.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
+@app.route('/time-machine')
+@login_required
+@require_permission('timemachine.view')
+def time_machine_page():
+    access = get_user_access(get_db())
+    return render_template('time_machine.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/api/categories/<int:category_id>', methods=['PUT', 'DELETE'])
 @login_required
@@ -3965,6 +4003,268 @@ def feature_flags():
         "pro_enabled": PRO_ENABLED,
         "pro_features": PRO_FEATURES,
         "free_features": FREE_FEATURES
+    })
+
+@app.route('/api/time-machine/changes', methods=['GET'])
+@login_required
+@require_permission('timemachine.view')
+def time_machine_changes():
+    db = get_db()
+    activity_rows = db.execute('''
+        SELECT id, action, entity_type, entity_id, details, created_at, username
+        FROM activity_log
+        ORDER BY created_at ASC
+    ''').fetchall()
+
+    action_labels = {
+        "create": "erstellt",
+        "update": "aktualisiert",
+        "delete": "gelöscht",
+        "comment": "kommentiert",
+        "watch": "beobachtet",
+        "unwatch": "Beobachtung beendet",
+        "login": "angemeldet",
+        "logout": "abgemeldet"
+    }
+    entity_labels = {
+        "asset": "Asset",
+        "device": "Gerät",
+        "ticket": "Ticket",
+        "roadmap": "Roadmap",
+        "roadmap_step": "Roadmap-Schritt",
+        "dependency_link": "Dependency",
+        "team": "Team",
+        "department": "Abteilung",
+        "software": "Software",
+        "location": "Standort",
+        "user": "Benutzer"
+    }
+    layer_map = {
+        "asset": "assets",
+        "device": "devices",
+        "ticket": "tickets",
+        "roadmap": "roadmaps",
+        "roadmap_step": "roadmaps",
+        "dependency_link": "dependencies",
+        "team": "organisation",
+        "department": "organisation",
+        "software": "assets",
+        "location": "assets",
+        "user": "organisation"
+    }
+
+    changes = []
+    for row in activity_rows:
+        try:
+            details = json.loads(row["details"]) if row["details"] else {}
+        except json.JSONDecodeError:
+            details = {}
+        action_label = action_labels.get(row["action"], row["action"])
+        entity_label = entity_labels.get(row["entity_type"], row["entity_type"])
+        timestamp = parse_time_machine_timestamp(row["created_at"])
+        if not timestamp:
+            continue
+        changes.append({
+            "key": f"activity-{row['id']}",
+            "timestamp": timestamp.isoformat(),
+            "title": format_time_machine_change(entity_label, action_label, details),
+            "description": details.get("description") or details.get("notes") or row["action"],
+            "layer": layer_map.get(row["entity_type"], "events"),
+            "layer_label": entity_label,
+            "source": "Aktivitätslog",
+            "entity_type": row["entity_type"],
+            "entity_id": row["entity_id"],
+            "impact": details.get("impact", "n/a"),
+            "is_planned": False
+        })
+
+    roadmap_rows = db.execute('''
+        SELECT id, title, status, start_date, target_date, owner, created_at
+        FROM roadmaps
+        ORDER BY created_at ASC
+    ''').fetchall()
+    roadmap_step_rows = db.execute('''
+        SELECT id, roadmap_id, title, status, due_date, created_at
+        FROM roadmap_steps
+        ORDER BY created_at ASC
+    ''').fetchall()
+
+    roadmaps = []
+    for row in roadmap_rows:
+        roadmaps.append({
+            "id": row["id"],
+            "title": row["title"],
+            "status": row["status"],
+            "start_date": row["start_date"],
+            "target_date": row["target_date"],
+            "owner": row["owner"]
+        })
+
+        start_timestamp = parse_time_machine_timestamp(row["start_date"]) or parse_time_machine_timestamp(row["created_at"])
+        if start_timestamp:
+            changes.append({
+                "key": f"roadmap-start-{row['id']}",
+                "timestamp": start_timestamp.isoformat(),
+                "title": f"Roadmap gestartet · {row['title']}",
+                "description": "Roadmap-Start geplant oder umgesetzt.",
+                "layer": "roadmaps",
+                "layer_label": "Roadmap",
+                "source": "Roadmap",
+                "entity_type": "roadmap",
+                "entity_id": row["id"],
+                "roadmap_id": row["id"],
+                "impact": row["status"] or "planned",
+                "is_planned": True
+            })
+        target_timestamp = parse_time_machine_timestamp(row["target_date"])
+        if target_timestamp:
+            changes.append({
+                "key": f"roadmap-target-{row['id']}",
+                "timestamp": target_timestamp.isoformat(),
+                "title": f"Roadmap Zieltermin · {row['title']}",
+                "description": "Geplanter Abschluss oder Meilenstein.",
+                "layer": "roadmaps",
+                "layer_label": "Roadmap",
+                "source": "Roadmap",
+                "entity_type": "roadmap",
+                "entity_id": row["id"],
+                "roadmap_id": row["id"],
+                "impact": "target",
+                "is_planned": True
+            })
+
+    for row in roadmap_step_rows:
+        step_timestamp = parse_time_machine_timestamp(row["due_date"]) or parse_time_machine_timestamp(row["created_at"])
+        if not step_timestamp:
+            continue
+        changes.append({
+            "key": f"roadmap-step-{row['id']}",
+            "timestamp": step_timestamp.isoformat(),
+            "title": f"Roadmap-Schritt · {row['title']}",
+            "description": "Geplanter Change aus Roadmap.",
+            "layer": "roadmaps",
+            "layer_label": "Roadmap",
+            "source": "Roadmap",
+            "entity_type": "roadmap_step",
+            "entity_id": row["id"],
+            "roadmap_id": row["roadmap_id"],
+            "impact": row["status"] or "planned",
+            "is_planned": True
+        })
+
+    ticket_rows = db.execute('''
+        SELECT id, title, status, created_at, resolved_at
+        FROM tickets
+        ORDER BY created_at DESC
+    ''').fetchall()
+    tickets = [dict(row) for row in ticket_rows]
+
+    timestamps = [parse_time_machine_timestamp(change["timestamp"]) for change in changes]
+    timestamps = [ts for ts in timestamps if ts]
+    now = datetime.utcnow()
+    range_start = min(timestamps) if timestamps else now
+    range_end = max(timestamps) if timestamps else now
+
+    return jsonify({
+        "changes": changes,
+        "roadmaps": roadmaps,
+        "tickets": tickets,
+        "range": {
+            "start": range_start.isoformat(),
+            "end": range_end.isoformat()
+        }
+    })
+
+@app.route('/api/time-machine/state', methods=['GET'])
+@login_required
+@require_permission('timemachine.view')
+def time_machine_state():
+    db = get_db()
+    timestamp_raw = request.args.get('timestamp')
+    timestamp = parse_time_machine_timestamp(timestamp_raw) or datetime.utcnow()
+    timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+    assets = db.execute('''
+        SELECT COUNT(*) as total
+        FROM assets
+        WHERE created_at <= ?
+          AND (retirement_date IS NULL OR retirement_date = '' OR retirement_date > ?)
+    ''', (timestamp_str, timestamp_str)).fetchone()["total"]
+    devices = db.execute('''
+        SELECT COUNT(*) as total
+        FROM devices
+        WHERE created_at <= ?
+    ''', (timestamp_str,)).fetchone()["total"]
+    tickets_total = db.execute('''
+        SELECT COUNT(*) as total
+        FROM tickets
+        WHERE created_at <= ?
+    ''', (timestamp_str,)).fetchone()["total"]
+    tickets_open = db.execute('''
+        SELECT COUNT(*) as total
+        FROM tickets
+        WHERE created_at <= ?
+          AND (resolved_at IS NULL OR resolved_at = '' OR resolved_at > ?)
+    ''', (timestamp_str, timestamp_str)).fetchone()["total"]
+    roadmaps_total = db.execute('''
+        SELECT COUNT(*) as total
+        FROM roadmaps
+        WHERE created_at <= ?
+    ''', (timestamp_str,)).fetchone()["total"]
+    dependencies_total = db.execute('''
+        SELECT COUNT(*) as total
+        FROM dependency_links
+        WHERE created_at <= ?
+    ''', (timestamp_str,)).fetchone()["total"]
+    last_change_row = db.execute('''
+        SELECT action, entity_type, details, created_at
+        FROM activity_log
+        WHERE created_at <= ?
+        ORDER BY created_at DESC
+        LIMIT 1
+    ''', (timestamp_str,)).fetchone()
+    last_change_label = "—"
+    if last_change_row:
+        entity_labels = {
+            "asset": "Asset",
+            "device": "Gerät",
+            "ticket": "Ticket",
+            "roadmap": "Roadmap",
+            "roadmap_step": "Roadmap-Schritt",
+            "dependency_link": "Dependency",
+            "team": "Team",
+            "department": "Abteilung",
+            "software": "Software",
+            "location": "Standort",
+            "user": "Benutzer"
+        }
+        action_labels = {
+            "create": "erstellt",
+            "update": "aktualisiert",
+            "delete": "gelöscht",
+            "comment": "kommentiert",
+            "watch": "beobachtet",
+            "unwatch": "Beobachtung beendet",
+            "login": "angemeldet",
+            "logout": "abgemeldet"
+        }
+        try:
+            details = json.loads(last_change_row["details"]) if last_change_row["details"] else {}
+        except json.JSONDecodeError:
+            details = {}
+        entity_label = entity_labels.get(last_change_row["entity_type"], last_change_row["entity_type"])
+        action_label = action_labels.get(last_change_row["action"], last_change_row["action"])
+        last_change_label = format_time_machine_change(entity_label, action_label, details)
+
+    return jsonify({
+        "timestamp": timestamp.isoformat(),
+        "assets": assets,
+        "devices": devices,
+        "tickets": tickets_total,
+        "tickets_open": tickets_open,
+        "roadmaps": roadmaps_total,
+        "dependencies": dependencies_total,
+        "last_change": last_change_label
     })
 
 @app.route('/api/activity', methods=['GET'])
