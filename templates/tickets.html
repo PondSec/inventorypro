@@ -405,7 +405,10 @@
                                                 <p class="font-semibold text-slate-800" x-text="category.name"></p>
                                                 <p class="text-xs text-slate-500" x-text="category.description"></p>
                                             </div>
-                                            <span class="rounded-full px-3 py-1 text-xs font-semibold" :style="`background-color: ${category.color}; color: white;`" x-text="`${category.sla_hours}h SLA`"></span>
+                                            <div class="flex items-center gap-3">
+                                                <span class="rounded-full px-3 py-1 text-xs font-semibold" :style="`background-color: ${category.color}; color: white;`" x-text="`${category.sla_hours}h SLA`"></span>
+                                                <button @click="deleteCategory(category)" class="text-rose-500 text-xs font-semibold">Löschen</button>
+                                            </div>
                                         </div>
                                     </template>
                                 </div>
