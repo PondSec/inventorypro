@@ -288,7 +288,7 @@
                     <div class="flex flex-wrap items-center justify-between gap-4">
                         <div>
                             <h3 class="text-lg font-semibold text-slate-900">Timeline-View</h3>
-                            <p class="text-sm text-slate-500">Horizontale Zeitachse mit Ebenen für Assets, Geräte, Tickets und Roadmaps.</p>
+                            <p class="text-sm text-slate-500">Vertikale Zeitachse mit Ebenen für Assets, Geräte, Tickets und Roadmaps.</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-3">
                             <select x-model="selectedLayer" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs">
@@ -308,16 +308,24 @@
                                     <p class="text-xs font-semibold uppercase tracking-widest text-slate-500" x-text="layer.label"></p>
                                     <span class="text-xs text-slate-400" x-text="`${layerChanges(layer.key).length} Changes`"></span>
                                 </div>
-                                <div class="mt-4 flex gap-3 overflow-x-auto pb-2">
+                                <div class="mt-4 space-y-4">
                                     <template x-for="change in layerChanges(layer.key)" :key="change.key">
-                                        <button @click="selectChange(change)" class="min-w-[220px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm hover:border-cyan-300">
-                                            <div class="flex items-center justify-between gap-2">
-                                                <span class="text-xs font-semibold text-slate-700" x-text="change.title"></span>
-                                                <span class="text-[10px] uppercase tracking-widest" :class="change.is_planned ? 'text-cyan-600' : 'text-slate-400'" x-text="change.is_planned ? 'geplant' : 'live'"></span>
+                                        <div class="flex flex-col gap-3 rounded-2xl border border-transparent bg-white px-4 py-3 shadow-sm transition hover:border-cyan-300 sm:flex-row sm:items-start">
+                                            <div class="flex items-start gap-3 sm:w-40">
+                                                <span class="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-500"></span>
+                                                <div>
+                                                    <p class="text-[10px] uppercase tracking-widest text-slate-400">Zeitpunkt</p>
+                                                    <p class="text-xs font-semibold text-slate-700" x-text="formatDate(change.timestamp)"></p>
+                                                </div>
                                             </div>
-                                            <p class="mt-1 text-xs text-slate-500" x-text="change.description"></p>
-                                            <p class="mt-2 text-xs font-semibold text-slate-700" x-text="formatDate(change.timestamp)"></p>
-                                        </button>
+                                            <button @click="selectChange(change)" class="flex-1 text-left">
+                                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                                    <span class="text-sm font-semibold text-slate-800" x-text="change.title"></span>
+                                                    <span class="rounded-full bg-slate-100 px-2 py-1 text-[10px] uppercase tracking-widest" :class="change.is_planned ? 'text-cyan-600' : 'text-slate-400'" x-text="change.is_planned ? 'geplant' : 'live'"></span>
+                                                </div>
+                                                <p class="mt-2 text-xs text-slate-500" x-text="change.description"></p>
+                                            </button>
+                                        </div>
                                     </template>
                                     <p x-show="layerChanges(layer.key).length === 0" class="text-xs text-slate-400">Keine Changes für diese Ebene.</p>
                                 </div>
