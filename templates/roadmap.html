@@ -323,7 +323,7 @@
                                 <div class="overflow-x-auto pb-2">
                                     <div class="flex gap-4 min-w-full">
                                         <template x-for="status in roadmapStatuses" :key="status">
-                                            <div class="w-72 flex-shrink-0 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                                            <div class="w-80 flex-shrink-0 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:w-80 lg:w-96">
                                                 <div class="flex items-center justify-between">
                                                     <p class="text-xs uppercase text-slate-400" x-text="roadmapStatusLabels[status] || status"></p>
                                                     <span class="text-xs text-slate-400" x-text="stepsByStatus(status).length"></span>
@@ -341,17 +341,17 @@
                                                                 </button>
                                                             </div>
                                                             <div class="grid gap-2 text-xs text-slate-500 min-w-0">
-                                                                <label class="flex flex-col gap-1 min-w-0">
+                                                                <label class="flex w-full min-w-0 flex-col gap-1 overflow-hidden">
                                                                     <span class="text-[10px] uppercase text-slate-400">Owner</span>
-                                                                    <input type="text" x-model="step.owner" placeholder="Owner" class="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1" :disabled="!can('roadmap.manage')">
+                                                                    <input type="text" x-model="step.owner" placeholder="Owner" class="w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs leading-tight" :disabled="!can('roadmap.manage')">
                                                                 </label>
-                                                                <label class="flex flex-col gap-1 min-w-0">
+                                                                <label class="flex w-full min-w-0 flex-col gap-1 overflow-hidden">
                                                                     <span class="text-[10px] uppercase text-slate-400">Fällig</span>
-                                                                    <input type="date" x-model="step.due_date" class="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1" :disabled="!can('roadmap.manage')">
+                                                                    <input type="date" x-model="step.due_date" class="w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs leading-tight" :disabled="!can('roadmap.manage')">
                                                                 </label>
-                                                                <label class="flex flex-col gap-1 min-w-0">
+                                                                <label class="flex w-full min-w-0 flex-col gap-1 overflow-hidden">
                                                                     <span class="text-[10px] uppercase text-slate-400">Status</span>
-                                                                    <select x-model="step.ui_status" class="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-1" :disabled="!can('roadmap.manage')">
+                                                                    <select x-model="step.ui_status" class="w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs leading-tight" :disabled="!can('roadmap.manage')">
                                                                         <template x-for="statusOption in roadmapStatuses" :key="statusOption">
                                                                             <option :value="statusOption" x-text="roadmapStatusLabels[statusOption] || statusOption"></option>
                                                                         </template>
