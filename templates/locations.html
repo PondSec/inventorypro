@@ -190,18 +190,31 @@
             </header>
 
             <main class="app-content flex-1 overflow-auto p-8 pt-24 space-y-8 scrollbar-hide">
-            <section class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-8 py-10 text-white shadow-2xl shadow-slate-300/50">
-                <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div class="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                        <p class="text-xs uppercase tracking-[0.3em] text-slate-300">Locations</p>
-                        <h2 class="mt-2 text-3xl font-semibold">Standorte strukturieren dein Inventar.</h2>
-                        <p class="mt-3 max-w-xl text-slate-200">Lege zentrale Lager, Etagen oder Abteilungen an und verknüpfe Geräte.</p>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Standorte</p>
+                        <h2 class="text-2xl font-semibold text-slate-900">Standorte verwalten</h2>
+                        <p class="mt-1 text-sm text-slate-500">Lager, Etagen und Abteilungen zentral pflegen.</p>
                     </div>
-                    <div class="rounded-2xl bg-white/10 p-4">
-                        <p class="text-xs uppercase tracking-widest text-slate-300">Gesamt</p>
-                        <p class="mt-2 text-2xl font-semibold" x-text="locations.length"></p>
-                        <p class="text-xs text-slate-300">aktive Standorte</p>
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p class="text-xs uppercase text-slate-400">Gesamt</p>
+                        <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="locations.length"></p>
+                        <p class="text-xs text-slate-500">aktive Standorte</p>
                     </div>
+                </div>
+            </section>
+
+            <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div class="relative flex-1 min-w-[220px]">
+                        <label class="text-xs uppercase text-slate-400">Suche</label>
+                        <input type="text" x-model="locationSearch" placeholder="Standort suchen" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                        <span class="absolute right-4 top-9 text-slate-400">
+                            <i data-feather="search" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <button @click="resetForm()" class="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Formular zurücksetzen</button>
                 </div>
             </section>
 
@@ -236,20 +249,23 @@
                         </span>
                     </div>
                     <div class="space-y-3">
-                        <template x-for="location in locations" :key="location.id">
+                        <template x-for="location in filteredLocations()" :key="location.id">
                             <div class="rounded-2xl border border-slate-200 p-4 hover:bg-slate-50">
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <p class="font-semibold text-slate-900" x-text="location.name"></p>
                                         <p class="text-sm text-slate-500" x-text="location.description || 'Keine Beschreibung'"></p>
                                     </div>
-                                    <div class="flex items-center gap-2">
+                                    <div class="flex items-center gap-2" x-data="{ open: false }">
                                         <button @click="editLocation(location)" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">
                                             Bearbeiten
                                         </button>
-                                        <button @click="deleteLocation(location)" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">
-                                            Löschen
+                                        <button @click="open = !open" class="inline-flex items-center justify-center rounded-full border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-100" aria-label="Weitere Aktionen">
+                                            <i data-feather="more-vertical" class="h-4 w-4"></i>
                                         </button>
+                                        <div x-show="open" @click.away="open = false" class="absolute right-4 z-20 mt-20 w-40 rounded-2xl border border-slate-200 bg-white shadow-xl" x-transition>
+                                            <button @click="deleteLocation(location); open=false" class="block w-full px-4 py-2 text-left text-sm text-rose-600 hover:bg-rose-50">Löschen</button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -267,6 +283,7 @@
         document.addEventListener('alpine:init', () => {
             Alpine.data('locationsAdmin', () => ({
                 locations: [],
+                locationSearch: '',
                 form: { id: null, name: '', description: '' },
                 editing: false,
                 errorMessage: '',
@@ -282,6 +299,14 @@
                         this.locations = await response.json();
                     }
                     this.$nextTick(() => feather.replace());
+                },
+
+                filteredLocations() {
+                    const query = (this.locationSearch || '').toLowerCase().trim();
+                    if (!query) return this.locations;
+                    return this.locations.filter((location) => {
+                        return `${location.name} ${location.description || ''}`.toLowerCase().includes(query);
+                    });
                 },
 
                 editLocation(location) {

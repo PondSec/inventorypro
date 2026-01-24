@@ -193,21 +193,38 @@
             </header>
 
             <main class="app-content flex-1 overflow-auto p-8 pt-24 space-y-8 scrollbar-hide">
-            <section class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-8 py-10 text-white shadow-2xl shadow-slate-300/50">
-                <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div class="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                        <p class="text-xs uppercase tracking-[0.3em] text-slate-300">Team</p>
-                        <h2 class="mt-2 text-3xl font-semibold">Verwalte Zugänge und Zugriffsrechte.</h2>
-                        <p class="mt-3 max-w-xl text-slate-200">Lege neue Nutzer an, setze Passwörter zurück und behalte den 2FA-Status im Blick.</p>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Admin</p>
+                        <h2 class="text-2xl font-semibold text-slate-900">Benutzer & Rollen</h2>
+                        <p class="mt-1 text-sm text-slate-500">Zugänge, Rollen und Directory-Integration verwalten.</p>
                     </div>
-                    <div class="rounded-2xl bg-white/10 p-4">
-                        <p class="text-xs uppercase tracking-widest text-slate-300">Gesamt</p>
-                        <p class="mt-2 text-2xl font-semibold" x-text="users.length"></p>
-                        <p class="text-xs text-slate-300">aktive Konten</p>
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p class="text-xs uppercase text-slate-400">Gesamt</p>
+                        <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="users.length"></p>
+                        <p class="text-xs text-slate-500">aktive Konten</p>
                     </div>
                 </div>
             </section>
 
+            <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div class="relative flex-1 min-w-[220px]">
+                        <label class="text-xs uppercase text-slate-400">Suche</label>
+                        <input type="text" x-model="userSearch" placeholder="Benutzer oder Rolle" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                        <span class="absolute right-4 top-9 text-slate-400">
+                            <i data-feather="search" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="inline-flex rounded-full border border-slate-200 bg-white p-1 text-xs font-semibold">
+                        <button @click="activeAdminTab = 'users'" class="rounded-full px-4 py-2" :class="activeAdminTab === 'users' ? 'bg-slate-900 text-white' : 'text-slate-600'">Benutzer</button>
+                        <button @click="activeAdminTab = 'roles'" class="rounded-full px-4 py-2" :class="activeAdminTab === 'roles' ? 'bg-slate-900 text-white' : 'text-slate-600'">Rollen & Verzeichnis</button>
+                    </div>
+                </div>
+            </section>
+
+            <div x-show="activeAdminTab === 'users'" class="space-y-6">
             <section class="grid gap-6 lg:grid-cols-3">
                 <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-1">
                     <h3 class="text-lg font-semibold text-slate-900">Neuen Benutzer anlegen</h3>
@@ -259,7 +276,7 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
-                                <template x-for="user in users" :key="user.id">
+                                <template x-for="user in filteredUsers()" :key="user.id">
                                     <tr class="hover:bg-slate-50">
                                         <td class="py-3 font-semibold text-slate-900" x-text="user.username"></td>
                                         <td class="py-3">
@@ -279,15 +296,18 @@
                                             </div>
                                         </td>
                                         <td class="py-3 text-right">
-                                            <button @click="openResetModal(user)" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">
-                                                Passwort reset
-                                            </button>
-                                            <button x-show="can('roles.assign')" @click="openUserRoleModal(user)" class="ml-2 rounded-full border border-indigo-200 px-3 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-50">
-                                                Rollen
-                                            </button>
-                                            <button @click="deleteUser(user)" class="ml-2 rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">
-                                                Löschen
-                                            </button>
+                                            <div class="flex items-center justify-end gap-2" x-data="{ open: false }">
+                                                <button x-show="can('roles.assign')" @click="openUserRoleModal(user)" class="rounded-full border border-indigo-200 px-3 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-50">
+                                                    Rollen
+                                                </button>
+                                                <button @click="open = !open" class="inline-flex items-center justify-center rounded-full border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-100" aria-label="Weitere Aktionen">
+                                                    <i data-feather="more-vertical" class="h-4 w-4"></i>
+                                                </button>
+                                                <div x-show="open" @click.away="open = false" class="absolute right-4 z-20 mt-20 w-40 rounded-2xl border border-slate-200 bg-white shadow-xl" x-transition>
+                                                    <button @click="openResetModal(user); open=false" class="block w-full px-4 py-2 text-left text-sm hover:bg-slate-50">Passwort reset</button>
+                                                    <button @click="deleteUser(user); open=false" class="block w-full px-4 py-2 text-left text-sm text-rose-600 hover:bg-rose-50">Löschen</button>
+                                                </div>
+                                            </div>
                                         </td>
                                     </tr>
                                 </template>
@@ -297,7 +317,9 @@
                     </div>
                 </div>
             </section>
+            </div>
 
+            <div x-show="activeAdminTab === 'roles'" class="space-y-6">
             <section class="grid gap-6 lg:grid-cols-3" x-show="can('roles.manage')">
                 <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-1">
                     <h3 class="text-lg font-semibold text-slate-900">Neue Rolle</h3>
@@ -458,6 +480,7 @@
                     <p class="mt-3 text-xs text-emerald-600" x-text="adMessage" x-show="adMessage"></p>
                 </div>
             </section>
+            </div>
             </main>
         </div>
     </div>
@@ -549,6 +572,8 @@
         document.addEventListener('alpine:init', () => {
             Alpine.data('userAdmin', () => ({
                 users: [],
+                userSearch: '',
+                activeAdminTab: 'users',
                 newUser: { username: '', password: '', role_ids: [] },
                 resetModalOpen: false,
                 resetUser: null,
@@ -607,6 +632,15 @@
                         this.users = await response.json();
                     }
                     this.$nextTick(() => feather.replace());
+                },
+
+                filteredUsers() {
+                    const query = (this.userSearch || '').toLowerCase().trim();
+                    if (!query) return this.users;
+                    return this.users.filter((user) => {
+                        const roles = (user.roles || []).map((role) => role.name).join(' ').toLowerCase();
+                        return `${user.username} ${roles}`.toLowerCase().includes(query);
+                    });
                 },
 
                 async loadRoles() {
