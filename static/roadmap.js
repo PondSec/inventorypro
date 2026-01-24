@@ -7,7 +7,9 @@ document.addEventListener('alpine:init', () => {
         filters: {
             status: '',
             search: '',
-            mine: false
+            mine: false,
+            owner: '',
+            month: ''
         },
         roadmapStatuses: ['planned', 'in_progress', 'blocked', 'done'],
         roadmapStatusLabels: {
@@ -74,6 +76,8 @@ document.addEventListener('alpine:init', () => {
             if (this.filters.status) params.append('status', this.filters.status);
             if (this.filters.search) params.append('search', this.filters.search);
             if (this.filters.mine) params.append('mine', '1');
+            if (this.filters.owner) params.append('owner', this.filters.owner);
+            if (this.filters.month) params.append('month', this.filters.month);
             if (this.preselectedTicketId) params.append('ticket_id', this.preselectedTicketId);
 
             const response = await fetch(`/api/roadmaps?${params.toString()}`);
@@ -82,6 +86,10 @@ document.addEventListener('alpine:init', () => {
                 this.updateOverview();
             }
             this.$nextTick(() => feather.replace());
+        },
+
+        applyFilters() {
+            this.loadRoadmaps();
         },
 
         updateOverview() {
