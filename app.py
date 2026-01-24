@@ -2137,10 +2137,22 @@ def ticket_category_detail(category_id):
 
     if not user_can('ticket_categories.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    affected_tickets = db.execute(
+        'SELECT id FROM tickets WHERE category_id = ?',
+        (category_id,)
+    ).fetchall()
+    if affected_tickets:
+        db.execute('UPDATE tickets SET category_id = NULL WHERE category_id = ?', (category_id,))
     result = db.execute('DELETE FROM ticket_categories WHERE id = ?', (category_id,))
     if result.rowcount == 0:
         return jsonify({"error": "Kategorie nicht gefunden"}), 404
-    log_activity(db, "delete", "ticket_category", category_id)
+    log_activity(
+        db,
+        "delete",
+        "ticket_category",
+        category_id,
+        {"updated_tickets": len(affected_tickets)}
+    )
     db.commit()
     return jsonify({"status": "deleted"}), 200
 
