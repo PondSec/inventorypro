@@ -217,6 +217,18 @@ PERMISSIONS = [
         "label": "Aktivitätslog anzeigen",
         "description": "Aktivitätslog einsehen.",
         "group": "Reporting"
+    },
+    {
+        "key": "roadmap.view",
+        "label": "Roadmaps anzeigen",
+        "description": "Roadmaps und Pläne einsehen.",
+        "group": "Roadmap"
+    },
+    {
+        "key": "roadmap.manage",
+        "label": "Roadmaps verwalten",
+        "description": "Roadmaps erstellen, bearbeiten und löschen.",
+        "group": "Roadmap"
     }
 ]
 
@@ -255,7 +267,9 @@ DEFAULT_ROLES = [
             "ticket_alerts.manage",
             "notifications.manage",
             "stats.view",
-            "activity.view"
+            "activity.view",
+            "roadmap.view",
+            "roadmap.manage"
         ]
     },
     {
@@ -267,7 +281,8 @@ DEFAULT_ROLES = [
             "tickets.view_own",
             "tickets.create",
             "tickets.comment_own",
-            "tickets.watch_own"
+            "tickets.watch_own",
+            "roadmap.view"
         ]
     }
 ]
@@ -936,6 +951,38 @@ def init_db():
             )
         ''')
 
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS roadmaps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket_id INTEGER UNIQUE,
+                title TEXT NOT NULL,
+                objective TEXT,
+                status TEXT DEFAULT 'planned',
+                owner TEXT,
+                start_date TEXT,
+                target_date TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (ticket_id) REFERENCES tickets(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS roadmap_steps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                roadmap_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT DEFAULT 'planned',
+                position INTEGER DEFAULT 0,
+                owner TEXT,
+                due_date TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (roadmap_id) REFERENCES roadmaps(id)
+            )
+        ''')
+
         # Default-Kategorien
         default_categories = [
             ("CPU", "cpu", '{"cores":"number","clock":"text","manufacturer":"text"}'),
@@ -960,7 +1007,8 @@ def init_db():
             ("Allgemein", "Allgemeine Anfragen und Rückfragen", "#2563eb", 72, 1),
             ("Incident", "Störungen und dringende Ausfälle", "#dc2626", 24, 0),
             ("Service Request", "Bestellungen und Service-Anfragen", "#0f766e", 120, 0),
-            ("Change", "Geplante Änderungen und Wartungen", "#7c3aed", 168, 0)
+            ("Change", "Geplante Änderungen und Wartungen", "#7c3aed", 168, 0),
+            ("Verbesserungen", "Optimierungen, neue Features und Produktideen", "#0ea5e9", 168, 0)
         ]
         c.executemany('''
             INSERT OR IGNORE INTO ticket_categories (name, description, color, sla_hours, is_default)
@@ -1222,6 +1270,79 @@ def parse_datetime(value):
 
 def is_closed_status(status):
     return (status or "").strip().lower() in {"closed", "resolved", "done"}
+
+def should_auto_create_roadmap(category_name):
+    if not category_name:
+        return False
+    lowered = category_name.strip().lower()
+    keywords = ("verbesser", "improvement", "enhancement", "feature", "upgrade", "optim")
+    return any(keyword in lowered for keyword in keywords)
+
+def create_roadmap_for_ticket(db, ticket, category_name=None, created_by=None):
+    if not ticket:
+        return None
+    existing = db.execute('SELECT id FROM roadmaps WHERE ticket_id = ?', (ticket["id"],)).fetchone()
+    if existing:
+        return existing["id"]
+    title = f"Roadmap: {ticket['title']}"
+    objective = f"Umsetzungsplan für Ticket #{ticket['id']}: {ticket['title']}"
+    owner = ticket.get("assignee") or ticket.get("created_by")
+    start_date = datetime.utcnow().strftime("%Y-%m-%d")
+    target_date = ticket.get("due_date") or None
+    roadmap_cursor = db.execute('''
+        INSERT INTO roadmaps (ticket_id, title, objective, status, owner, start_date, target_date, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        ticket["id"],
+        title,
+        objective,
+        "planned",
+        owner,
+        start_date,
+        target_date,
+        created_by or session.get('username')
+    ))
+    roadmap_id = roadmap_cursor.lastrowid
+    default_steps = [
+        ("Analyse & Scope", "Ziele, Anforderungen und Erfolgskriterien definieren.", "planned"),
+        ("Konzept & Design", "Architektur, UI/UX und technische Umsetzung planen.", "planned"),
+        ("Implementierung", "Features entwickeln und integrieren.", "planned"),
+        ("Qualitätssicherung", "Tests, Review und Abnahme durchführen.", "planned"),
+        ("Rollout & Monitoring", "Deployment, Dokumentation und Monitoring vorbereiten.", "planned")
+    ]
+    for position, (step_title, description, status) in enumerate(default_steps, start=1):
+        db.execute('''
+            INSERT INTO roadmap_steps (roadmap_id, title, description, status, position)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (roadmap_id, step_title, description, status, position))
+    log_activity(db, "create", "roadmap", roadmap_id, {
+        "ticket_id": ticket["id"],
+        "title": title,
+        "category": category_name
+    })
+    return roadmap_id
+
+def fetch_roadmap(db, roadmap_id):
+    row = db.execute('''
+        SELECT r.*, t.title as ticket_title, t.status as ticket_status, t.created_by as ticket_owner
+        FROM roadmaps r
+        LEFT JOIN tickets t ON r.ticket_id = t.id
+        WHERE r.id = ?
+    ''', (roadmap_id,)).fetchone()
+    return dict(row) if row else None
+
+def fetch_roadmap_for_ticket(db, ticket_id):
+    row = db.execute('SELECT * FROM roadmaps WHERE ticket_id = ?', (ticket_id,)).fetchone()
+    return dict(row) if row else None
+
+def fetch_roadmap_steps(db, roadmap_id):
+    rows = db.execute('''
+        SELECT *
+        FROM roadmap_steps
+        WHERE roadmap_id = ?
+        ORDER BY position ASC, created_at ASC
+    ''', (roadmap_id,)).fetchall()
+    return [dict(row) for row in rows]
 
 def warranty_status(warranty_end):
     parsed = parse_date(warranty_end)
@@ -1508,6 +1629,13 @@ def locations_page():
 def tickets_page():
     access = get_user_access(get_db())
     return render_template('tickets.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
+@app.route('/roadmap')
+@login_required
+@require_permissions('roadmap.view', 'roadmap.manage')
+def roadmap_page():
+    access = get_user_access(get_db())
+    return render_template('roadmap.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/api/categories/<int:category_id>', methods=['PUT', 'DELETE'])
 @login_required
@@ -2016,6 +2144,244 @@ def ticket_category_detail(category_id):
     db.commit()
     return jsonify({"status": "deleted"}), 200
 
+@app.route('/api/roadmaps', methods=['GET', 'POST'])
+@login_required
+def roadmaps():
+    db = get_db()
+    access = get_user_access(db)
+    if request.method == 'POST':
+        if not user_can('roadmap.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        ticket_id = data.get('ticket_id')
+        title = (data.get('title') or '').strip()
+        objective = (data.get('objective') or '').strip()
+        status = (data.get('status') or 'planned').strip()
+        owner = (data.get('owner') or '').strip()
+        start_date = (data.get('start_date') or '').strip()
+        target_date = (data.get('target_date') or '').strip()
+        steps = data.get('steps') or []
+        ticket = None
+        if ticket_id:
+            ticket = fetch_ticket(db, ticket_id)
+            if not ticket:
+                return jsonify({"error": "Ticket nicht gefunden"}), 404
+            if not ensure_ticket_access(ticket, access, require_owner_permission=True):
+                return jsonify({"error": "Keine Berechtigung"}), 403
+            existing = db.execute('SELECT id FROM roadmaps WHERE ticket_id = ?', (ticket_id,)).fetchone()
+            if existing:
+                return jsonify({"error": "Roadmap für dieses Ticket existiert bereits"}), 400
+            if not title:
+                title = f"Roadmap: {ticket['title']}"
+            if not objective:
+                objective = f"Umsetzungsplan für Ticket #{ticket['id']}: {ticket['title']}"
+            if not owner:
+                owner = ticket.get("assignee") or ticket.get("created_by") or ''
+
+        if not title:
+            return jsonify({"error": "Titel ist erforderlich"}), 400
+
+        cursor = db.execute('''
+            INSERT INTO roadmaps (ticket_id, title, objective, status, owner, start_date, target_date, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            ticket_id,
+            title,
+            objective,
+            status,
+            owner,
+            start_date or None,
+            target_date or None,
+            session.get('username')
+        ))
+        roadmap_id = cursor.lastrowid
+        for index, step in enumerate(steps, start=1):
+            step_title = (step.get('title') or '').strip()
+            if not step_title:
+                continue
+            db.execute('''
+                INSERT INTO roadmap_steps (roadmap_id, title, description, status, position, owner, due_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                roadmap_id,
+                step_title,
+                (step.get('description') or '').strip(),
+                (step.get('status') or 'planned').strip(),
+                int(step.get('position') or index),
+                (step.get('owner') or '').strip(),
+                (step.get('due_date') or '').strip() or None
+            ))
+        log_activity(db, "create", "roadmap", roadmap_id, {"title": title, "ticket_id": ticket_id})
+        db.commit()
+        return jsonify({"status": "created", "id": roadmap_id}), 201
+
+    if not user_can('roadmap.view'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+
+    filters = []
+    params = []
+    status = (request.args.get('status') or '').strip()
+    search = (request.args.get('search') or '').strip()
+    ticket_id = request.args.get('ticket_id')
+    mine = request.args.get('mine')
+
+    if status:
+        filters.append('r.status = ?')
+        params.append(status)
+    if ticket_id:
+        filters.append('r.ticket_id = ?')
+        params.append(ticket_id)
+    if search:
+        filters.append('(r.title LIKE ? OR r.objective LIKE ? OR t.title LIKE ?)')
+        params.extend([f'%{search}%', f'%{search}%', f'%{search}%'])
+    if mine:
+        filters.append('(r.created_by = ? OR t.created_by = ?)')
+        params.extend([session.get('username'), session.get('username')])
+    if not access["is_superuser"] and 'tickets.view_all' not in access["permissions"]:
+        filters.append('(t.created_by = ? OR r.created_by = ?)')
+        params.extend([session.get('username'), session.get('username')])
+
+    query = '''
+        SELECT r.*, t.title as ticket_title, t.status as ticket_status,
+               c.name as category_name, c.color as category_color,
+               (SELECT COUNT(*) FROM roadmap_steps rs WHERE rs.roadmap_id = r.id) as step_count
+        FROM roadmaps r
+        LEFT JOIN tickets t ON r.ticket_id = t.id
+        LEFT JOIN ticket_categories c ON t.category_id = c.id
+    '''
+    if filters:
+        query += ' WHERE ' + ' AND '.join(filters)
+    query += ' ORDER BY r.updated_at DESC, r.created_at DESC'
+    rows = db.execute(query, params).fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/roadmaps/<int:roadmap_id>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def roadmap_detail(roadmap_id):
+    db = get_db()
+    access = get_user_access(db)
+    roadmap = fetch_roadmap(db, roadmap_id)
+    if not roadmap:
+        return jsonify({"error": "Roadmap nicht gefunden"}), 404
+    if roadmap.get("ticket_id"):
+        ticket = fetch_ticket(db, roadmap["ticket_id"])
+        if not ensure_ticket_access(ticket, access):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+    elif not user_can('roadmap.view'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+
+    if request.method == 'GET':
+        roadmap["steps"] = fetch_roadmap_steps(db, roadmap_id)
+        return jsonify(roadmap)
+
+    if request.method == 'PUT':
+        if not user_can('roadmap.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        title = (data.get('title') or roadmap.get('title') or '').strip()
+        objective = (data.get('objective') or roadmap.get('objective') or '').strip()
+        status = (data.get('status') or roadmap.get('status') or 'planned').strip()
+        owner = (data.get('owner') or roadmap.get('owner') or '').strip()
+        start_date = (data.get('start_date') or roadmap.get('start_date') or '').strip()
+        target_date = (data.get('target_date') or roadmap.get('target_date') or '').strip()
+        if not title:
+            return jsonify({"error": "Titel ist erforderlich"}), 400
+        db.execute('''
+            UPDATE roadmaps
+            SET title = ?, objective = ?, status = ?, owner = ?, start_date = ?, target_date = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (title, objective, status, owner, start_date or None, target_date or None, roadmap_id))
+        log_activity(db, "update", "roadmap", roadmap_id, {"title": title})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    if not user_can('roadmap.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    db.execute('DELETE FROM roadmap_steps WHERE roadmap_id = ?', (roadmap_id,))
+    db.execute('DELETE FROM roadmaps WHERE id = ?', (roadmap_id,))
+    log_activity(db, "delete", "roadmap", roadmap_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/roadmaps/<int:roadmap_id>/steps', methods=['POST'])
+@login_required
+def roadmap_steps_create(roadmap_id):
+    db = get_db()
+    access = get_user_access(db)
+    roadmap = fetch_roadmap(db, roadmap_id)
+    if not roadmap:
+        return jsonify({"error": "Roadmap nicht gefunden"}), 404
+    if roadmap.get("ticket_id"):
+        ticket = fetch_ticket(db, roadmap["ticket_id"])
+        if not ensure_ticket_access(ticket, access):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+    if not user_can('roadmap.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip()
+    if not title:
+        return jsonify({"error": "Titel ist erforderlich"}), 400
+    description = (data.get('description') or '').strip()
+    status = (data.get('status') or 'planned').strip()
+    owner = (data.get('owner') or '').strip()
+    due_date = (data.get('due_date') or '').strip()
+    position = int(data.get('position') or 0)
+    if position <= 0:
+        row = db.execute('SELECT MAX(position) as max_pos FROM roadmap_steps WHERE roadmap_id = ?', (roadmap_id,)).fetchone()
+        position = (row["max_pos"] or 0) + 1
+    cursor = db.execute('''
+        INSERT INTO roadmap_steps (roadmap_id, title, description, status, position, owner, due_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (roadmap_id, title, description, status, position, owner, due_date or None))
+    db.execute('UPDATE roadmaps SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (roadmap_id,))
+    log_activity(db, "create", "roadmap_step", cursor.lastrowid, {"roadmap_id": roadmap_id, "title": title})
+    db.commit()
+    return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+
+@app.route('/api/roadmaps/<int:roadmap_id>/steps/<int:step_id>', methods=['PUT', 'DELETE'])
+@login_required
+def roadmap_steps_detail(roadmap_id, step_id):
+    db = get_db()
+    access = get_user_access(db)
+    roadmap = fetch_roadmap(db, roadmap_id)
+    if not roadmap:
+        return jsonify({"error": "Roadmap nicht gefunden"}), 404
+    if roadmap.get("ticket_id"):
+        ticket = fetch_ticket(db, roadmap["ticket_id"])
+        if not ensure_ticket_access(ticket, access):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+    if not user_can('roadmap.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    step = db.execute('SELECT * FROM roadmap_steps WHERE id = ? AND roadmap_id = ?', (step_id, roadmap_id)).fetchone()
+    if not step:
+        return jsonify({"error": "Step nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        title = (data.get('title') or step["title"]).strip()
+        description = (data.get('description') or step["description"] or '').strip()
+        status = (data.get('status') or step["status"] or 'planned').strip()
+        owner = (data.get('owner') or step["owner"] or '').strip()
+        due_date = (data.get('due_date') or step["due_date"] or '').strip()
+        position = int(data.get('position') or step["position"] or 0)
+        if not title:
+            return jsonify({"error": "Titel ist erforderlich"}), 400
+        db.execute('''
+            UPDATE roadmap_steps
+            SET title = ?, description = ?, status = ?, owner = ?, due_date = ?, position = ?
+            WHERE id = ? AND roadmap_id = ?
+        ''', (title, description, status, owner, due_date or None, position, step_id, roadmap_id))
+        db.execute('UPDATE roadmaps SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (roadmap_id,))
+        log_activity(db, "update", "roadmap_step", step_id, {"roadmap_id": roadmap_id, "title": title})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM roadmap_steps WHERE id = ? AND roadmap_id = ?', (step_id, roadmap_id))
+    db.execute('UPDATE roadmaps SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (roadmap_id,))
+    log_activity(db, "delete", "roadmap_step", step_id, {"roadmap_id": roadmap_id})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
 @app.route('/api/tickets', methods=['GET', 'POST'])
 @login_required
 def tickets():
@@ -2054,6 +2420,10 @@ def tickets():
         resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
         if not title or not description:
             return jsonify({"error": "Titel und Beschreibung sind erforderlich"}), 400
+        category_name = None
+        if category_id:
+            category_row = db.execute('SELECT name FROM ticket_categories WHERE id = ?', (category_id,)).fetchone()
+            category_name = category_row["name"] if category_row else None
         cursor = db.execute('''
             INSERT INTO tickets (
                 title, description, category_id, priority, status, requester_name,
@@ -2072,6 +2442,22 @@ def tickets():
                 INSERT OR IGNORE INTO ticket_assets (ticket_id, asset_id)
                 VALUES (?, ?)
             ''', (ticket_id, asset_id))
+        new_ticket = {
+            "id": ticket_id,
+            "title": title,
+            "description": description,
+            "category_id": category_id,
+            "priority": priority,
+            "status": status,
+            "requester_name": requester_name,
+            "requester_email": requester_email,
+            "created_by": session.get('username'),
+            "assignee": assignee,
+            "assignee_email": assignee_email,
+            "due_date": due_date
+        }
+        if should_auto_create_roadmap(category_name):
+            create_roadmap_for_ticket(db, new_ticket, category_name, created_by=session.get('username'))
         log_activity(db, "create", "ticket", ticket_id, {"title": title})
         db.commit()
         ticket = fetch_ticket(db, ticket_id)
@@ -2156,6 +2542,10 @@ def ticket_detail(ticket_id):
         ticket_assets = fetch_ticket_assets(db, ticket_id)
         ticket['assets'] = ticket_assets
         ticket['asset_ids'] = [asset["id"] for asset in ticket_assets]
+        roadmap = fetch_roadmap_for_ticket(db, ticket_id)
+        if roadmap:
+            roadmap["steps"] = fetch_roadmap_steps(db, roadmap["id"])
+        ticket['roadmap'] = roadmap
         return jsonify(ticket)
 
     if request.method == 'PUT':
@@ -2188,6 +2578,10 @@ def ticket_detail(ticket_id):
                 resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             else:
                 resolved_at = None
+        category_name = None
+        if category_id:
+            category_row = db.execute('SELECT name FROM ticket_categories WHERE id = ?', (category_id,)).fetchone()
+            category_name = category_row["name"] if category_row else None
 
         db.execute('''
             UPDATE tickets
@@ -2210,6 +2604,22 @@ def ticket_detail(ticket_id):
                     VALUES (?, ?)
                 ''', (ticket_id, asset_id))
         log_activity(db, "update", "ticket", ticket_id, {"title": title})
+        if should_auto_create_roadmap(category_name):
+            updated_ticket = {
+                "id": ticket_id,
+                "title": title,
+                "description": description,
+                "category_id": category_id,
+                "priority": priority,
+                "status": status,
+                "requester_name": requester_name,
+                "requester_email": requester_email,
+                "created_by": ticket.get('created_by'),
+                "assignee": assignee,
+                "assignee_email": assignee_email,
+                "due_date": due_date
+            }
+            create_roadmap_for_ticket(db, updated_ticket, category_name, created_by=session.get('username'))
         db.commit()
         updated_ticket = fetch_ticket(db, ticket_id)
         if updated_ticket:
