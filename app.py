@@ -895,8 +895,380 @@ def init_db():
             VALUES
                 ('Problemlösungen', 'Dokumentierte Lösungen und Troubleshooting-Schritte.'),
                 ('Workflow', 'Abteilungs- und Prozessbeschreibungen.'),
-                ('Themen', 'Wissen zu wiederkehrenden Themen und Best Practices.')
+                ('Themen', 'Wissen zu wiederkehrenden Themen und Best Practices.'),
+                ('Produktguide', 'Funktionsübersicht und Bedienung der Inventory-Pro-Anwendung.')
         ''')
+
+        c.execute('SELECT COUNT(*) FROM knowledge_entries')
+        if c.fetchone()[0] == 0:
+            category_rows = c.execute('SELECT id, name FROM knowledge_categories').fetchall()
+            category_map = {row["name"]: row["id"] for row in category_rows}
+            entries = [
+                {
+                    "title": "Überblick: Inventory Pro im Alltag",
+                    "summary": "Kurzüberblick über die wichtigsten Module und das Zusammenspiel von Inventar, Tickets und Wissen.",
+                    "content": (
+                        "Inventory Pro kombiniert Inventarisierung, Helpdesk und Wissensmanagement in einer Oberfläche.\n"
+                        "Die Startnavigation führt zu Assets, Geräten, Standorten, Tickets, Roadmap, Abhängigkeiten und Statistik.\n"
+                        "Alle Aktionen werden im Aktivitätslog dokumentiert, sodass Änderungen jederzeit nachvollziehbar bleiben."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Navigation & Schnellzugriffe",
+                    "summary": "So findest du die Hauptbereiche schnell in der linken Navigation.",
+                    "content": (
+                        "Die linke Seitenleiste zeigt alle Module, die durch deine Rolle freigeschaltet sind.\n"
+                        "Nutze die Wissensbasis, um Anleitungen zu öffnen, und die Tickets, um Supportfälle zu bearbeiten.\n"
+                        "Die Statistik- und Roadmap-Seiten geben dir einen schnellen Überblick über Status und Planung."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Dashboard-Übersicht",
+                    "summary": "Was auf der Startseite sichtbar ist und wie du Kennzahlen interpretierst.",
+                    "content": (
+                        "Das Dashboard fasst offene Tickets, Geräte- und Assetzahlen sowie aktuelle Aktivitäten zusammen.\n"
+                        "Filter helfen dir, die wichtigsten Kennzahlen für dein Team im Blick zu behalten.\n"
+                        "Nutze die Zusammenfassung, um schnell offene Aufgaben zu priorisieren."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Inventar: Assets anlegen",
+                    "summary": "Schritt-für-Schritt-Anleitung zum Erstellen von Assets.",
+                    "content": (
+                        "Öffne den Bereich Assets und lege ein neues Asset mit Name, Notizen und Spezifikationen an.\n"
+                        "Ergänze Anschaffungs-, Inbetriebnahme- und Garantie-Daten, um den Lebenszyklus zu verfolgen.\n"
+                        "Retirement-Daten helfen später beim Ausmustern und Reporting."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Inventar: Geräte verwalten",
+                    "summary": "Geräte erfassen, Kategorien zuordnen und Standortinformationen pflegen.",
+                    "content": (
+                        "Geräte werden einer Kategorie zugeordnet und erhalten optional Seriennummern und Specs.\n"
+                        "Der Standort bestimmt, wo das Gerät aktuell eingesetzt wird.\n"
+                        "Nutze Tags und Notizen für zusätzliche Kontextinformationen."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Kategorien & dynamische Felder",
+                    "summary": "So funktionieren die flexiblen Felder pro Kategorie.",
+                    "content": (
+                        "Kategorien definieren, welche Felder im Formular angezeigt werden.\n"
+                        "Die Felddefinitionen werden als JSON gespeichert und automatisch in Eingabefelder übersetzt.\n"
+                        "Füge hier Status-, Hersteller- oder Modellfelder hinzu, ohne den Code anzupassen."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Standorte verwalten",
+                    "summary": "Standortdaten strukturiert erfassen und zu Geräten/Assets zuweisen.",
+                    "content": (
+                        "Standorte helfen, Geräte und Assets geographisch oder organisatorisch zuordnen zu können.\n"
+                        "Du kannst jeden Standort mit einer kurzen Beschreibung ergänzen.\n"
+                        "In Listen lässt sich jederzeit nachvollziehen, welche Objekte dort hinterlegt sind."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Tags & Notizen bei Geräten",
+                    "summary": "Zusätzliche Metadaten zur schnellen Suche und Dokumentation.",
+                    "content": (
+                        "Tags dienen als schnelle Filterkriterien für Gerätetypen, Projekte oder Besonderheiten.\n"
+                        "Notizen ermöglichen Freitext, z. B. für Wartungshinweise oder individuelle Konfigurationen.\n"
+                        "Beides ist direkt in der Geräteansicht pflegbar."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Wartungsaufgaben planen",
+                    "summary": "Regelmäßige Wartungen erfassen und verfolgen.",
+                    "content": (
+                        "Wartungsaufgaben hängen an einem Gerät und beinhalten Titel, Fälligkeitsdatum und Status.\n"
+                        "Der Status zeigt, ob eine Aufgabe offen oder erledigt ist.\n"
+                        "Nutze diese Funktion für wiederkehrende Prüfungen und Sicherheitsupdates."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Asset-Zuweisungen",
+                    "summary": "Assets Personen, Standorten oder Services zuordnen.",
+                    "content": (
+                        "Asset-Zuweisungen dokumentieren, wer oder was ein Asset aktuell nutzt.\n"
+                        "Optional lassen sich Standort und Service referenzieren.\n"
+                        "Historische Zuweisungen bleiben erhalten, um Nutzung nachzuvollziehen."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Services & SLA",
+                    "summary": "Servicekatalog aufbauen und SLA-Werte definieren.",
+                    "content": (
+                        "Services beschreiben betriebliche Leistungen, z. B. E-Mail oder VPN.\n"
+                        "SLA-Stunden definieren Zielzeiten für Tickets und Reports.\n"
+                        "Assets können Services zugeordnet werden, damit Abhängigkeiten sichtbar bleiben."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Tickets: Überblick",
+                    "summary": "Das Helpdesk-Modul und seine grundlegenden Elemente.",
+                    "content": (
+                        "Tickets bündeln Supportanfragen mit Titel, Kategorie, Status und Priorität.\n"
+                        "Zusätzlich werden SLA-Informationen, Fälligkeiten und verantwortliche Teams gepflegt.\n"
+                        "Tickets können mit Assets, Geräten und Wissenseinträgen verknüpft werden."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Tickets erstellen",
+                    "summary": "Anleitung zum Erstellen neuer Supportfälle.",
+                    "content": (
+                        "Nutze die Ticketansicht und erstelle ein neues Ticket mit Titel und Beschreibung.\n"
+                        "Wähle Kategorie, Priorität und optional einen Standort oder Service aus.\n"
+                        "Damit werden die richtigen Teams automatisch informiert."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Ticket-Status & Priorität",
+                    "summary": "So steuerst du den Lebenszyklus von Supportfällen.",
+                    "content": (
+                        "Statuswerte zeigen, ob ein Ticket offen, in Bearbeitung oder gelöst ist.\n"
+                        "Prioritäten helfen bei der Reihenfolge der Bearbeitung.\n"
+                        "Änderungen werden im Aktivitätslog aufgezeichnet."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Kommentare & interne Notizen",
+                    "summary": "Kommunikation innerhalb und außerhalb des Teams.",
+                    "content": (
+                        "Kommentare dokumentieren die Kommunikation mit Antragstellern.\n"
+                        "Interne Notizen bleiben nur für dein Team sichtbar.\n"
+                        "Jeder Kommentar ergänzt die Ticket-Historie."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Watcher & Benachrichtigungen",
+                    "summary": "Wie Abonnenten über Ticketänderungen informiert werden.",
+                    "content": (
+                        "Watcher erhalten Benachrichtigungen, wenn ein Ticket aktualisiert wird.\n"
+                        "Lege Watcher-Adressen je Ticket fest oder pflege sie zentral in den Einstellungen.\n"
+                        "So bleiben Stakeholder immer informiert."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Eskalationsstufen",
+                    "summary": "Eskalationen strukturieren und dokumentieren.",
+                    "content": (
+                        "Eskalationslevel helfen dabei, dringende Tickets sichtbar zu machen.\n"
+                        "Im Ticketformular lassen sich Level setzen und aktualisieren.\n"
+                        "Reports können damit zeigen, welche Fälle kritisch sind."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "SLA & Fälligkeitsdaten",
+                    "summary": "So nutzt du SLA-Zeiten für die Ticketplanung.",
+                    "content": (
+                        "Tickets enthalten SLA-Daten, die aus Service- oder Ticketkategorien abgeleitet werden können.\n"
+                        "Fälligkeitsdaten helfen bei der Planung und Priorisierung.\n"
+                        "Die Statistik-Seite zeigt dir, ob SLAs eingehalten werden."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Wissensbasis: Nutzung",
+                    "summary": "Artikel finden, lesen und als Lösung referenzieren.",
+                    "content": (
+                        "Die Wissensbasis bietet strukturierte Artikel, die Lösungen und Prozesse beschreiben.\n"
+                        "Nutze die Filter nach Kategorie und die Suche, um schnell passende Inhalte zu finden.\n"
+                        "Tickets können auf relevante Artikel verweisen, um Wiederholungen zu vermeiden."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Wissenskategorien pflegen",
+                    "summary": "Themenbereiche für die Wissensbasis anlegen.",
+                    "content": (
+                        "Wissenskategorien gruppieren Artikel nach Themen oder Workflows.\n"
+                        "Neue Kategorien unterstützen Teams dabei, Inhalte konsistent zu organisieren.\n"
+                        "Bestehende Kategorien können jederzeit aktualisiert oder erweitert werden."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Roadmap-Planung",
+                    "summary": "Maßnahmen planen und Meilensteine verfolgen.",
+                    "content": (
+                        "Die Roadmap hält geplante Vorhaben inklusive Ticketbezug fest.\n"
+                        "Einzelne Schritte lassen sich mit Titeln und Zieldaten hinterlegen.\n"
+                        "So bleibt die Planung für langfristige Themen transparent."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Abhängigkeiten & Services",
+                    "summary": "Systembeziehungen nachvollziehen.",
+                    "content": (
+                        "Die Abhängigkeiten-Seite dokumentiert, welche Services oder Software voneinander abhängen.\n"
+                        "Verknüpfungen helfen, Auswirkungen von Ausfällen oder Updates zu analysieren.\n"
+                        "So lassen sich Change- und Incident-Prozesse besser steuern."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Statistik & Reports",
+                    "summary": "Kennzahlen zu Tickets und Inventar interpretieren.",
+                    "content": (
+                        "Die Statistik-Seite liefert Trends zu Ticket-Volumen, Status und SLA-Verhalten.\n"
+                        "Inventarstatistiken zeigen die Verteilung von Geräten und Assets.\n"
+                        "Nutze diese Daten für Management-Reports und Kapazitätsplanung."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Time Machine",
+                    "summary": "Historische Veränderungen im Blick behalten.",
+                    "content": (
+                        "Die Time-Machine-Ansicht zeigt Änderungen über die Zeit hinweg.\n"
+                        "So kannst du nachvollziehen, wann Assets, Tickets oder Benutzer angepasst wurden.\n"
+                        "Diese Historie unterstützt Audit- und Compliance-Anforderungen."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Aktivitätslog",
+                    "summary": "Alle Aktionen transparent nachvollziehen.",
+                    "content": (
+                        "Das Aktivitätslog protokolliert wichtige Änderungen in der Anwendung.\n"
+                        "Einträge enthalten Nutzer, Aktion und betroffene Entität.\n"
+                        "Damit kannst du jederzeit rekonstruieren, was passiert ist."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Benutzerverwaltung",
+                    "summary": "User anlegen, verwalten und deaktivieren.",
+                    "content": (
+                        "In der Benutzerverwaltung legst du neue Konten an und verwaltest bestehende Nutzer.\n"
+                        "Passwörter werden sicher gehasht gespeichert.\n"
+                        "Rollen bestimmen, welche Module und Aktionen sichtbar sind."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Rollen & Berechtigungen",
+                    "summary": "Feingranulare Zugriffssteuerung.",
+                    "content": (
+                        "Rollen bündeln Berechtigungen und können Nutzern zugewiesen werden.\n"
+                        "Berechtigungen steuern den Zugriff auf Module wie Tickets, Wissensbasis oder Admin-Funktionen.\n"
+                        "Superuser-Rollen haben erweiterten Zugriff auf alle Bereiche."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Zwei-Faktor-Authentifizierung",
+                    "summary": "Zusätzliche Sicherheit per TOTP.",
+                    "content": (
+                        "Aktiviere 2FA für Benutzerkonten, um Logins abzusichern.\n"
+                        "TOTP-Apps wie Google Authenticator oder Authy können verwendet werden.\n"
+                        "Einmal aktiviert, ist bei jedem Login ein zusätzlicher Code erforderlich."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Passwort-Reset",
+                    "summary": "Passwort zurücksetzen, wenn der Zugriff verloren geht.",
+                    "content": (
+                        "Nutzer können ihr Passwort über den Reset-Workflow wiederherstellen.\n"
+                        "Der Prozess unterstützt TOTP-basierte Verifizierung.\n"
+                        "Admins können Passwörter auch manuell zurücksetzen."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Ticket-Alerts & Automationen",
+                    "summary": "Automatische Benachrichtigungen für kritische Ereignisse.",
+                    "content": (
+                        "Ticket-Alerts reagieren auf Ereignisse wie Statuswechsel oder Prioritätsänderungen.\n"
+                        "Regeln können im Admin-Bereich gepflegt werden.\n"
+                        "So bleiben Teams bei kritischen Tickets informiert."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Benachrichtigungseinstellungen",
+                    "summary": "SMTP und Versandregeln konfigurieren.",
+                    "content": (
+                        "Im Admin-Bereich kannst du SMTP-Serverdaten hinterlegen.\n"
+                        "Aktiviere oder deaktiviere den Versand von Systemmails.\n"
+                        "Teste die Konfiguration, bevor produktive Alerts versendet werden."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Software-Inventar",
+                    "summary": "Software erfassen und Installationen dokumentieren.",
+                    "content": (
+                        "Das Software-Modul listet Anwendungen und deren Versionen.\n"
+                        "Installationen können einem Asset oder Gerät zugewiesen werden.\n"
+                        "So behältst du Lizenzen und Abhängigkeiten im Blick."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Teams & Abteilungen",
+                    "summary": "Organisationseinheiten für Tickets und Zuständigkeiten.",
+                    "content": (
+                        "Abteilungen strukturieren die Organisation und bilden Zuständigkeiten ab.\n"
+                        "Teams helfen bei der Zuweisung von Tickets und Aufgaben.\n"
+                        "Damit ist klar, wer welche Themen bearbeitet."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Dark Mode & UI-Einstellungen",
+                    "summary": "Oberfläche an persönliche Präferenzen anpassen.",
+                    "content": (
+                        "Die Oberfläche unterstützt helle und dunkle Darstellung.\n"
+                        "Das responsive Layout funktioniert auf Desktop und Mobile.\n"
+                        "So bleibt die Bedienung auch unterwegs komfortabel."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Best Practices für die Wissensbasis",
+                    "summary": "Tipps für strukturierte Dokumentation.",
+                    "content": (
+                        "Schreibe kurze Zusammenfassungen und detaillierte Inhalte pro Artikel.\n"
+                        "Nutze Kategorien und klare Titel, damit Teams Inhalte schnell finden.\n"
+                        "Verlinke Tickets mit finalen Lösungen, um Wissen wiederzuverwenden."
+                    ),
+                    "category": "Themen",
+                },
+            ]
+            for entry in entries:
+                c.execute(
+                    '''
+                    INSERT INTO knowledge_entries (title, summary, content, category_id, created_by)
+                    VALUES (?, ?, ?, ?, ?)
+                    ''',
+                    (
+                        entry["title"],
+                        entry["summary"],
+                        entry["content"],
+                        category_map.get(entry["category"]),
+                        "System",
+                    ),
+                )
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS services (
