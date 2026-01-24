@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="de" x-data="dependencyApp()" x-init="init()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - Dependency & Impact Graph</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app-body bg-slate-950/5 text-slate-900">
+    <div class="app-shell">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
+                <a href="/" class="flex items-center gap-3">
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg">
+                        <i data-feather="cpu" class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <p class="text-lg font-semibold text-slate-900 sidebar-text">Inventory Pro</p>
+                        <p class="text-xs text-slate-500 sidebar-text">Smart Asset Hub</p>
+                    </div>
+                </a>
+            </div>
+            <nav x-data="{ appsOpen: true }" class="p-4 space-y-4 sidebar-scroll sidebar-primary-links">
+                <div class="rounded-2xl border border-slate-200 bg-white/80 shadow-sm">
+                    <button @click="appsOpen = !appsOpen" class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+                        <span class="flex items-center gap-3">
+                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                <i data-feather="grid" class="h-4 w-4"></i>
+                            </span>
+                            <span>
+                                <span class="block text-sm font-semibold text-slate-800 sidebar-text">Apps</span>
+                                <span class="block text-xs text-slate-400 sidebar-text">Verwaltung & Services</span>
+                            </span>
+                        </span>
+                        <svg :class="{ 'rotate-180': appsOpen }" class="h-4 w-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div x-show="appsOpen" x-transition class="bg-slate-50/80 px-3 py-3 space-y-4">
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Verwaltung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'categories.view' in permissions or 'categories.manage' in permissions %}
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="layers" class="h-4 w-4 text-slate-400"></i>
+                                        Kategorien
+                                    </span>
+                                </a>
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="package" class="h-4 w-4 text-slate-400"></i>
+                                        Assets
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'users.manage' in permissions %}
+                                <a href="/users" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="users" class="h-4 w-4 text-slate-400"></i>
+                                        Benutzer
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                                <a href="/locations" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="map-pin" class="h-4 w-4 text-slate-400"></i>
+                                        Standorte
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Services</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                                <a href="/tickets" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="life-buoy" class="h-4 w-4 text-slate-400"></i>
+                                        Ticketsystem
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                                <a href="/roadmap" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="git-merge" class="h-4 w-4 text-slate-400"></i>
+                                        Roadmap
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Auswertung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'stats.view' in permissions %}
+                                <a href="/stats" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="bar-chart-2" class="h-4 w-4 text-slate-400"></i>
+                                        Statistiken
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                                <a href="/dependencies" class="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="share-2" class="h-4 w-4 text-indigo-500"></i>
+                                        Dependency-Graph
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'timemachine.view' in permissions %}
+                                <a href="/time-machine" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="clock" class="h-4 w-4 text-slate-400"></i>
+                                        Zeitmaschine
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+        </aside>
+
+        <div class="app-main app-main--fixed">
+            <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
+                <div class="flex items-center gap-4">
+                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                        <i data-feather="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div>
+                        <p class="text-xs uppercase tracking-widest text-slate-400">Dependency & Impact</p>
+                        <h1 class="text-xl font-semibold text-slate-900">Abhängigkeits- & Impact-Graph</h1>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="hidden sm:block text-right">
+                        <p class="text-xs text-slate-400">Angemeldet als</p>
+                        <p class="text-sm font-semibold text-slate-800">{{ username }}</p>
+                    </div>
+                    <form action="/logout" method="post">
+                        <button type="submit" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-800">
+                            <i data-feather="log-out" class="h-4 w-4"></i>
+                            Logout
+                        </button>
+                    </form>
+                </div>
+            </header>
+
+            <main class="app-content app-content--padded pt-[110px] pb-16">
+                <section class="grid gap-6 lg:grid-cols-4">
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <p class="text-xs uppercase tracking-widest text-slate-400">Software</p>
+                        <p class="mt-3 text-3xl font-semibold text-slate-900" x-text="overview.software"></p>
+                        <p class="mt-1 text-sm text-slate-500">Inventarisierte Produkte</p>
+                    </div>
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <p class="text-xs uppercase tracking-widest text-slate-400">Teams</p>
+                        <p class="mt-3 text-3xl font-semibold text-slate-900" x-text="overview.teams"></p>
+                        <p class="mt-1 text-sm text-slate-500">Betreuende Einheiten</p>
+                    </div>
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <p class="text-xs uppercase tracking-widest text-slate-400">Abhängigkeiten</p>
+                        <p class="mt-3 text-3xl font-semibold text-slate-900" x-text="overview.links"></p>
+                        <p class="mt-1 text-sm text-slate-500">Explizite Links</p>
+                    </div>
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <p class="text-xs uppercase tracking-widest text-slate-400">Single Points</p>
+                        <p class="mt-3 text-3xl font-semibold text-slate-900" x-text="overview.spof"></p>
+                        <p class="mt-1 text-sm text-slate-500">Kritische Engpässe</p>
+                    </div>
+                </section>
+
+                <section class="mt-8 grid gap-6 xl:grid-cols-3">
+                    <div class="xl:col-span-2 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-lg font-semibold text-slate-900">Graph-Visualisierung</h2>
+                                <p class="text-sm text-slate-500">Asset, Software, Teams, Tickets und Roadmaps in einem Graph.</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button @click="refreshGraph()" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Neu laden</button>
+                                <button @click="fitGraph()" class="rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Fit</button>
+                            </div>
+                        </div>
+                        <div id="dependencyGraph" class="mt-6 h-[520px] w-full rounded-2xl border border-slate-200"></div>
+                        <div class="mt-4 flex flex-wrap gap-3 text-xs text-slate-500">
+                            <span class="rounded-full bg-slate-100 px-3 py-1">Durchgezogene Kanten = explizit</span>
+                            <span class="rounded-full bg-slate-100 px-3 py-1">Gestrichelt = automatisch (Assets, Installationen, Roadmaps)</span>
+                        </div>
+                    </div>
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <h2 class="text-lg font-semibold text-slate-900">Impact-Analyse</h2>
+                        <p class="text-sm text-slate-500">Szenarien simulieren: “Was fällt alles aus, wenn …?”</p>
+                        <div class="mt-4 space-y-3">
+                            <label class="block text-xs font-semibold text-slate-500">Quelle</label>
+                            <select x-model="impactQuery.sourceKey" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                <option value="">Quelle auswählen</option>
+                                <template x-for="(items, type) in nodeOptions" :key="type">
+                                    <optgroup :label="typeLabels[type] || type">
+                                        <template x-for="item in items" :key="`${type}-${item.id}`">
+                                            <option :value="`${type}:${item.id}`" x-text="item.name"></option>
+                                        </template>
+                                    </optgroup>
+                                </template>
+                            </select>
+                            <label class="block text-xs font-semibold text-slate-500">Tiefe (optional)</label>
+                            <input x-model="impactQuery.depth" type="number" min="1" placeholder="z.B. 3" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                            <button @click="runImpactAnalysis()" class="w-full rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Analyse starten</button>
+                        </div>
+                        <div class="mt-6">
+                            <h3 class="text-sm font-semibold text-slate-800">Betroffene Assets & Services</h3>
+                            <div class="mt-2 space-y-2 max-h-48 overflow-auto">
+                                <template x-for="item in impactResult.impact" :key="item.key">
+                                    <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                                        <p class="font-semibold text-slate-800" x-text="item.label"></p>
+                                        <p class="text-slate-500" x-text="`${typeLabels[item.type] || item.type} • Tiefe ${item.depth} • ${item.relation}`"></p>
+                                    </div>
+                                </template>
+                                <p x-show="impactResult.impact.length === 0" class="text-xs text-slate-400">Noch keine Analyse.</p>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <h3 class="text-sm font-semibold text-slate-800">Kritische Tickets</h3>
+                            <div class="mt-2 space-y-2 max-h-40 overflow-auto">
+                                <template x-for="ticket in impactResult.criticalTickets" :key="ticket.id">
+                                    <div class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs">
+                                        <p class="font-semibold text-rose-800" x-text="`#${ticket.id} ${ticket.title}`"></p>
+                                        <p class="text-rose-600" x-text="`${ticket.priority || 'normal'} • ${ticket.status || 'open'}`"></p>
+                                    </div>
+                                </template>
+                                <p x-show="impactResult.criticalTickets.length === 0" class="text-xs text-slate-400">Keine kritischen Tickets erkannt.</p>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <h3 class="text-sm font-semibold text-slate-800">Single Points of Failure</h3>
+                            <div class="mt-2 space-y-2 max-h-40 overflow-auto">
+                                <template x-for="node in impactResult.spof" :key="node.key">
+                                    <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs">
+                                        <p class="font-semibold text-amber-900" x-text="node.label"></p>
+                                        <p class="text-amber-700" x-text="`${node.dependent_count} abhängige Knoten`"></p>
+                                    </div>
+                                </template>
+                                <p x-show="impactResult.spof.length === 0" class="text-xs text-slate-400">Noch keine SPOFs definiert.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="mt-10 grid gap-6 lg:grid-cols-2">
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <h2 class="text-lg font-semibold text-slate-900">Software-Inventar</h2>
+                        <p class="text-sm text-slate-500">Inventarisierung mit Owner-Team, Kritikalität und Support.</p>
+                        <div class="mt-4 grid gap-3 md:grid-cols-2">
+                            <input x-model="newSoftware.name" placeholder="Software-Name" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newSoftware.vendor" placeholder="Hersteller" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newSoftware.version" placeholder="Version" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newSoftware.license_type" placeholder="Lizenztyp" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newSoftware.criticality" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                <option value="low">Niedrig</option>
+                                <option value="medium">Mittel</option>
+                                <option value="high">Hoch</option>
+                                <option value="critical">Kritisch</option>
+                            </select>
+                            <select x-model="newSoftware.owner_team_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                <option value="">Owner-Team auswählen</option>
+                                <template x-for="team in teams" :key="team.id">
+                                    <option :value="team.id" x-text="team.name"></option>
+                                </template>
+                            </select>
+                            <input x-model="newSoftware.support_contact" placeholder="Support Kontakt" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2">
+                            <textarea x-model="newSoftware.description" placeholder="Beschreibung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"></textarea>
+                        </div>
+                        <button @click="createSoftware()" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Software anlegen</button>
+
+                        <div class="mt-6 space-y-3 max-h-72 overflow-auto">
+                            <template x-for="item in software" :key="item.id">
+                                <div class="rounded-2xl border border-slate-200 p-4 text-sm">
+                                    <div class="flex items-start justify-between gap-4">
+                                        <div>
+                                            <p class="font-semibold text-slate-900" x-text="item.name"></p>
+                                            <p class="text-xs text-slate-500" x-text="`${item.vendor || '-'} • ${item.version || 'n/a'} • ${item.criticality}`"></p>
+                                            <p class="text-xs text-slate-500" x-text="item.owner_team_name ? `Owner: ${item.owner_team_name}` : 'Kein Team zugeordnet'"></p>
+                                        </div>
+                                        <button @click="deleteSoftware(item.id)" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
+                                    </div>
+                                </div>
+                            </template>
+                            <p x-show="software.length === 0" class="text-xs text-slate-400">Noch keine Software erfasst.</p>
+                        </div>
+                    </div>
+
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <h2 class="text-lg font-semibold text-slate-900">Software-Installationen</h2>
+                        <p class="text-sm text-slate-500">Verknüpfung zu Geräten, Assets und Umgebungen.</p>
+                        <div class="mt-4 grid gap-3 md:grid-cols-2">
+                            <select x-model="newInstallation.software_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                <option value="">Software auswählen</option>
+                                <template x-for="item in software" :key="item.id">
+                                    <option :value="item.id" x-text="item.name"></option>
+                                </template>
+                            </select>
+                            <select x-model="newInstallation.asset_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                <option value="">Asset auswählen</option>
+                                <template x-for="asset in nodeOptions.asset || []" :key="`asset-${asset.id}`">
+                                    <option :value="asset.id" x-text="asset.name"></option>
+                                </template>
+                            </select>
+                            <select x-model="newInstallation.device_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                <option value="">Gerät auswählen</option>
+                                <template x-for="device in nodeOptions.device || []" :key="`device-${device.id}`">
+                                    <option :value="device.id" x-text="device.name"></option>
+                                </template>
+                            </select>
+                            <input x-model="newInstallation.installed_version" placeholder="Installierte Version" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newInstallation.environment" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                <option value="production">Production</option>
+                                <option value="staging">Staging</option>
+                                <option value="dev">Development</option>
+                            </select>
+                            <select x-model="newInstallation.status" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                <option value="active">Aktiv</option>
+                                <option value="maintenance">Wartung</option>
+                                <option value="deprecated">Veraltet</option>
+                            </select>
+                            <textarea x-model="newInstallation.notes" placeholder="Notizen" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"></textarea>
+                        </div>
+                        <button @click="createInstallation()" class="mt-4 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Installation hinzufügen</button>
+
+                        <div class="mt-6 space-y-3 max-h-72 overflow-auto">
+                            <template x-for="item in installations" :key="item.id">
+                                <div class="rounded-2xl border border-slate-200 p-4 text-sm">
+                                    <div class="flex items-start justify-between gap-4">
+                                        <div>
+                                            <p class="font-semibold text-slate-900" x-text="item.software_name"></p>
+                                            <p class="text-xs text-slate-500" x-text="`${item.device_name || item.asset_name || 'Unbekannt'} • ${item.environment}`"></p>
+                                            <p class="text-xs text-slate-500" x-text="`${item.status} • ${item.installed_version || 'Version n/a'}`"></p>
+                                        </div>
+                                        <button @click="deleteInstallation(item.id)" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
+                                    </div>
+                                </div>
+                            </template>
+                            <p x-show="installations.length === 0" class="text-xs text-slate-400">Noch keine Installationen.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="mt-10 grid gap-6 lg:grid-cols-2">
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <h2 class="text-lg font-semibold text-slate-900">Teams & Abteilungen</h2>
+                        <div class="mt-4 grid gap-3 md:grid-cols-2">
+                            <input x-model="newDepartment.name" placeholder="Abteilung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newDepartment.description" placeholder="Beschreibung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                        </div>
+                        <button @click="createDepartment()" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Abteilung anlegen</button>
+
+                        <div class="mt-6 space-y-2">
+                            <template x-for="department in departments" :key="department.id">
+                                <div class="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-2 text-sm">
+                                    <div>
+                                        <p class="font-semibold text-slate-900" x-text="department.name"></p>
+                                        <p class="text-xs text-slate-500" x-text="department.description || 'Keine Beschreibung'"></p>
+                                    </div>
+                                    <button @click="deleteDepartment(department.id)" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
+                                </div>
+                            </template>
+                            <p x-show="departments.length === 0" class="text-xs text-slate-400">Keine Abteilungen erfasst.</p>
+                        </div>
+
+                        <div class="mt-6 grid gap-3 md:grid-cols-2">
+                            <input x-model="newTeam.name" placeholder="Team" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newTeam.department_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                <option value="">Abteilung wählen</option>
+                                <template x-for="department in departments" :key="`dept-${department.id}`">
+                                    <option :value="department.id" x-text="department.name"></option>
+                                </template>
+                            </select>
+                            <input x-model="newTeam.lead_user" placeholder="Team Lead" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newTeam.notes" placeholder="Notizen" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                        </div>
+                        <button @click="createTeam()" class="mt-4 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Team anlegen</button>
+
+                        <div class="mt-6 space-y-2">
+                            <template x-for="team in teams" :key="team.id">
+                                <div class="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-2 text-sm">
+                                    <div>
+                                        <p class="font-semibold text-slate-900" x-text="team.name"></p>
+                                        <p class="text-xs text-slate-500" x-text="team.department_name ? `Abteilung: ${team.department_name}` : 'Ohne Abteilung'"></p>
+                                    </div>
+                                    <button @click="deleteTeam(team.id)" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
+                                </div>
+                            </template>
+                            <p x-show="teams.length === 0" class="text-xs text-slate-400">Noch keine Teams angelegt.</p>
+                        </div>
+                    </div>
+
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <h2 class="text-lg font-semibold text-slate-900">Abhängigkeiten modellieren</h2>
+                        <p class="text-sm text-slate-500">Verknüpfen Sie Assets, Software, Teams, Tickets und Roadmaps.</p>
+                        <div class="mt-4 grid gap-3 md:grid-cols-2">
+                            <select x-model="newLink.sourceKey" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                <option value="">Quelle</option>
+                                <template x-for="(items, type) in nodeOptions" :key="`source-${type}`">
+                                    <optgroup :label="typeLabels[type] || type">
+                                        <template x-for="item in items" :key="`source-${type}-${item.id}`">
+                                            <option :value="`${type}:${item.id}`" x-text="item.name"></option>
+                                        </template>
+                                    </optgroup>
+                                </template>
+                            </select>
+                            <select x-model="newLink.targetKey" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                <option value="">Ziel</option>
+                                <template x-for="(items, type) in nodeOptions" :key="`target-${type}`">
+                                    <optgroup :label="typeLabels[type] || type">
+                                        <template x-for="item in items" :key="`target-${type}-${item.id}`">
+                                            <option :value="`${type}:${item.id}`" x-text="item.name"></option>
+                                        </template>
+                                    </optgroup>
+                                </template>
+                            </select>
+                            <input x-model="newLink.relation" placeholder="Relation (z.B. depends_on)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newLink.criticality" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                                <option value="low">Niedrig</option>
+                                <option value="medium">Mittel</option>
+                                <option value="high">Hoch</option>
+                                <option value="critical">Kritisch</option>
+                            </select>
+                            <input x-model="newLink.redundancy_group" placeholder="Redundanz-Gruppe" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newLink.notes" placeholder="Notizen" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                        </div>
+                        <button @click="createDependencyLink()" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Abhängigkeit anlegen</button>
+
+                        <div class="mt-6 space-y-2 max-h-80 overflow-auto">
+                            <template x-for="link in dependencyLinks" :key="link.id">
+                                <div class="rounded-2xl border border-slate-200 p-4 text-sm">
+                                    <div class="flex items-start justify-between gap-4">
+                                        <div>
+                                            <p class="font-semibold text-slate-900" x-text="`${link.source_label} → ${link.target_label}`"></p>
+                                            <p class="text-xs text-slate-500" x-text="`${link.relation} • ${link.criticality}`"></p>
+                                            <p class="text-xs text-slate-500" x-text="link.redundancy_group ? `Redundanz: ${link.redundancy_group}` : 'Keine Redundanz'"></p>
+                                        </div>
+                                        <button @click="deleteDependencyLink(link.id)" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
+                                    </div>
+                                </div>
+                            </template>
+                            <p x-show="dependencyLinks.length === 0" class="text-xs text-slate-400">Noch keine Abhängigkeiten modelliert.</p>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        function dependencyApp() {
+            return {
+                graph: null,
+                graphData: { nodes: [], edges: [] },
+                nodeOptions: {},
+                departments: [],
+                teams: [],
+                software: [],
+                installations: [],
+                dependencyLinks: [],
+                overview: { software: 0, teams: 0, links: 0, spof: 0 },
+                impactResult: { impact: [], tickets: [], criticalTickets: [], spof: [] },
+                newDepartment: { name: '', description: '' },
+                newTeam: { name: '', department_id: '', lead_user: '', notes: '' },
+                newSoftware: { name: '', vendor: '', version: '', license_type: '', criticality: 'medium', description: '', owner_team_id: '', support_contact: '' },
+                newInstallation: { software_id: '', asset_id: '', device_id: '', installed_version: '', environment: 'production', status: 'active', notes: '' },
+                newLink: { sourceKey: '', targetKey: '', relation: 'depends_on', criticality: 'medium', redundancy_group: '', notes: '' },
+                impactQuery: { sourceKey: '', depth: '' },
+                typeLabels: {
+                    asset: 'Asset',
+                    device: 'Gerät',
+                    software: 'Software',
+                    service: 'Service',
+                    team: 'Team',
+                    department: 'Abteilung',
+                    location: 'Standort',
+                    user: 'Benutzer',
+                    ticket: 'Ticket',
+                    roadmap: 'Roadmap',
+                    roadmap_step: 'Roadmap-Schritt'
+                },
+                async init() {
+                    await this.loadAll();
+                    await this.refreshGraph();
+                    this.$nextTick(() => {
+                        if (window.feather) {
+                            feather.replace();
+                        }
+                    });
+                },
+                async loadAll() {
+                    await Promise.all([
+                        this.loadNodeOptions(),
+                        this.loadDepartments(),
+                        this.loadTeams(),
+                        this.loadSoftware(),
+                        this.loadInstallations(),
+                        this.loadDependencyLinks(),
+                        this.loadSpof()
+                    ]);
+                    this.updateOverview();
+                },
+                updateOverview() {
+                    this.overview.software = this.software.length;
+                    this.overview.teams = this.teams.length;
+                    this.overview.links = this.dependencyLinks.length;
+                    this.overview.spof = this.impactResult.spof.length;
+                },
+                async loadNodeOptions() {
+                    const response = await fetch('/api/dependency-nodes');
+                    if (response.ok) {
+                        this.nodeOptions = await response.json();
+                    }
+                },
+                async loadDepartments() {
+                    const response = await fetch('/api/departments');
+                    if (response.ok) {
+                        this.departments = await response.json();
+                    }
+                },
+                async loadTeams() {
+                    const response = await fetch('/api/teams');
+                    if (response.ok) {
+                        this.teams = await response.json();
+                    }
+                },
+                async loadSoftware() {
+                    const response = await fetch('/api/software');
+                    if (response.ok) {
+                        this.software = await response.json();
+                    }
+                },
+                async loadInstallations() {
+                    const response = await fetch('/api/software-installations');
+                    if (response.ok) {
+                        this.installations = await response.json();
+                    }
+                },
+                async loadDependencyLinks() {
+                    const response = await fetch('/api/dependency-links');
+                    if (response.ok) {
+                        this.dependencyLinks = await response.json();
+                    }
+                },
+                async loadSpof() {
+                    const response = await fetch('/api/single-points');
+                    if (response.ok) {
+                        this.impactResult.spof = await response.json();
+                    }
+                },
+                async refreshGraph() {
+                    const response = await fetch('/api/dependency-graph');
+                    if (!response.ok) {
+                        return;
+                    }
+                    this.graphData = await response.json();
+                    this.renderGraph();
+                },
+                renderGraph() {
+                    const elements = [
+                        ...this.graphData.nodes.map(node => ({
+                            data: { id: node.key, label: node.label, type: node.type }
+                        })),
+                        ...this.graphData.edges.map((edge, index) => ({
+                            data: {
+                                id: `edge-${index}`,
+                                source: edge.source,
+                                target: edge.target,
+                                label: edge.relation,
+                                criticality: edge.criticality,
+                                implicit: edge.implicit
+                            }
+                        }))
+                    ];
+                    if (this.graph) {
+                        this.graph.destroy();
+                    }
+                    this.graph = cytoscape({
+                        container: document.getElementById('dependencyGraph'),
+                        elements,
+                        layout: { name: 'cose', animate: false, padding: 20 },
+                        style: [
+                            {
+                                selector: 'node',
+                                style: {
+                                    'background-color': '#6366F1',
+                                    'label': 'data(label)',
+                                    'font-size': 10,
+                                    'color': '#0f172a',
+                                    'text-valign': 'center',
+                                    'text-halign': 'center',
+                                    'text-wrap': 'wrap',
+                                    'width': 48,
+                                    'height': 48
+                                }
+                            },
+                            {
+                                selector: 'edge',
+                                style: {
+                                    'width': 2,
+                                    'line-color': '#94a3b8',
+                                    'target-arrow-color': '#94a3b8',
+                                    'target-arrow-shape': 'triangle',
+                                    'curve-style': 'bezier',
+                                    'label': 'data(label)',
+                                    'font-size': 8,
+                                    'text-background-opacity': 1,
+                                    'text-background-color': '#ffffff',
+                                    'text-background-padding': 2
+                                }
+                            },
+                            {
+                                selector: 'edge[implicit = "true"]',
+                                style: {
+                                    'line-style': 'dashed',
+                                    'line-color': '#cbd5f5',
+                                    'target-arrow-color': '#cbd5f5'
+                                }
+                            },
+                            {
+                                selector: 'node[type = "software"]',
+                                style: { 'background-color': '#0ea5e9' }
+                            },
+                            {
+                                selector: 'node[type = "team"]',
+                                style: { 'background-color': '#14b8a6' }
+                            },
+                            {
+                                selector: 'node[type = "department"]',
+                                style: { 'background-color': '#f97316' }
+                            },
+                            {
+                                selector: 'node[type = "ticket"]',
+                                style: { 'background-color': '#ef4444' }
+                            }
+                        ]
+                    });
+                },
+                fitGraph() {
+                    if (this.graph) {
+                        this.graph.fit();
+                    }
+                },
+                parseNodeKey(key) {
+                    if (!key) {
+                        return { type: null, id: null };
+                    }
+                    const [type, id] = key.split(':');
+                    return { type, id: parseInt(id, 10) };
+                },
+                async runImpactAnalysis() {
+                    const { type, id } = this.parseNodeKey(this.impactQuery.sourceKey);
+                    if (!type || !id) {
+                        alert('Bitte eine Quelle auswählen.');
+                        return;
+                    }
+                    const params = new URLSearchParams({ source_type: type, source_id: id });
+                    if (this.impactQuery.depth) {
+                        params.append('depth', this.impactQuery.depth);
+                    }
+                    const response = await fetch(`/api/impact-analysis?${params.toString()}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.impactResult.impact = data.impact || [];
+                        this.impactResult.criticalTickets = data.critical_tickets || [];
+                        this.impactResult.spof = data.spof || [];
+                        this.updateOverview();
+                    }
+                },
+                async createDepartment() {
+                    const response = await fetch('/api/departments', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.newDepartment)
+                    });
+                    if (response.ok) {
+                        this.newDepartment = { name: '', description: '' };
+                        await this.loadDepartments();
+                        await this.loadNodeOptions();
+                    }
+                },
+                async deleteDepartment(id) {
+                    if (!confirm('Abteilung wirklich löschen?')) return;
+                    const response = await fetch(`/api/departments/${id}`, { method: 'DELETE' });
+                    if (response.ok) {
+                        await this.loadDepartments();
+                        await this.loadNodeOptions();
+                    }
+                },
+                async createTeam() {
+                    const response = await fetch('/api/teams', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.newTeam)
+                    });
+                    if (response.ok) {
+                        this.newTeam = { name: '', department_id: '', lead_user: '', notes: '' };
+                        await this.loadTeams();
+                        await this.loadNodeOptions();
+                    }
+                },
+                async deleteTeam(id) {
+                    if (!confirm('Team wirklich löschen?')) return;
+                    const response = await fetch(`/api/teams/${id}`, { method: 'DELETE' });
+                    if (response.ok) {
+                        await this.loadTeams();
+                        await this.loadNodeOptions();
+                    }
+                },
+                async createSoftware() {
+                    const response = await fetch('/api/software', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.newSoftware)
+                    });
+                    if (response.ok) {
+                        this.newSoftware = { name: '', vendor: '', version: '', license_type: '', criticality: 'medium', description: '', owner_team_id: '', support_contact: '' };
+                        await this.loadSoftware();
+                        await this.loadNodeOptions();
+                        await this.refreshGraph();
+                        this.updateOverview();
+                    }
+                },
+                async deleteSoftware(id) {
+                    if (!confirm('Software wirklich löschen?')) return;
+                    const response = await fetch(`/api/software/${id}`, { method: 'DELETE' });
+                    if (response.ok) {
+                        await this.loadSoftware();
+                        await this.loadNodeOptions();
+                        await this.refreshGraph();
+                        this.updateOverview();
+                    }
+                },
+                async createInstallation() {
+                    const response = await fetch('/api/software-installations', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.newInstallation)
+                    });
+                    if (response.ok) {
+                        this.newInstallation = { software_id: '', asset_id: '', device_id: '', installed_version: '', environment: 'production', status: 'active', notes: '' };
+                        await this.loadInstallations();
+                        await this.refreshGraph();
+                    }
+                },
+                async deleteInstallation(id) {
+                    if (!confirm('Installation wirklich löschen?')) return;
+                    const response = await fetch(`/api/software-installations/${id}`, { method: 'DELETE' });
+                    if (response.ok) {
+                        await this.loadInstallations();
+                        await this.refreshGraph();
+                    }
+                },
+                async createDependencyLink() {
+                    const source = this.parseNodeKey(this.newLink.sourceKey);
+                    const target = this.parseNodeKey(this.newLink.targetKey);
+                    if (!source.type || !target.type) {
+                        alert('Quelle und Ziel auswählen.');
+                        return;
+                    }
+                    const payload = {
+                        source_type: source.type,
+                        source_id: source.id,
+                        target_type: target.type,
+                        target_id: target.id,
+                        relation: this.newLink.relation,
+                        criticality: this.newLink.criticality,
+                        redundancy_group: this.newLink.redundancy_group,
+                        notes: this.newLink.notes
+                    };
+                    const response = await fetch('/api/dependency-links', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.ok) {
+                        this.newLink = { sourceKey: '', targetKey: '', relation: 'depends_on', criticality: 'medium', redundancy_group: '', notes: '' };
+                        await this.loadDependencyLinks();
+                        await this.refreshGraph();
+                        await this.loadSpof();
+                        this.updateOverview();
+                    }
+                },
+                async deleteDependencyLink(id) {
+                    if (!confirm('Abhängigkeit wirklich löschen?')) return;
+                    const response = await fetch(`/api/dependency-links/${id}`, { method: 'DELETE' });
+                    if (response.ok) {
+                        await this.loadDependencyLinks();
+                        await this.refreshGraph();
+                        await this.loadSpof();
+                        this.updateOverview();
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            feather.replace();
+        });
+    </script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
+</body>
+</html>
