@@ -1370,6 +1370,26 @@ def summarize_device_info(device_rows):
             locations.append(location_name)
     return serials, locations
 
+def mark_devices_as_used(db, device_ids):
+    unique_ids = [device_id for device_id in dict.fromkeys(device_ids) if device_id]
+    if not unique_ids:
+        return
+    placeholders = ",".join(["?"] * len(unique_ids))
+    rows = db.execute(
+        f"SELECT id, specs FROM devices WHERE id IN ({placeholders})",
+        unique_ids,
+    ).fetchall()
+    for row in rows:
+        try:
+            specs = json.loads(row["specs"] or "{}")
+        except json.JSONDecodeError:
+            specs = {}
+        specs["Status"] = "Verwendet"
+        db.execute(
+            "UPDATE devices SET specs = ? WHERE id = ?",
+            (json.dumps(specs), row["id"]),
+        )
+
 def get_asset_devices_info(db, asset_id):
     rows = db.execute('''
         SELECT d.serial_number, l.name as location_name
@@ -1862,6 +1882,7 @@ def manage_assets():
                     INSERT INTO asset_devices (asset_id, device_id)
                     VALUES (?, ?)
                 ''', (asset_id, device_id))
+            mark_devices_as_used(db, device_ids)
             for relation in relations:
                 related_asset_id = relation.get("related_asset_id")
                 relation_type_id = relation.get("relation_type_id")
@@ -1981,6 +2002,7 @@ def asset_detail(asset_id):
                 INSERT INTO asset_devices (asset_id, device_id)
                 VALUES (?, ?)
             ''', (asset_id, device_id))
+        mark_devices_as_used(db, device_ids)
         db.execute('DELETE FROM asset_relations WHERE asset_id = ?', (asset_id,))
         for relation in relations:
             related_asset_id = relation.get("related_asset_id")
