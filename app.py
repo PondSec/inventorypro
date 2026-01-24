@@ -229,6 +229,54 @@ PERMISSIONS = [
         "label": "Roadmaps verwalten",
         "description": "Roadmaps erstellen, bearbeiten und löschen.",
         "group": "Roadmap"
+    },
+    {
+        "key": "dependencies.view",
+        "label": "Abhängigkeits-Graph anzeigen",
+        "description": "Dependency- und Impact-Graph einsehen.",
+        "group": "Abhängigkeiten"
+    },
+    {
+        "key": "dependencies.manage",
+        "label": "Abhängigkeits-Graph verwalten",
+        "description": "Abhängigkeiten modellieren und Impact-Regeln pflegen.",
+        "group": "Abhängigkeiten"
+    },
+    {
+        "key": "software.view",
+        "label": "Software-Inventar anzeigen",
+        "description": "Software-Inventar und Installationen einsehen.",
+        "group": "Software"
+    },
+    {
+        "key": "software.manage",
+        "label": "Software-Inventar verwalten",
+        "description": "Software, Installationen und Eigentümer verwalten.",
+        "group": "Software"
+    },
+    {
+        "key": "teams.view",
+        "label": "Teams anzeigen",
+        "description": "Teams und Verantwortlichkeiten einsehen.",
+        "group": "Organisation"
+    },
+    {
+        "key": "teams.manage",
+        "label": "Teams verwalten",
+        "description": "Teams und Zuordnungen pflegen.",
+        "group": "Organisation"
+    },
+    {
+        "key": "departments.view",
+        "label": "Abteilungen anzeigen",
+        "description": "Abteilungen und Strukturen einsehen.",
+        "group": "Organisation"
+    },
+    {
+        "key": "departments.manage",
+        "label": "Abteilungen verwalten",
+        "description": "Abteilungen erstellen und pflegen.",
+        "group": "Organisation"
     }
 ]
 
@@ -269,7 +317,15 @@ DEFAULT_ROLES = [
             "stats.view",
             "activity.view",
             "roadmap.view",
-            "roadmap.manage"
+            "roadmap.manage",
+            "dependencies.view",
+            "dependencies.manage",
+            "software.view",
+            "software.manage",
+            "teams.view",
+            "teams.manage",
+            "departments.view",
+            "departments.manage"
         ]
     },
     {
@@ -826,6 +882,77 @@ def init_db():
         ''')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS departments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS teams (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                department_id INTEGER,
+                lead_user TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (department_id) REFERENCES departments(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS software (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                vendor TEXT,
+                version TEXT,
+                license_type TEXT,
+                criticality TEXT DEFAULT 'medium',
+                description TEXT,
+                owner_team_id INTEGER,
+                support_contact TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(name, vendor, version),
+                FOREIGN KEY (owner_team_id) REFERENCES teams(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS software_installations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                software_id INTEGER NOT NULL,
+                device_id INTEGER,
+                asset_id INTEGER,
+                installed_version TEXT,
+                environment TEXT DEFAULT 'production',
+                status TEXT DEFAULT 'active',
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (software_id) REFERENCES software(id),
+                FOREIGN KEY (device_id) REFERENCES devices(id),
+                FOREIGN KEY (asset_id) REFERENCES assets(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS dependency_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_type TEXT NOT NULL,
+                source_id INTEGER NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id INTEGER NOT NULL,
+                relation TEXT DEFAULT 'depends_on',
+                criticality TEXT DEFAULT 'medium',
+                redundancy_group TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(source_type, source_id, target_type, target_id, relation)
+            )
+        ''')
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS rule_overrides (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 rule_key TEXT NOT NULL,
@@ -1078,6 +1205,404 @@ def log_activity(db, action, entity_type, entity_id=None, details=None):
         INSERT INTO activity_log (username, action, entity_type, entity_id, details)
         VALUES (?, ?, ?, ?, ?)
     ''', (username, action, entity_type, entity_id, json.dumps(details or {})))
+
+DEPENDENCY_ENTITY_TYPES = {
+    "asset": {"table": "assets", "label": "Asset", "name_col": "name"},
+    "device": {"table": "devices", "label": "Gerät", "name_col": "name"},
+    "software": {"table": "software", "label": "Software", "name_col": "name"},
+    "service": {"table": "services", "label": "Service", "name_col": "name"},
+    "team": {"table": "teams", "label": "Team", "name_col": "name"},
+    "department": {"table": "departments", "label": "Abteilung", "name_col": "name"},
+    "location": {"table": "locations", "label": "Standort", "name_col": "name"},
+    "user": {"table": "users", "label": "Benutzer", "name_col": "username"},
+    "ticket": {"table": "tickets", "label": "Ticket", "name_col": "title"},
+    "roadmap": {"table": "roadmaps", "label": "Roadmap", "name_col": "title"},
+    "roadmap_step": {"table": "roadmap_steps", "label": "Roadmap-Schritt", "name_col": "title"}
+}
+
+def fetch_entity_label(db, entity_type, entity_id):
+    meta = DEPENDENCY_ENTITY_TYPES.get(entity_type)
+    if not meta:
+        return None
+    row = db.execute(
+        f"SELECT {meta['name_col']} AS name FROM {meta['table']} WHERE id = ?",
+        (entity_id,)
+    ).fetchone()
+    return row["name"] if row else None
+
+def fetch_entity_options(db):
+    options = {}
+    for entity_type, meta in DEPENDENCY_ENTITY_TYPES.items():
+        rows = db.execute(
+            f"SELECT id, {meta['name_col']} AS name FROM {meta['table']} ORDER BY {meta['name_col']}"
+        ).fetchall()
+        options[entity_type] = [dict(row) for row in rows]
+    return options
+
+def build_dependency_edges(db):
+    edges = []
+    link_rows = db.execute('''
+        SELECT id, source_type, source_id, target_type, target_id, relation, criticality, redundancy_group, notes
+        FROM dependency_links
+        ORDER BY created_at DESC
+    ''').fetchall()
+    for row in link_rows:
+        edges.append({
+            "id": row["id"],
+            "source_type": row["source_type"],
+            "source_id": row["source_id"],
+            "target_type": row["target_type"],
+            "target_id": row["target_id"],
+            "relation": row["relation"],
+            "criticality": row["criticality"],
+            "redundancy_group": row["redundancy_group"],
+            "notes": row["notes"],
+            "implicit": False
+        })
+
+    asset_device_rows = db.execute('SELECT asset_id, device_id FROM asset_devices').fetchall()
+    for row in asset_device_rows:
+        edges.append({
+            "source_type": "asset",
+            "source_id": row["asset_id"],
+            "target_type": "device",
+            "target_id": row["device_id"],
+            "relation": "uses_device",
+            "criticality": "medium",
+            "redundancy_group": None,
+            "notes": None,
+            "implicit": True
+        })
+
+    asset_service_rows = db.execute('SELECT asset_id, service_id FROM asset_services').fetchall()
+    for row in asset_service_rows:
+        edges.append({
+            "source_type": "asset",
+            "source_id": row["asset_id"],
+            "target_type": "service",
+            "target_id": row["service_id"],
+            "relation": "consumes_service",
+            "criticality": "medium",
+            "redundancy_group": None,
+            "notes": None,
+            "implicit": True
+        })
+
+    assignment_rows = db.execute('''
+        SELECT asset_id, user_identifier, location_id
+        FROM asset_assignments
+        WHERE released_at IS NULL OR released_at = ''
+    ''').fetchall()
+    for row in assignment_rows:
+        if row["location_id"]:
+            edges.append({
+                "source_type": "asset",
+                "source_id": row["asset_id"],
+                "target_type": "location",
+                "target_id": row["location_id"],
+                "relation": "located_at",
+                "criticality": "low",
+                "redundancy_group": None,
+                "notes": None,
+                "implicit": True
+            })
+        if row["user_identifier"]:
+            user_row = db.execute('SELECT id FROM users WHERE username = ?', (row["user_identifier"],)).fetchone()
+            if user_row:
+                edges.append({
+                    "source_type": "asset",
+                    "source_id": row["asset_id"],
+                    "target_type": "user",
+                    "target_id": user_row["id"],
+                    "relation": "assigned_to",
+                    "criticality": "low",
+                    "redundancy_group": None,
+                    "notes": None,
+                    "implicit": True
+                })
+
+    installation_rows = db.execute('''
+        SELECT software_id, device_id, asset_id
+        FROM software_installations
+    ''').fetchall()
+    for row in installation_rows:
+        if row["device_id"]:
+            edges.append({
+                "source_type": "device",
+                "source_id": row["device_id"],
+                "target_type": "software",
+                "target_id": row["software_id"],
+                "relation": "runs_software",
+                "criticality": "medium",
+                "redundancy_group": None,
+                "notes": None,
+                "implicit": True
+            })
+        if row["asset_id"]:
+            edges.append({
+                "source_type": "asset",
+                "source_id": row["asset_id"],
+                "target_type": "software",
+                "target_id": row["software_id"],
+                "relation": "runs_software",
+                "criticality": "medium",
+                "redundancy_group": None,
+                "notes": None,
+                "implicit": True
+            })
+
+    software_rows = db.execute('SELECT id, owner_team_id FROM software WHERE owner_team_id IS NOT NULL').fetchall()
+    for row in software_rows:
+        edges.append({
+            "source_type": "software",
+            "source_id": row["id"],
+            "target_type": "team",
+            "target_id": row["owner_team_id"],
+            "relation": "maintained_by",
+            "criticality": "medium",
+            "redundancy_group": None,
+            "notes": None,
+            "implicit": True
+        })
+
+    team_rows = db.execute('SELECT id, department_id FROM teams WHERE department_id IS NOT NULL').fetchall()
+    for row in team_rows:
+        edges.append({
+            "source_type": "team",
+            "source_id": row["id"],
+            "target_type": "department",
+            "target_id": row["department_id"],
+            "relation": "part_of",
+            "criticality": "low",
+            "redundancy_group": None,
+            "notes": None,
+            "implicit": True
+        })
+
+    ticket_asset_rows = db.execute('SELECT ticket_id, asset_id FROM ticket_assets').fetchall()
+    for row in ticket_asset_rows:
+        edges.append({
+            "source_type": "ticket",
+            "source_id": row["ticket_id"],
+            "target_type": "asset",
+            "target_id": row["asset_id"],
+            "relation": "related_asset",
+            "criticality": "medium",
+            "redundancy_group": None,
+            "notes": None,
+            "implicit": True
+        })
+
+    roadmap_step_rows = db.execute('SELECT id, roadmap_id FROM roadmap_steps WHERE roadmap_id IS NOT NULL').fetchall()
+    for row in roadmap_step_rows:
+        edges.append({
+            "source_type": "roadmap_step",
+            "source_id": row["id"],
+            "target_type": "roadmap",
+            "target_id": row["roadmap_id"],
+            "relation": "part_of",
+            "criticality": "low",
+            "redundancy_group": None,
+            "notes": None,
+            "implicit": True
+        })
+
+    return edges
+
+def dependency_node_key(entity_type, entity_id):
+    return f"{entity_type}:{entity_id}"
+
+def build_dependency_nodes(db):
+    nodes = []
+    for entity_type, meta in DEPENDENCY_ENTITY_TYPES.items():
+        rows = db.execute(
+            f"SELECT id, {meta['name_col']} AS name FROM {meta['table']} ORDER BY {meta['name_col']}"
+        ).fetchall()
+        for row in rows:
+            nodes.append({
+                "key": dependency_node_key(entity_type, row["id"]),
+                "id": row["id"],
+                "type": entity_type,
+                "label": row["name"]
+            })
+    return nodes
+
+def build_dependency_graph_data(db):
+    nodes = build_dependency_nodes(db)
+    node_map = {node["key"]: node for node in nodes}
+    edges = build_dependency_edges(db)
+    for edge in edges:
+        source_key = dependency_node_key(edge["source_type"], edge["source_id"])
+        target_key = dependency_node_key(edge["target_type"], edge["target_id"])
+        if source_key not in node_map:
+            label = fetch_entity_label(db, edge["source_type"], edge["source_id"]) or f"{edge['source_type']} #{edge['source_id']}"
+            node_map[source_key] = {
+                "key": source_key,
+                "id": edge["source_id"],
+                "type": edge["source_type"],
+                "label": label
+            }
+        if target_key not in node_map:
+            label = fetch_entity_label(db, edge["target_type"], edge["target_id"]) or f"{edge['target_type']} #{edge['target_id']}"
+            node_map[target_key] = {
+                "key": target_key,
+                "id": edge["target_id"],
+                "type": edge["target_type"],
+                "label": label
+            }
+    return list(node_map.values()), edges
+
+def find_tickets_for_node(db, entity_type, entity_id):
+    ticket_ids = set()
+    if entity_type == "ticket":
+        ticket_ids.add(entity_id)
+    if entity_type == "asset":
+        rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (entity_id,)).fetchall()
+        ticket_ids.update(row["ticket_id"] for row in rows)
+    if entity_type == "device":
+        asset_rows = db.execute('SELECT asset_id FROM asset_devices WHERE device_id = ?', (entity_id,)).fetchall()
+        for asset_row in asset_rows:
+            rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (asset_row["asset_id"],)).fetchall()
+            ticket_ids.update(row["ticket_id"] for row in rows)
+    if entity_type == "software":
+        install_rows = db.execute('''
+            SELECT asset_id, device_id
+            FROM software_installations
+            WHERE software_id = ?
+        ''', (entity_id,)).fetchall()
+        for install in install_rows:
+            if install["asset_id"]:
+                rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (install["asset_id"],)).fetchall()
+                ticket_ids.update(row["ticket_id"] for row in rows)
+            if install["device_id"]:
+                asset_rows = db.execute('SELECT asset_id FROM asset_devices WHERE device_id = ?', (install["device_id"],)).fetchall()
+                for asset_row in asset_rows:
+                    rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (asset_row["asset_id"],)).fetchall()
+                    ticket_ids.update(row["ticket_id"] for row in rows)
+    if entity_type == "service":
+        asset_rows = db.execute('SELECT asset_id FROM asset_services WHERE service_id = ?', (entity_id,)).fetchall()
+        for asset_row in asset_rows:
+            rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (asset_row["asset_id"],)).fetchall()
+            ticket_ids.update(row["ticket_id"] for row in rows)
+    if entity_type == "location":
+        asset_rows = db.execute('SELECT asset_id FROM asset_assignments WHERE location_id = ?', (entity_id,)).fetchall()
+        for asset_row in asset_rows:
+            rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (asset_row["asset_id"],)).fetchall()
+            ticket_ids.update(row["ticket_id"] for row in rows)
+    if entity_type == "user":
+        user_row = db.execute('SELECT username FROM users WHERE id = ?', (entity_id,)).fetchone()
+        if user_row:
+            asset_rows = db.execute('SELECT asset_id FROM asset_assignments WHERE user_identifier = ?', (user_row["username"],)).fetchall()
+            for asset_row in asset_rows:
+                rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (asset_row["asset_id"],)).fetchall()
+                ticket_ids.update(row["ticket_id"] for row in rows)
+    if not ticket_ids:
+        return []
+    placeholders = ",".join("?" for _ in ticket_ids)
+    rows = db.execute(f'''
+        SELECT id, title, status, priority, escalation_level, due_date
+        FROM tickets
+        WHERE id IN ({placeholders})
+        ORDER BY created_at DESC
+    ''', tuple(ticket_ids)).fetchall()
+    return [dict(row) for row in rows]
+
+def analyze_dependency_impact(db, source_type, source_id, max_depth=None):
+    nodes, edges = build_dependency_graph_data(db)
+    node_map = {node["key"]: node for node in nodes}
+    reverse_adj = {}
+    for edge in edges:
+        source_key = dependency_node_key(edge["source_type"], edge["source_id"])
+        target_key = dependency_node_key(edge["target_type"], edge["target_id"])
+        reverse_adj.setdefault(target_key, []).append({
+            "key": source_key,
+            "relation": edge["relation"],
+            "criticality": edge["criticality"]
+        })
+
+    start_key = dependency_node_key(source_type, source_id)
+    visited = {start_key}
+    impact = []
+    queue = [(start_key, 0)]
+    while queue:
+        current_key, depth = queue.pop(0)
+        if max_depth is not None and depth >= max_depth:
+            continue
+        for neighbor in reverse_adj.get(current_key, []):
+            neighbor_key = neighbor["key"]
+            if neighbor_key in visited:
+                continue
+            visited.add(neighbor_key)
+            node = node_map.get(neighbor_key, {
+                "key": neighbor_key,
+                "type": neighbor_key.split(":")[0],
+                "id": int(neighbor_key.split(":")[1]),
+                "label": neighbor_key
+            })
+            impact.append({
+                "key": neighbor_key,
+                "type": node["type"],
+                "id": node["id"],
+                "label": node["label"],
+                "depth": depth + 1,
+                "relation": neighbor["relation"],
+                "criticality": neighbor["criticality"]
+            })
+            queue.append((neighbor_key, depth + 1))
+
+    impacted_ticket_ids = set()
+    for item in impact:
+        ticket_rows = find_tickets_for_node(db, item["type"], item["id"])
+        impacted_ticket_ids.update(ticket["id"] for ticket in ticket_rows)
+    direct_ticket_rows = find_tickets_for_node(db, source_type, source_id)
+    impacted_ticket_ids.update(ticket["id"] for ticket in direct_ticket_rows)
+
+    tickets = []
+    if impacted_ticket_ids:
+        placeholders = ",".join("?" for _ in impacted_ticket_ids)
+        ticket_rows = db.execute(f'''
+            SELECT id, title, status, priority, escalation_level, due_date
+            FROM tickets
+            WHERE id IN ({placeholders})
+            ORDER BY created_at DESC
+        ''', tuple(impacted_ticket_ids)).fetchall()
+        tickets = [dict(row) for row in ticket_rows]
+
+    critical_tickets = [
+        ticket for ticket in tickets
+        if (ticket.get("priority") or "").lower() in {"high", "urgent", "critical"}
+        or (ticket.get("escalation_level") or 0) > 0
+    ]
+    return impact, tickets, critical_tickets
+
+def calculate_spof_nodes(db):
+    rows = db.execute('''
+        SELECT source_type, source_id, target_type, target_id, redundancy_group
+        FROM dependency_links
+    ''').fetchall()
+    dependents = {}
+    redundancy_targets = set()
+    for row in rows:
+        target_key = dependency_node_key(row["target_type"], row["target_id"])
+        source_key = dependency_node_key(row["source_type"], row["source_id"])
+        dependents.setdefault(target_key, set()).add(source_key)
+        if row["redundancy_group"]:
+            redundancy_targets.add(target_key)
+    spof = []
+    for target_key, sources in dependents.items():
+        if target_key in redundancy_targets:
+            continue
+        entity_type, entity_id = target_key.split(":")
+        label = fetch_entity_label(db, entity_type, int(entity_id)) or target_key
+        spof.append({
+            "key": target_key,
+            "type": entity_type,
+            "id": int(entity_id),
+            "label": label,
+            "dependent_count": len(sources)
+        })
+    spof.sort(key=lambda item: item["dependent_count"], reverse=True)
+    return spof
 
 def pro_required(f):
     @wraps(f)
@@ -1676,6 +2201,13 @@ def tickets_page():
 def roadmap_page():
     access = get_user_access(get_db())
     return render_template('roadmap.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
+@app.route('/dependencies')
+@login_required
+@require_permissions('dependencies.view', 'dependencies.manage')
+def dependencies_page():
+    access = get_user_access(get_db())
+    return render_template('dependencies.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/api/categories/<int:category_id>', methods=['PUT', 'DELETE'])
 @login_required
@@ -2441,6 +2973,462 @@ def roadmap_steps_detail(roadmap_id, step_id):
     log_activity(db, "delete", "roadmap_step", step_id, {"roadmap_id": roadmap_id})
     db.commit()
     return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/departments', methods=['GET', 'POST'])
+@login_required
+def departments():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('departments.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO departments (name, description)
+                VALUES (?, ?)
+            ''', (name, description))
+            log_activity(db, "create", "department", cursor.lastrowid, {"name": name})
+            db.commit()
+            return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Abteilung existiert bereits"}), 400
+
+    if not (user_can('departments.view') or user_can('departments.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('SELECT * FROM departments ORDER BY name').fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/departments/<int:department_id>', methods=['PUT', 'DELETE'])
+@login_required
+def department_detail(department_id):
+    db = get_db()
+    if not user_can('departments.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    department = db.execute('SELECT * FROM departments WHERE id = ?', (department_id,)).fetchone()
+    if not department:
+        return jsonify({"error": "Abteilung nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        name = (data.get('name') or department["name"] or '').strip()
+        description = (data.get('description') or department["description"] or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        db.execute('''
+            UPDATE departments
+            SET name = ?, description = ?
+            WHERE id = ?
+        ''', (name, description, department_id))
+        log_activity(db, "update", "department", department_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM departments WHERE id = ?', (department_id,))
+    log_activity(db, "delete", "department", department_id, {"name": department["name"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/teams', methods=['GET', 'POST'])
+@login_required
+def teams():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('teams.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        department_id = data.get('department_id')
+        lead_user = (data.get('lead_user') or '').strip()
+        notes = (data.get('notes') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO teams (name, department_id, lead_user, notes)
+                VALUES (?, ?, ?, ?)
+            ''', (name, department_id, lead_user, notes))
+            log_activity(db, "create", "team", cursor.lastrowid, {"name": name})
+            db.commit()
+            return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Team existiert bereits"}), 400
+
+    if not (user_can('teams.view') or user_can('teams.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('''
+        SELECT t.*, d.name as department_name
+        FROM teams t
+        LEFT JOIN departments d ON t.department_id = d.id
+        ORDER BY t.name
+    ''').fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/teams/<int:team_id>', methods=['PUT', 'DELETE'])
+@login_required
+def team_detail(team_id):
+    db = get_db()
+    if not user_can('teams.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    team = db.execute('SELECT * FROM teams WHERE id = ?', (team_id,)).fetchone()
+    if not team:
+        return jsonify({"error": "Team nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        name = (data.get('name') or team["name"] or '').strip()
+        department_id = data.get('department_id')
+        lead_user = (data.get('lead_user') or team["lead_user"] or '').strip()
+        notes = (data.get('notes') or team["notes"] or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        db.execute('''
+            UPDATE teams
+            SET name = ?, department_id = ?, lead_user = ?, notes = ?
+            WHERE id = ?
+        ''', (name, department_id, lead_user, notes, team_id))
+        log_activity(db, "update", "team", team_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM teams WHERE id = ?', (team_id,))
+    log_activity(db, "delete", "team", team_id, {"name": team["name"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/software', methods=['GET', 'POST'])
+@login_required
+def software_inventory():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('software.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        vendor = (data.get('vendor') or '').strip()
+        version = (data.get('version') or '').strip()
+        license_type = (data.get('license_type') or '').strip()
+        criticality = (data.get('criticality') or 'medium').strip()
+        description = (data.get('description') or '').strip()
+        owner_team_id = data.get('owner_team_id')
+        support_contact = (data.get('support_contact') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO software (name, vendor, version, license_type, criticality, description, owner_team_id, support_contact)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (name, vendor, version, license_type, criticality, description, owner_team_id, support_contact))
+            log_activity(db, "create", "software", cursor.lastrowid, {"name": name})
+            db.commit()
+            return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Software existiert bereits"}), 400
+
+    if not (user_can('software.view') or user_can('software.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('''
+        SELECT s.*, t.name as owner_team_name
+        FROM software s
+        LEFT JOIN teams t ON s.owner_team_id = t.id
+        ORDER BY s.name
+    ''').fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/software/<int:software_id>', methods=['PUT', 'DELETE'])
+@login_required
+def software_detail(software_id):
+    db = get_db()
+    if not user_can('software.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    software_row = db.execute('SELECT * FROM software WHERE id = ?', (software_id,)).fetchone()
+    if not software_row:
+        return jsonify({"error": "Software nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        name = (data.get('name') or software_row["name"] or '').strip()
+        vendor = (data.get('vendor') or software_row["vendor"] or '').strip()
+        version = (data.get('version') or software_row["version"] or '').strip()
+        license_type = (data.get('license_type') or software_row["license_type"] or '').strip()
+        criticality = (data.get('criticality') or software_row["criticality"] or 'medium').strip()
+        description = (data.get('description') or software_row["description"] or '').strip()
+        owner_team_id = data.get('owner_team_id')
+        support_contact = (data.get('support_contact') or software_row["support_contact"] or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        db.execute('''
+            UPDATE software
+            SET name = ?, vendor = ?, version = ?, license_type = ?, criticality = ?, description = ?, owner_team_id = ?, support_contact = ?
+            WHERE id = ?
+        ''', (name, vendor, version, license_type, criticality, description, owner_team_id, support_contact, software_id))
+        log_activity(db, "update", "software", software_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM software WHERE id = ?', (software_id,))
+    log_activity(db, "delete", "software", software_id, {"name": software_row["name"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/software-installations', methods=['GET', 'POST'])
+@login_required
+def software_installations():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('software.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        software_id = data.get('software_id')
+        device_id = data.get('device_id')
+        asset_id = data.get('asset_id')
+        if not software_id or not (device_id or asset_id):
+            return jsonify({"error": "Software sowie Gerät oder Asset sind erforderlich"}), 400
+        installed_version = (data.get('installed_version') or '').strip()
+        environment = (data.get('environment') or 'production').strip()
+        status = (data.get('status') or 'active').strip()
+        notes = (data.get('notes') or '').strip()
+        cursor = db.execute('''
+            INSERT INTO software_installations (
+                software_id, device_id, asset_id, installed_version, environment, status, notes
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (software_id, device_id, asset_id, installed_version, environment, status, notes))
+        log_activity(db, "create", "software_installation", cursor.lastrowid, {
+            "software_id": software_id,
+            "device_id": device_id,
+            "asset_id": asset_id
+        })
+        db.commit()
+        return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+
+    if not (user_can('software.view') or user_can('software.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    software_id = request.args.get('software_id')
+    device_id = request.args.get('device_id')
+    asset_id = request.args.get('asset_id')
+    query = '''
+        SELECT si.*, s.name as software_name, d.name as device_name, a.name as asset_name
+        FROM software_installations si
+        JOIN software s ON si.software_id = s.id
+        LEFT JOIN devices d ON si.device_id = d.id
+        LEFT JOIN assets a ON si.asset_id = a.id
+    '''
+    conditions = []
+    params = []
+    if software_id:
+        conditions.append('si.software_id = ?')
+        params.append(software_id)
+    if device_id:
+        conditions.append('si.device_id = ?')
+        params.append(device_id)
+    if asset_id:
+        conditions.append('si.asset_id = ?')
+        params.append(asset_id)
+    if conditions:
+        query += ' WHERE ' + ' AND '.join(conditions)
+    query += ' ORDER BY si.created_at DESC'
+    rows = db.execute(query, params).fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/software-installations/<int:installation_id>', methods=['PUT', 'DELETE'])
+@login_required
+def software_installation_detail(installation_id):
+    db = get_db()
+    if not user_can('software.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    installation = db.execute('SELECT * FROM software_installations WHERE id = ?', (installation_id,)).fetchone()
+    if not installation:
+        return jsonify({"error": "Installation nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        installed_version = (data.get('installed_version') or installation["installed_version"] or '').strip()
+        environment = (data.get('environment') or installation["environment"] or 'production').strip()
+        status = (data.get('status') or installation["status"] or 'active').strip()
+        notes = (data.get('notes') or installation["notes"] or '').strip()
+        db.execute('''
+            UPDATE software_installations
+            SET installed_version = ?, environment = ?, status = ?, notes = ?
+            WHERE id = ?
+        ''', (installed_version, environment, status, notes, installation_id))
+        log_activity(db, "update", "software_installation", installation_id, {"software_id": installation["software_id"]})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM software_installations WHERE id = ?', (installation_id,))
+    log_activity(db, "delete", "software_installation", installation_id, {"software_id": installation["software_id"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/dependency-links', methods=['GET', 'POST'])
+@login_required
+def dependency_links():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('dependencies.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        source_type = (data.get('source_type') or '').strip()
+        source_id = data.get('source_id')
+        target_type = (data.get('target_type') or '').strip()
+        target_id = data.get('target_id')
+        relation = (data.get('relation') or 'depends_on').strip()
+        criticality = (data.get('criticality') or 'medium').strip()
+        redundancy_group = (data.get('redundancy_group') or '').strip() or None
+        notes = (data.get('notes') or '').strip()
+        if source_type not in DEPENDENCY_ENTITY_TYPES or target_type not in DEPENDENCY_ENTITY_TYPES:
+            return jsonify({"error": "Ungültiger Entity-Typ"}), 400
+        if not source_id or not target_id:
+            return jsonify({"error": "Quelle und Ziel sind erforderlich"}), 400
+        try:
+            source_id = int(source_id)
+            target_id = int(target_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Ungültige IDs"}), 400
+        if not fetch_entity_label(db, source_type, source_id) or not fetch_entity_label(db, target_type, target_id):
+            return jsonify({"error": "Quelle oder Ziel existiert nicht"}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO dependency_links (
+                    source_type, source_id, target_type, target_id, relation, criticality, redundancy_group, notes
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (source_type, source_id, target_type, target_id, relation, criticality, redundancy_group, notes))
+            log_activity(db, "create", "dependency_link", cursor.lastrowid, {
+                "source_type": source_type,
+                "source_id": source_id,
+                "target_type": target_type,
+                "target_id": target_id
+            })
+            db.commit()
+            return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Abhängigkeit existiert bereits"}), 400
+
+    if not (user_can('dependencies.view') or user_can('dependencies.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('''
+        SELECT *
+        FROM dependency_links
+        ORDER BY created_at DESC
+    ''').fetchall()
+    links = []
+    for row in rows:
+        source_label = fetch_entity_label(db, row["source_type"], row["source_id"]) or f"{row['source_type']} #{row['source_id']}"
+        target_label = fetch_entity_label(db, row["target_type"], row["target_id"]) or f"{row['target_type']} #{row['target_id']}"
+        links.append({
+            **dict(row),
+            "source_label": source_label,
+            "target_label": target_label
+        })
+    return jsonify(links)
+
+@app.route('/api/dependency-links/<int:link_id>', methods=['PUT', 'DELETE'])
+@login_required
+def dependency_link_detail(link_id):
+    db = get_db()
+    if not user_can('dependencies.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    link_row = db.execute('SELECT * FROM dependency_links WHERE id = ?', (link_id,)).fetchone()
+    if not link_row:
+        return jsonify({"error": "Abhängigkeit nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        relation = (data.get('relation') or link_row["relation"] or 'depends_on').strip()
+        criticality = (data.get('criticality') or link_row["criticality"] or 'medium').strip()
+        redundancy_group = (data.get('redundancy_group') or link_row["redundancy_group"] or '').strip() or None
+        notes = (data.get('notes') or link_row["notes"] or '').strip()
+        db.execute('''
+            UPDATE dependency_links
+            SET relation = ?, criticality = ?, redundancy_group = ?, notes = ?
+            WHERE id = ?
+        ''', (relation, criticality, redundancy_group, notes, link_id))
+        log_activity(db, "update", "dependency_link", link_id, {
+            "source_type": link_row["source_type"],
+            "source_id": link_row["source_id"]
+        })
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM dependency_links WHERE id = ?', (link_id,))
+    log_activity(db, "delete", "dependency_link", link_id, {
+        "source_type": link_row["source_type"],
+        "source_id": link_row["source_id"]
+    })
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/dependency-nodes', methods=['GET'])
+@login_required
+def dependency_nodes():
+    db = get_db()
+    if not (user_can('dependencies.view') or user_can('dependencies.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    return jsonify(fetch_entity_options(db))
+
+@app.route('/api/dependency-graph', methods=['GET'])
+@login_required
+def dependency_graph():
+    db = get_db()
+    if not (user_can('dependencies.view') or user_can('dependencies.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    nodes, edges = build_dependency_graph_data(db)
+    graph_edges = []
+    for edge in edges:
+        source_key = dependency_node_key(edge["source_type"], edge["source_id"])
+        target_key = dependency_node_key(edge["target_type"], edge["target_id"])
+        graph_edges.append({
+            "source": source_key,
+            "target": target_key,
+            "relation": edge["relation"],
+            "criticality": edge["criticality"],
+            "implicit": edge["implicit"]
+        })
+    return jsonify({
+        "nodes": nodes,
+        "edges": graph_edges
+    })
+
+@app.route('/api/impact-analysis', methods=['GET'])
+@login_required
+def impact_analysis():
+    db = get_db()
+    if not (user_can('dependencies.view') or user_can('dependencies.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    source_type = (request.args.get('source_type') or '').strip()
+    source_id = request.args.get('source_id')
+    max_depth = request.args.get('depth')
+    if source_type not in DEPENDENCY_ENTITY_TYPES or not source_id:
+        return jsonify({"error": "Quelle ist erforderlich"}), 400
+    label = fetch_entity_label(db, source_type, int(source_id))
+    if not label:
+        return jsonify({"error": "Quelle nicht gefunden"}), 404
+    depth_value = int(max_depth) if max_depth is not None and str(max_depth).isdigit() else None
+    impact, tickets, critical_tickets = analyze_dependency_impact(db, source_type, int(source_id), depth_value)
+    return jsonify({
+        "source": {
+            "type": source_type,
+            "id": int(source_id),
+            "label": label
+        },
+        "impact": impact,
+        "tickets": tickets,
+        "critical_tickets": critical_tickets,
+        "spof": calculate_spof_nodes(db)
+    })
+
+@app.route('/api/single-points', methods=['GET'])
+@login_required
+def single_points():
+    db = get_db()
+    if not (user_can('dependencies.view') or user_can('dependencies.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    return jsonify(calculate_spof_nodes(db))
 
 @app.route('/api/tickets', methods=['GET', 'POST'])
 @login_required
