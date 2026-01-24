@@ -89,6 +89,14 @@
                                     </span>
                                 </a>
                                 {% endif %}
+                                {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
+                                <a href="/knowledge" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="book-open" class="h-4 w-4 text-slate-400"></i>
+                                        Wissensbasis
+                                    </span>
+                                </a>
+                                {% endif %}
                                 {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
                                 <a href="/roadmap" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
                                     <span class="flex items-center gap-2">
