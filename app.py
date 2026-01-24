@@ -171,6 +171,18 @@ PERMISSIONS = [
         "group": "Tickets"
     },
     {
+        "key": "knowledge.view",
+        "label": "Wissensbasis anzeigen",
+        "description": "Wissensdatenbank durchsuchen und lesen.",
+        "group": "Wissensbasis"
+    },
+    {
+        "key": "knowledge.manage",
+        "label": "Wissensbasis verwalten",
+        "description": "Wissensartikel und Kategorien erstellen und pflegen.",
+        "group": "Wissensbasis"
+    },
+    {
         "key": "ticket_categories.manage",
         "label": "Ticket-Kategorien verwalten",
         "description": "Ticket-Kategorien erstellen und bearbeiten.",
@@ -317,6 +329,8 @@ DEFAULT_ROLES = [
             "tickets.comment",
             "tickets.comment_internal",
             "tickets.watch",
+            "knowledge.view",
+            "knowledge.manage",
             "ticket_categories.manage",
             "ticket_alerts.manage",
             "notifications.manage",
@@ -526,6 +540,7 @@ def get_post_login_redirect(access):
     landing_targets = [
         (("categories.view", "categories.manage"), "index"),
         (("tickets.view_all", "tickets.view_own", "tickets.create"), "tickets_page"),
+        (("knowledge.view", "knowledge.manage"), "knowledge_page"),
         (("stats.view",), "stats"),
         (("timemachine.view",), "time_machine_page"),
         (("users.manage",), "users_page"),
@@ -835,6 +850,52 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (ticket_id) REFERENCES tickets(id)
             )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS knowledge_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS knowledge_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                summary TEXT,
+                content TEXT,
+                category_id INTEGER,
+                related_ticket_id INTEGER,
+                created_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (category_id) REFERENCES knowledge_categories(id),
+                FOREIGN KEY (related_ticket_id) REFERENCES tickets(id)
+            )
+        ''')
+
+        for column, column_type in (
+            ("summary", "TEXT"),
+            ("content", "TEXT"),
+            ("category_id", "INTEGER"),
+            ("related_ticket_id", "INTEGER"),
+            ("created_by", "TEXT"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ):
+            try:
+                c.execute(f'ALTER TABLE knowledge_entries ADD COLUMN {column} {column_type}')
+            except sqlite3.OperationalError:
+                pass
+
+        c.execute('''
+            INSERT OR IGNORE INTO knowledge_categories (name, description)
+            VALUES
+                ('Problemlösungen', 'Dokumentierte Lösungen und Troubleshooting-Schritte.'),
+                ('Workflow', 'Abteilungs- und Prozessbeschreibungen.'),
+                ('Themen', 'Wissen zu wiederkehrenden Themen und Best Practices.')
         ''')
 
         c.execute('''
@@ -2265,6 +2326,13 @@ def locations_page():
 def tickets_page():
     access = get_user_access(get_db())
     return render_template('tickets.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
+@app.route('/knowledge')
+@login_required
+@require_permissions('knowledge.view', 'knowledge.manage')
+def knowledge_page():
+    access = get_user_access(get_db())
+    return render_template('knowledge.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/roadmap')
 @login_required
@@ -3870,6 +3938,205 @@ def delete_ticket_watcher(ticket_id, watcher_id):
     log_activity(db, "unwatch", "ticket", ticket_id, {"watcher_id": watcher_id})
     db.commit()
     return jsonify({"status": "deleted"}), 200
+
+def serialize_knowledge_entry(row):
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "summary": row["summary"],
+        "content": row["content"],
+        "category_id": row["category_id"],
+        "category_name": row["category_name"],
+        "related_ticket_id": row["related_ticket_id"],
+        "created_by": row["created_by"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+@app.route('/api/knowledge/categories', methods=['GET', 'POST'])
+@login_required
+def knowledge_categories():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('knowledge.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        db.execute('''
+            INSERT INTO knowledge_categories (name, description)
+            VALUES (?, ?)
+        ''', (name, description))
+        log_activity(db, "create", "knowledge_category", details={"name": name})
+        db.commit()
+        return jsonify({"status": "created"}), 201
+
+    if not user_can('knowledge.view') and not user_can('knowledge.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    categories = db.execute('''
+        SELECT id, name, description, created_at
+        FROM knowledge_categories
+        ORDER BY name
+    ''').fetchall()
+    return jsonify([dict(row) for row in categories])
+
+@app.route('/api/knowledge/categories/<int:category_id>', methods=['PUT', 'DELETE'])
+@login_required
+def knowledge_category_detail(category_id):
+    db = get_db()
+    if not user_can('knowledge.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        result = db.execute('''
+            UPDATE knowledge_categories
+            SET name = ?, description = ?
+            WHERE id = ?
+        ''', (name, description, category_id))
+        if result.rowcount == 0:
+            return jsonify({"error": "Kategorie nicht gefunden"}), 404
+        log_activity(db, "update", "knowledge_category", category_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    result = db.execute('DELETE FROM knowledge_categories WHERE id = ?', (category_id,))
+    if result.rowcount == 0:
+        return jsonify({"error": "Kategorie nicht gefunden"}), 404
+    log_activity(db, "delete", "knowledge_category", category_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/knowledge/entries', methods=['GET', 'POST'])
+@login_required
+def knowledge_entries():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('knowledge.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        title = (data.get('title') or '').strip()
+        summary = (data.get('summary') or '').strip()
+        content = (data.get('content') or '').strip()
+        category_id = data.get('category_id') or None
+        related_ticket_id = data.get('related_ticket_id') or None
+        if not title:
+            return jsonify({"error": "Titel ist erforderlich"}), 400
+        db.execute('''
+            INSERT INTO knowledge_entries (title, summary, content, category_id, related_ticket_id, created_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (title, summary, content, category_id, related_ticket_id, session.get('username')))
+        log_activity(db, "create", "knowledge_entry", details={"title": title})
+        db.commit()
+        return jsonify({"status": "created"}), 201
+
+    if not user_can('knowledge.view') and not user_can('knowledge.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    category_id = request.args.get('category_id')
+    search = (request.args.get('search') or '').strip().lower()
+    params = []
+    where_clauses = []
+    if category_id:
+        where_clauses.append("ke.category_id = ?")
+        params.append(category_id)
+    if search:
+        where_clauses.append("(lower(ke.title) LIKE ? OR lower(ke.summary) LIKE ? OR lower(ke.content) LIKE ?)")
+        like = f"%{search}%"
+        params.extend([like, like, like])
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    entries = db.execute(f'''
+        SELECT ke.id, ke.title, ke.summary, ke.content, ke.category_id, ke.related_ticket_id,
+               ke.created_by, ke.created_at, ke.updated_at, kc.name AS category_name
+        FROM knowledge_entries ke
+        LEFT JOIN knowledge_categories kc ON kc.id = ke.category_id
+        {where_sql}
+        ORDER BY ke.updated_at DESC, ke.created_at DESC
+    ''', params).fetchall()
+    return jsonify([serialize_knowledge_entry(row) for row in entries])
+
+@app.route('/api/knowledge/entries/<int:entry_id>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def knowledge_entry_detail(entry_id):
+    db = get_db()
+    if request.method == 'GET':
+        if not user_can('knowledge.view') and not user_can('knowledge.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        entry = db.execute('''
+            SELECT ke.id, ke.title, ke.summary, ke.content, ke.category_id, ke.related_ticket_id,
+                   ke.created_by, ke.created_at, ke.updated_at, kc.name AS category_name
+            FROM knowledge_entries ke
+            LEFT JOIN knowledge_categories kc ON kc.id = ke.category_id
+            WHERE ke.id = ?
+        ''', (entry_id,)).fetchone()
+        if not entry:
+            return jsonify({"error": "Eintrag nicht gefunden"}), 404
+        return jsonify(serialize_knowledge_entry(entry))
+
+    if not user_can('knowledge.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        title = (data.get('title') or '').strip()
+        summary = (data.get('summary') or '').strip()
+        content = (data.get('content') or '').strip()
+        category_id = data.get('category_id') or None
+        related_ticket_id = data.get('related_ticket_id') or None
+        if not title:
+            return jsonify({"error": "Titel ist erforderlich"}), 400
+        result = db.execute('''
+            UPDATE knowledge_entries
+            SET title = ?, summary = ?, content = ?, category_id = ?, related_ticket_id = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (title, summary, content, category_id, related_ticket_id, entry_id))
+        if result.rowcount == 0:
+            return jsonify({"error": "Eintrag nicht gefunden"}), 404
+        log_activity(db, "update", "knowledge_entry", entry_id, {"title": title})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    result = db.execute('DELETE FROM knowledge_entries WHERE id = ?', (entry_id,))
+    if result.rowcount == 0:
+        return jsonify({"error": "Eintrag nicht gefunden"}), 404
+    log_activity(db, "delete", "knowledge_entry", entry_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/knowledge/suggestions', methods=['GET'])
+@login_required
+def knowledge_suggestions():
+    db = get_db()
+    if not user_can('knowledge.view') and not user_can('knowledge.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    query = (request.args.get('query') or '').strip().lower()
+    ticket_id = request.args.get('ticket_id')
+    if not query and not ticket_id:
+        return jsonify([])
+    where_clauses = []
+    params = []
+    if query:
+        where_clauses.append("(lower(ke.title) LIKE ? OR lower(ke.summary) LIKE ? OR lower(ke.content) LIKE ?)")
+        like = f"%{query}%"
+        params.extend([like, like, like])
+    if ticket_id:
+        where_clauses.append("ke.related_ticket_id = ?")
+        params.append(ticket_id)
+    where_sql = "WHERE " + " OR ".join(where_clauses)
+    entries = db.execute(f'''
+        SELECT ke.id, ke.title, ke.summary, ke.content, ke.category_id, ke.related_ticket_id,
+               ke.created_by, ke.created_at, ke.updated_at, kc.name AS category_name
+        FROM knowledge_entries ke
+        LEFT JOIN knowledge_categories kc ON kc.id = ke.category_id
+        {where_sql}
+        ORDER BY ke.updated_at DESC, ke.created_at DESC
+        LIMIT 6
+    ''', params).fetchall()
+    return jsonify([serialize_knowledge_entry(row) for row in entries])
 
 @app.route('/api/ticket-alerts', methods=['GET', 'POST'])
 @login_required
