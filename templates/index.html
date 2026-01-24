@@ -439,12 +439,12 @@
                                 Filter ein-/ausblenden
                             </button>
                             <div x-show="filtersOpen" class="grid min-w-0 gap-3 rounded-2xl border border-slate-200 bg-white p-3" x-transition>
-                                <div>
+                                <div class="min-w-0">
                                     <label class="text-xs font-semibold text-slate-500">Owner enthält</label>
                                     <input type="text" x-model="ownerQuery" placeholder="z. B. Max Mustermann" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                 </div>
                                 <div class="grid min-w-0 gap-3 sm:grid-cols-2">
-                                    <div>
+                                    <div class="min-w-0">
                                         <label class="text-xs font-semibold text-slate-500">Kategorie</label>
                                         <select x-model="categoryFilter" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                             <option value="">Alle Kategorien</option>
@@ -453,7 +453,7 @@
                                             </template>
                                         </select>
                                     </div>
-                                    <div>
+                                    <div class="min-w-0">
                                         <label class="text-xs font-semibold text-slate-500">Standort</label>
                                         <select x-model="locationFilter" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                             <option value="">Alle Standorte</option>
@@ -464,16 +464,16 @@
                                     </div>
                                 </div>
                                 <div class="grid min-w-0 gap-3 sm:grid-cols-2">
-                                    <div>
+                                    <div class="min-w-0">
                                         <label class="text-xs font-semibold text-slate-500">Erstellt von</label>
                                         <input type="date" x-model="createdFrom" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                     </div>
-                                    <div>
+                                    <div class="min-w-0">
                                         <label class="text-xs font-semibold text-slate-500">Erstellt bis</label>
                                         <input type="date" x-model="createdTo" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                     </div>
                                 </div>
-                                <div>
+                                <div class="min-w-0">
                                     <label class="text-xs font-semibold text-slate-500">Spezifikationen enthalten</label>
                                     <input type="text" x-model="specQuery" placeholder="z. B. i7, 16GB, SSD" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                 </div>
