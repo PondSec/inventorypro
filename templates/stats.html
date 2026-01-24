@@ -43,71 +43,92 @@
                 </div>
                 </a>
             </div>
-            <nav class="p-4 space-y-3 sidebar-scroll sidebar-primary-links">
-                {% if 'categories.view' in permissions or 'categories.manage' in permissions %}
-                <a href="/" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
-                            <i data-feather="layers" class="w-4 h-4"></i>
+            <nav x-data="{ appsOpen: false }" class="p-4 space-y-4 sidebar-scroll sidebar-primary-links">
+                <div class="rounded-2xl border border-slate-200 bg-white/80 shadow-sm">
+                    <button @click="appsOpen = !appsOpen" class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+                        <span class="flex items-center gap-3">
+                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                <i data-feather="grid" class="h-4 w-4"></i>
+                            </span>
+                            <span>
+                                <span class="block text-sm font-semibold text-slate-800 sidebar-text">Apps</span>
+                                <span class="block text-xs text-slate-400 sidebar-text">Verwaltung & Services</span>
+                            </span>
                         </span>
-                        <span class="sidebar-text">Kategorien</span>
-                    </span>
-                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                </a>
-                {% endif %}
-                {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
-                <a href="/tickets" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-amber-50 text-amber-600 mr-3">
-                            <i data-feather="life-buoy" class="w-4 h-4"></i>
-                        </span>
-                        <span class="sidebar-text">Tickets</span>
-                    </span>
-                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                </a>
-                {% endif %}
-                {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
-                <a href="/roadmap" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 mr-3">
-                            <i data-feather="git-merge" class="w-4 h-4"></i>
-                        </span>
-                        <span class="sidebar-text">Roadmap</span>
-                    </span>
-                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                </a>
-                {% endif %}
-				<a href="/stats" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-indigo-100 bg-indigo-50 text-sm font-semibold text-indigo-700">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 mr-3">
-                            <i data-feather="bar-chart-2" class="w-4 h-4"></i>
-                        </span>
-                        <span class="sidebar-text">Statistiken</span>
-                    </span>
-                    <i data-feather="trending-up" class="w-4 h-4 text-indigo-400"></i>
-                </a>
-                {% if 'users.manage' in permissions %}
-                <a href="/users" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
-                            <i data-feather="users" class="w-4 h-4"></i>
-                        </span>
-                        <span class="sidebar-text">Benutzer</span>
-                    </span>
-                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                </a>
-                {% endif %}
-                {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
-                <a href="/locations" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
-                    <span class="flex items-center">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
-                            <i data-feather="map-pin" class="w-4 h-4"></i>
-                        </span>
-                        <span class="sidebar-text">Standorte</span>
-                    </span>
-                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
-                </a>
-                {% endif %}
+                        <svg :class="{ 'rotate-180': appsOpen }" class="h-4 w-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div x-show="appsOpen" x-transition class="bg-slate-50/80 px-3 py-3 space-y-4">
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Verwaltung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'categories.view' in permissions or 'categories.manage' in permissions %}
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="layers" class="h-4 w-4 text-slate-400"></i>
+                                        Kategorien
+                                    </span>
+                                </a>
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="package" class="h-4 w-4 text-slate-400"></i>
+                                        Assets
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'users.manage' in permissions %}
+                                <a href="/users" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="users" class="h-4 w-4 text-slate-400"></i>
+                                        Benutzer
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                                <a href="/locations" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="map-pin" class="h-4 w-4 text-slate-400"></i>
+                                        Standorte
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Services</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                                <a href="/tickets" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="life-buoy" class="h-4 w-4 text-slate-400"></i>
+                                        Ticketsystem
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                                <a href="/roadmap" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="git-merge" class="h-4 w-4 text-slate-400"></i>
+                                        Roadmap
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Auswertung</p>
+                            <div class="mt-2 space-y-1">
+                                <a href="/stats" class="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="bar-chart-2" class="h-4 w-4 text-indigo-500"></i>
+                                        Statistiken
+                                    </span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </nav>
         </aside>
 		
