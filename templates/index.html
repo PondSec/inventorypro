@@ -409,7 +409,7 @@
                 </section>
 
                 <section class="grid gap-4 lg:grid-cols-4">
-                    <div class="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm overflow-hidden">
+                    <div class="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm overflow-hidden lg:col-span-2 2xl:col-span-1">
                         <div class="flex items-center justify-between">
                             <div>
                                 <p class="text-sm font-semibold text-slate-900">Geräte durchsuchen</p>
@@ -443,7 +443,7 @@
                                     <label class="text-xs font-semibold text-slate-500">Owner enthält</label>
                                     <input type="text" x-model="ownerQuery" placeholder="z. B. Max Mustermann" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                 </div>
-                                <div class="grid min-w-0 gap-3 sm:grid-cols-2">
+                                <div class="grid min-w-0 gap-3 sm:grid-cols-1 2xl:grid-cols-2">
                                     <div class="min-w-0">
                                         <label class="text-xs font-semibold text-slate-500">Kategorie</label>
                                         <select x-model="categoryFilter" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
@@ -463,7 +463,7 @@
                                         </select>
                                     </div>
                                 </div>
-                                <div class="grid min-w-0 gap-3 sm:grid-cols-2">
+                                <div class="grid min-w-0 gap-3 sm:grid-cols-1 2xl:grid-cols-2">
                                     <div class="min-w-0">
                                         <label class="text-xs font-semibold text-slate-500">Erstellt von</label>
                                         <input type="date" x-model="createdFrom" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
