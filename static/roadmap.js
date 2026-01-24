@@ -97,7 +97,14 @@ document.addEventListener('alpine:init', () => {
         async selectRoadmap(roadmap) {
             const response = await fetch(`/api/roadmaps/${roadmap.id}`);
             if (response.ok) {
-                this.selectedRoadmap = await response.json();
+                const roadmapData = await response.json();
+                if (Array.isArray(roadmapData.steps)) {
+                    roadmapData.steps = roadmapData.steps.map((step) => ({
+                        ...step,
+                        ui_status: step.status
+                    }));
+                }
+                this.selectedRoadmap = roadmapData;
                 this.stepFormOpen = false;
             }
             this.$nextTick(() => feather.replace());
@@ -160,7 +167,7 @@ document.addEventListener('alpine:init', () => {
             const payload = {
                 title: step.title,
                 description: step.description,
-                status: step.status,
+                status: step.ui_status || step.status,
                 owner: step.owner,
                 due_date: step.due_date,
                 position: step.position
