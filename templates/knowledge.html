@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="de" x-data="knowledgeApp()" x-init="init()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - Wissensbasis</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>
+        window.inventoryPermissions = {{ permissions | tojson }};
+        window.inventoryIsSuperuser = {{ is_superuser | tojson }};
+    </script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app-body">
+    <div class="app-shell">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
+                <a href="/" class="flex items-center gap-3">
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg">
+                        <i data-feather="cpu" class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <p class="text-lg font-semibold text-slate-900 sidebar-text">Inventory Pro</p>
+                        <p class="text-xs text-slate-500 sidebar-text">Smart Asset Hub</p>
+                    </div>
+                </a>
+            </div>
+            <nav x-data="{ appsOpen: true }" class="p-4 space-y-4 sidebar-scroll sidebar-primary-links">
+                <div class="rounded-2xl border border-slate-200 bg-white/80 shadow-sm">
+                    <button @click="appsOpen = !appsOpen" class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+                        <span class="flex items-center gap-3">
+                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                <i data-feather="grid" class="h-4 w-4"></i>
+                            </span>
+                            <span>
+                                <span class="block text-sm font-semibold text-slate-800 sidebar-text">Apps</span>
+                                <span class="block text-xs text-slate-400 sidebar-text">Verwaltung & Services</span>
+                            </span>
+                        </span>
+                        <svg :class="{ 'rotate-180': appsOpen }" class="h-4 w-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div x-show="appsOpen" x-transition class="bg-slate-50/80 px-3 py-3 space-y-4">
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Verwaltung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'categories.view' in permissions or 'categories.manage' in permissions %}
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="layers" class="h-4 w-4 text-slate-400"></i>
+                                        Kategorien
+                                    </span>
+                                </a>
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="package" class="h-4 w-4 text-slate-400"></i>
+                                        Assets
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'users.manage' in permissions %}
+                                <a href="/users" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="users" class="h-4 w-4 text-slate-400"></i>
+                                        Benutzer
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                                <a href="/locations" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="map-pin" class="h-4 w-4 text-slate-400"></i>
+                                        Standorte
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Services</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                                <a href="/tickets" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="life-buoy" class="h-4 w-4 text-slate-400"></i>
+                                        Ticketsystem
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
+                                <a href="/knowledge" class="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm font-semibold text-emerald-700 shadow-sm">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="book-open" class="h-4 w-4 text-emerald-500"></i>
+                                        Wissensbasis
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                                <a href="/roadmap" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="git-merge" class="h-4 w-4 text-slate-400"></i>
+                                        Roadmap
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions %}
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Auswertung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'stats.view' in permissions %}
+                                <a href="/stats" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="bar-chart-2" class="h-4 w-4 text-slate-400"></i>
+                                        Statistiken
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                                <a href="/dependencies" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="share-2" class="h-4 w-4 text-slate-400"></i>
+                                        Dependency-Graph
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'timemachine.view' in permissions %}
+                                <a href="/time-machine" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="clock" class="h-4 w-4 text-slate-400"></i>
+                                        Zeitmaschine
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </nav>
+        </aside>
+
+        <div class="app-main app-main--fixed">
+            <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
+                <div class="flex items-center gap-4">
+                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                        <i data-feather="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Knowledge Hub</p>
+                        <h1 class="text-2xl font-semibold text-slate-900">Wissensbasis</h1>
+                    </div>
+                </div>
+                <div class="flex items-center justify-end gap-2 sm:gap-3">
+                    <span class="hidden text-sm text-slate-500 sm:inline">Angemeldet als {{ username }}</span>
+                    <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <span data-theme-icon aria-hidden="true">🌙</span>
+                        <span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
+                    </button>
+                    <button onclick="logout()" class="inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <i data-feather="log-out" class="w-4 h-4"></i>
+                        <span class="sr-only sm:not-sr-only">Abmelden</span>
+                    </button>
+                </div>
+            </header>
+
+            <main class="app-content flex-1 overflow-auto p-8 pt-24 space-y-8 scrollbar-hide">
+                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Knowledge Hub</p>
+                            <h2 class="text-2xl font-semibold text-slate-900">Wissensbasis</h2>
+                            <p class="mt-1 text-sm text-slate-500">Antworten schnell finden und direkt mit Tickets verknüpfen.</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">Kategorien</p>
+                                <p class="text-2xl font-semibold text-slate-900" x-text="categories.length"></p>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">Einträge</p>
+                                <p class="text-2xl font-semibold text-slate-900" x-text="entries.length"></p>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">Aktuell</p>
+                                <p class="text-2xl font-semibold text-slate-900" x-text="selectedEntry ? '1' : '0'"></p>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">Neue Ideen</p>
+                                <p class="text-2xl font-semibold text-slate-900" x-text="entries.filter(entry => entry.summary).length"></p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <div class="relative flex-1 min-w-[220px]">
+                            <label class="text-xs uppercase text-slate-400">Suche</label>
+                            <input type="text" x-model.debounce.300ms="searchQuery" @input="loadEntries" placeholder="Artikel durchsuchen..." class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:ring-emerald-500">
+                            <span class="absolute right-4 top-9 text-slate-400">
+                                <i data-feather="search" class="h-4 w-4"></i>
+                            </span>
+                        </div>
+                        <button x-show="can('knowledge.manage')" @click="openEntryModal()" class="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700">
+                            Neuer Artikel
+                        </button>
+                    </div>
+                </section>
+
+                <section class="grid gap-6 xl:grid-cols-[0.8fr_1fr_1.2fr]">
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs uppercase text-slate-400">Kategorien</p>
+                                <h3 class="text-lg font-semibold text-slate-900">Wissensbereiche</h3>
+                            </div>
+                            <button x-show="can('knowledge.manage')" @click="openCategoryModal()" class="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                Neue Kategorie
+                            </button>
+                        </div>
+                        <div class="space-y-2">
+                            <button @click="setCategoryFilter('')" :class="selectedCategoryId === '' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-white text-slate-600 border-slate-200'" class="flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-sm font-medium">
+                                <span class="flex items-center gap-2">
+                                    <i data-feather="grid" class="h-4 w-4"></i>
+                                    Alle Kategorien
+                                </span>
+                                <span class="text-xs text-slate-400" x-text="entries.length"></span>
+                            </button>
+                            <template x-for="category in categories" :key="category.id">
+                                <button @click="setCategoryFilter(category.id)" :class="selectedCategoryId === category.id ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-white text-slate-600 border-slate-200'" class="flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-sm font-medium">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="folder" class="h-4 w-4"></i>
+                                        <span x-text="category.name"></span>
+                                    </span>
+                                    <span class="text-xs text-slate-400" x-text="category.description ? 'Info' : ''"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-xs uppercase text-slate-400">Einträge</p>
+                                <h3 class="text-lg font-semibold text-slate-900">Wissensartikel</h3>
+                            </div>
+                            <button x-show="can('knowledge.manage')" @click="openEntryModal()" class="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                Neuer Artikel
+                            </button>
+                        </div>
+                        <div class="space-y-3 max-h-[520px] overflow-auto pr-2">
+                            <template x-for="entry in entries" :key="entry.id">
+                                <button @click="selectEntry(entry)" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:bg-white transition-colors">
+                                    <div class="flex items-center justify-between">
+                                        <p class="text-sm font-semibold text-slate-800" x-text="entry.title"></p>
+                                        <span class="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] text-slate-600" x-text="entry.category_name || 'Ohne Kategorie'"></span>
+                                    </div>
+                                    <p class="mt-1 text-xs text-slate-500 line-clamp-2" x-text="entry.summary || entry.content || 'Keine Beschreibung hinterlegt.'"></p>
+                                    <p class="mt-2 text-[11px] text-slate-400" x-text="entry.updated_at || entry.created_at"></p>
+                                </button>
+                            </template>
+                            <p x-show="entries.length === 0" class="text-xs text-slate-400">Noch keine Wissenseinträge vorhanden.</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-6">
+                        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" x-show="selectedEntry">
+                            <template x-if="selectedEntry">
+                                <div class="space-y-4">
+                                    <div class="flex items-start justify-between gap-4">
+                                        <div>
+                                            <p class="text-xs uppercase text-slate-400">Detailansicht</p>
+                                            <h3 class="text-2xl font-semibold text-slate-900" x-text="selectedEntry.title"></h3>
+                                            <p class="text-sm text-slate-500" x-text="selectedEntry.summary || 'Keine Kurzbeschreibung.'"></p>
+                                        </div>
+                                        <div class="flex items-center gap-2" x-data="{ open: false }">
+                                            <button x-show="can('knowledge.manage')" @click="openEntryModal(selectedEntry)" class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                                                Bearbeiten
+                                            </button>
+                                            <button @click="open = !open" class="inline-flex items-center justify-center rounded-full border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-100" aria-label="Weitere Aktionen">
+                                                <i data-feather="more-vertical" class="h-4 w-4"></i>
+                                            </button>
+                                            <div x-show="open" @click.away="open = false" class="absolute right-4 z-20 mt-20 w-40 rounded-2xl border border-slate-200 bg-white shadow-xl" x-transition>
+                                                <button x-show="can('knowledge.manage')" @click="deleteEntry(selectedEntry); open=false" class="block w-full px-4 py-2 text-left text-sm text-rose-600 hover:bg-rose-50">Löschen</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="grid gap-3 text-xs text-slate-500 sm:grid-cols-2">
+                                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                            <p class="text-[11px] uppercase text-slate-400">Kategorie</p>
+                                            <p class="text-sm font-semibold text-slate-700" x-text="selectedEntry.category_name || 'Nicht zugeordnet'"></p>
+                                        </div>
+                                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                            <p class="text-[11px] uppercase text-slate-400">Verknüpftes Ticket</p>
+                                            <p class="text-sm font-semibold text-slate-700" x-text="selectedEntry.related_ticket_id ? `#${selectedEntry.related_ticket_id}` : 'Keins'"></p>
+                                        </div>
+                                    </div>
+                                    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700 whitespace-pre-line" x-text="selectedEntry.content || 'Noch kein ausführlicher Inhalt hinterlegt.'"></div>
+                                    <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                                        <span x-text="`Erstellt von ${selectedEntry.created_by || 'Unbekannt'}`"></span>
+                                        <span x-text="`Erstellt: ${selectedEntry.created_at || '-'}`"></span>
+                                        <span x-text="`Aktualisiert: ${selectedEntry.updated_at || '-'}`"></span>
+                                    </div>
+                                    <div x-show="selectedEntry.related_ticket_id" class="flex items-center gap-2">
+                                        <a :href="`/tickets?ticket_id=${selectedEntry.related_ticket_id}`" class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                            Ticket öffnen
+                                        </a>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <div class="rounded-3xl border border-dashed border-slate-200 bg-white/60 p-10 text-center text-slate-400" x-show="!selectedEntry">
+                            <p class="text-sm font-semibold text-slate-600">Wähle einen Artikel aus.</p>
+                            <p class="mt-2 text-xs">Hier erscheint die Detailansicht mit Lösungsschritten, Workflows oder Themenwissen.</p>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div x-show="entryModalOpen" x-transition class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div @click.away="closeEntryModal" class="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-xl">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs uppercase text-slate-400" x-text="entryForm.id ? 'Eintrag bearbeiten' : 'Neuer Eintrag'"></p>
+                    <h3 class="text-lg font-semibold text-slate-900">Wissensartikel</h3>
+                </div>
+                <button @click="closeEntryModal" class="text-slate-400 hover:text-slate-700">
+                    <i data-feather="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="mt-4 grid gap-4">
+                <div>
+                    <label class="text-xs uppercase text-slate-400">Titel</label>
+                    <input type="text" x-model="entryForm.title" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-slate-400">Kurzbeschreibung</label>
+                    <textarea rows="2" x-model="entryForm.summary" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-slate-400">Kategorie</label>
+                    <select x-model="entryForm.category_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                        <option value="">Ohne Kategorie</option>
+                        <template x-for="category in categories" :key="category.id">
+                            <option :value="category.id" x-text="category.name"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-slate-400">Verknüpftes Ticket (optional)</label>
+                    <input type="number" min="1" x-model="entryForm.related_ticket_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-slate-400">Inhalt / Lösung</label>
+                    <textarea rows="6" x-model="entryForm.content" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
+                </div>
+                <p x-show="entryError" class="text-sm text-rose-500" x-text="entryError"></p>
+            </div>
+            <div class="mt-6 flex flex-wrap justify-end gap-3">
+                <button @click="closeEntryModal" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600">Abbrechen</button>
+                <button @click="saveEntry" class="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white">Speichern</button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="categoryModalOpen" x-transition class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div @click.away="closeCategoryModal" class="w-full max-w-lg rounded-3xl bg-white p-6 shadow-xl">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs uppercase text-slate-400" x-text="categoryForm.id ? 'Kategorie bearbeiten' : 'Neue Kategorie'"></p>
+                    <h3 class="text-lg font-semibold text-slate-900">Kategorie</h3>
+                </div>
+                <button @click="closeCategoryModal" class="text-slate-400 hover:text-slate-700">
+                    <i data-feather="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="mt-4 grid gap-4">
+                <div>
+                    <label class="text-xs uppercase text-slate-400">Name</label>
+                    <input type="text" x-model="categoryForm.name" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-slate-400">Beschreibung</label>
+                    <textarea rows="3" x-model="categoryForm.description" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
+                </div>
+                <p x-show="categoryError" class="text-sm text-rose-500" x-text="categoryError"></p>
+            </div>
+            <div class="mt-6 flex flex-wrap justify-end gap-3">
+                <button @click="closeCategoryModal" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600">Abbrechen</button>
+                <button @click="saveCategory" class="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white">Speichern</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script>
+        async function logout() {
+            try {
+                const response = await fetch('/logout', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (response.ok) {
+                    window.location.href = '/login';
+                } else {
+                    const data = await response.json();
+                    alert('Logout failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Network error: ' + error.message);
+            }
+        }
+    </script>
+    <script src="/static/knowledge.js"></script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
+</body>
+</html>
