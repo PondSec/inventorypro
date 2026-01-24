@@ -1,12 +1,16 @@
 <!DOCTYPE html>
-<html lang="de" x-data="inventoryStats()">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Pro - Statistiken</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="/static/style.css">
     <style>
         .stat-card:hover {
             transform: translateY(-4px);
@@ -16,14 +20,16 @@
             height: 6px;
             border-radius: 999px;
         }
+        .glass-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.65));
+            backdrop-filter: blur(12px);
+        }
     </style>
 </head>
-<body class="bg-slate-950/5 text-slate-900">
-    <div class="flex h-screen">
-	
-	
+<body class="app-body bg-slate-950/5 text-slate-900">
+    <div class="app-shell">
         <!-- Sidebar -->
-        <div class="w-[280px] bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
             <div class="sidebar-header p-6 border-b border-slate-200">
                 <a href="https://inv.pondsec.com">
                 <div class="logo flex items-center space-x-3">
@@ -31,48 +37,92 @@
                         <i data-feather="cpu" class="w-5 h-5"></i>
                     </span>
                     <div>
-                        <p class="text-lg font-semibold text-slate-900">Inventory Pro</p>
-                        <p class="text-xs text-slate-500">Smart Asset Hub</p>
+                        <p class="text-lg font-semibold text-slate-900 sidebar-text">Inventory Pro</p>
+                        <p class="text-xs text-slate-500 sidebar-text">Smart Asset Hub</p>
                     </div>
                 </div>
                 </a>
             </div>
-            <nav class="p-4 space-y-3">
+            <nav class="p-4 space-y-3 sidebar-scroll sidebar-primary-links">
+                {% if 'categories.view' in permissions or 'categories.manage' in permissions %}
                 <a href="/" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
                     <span class="flex items-center">
                         <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
                             <i data-feather="layers" class="w-4 h-4"></i>
                         </span>
-                        Kategorien
+                        <span class="sidebar-text">Kategorien</span>
                     </span>
                     <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
                 </a>
+                {% endif %}
+                {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                <a href="/tickets" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
+                    <span class="flex items-center">
+                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-amber-50 text-amber-600 mr-3">
+                            <i data-feather="life-buoy" class="w-4 h-4"></i>
+                        </span>
+                        <span class="sidebar-text">Tickets</span>
+                    </span>
+                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
+                </a>
+                {% endif %}
 				<a href="/stats" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-indigo-100 bg-indigo-50 text-sm font-semibold text-indigo-700">
                     <span class="flex items-center">
                         <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 mr-3">
                             <i data-feather="bar-chart-2" class="w-4 h-4"></i>
                         </span>
-                        Statistiken
+                        <span class="sidebar-text">Statistiken</span>
                     </span>
                     <i data-feather="trending-up" class="w-4 h-4 text-indigo-400"></i>
                 </a>
+                {% if 'users.manage' in permissions %}
+                <a href="/users" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
+                    <span class="flex items-center">
+                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
+                            <i data-feather="users" class="w-4 h-4"></i>
+                        </span>
+                        <span class="sidebar-text">Benutzer</span>
+                    </span>
+                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
+                </a>
+                {% endif %}
+                {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                <a href="/locations" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
+                    <span class="flex items-center">
+                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
+                            <i data-feather="map-pin" class="w-4 h-4"></i>
+                        </span>
+                        <span class="sidebar-text">Standorte</span>
+                    </span>
+                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
+                </a>
+                {% endif %}
             </nav>
-        </div>
+        </aside>
 		
-		<header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 left-[280px] z-30 h-[82px]" style="width: calc(100% - 280px);">
+        <div class="app-main app-main--fixed">
+		<header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
 			<!-- Linke Seite: Titel -->
-			<div>
-                <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Analytics</p>
-			    <h1 class="text-2xl font-semibold text-slate-900">Bestandsstatistiken</h1>
+            <div class="flex items-center gap-4">
+                <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                    <i data-feather="menu" class="w-4 h-4"></i>
+                </button>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Analytics</p>
+                    <h1 class="text-2xl font-semibold text-slate-900">Bestandsstatistiken</h1>
+                </div>
             </div>
 
 			<!-- Rechte Seite: Button-Gruppe -->
-			<div class="flex items-center space-x-4">
-
+			<div class="flex items-center gap-2 sm:gap-3">
+			  <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+				<span data-theme-icon aria-hidden="true">🌙</span>
+				<span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
+			  </button>
 			  <!-- Logout Button -->
-			  <button onclick="logout()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+			  <button onclick="logout()" class="inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
 				<i data-feather="log-out" class="w-4 h-4"></i>
-				Abmelden
+				<span class="sr-only sm:not-sr-only">Abmelden</span>
 			  </button>
 			</div>
 
@@ -100,7 +150,7 @@
 		</header>
 		
         <!-- Main Content -->
-        <div class="flex-1 overflow-auto p-8 pt-24 space-y-8">
+        <div class="flex-1 overflow-auto p-8 pt-24 space-y-8 scrollbar-hide">
             <section class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-8 py-10 text-white shadow-2xl shadow-slate-300/50">
                 <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                     <div>
@@ -123,13 +173,14 @@
                 </div>
             </section>
 
-            <!-- Statistik-Karten -->
+            <!-- KPI Überblick -->
 			<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 				<div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
                     <div class="flex items-center justify-between">
                         <div>
                             <h3 class="text-sm font-semibold text-slate-500">Gesamtgeräte</h3>
                             <p class="mt-2 text-3xl font-semibold text-slate-900">{{ total_devices }}</p>
+                            <p class="text-xs text-slate-500">{{ devices_recent_30 }} neu in 30 Tagen</p>
                         </div>
                         <span class="inline-flex items-center justify-center rounded-2xl bg-blue-50 p-3 text-blue-600">
                             <i data-feather="box" class="h-5 w-5"></i>
@@ -142,6 +193,7 @@
                         <div>
                             <h3 class="text-sm font-semibold text-slate-500">Kategorien</h3>
                             <p class="mt-2 text-3xl font-semibold text-slate-900">{{ total_categories }}</p>
+                            <p class="text-xs text-slate-500">{{ total_locations }} Standorte aktiv</p>
                         </div>
                         <span class="inline-flex items-center justify-center rounded-2xl bg-indigo-50 p-3 text-indigo-600">
                             <i data-feather="layers" class="h-5 w-5"></i>
@@ -152,11 +204,12 @@
 				<div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
                     <div class="flex items-center justify-between">
                         <div>
-                            <h3 class="text-sm font-semibold text-slate-500">Verwendet</h3>
-                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ status_data['Verwendet'] }}</p>
+                            <h3 class="text-sm font-semibold text-slate-500">Wartung offen</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ open_maintenance }}</p>
+                            <p class="text-xs text-slate-500">{{ overdue_maintenance }} überfällig</p>
                         </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-emerald-50 p-3 text-emerald-600">
-                            <i data-feather="check-circle" class="h-5 w-5"></i>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-rose-50 p-3 text-rose-600">
+                            <i data-feather="tool" class="h-5 w-5"></i>
                         </span>
                     </div>
 				</div>
@@ -164,62 +217,208 @@
 				<div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
                     <div class="flex items-center justify-between">
                         <div>
-                            <h3 class="text-sm font-semibold text-slate-500">Lager</h3>
-                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ status_data['Lager'] }}</p>
+                            <h3 class="text-sm font-semibold text-slate-500">Letzte 7 Tage</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ devices_recent_7 }}</p>
+                            <p class="text-xs text-slate-500">Neue Geräte</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-emerald-50 p-3 text-emerald-600">
+                            <i data-feather="trending-up" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+
+                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Gerätestatus</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ status_data['Verwendet'] }}</p>
+                            <p class="text-xs text-slate-500">{{ status_data['Lager'] }} im Lager</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-emerald-50 p-3 text-emerald-600">
+                            <i data-feather="check-circle" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+
+                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Dokumentation</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ tag_coverage }}%</p>
+                            <p class="text-xs text-slate-500">{{ note_coverage }}% mit Notizen</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-sky-50 p-3 text-sky-600">
+                            <i data-feather="file-text" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+
+                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Wartung gesamt</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ total_maintenance }}</p>
+                            <p class="text-xs text-slate-500">{{ done_maintenance }} erledigt</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-purple-50 p-3 text-purple-600">
+                            <i data-feather="clipboard" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+
+                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Fällige Wartung</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ due_soon_maintenance }}</p>
+                            <p class="text-xs text-slate-500">Nächste 7 Tage</p>
                         </div>
                         <span class="inline-flex items-center justify-center rounded-2xl bg-amber-50 p-3 text-amber-600">
-                            <i data-feather="archive" class="h-5 w-5"></i>
+                            <i data-feather="calendar" class="h-5 w-5"></i>
                         </span>
                     </div>
 				</div>
 			</div>
 
-			<!-- Kategorieverteilung Chart -->
-			<div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-				<div class="flex items-center justify-between mb-4">
-                    <div>
-                        <h2 class="text-xl font-semibold text-slate-900">Verteilung nach Kategorien</h2>
-                        <p class="text-sm text-slate-500">Welche Bereiche aktuell dominieren.</p>
-                    </div>
-                    <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                        <i data-feather="pie-chart" class="h-4 w-4"></i>
-                    </span>
-                </div>
-				<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-					{% for category in categories %}
-					<div class="flex items-center rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-						<div class="w-3 h-3 rounded-full mr-3" 
-							 style="background-color: {{ loop.cycle('#3B82F6', '#10B981', '#6366F1', '#F59E0B') }}"></div>
-						<span class="text-sm text-slate-700">{{ category['name'] }}</span>
-						<span class="ml-auto text-sm font-semibold text-slate-900">{{ category['device_count'] }}</span>
-					</div>
-					{% endfor %}
-				</div>
-			</div>
-			
-			<!-- Charts Section -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- Kategorieverteilung -->
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex justify-between items-center mb-4">
+                <div class="glass-card p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Gerätezugang (6 Monate)</h2>
+                            <p class="text-sm text-slate-500">Neu angelegte Geräte im Zeitverlauf.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="activity" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <canvas id="growthChart" height="280"></canvas>
+                </div>
+
+                <div class="glass-card p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
                         <div>
                             <h2 class="text-xl font-semibold text-slate-900">Verteilung nach Kategorien</h2>
-                            <p class="text-sm text-slate-500">Auswertung nach Zeitraum filtern.</p>
+                            <p class="text-sm text-slate-500">Welche Bereiche aktuell dominieren.</p>
                         </div>
-                        <select x-model="chartTimeRange" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                            <option value="all">Alle</option>
-                            <option value="month">Letzter Monat</option>
-                            <option value="week">Letzte Woche</option>
-                        </select>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="pie-chart" class="h-4 w-4"></i>
+                        </span>
                     </div>
-                    <canvas id="categoryChart" height="300"></canvas>
+                    <canvas id="categoryChart" height="280"></canvas>
                 </div>
-                
-                <!-- Statusverteilung -->
+
                 <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <h2 class="text-xl font-semibold text-slate-900 mb-2">Gerätestatus</h2>
-                    <p class="text-sm text-slate-500 mb-4">Live-Überblick über den Status deiner Geräte.</p>
-                    <canvas id="statusChart" height="300"></canvas>
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Gerätestatus</h2>
+                            <p class="text-sm text-slate-500">Aktueller Status aller Geräte.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="check-square" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <canvas id="statusChart" height="280"></canvas>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Standorte</h2>
+                            <p class="text-sm text-slate-500">Verteilung der Geräte nach Standort.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="map-pin" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <canvas id="locationChart" height="280"></canvas>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Gerätealter</h2>
+                            <p class="text-sm text-slate-500">Wie lange Geräte schon im Bestand sind.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="clock" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <canvas id="ageChart" height="280"></canvas>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Standortlücken</h2>
+                            <p class="text-sm text-slate-500">Geräte ohne Standortzuordnung.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="alert-circle" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div class="rounded-2xl bg-rose-50 px-4 py-3">
+                            <p class="text-xs uppercase tracking-widest text-rose-400">Ohne Standort</p>
+                            <p class="mt-2 text-3xl font-semibold text-rose-600">{{ unknown_location_count }}</p>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex items-center justify-between text-xs text-slate-500">
+                                <span>Abdeckung</span>
+                                <span>{{ (100 - (unknown_location_count * 100 // (total_devices or 1))) }}%</span>
+                            </div>
+                            <div class="mt-2 h-2 rounded-full bg-slate-100">
+                                <div class="h-2 rounded-full bg-rose-400" style="width: {{ (unknown_location_count * 100 // (total_devices or 1)) }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Top Kategorien</h2>
+                            <p class="text-sm text-slate-500">Kategorien mit dem größten Bestand.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="award" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for category in top_categories %}
+                        <div class="flex items-center rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <span class="text-sm font-semibold text-slate-700">{{ category['name'] }}</span>
+                            <span class="ml-auto text-sm font-semibold text-slate-900">{{ category['device_count'] }}</span>
+                        </div>
+                        {% endfor %}
+                        {% if top_categories|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Kategorien vorhanden.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Aktivität (7 Tage)</h2>
+                            <p class="text-sm text-slate-500">Meistgenutzte Aktionen im System.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="zap" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for item in activity_summary %}
+                        <div class="flex items-center rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <span class="text-sm font-semibold text-slate-700">{{ item['action'] }}</span>
+                            <span class="ml-auto text-sm font-semibold text-slate-900">{{ item['total'] }}</span>
+                        </div>
+                        {% endfor %}
+                        {% if activity_summary|length == 0 %}
+                        <p class="text-sm text-slate-500">Keine Aktivitäten in den letzten 7 Tagen.</p>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
 
@@ -234,7 +433,7 @@
                         <i data-feather="clock" class="h-4 w-4"></i>
                     </span>
                 </div>
-				<div class="overflow-x-auto">
+				<div class="overflow-x-auto scrollbar-hide">
                     <table class="min-w-full text-sm">
                         <thead class="text-left text-slate-500">
                             <tr class="border-b border-slate-200">
@@ -258,304 +457,117 @@
                 </div>
 			</div>
         </div>
+        </div>
     </div>
 
     <script>
-        document.addEventListener('alpine:init', () => {
-            Alpine.data('inventoryStats', () => ({
-                // Daten aus dem Haupt-App-State
-                categories: [],
-                devices: [],
-                filteredDevices: [],
-                recentDevices: [],
-                chartTimeRange: 'all',
-                
-                // Statistikwerte
-                totalDevices: 0,
-                activePercentage: 0,
-                topCategory: '',
-                avgSpecs: 0,
-                mostCommonSpec: '',
-                newestDevice: '',
-                newestDeviceCategory: '',
-                
-                // Initialisierung
-                async init() {
-                    await this.loadData();
-                    this.calculateStats();
-                    this.initCharts();
-                    feather.replace();
-                    
-                    // Aktualisiere Daten alle 30 Sekunden
-                    setInterval(async () => {
-                        await this.loadData();
-                        this.calculateStats();
-                        this.updateCharts();
-                    }, 30000);
+        document.addEventListener('DOMContentLoaded', function() {
+            const statsData = {
+                categories: {{ categories|tojson|default([]) }},
+                statusData: {{ status_data|tojson|default({}) }},
+                locations: {{ locations|tojson|default([]) }},
+                unknownLocationCount: {{ unknown_location_count|default(0) }},
+                devicesByMonth: {{ devices_by_month|tojson|default([]) }},
+                ageBuckets: {{ age_buckets|tojson|default({}) }}
+            };
+
+            const palette = [
+                '#3B82F6', '#10B981', '#6366F1', '#F59E0B',
+                '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6',
+                '#0EA5E9', '#22C55E'
+            ];
+
+            new Chart(document.getElementById('growthChart'), {
+                type: 'line',
+                data: {
+                    labels: statsData.devicesByMonth.map(item => item.month),
+                    datasets: [{
+                        label: 'Neue Geräte',
+                        data: statsData.devicesByMonth.map(item => item.count),
+                        borderColor: '#6366F1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.2)',
+                        tension: 0.35,
+                        fill: true
+                    }]
                 },
-                
-                // Daten laden
-                async loadData() {
-                    const [catRes, devRes] = await Promise.all([
-                        fetch('/api/categories'),
-                        fetch('/api/devices')
-                    ]);
-                    
-                    this.categories = await catRes.json();
-                    this.devices = await devRes.json();
-                    this.filteredDevices = [...this.devices];
-                    this.recentDevices = [...this.devices]
-                        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-                        .slice(0, 5);
-                },
-                
-                // Statistiken berechnen
-                calculateStats() {
-                    this.totalDevices = this.devices.length;
-                    
-                    // Aktive Geräte berechnen
-                    const activeCount = this.devices.filter(d => 
-                        (d.specs && JSON.parse(d.specs).status === 'Verwendet') || 
-                        !d.specs
-                    ).length;
-                    this.activePercentage = Math.round((activeCount / this.totalDevices) * 100);
-                    
-                    // Top Kategorie finden
-                    const categoryCounts = {};
-                    this.devices.forEach(device => {
-                        const catName = this.categories.find(c => c.id === device.category_id)?.name || 'Unknown';
-                        categoryCounts[catName] = (categoryCounts[catName] || 0) + 1;
-                    });
-                    this.topCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
-                    
-                    // Durchschnittliche Specs
-                    const specCounts = {};
-                    this.devices.forEach(device => {
-                        if (device.specs) {
-                            const specs = JSON.parse(device.specs);
-                            Object.entries(specs).forEach(([key, val]) => {
-                                if (key !== 'status') {
-                                    const specKey = `${key}:${val}`;
-                                    specCounts[specKey] = (specCounts[specKey] || 0) + 1;
-                                }
-                            });
-                        }
-                    });
-                    this.avgSpecs = Object.keys(specCounts).length > 0 
-                        ? (Object.values(specCounts).reduce((a, b) => a + b, 0) / Object.keys(specCounts).length
-                        : 0;
-                    this.mostCommonSpec = Object.entries(specCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
-                    
-                    // Neuestes Gerät
-                    const newest = [...this.devices].sort((a, b) => 
-                        new Date(b.created_at) - new Date(a.created_at))[0];
-                    if (newest) {
-                        this.newestDevice = newest.name;
-                        this.newestDeviceCategory = this.categories.find(c => c.id === newest.category_id)?.name || 'Unknown';
+                options: {
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: { beginAtZero: true }
                     }
-                },
-                
-                // Charts initialisieren
-                initCharts() {
-                    // Kategorie-Chart
-                    this.categoryChart = new Chart(
-                        document.getElementById('categoryChart'),
-                        this.getCategoryChartConfig()
-                    );
-                    
-                    // Status-Chart
-                    this.statusChart = new Chart(
-                        document.getElementById('statusChart'),
-                        this.getStatusChartConfig()
-                    );
-                },
-                
-                // Charts aktualisieren
-                updateCharts() {
-                    this.categoryChart.data = this.getCategoryChartData();
-                    this.statusChart.data = this.getStatusChartData();
-                    this.categoryChart.update();
-                    this.statusChart.update();
-                },
-                
-                // Kategorie-Chart Konfiguration
-                getCategoryChartConfig() {
-                    return {
-                        type: 'doughnut',
-                        data: this.getCategoryChartData(),
-                        options: {
-                            responsive: true,
-                            plugins: {
-                                legend: {
-                                    position: 'right',
-                                },
-                                tooltip: {
-                                    callbacks: {
-                                        label: function(context) {
-                                            return `${context.label}: ${context.raw} (${context.parsed}%)`;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    };
-                },
-                
-                getCategoryChartData() {
-                    const categoryCounts = {};
-                    this.categories.forEach(cat => {
-                        categoryCounts[cat.name] = this.devices.filter(d => d.category_id === cat.id).length;
-                    });
-                    
-                    return {
-                        labels: Object.keys(categoryCounts),
-                        datasets: [{
-                            data: Object.values(categoryCounts),
-                            backgroundColor: [
-                                '#3B82F6', '#10B981', '#6366F1', '#F59E0B', 
-                                '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'
-                            ],
-                            borderWidth: 1
-                        }]
-                    };
-                },
-                
-                // Status-Chart Konfiguration
-                getStatusChartConfig() {
-                    return {
-                        type: 'bar',
-                        data: this.getStatusChartData(),
-                        options: {
-                            responsive: true,
-                            scales: {
-                                y: {
-                                    beginAtZero: true
-                                }
-                            }
-                        }
-                    };
-                },
-                
-                getStatusChartData() {
-                    const statusCounts = {
-                        'Verwendet': 0,
-                        'Lager': 0,
-                        'Defekt': 0
-                    };
-                    
-                    this.devices.forEach(device => {
-                        let status = 'Verwendet';
-                        if (device.specs) {
-                            const specs = JSON.parse(device.specs);
-                            if (specs.status && statusCounts.hasOwnProperty(specs.status)) {
-                                status = specs.status;
-                            }
-                        }
-                        statusCounts[status]++;
-                    });
-                    
-                    return {
-                        labels: Object.keys(statusCounts),
-                        datasets: [{
-                            label: 'Geräte nach Status',
-                            data: Object.values(statusCounts),
-                            backgroundColor: [
-                                '#10B981',
-                                '#F59E0B',
-                                '#EF4444'
-                            ]
-                        }]
-                    };
-                },
-                
-                // Hilfsfunktion aus dem Haupt-App-State
-                getCategoryColor(categoryName) {
-                    const predefinedColors = {
-                        'CPU': 'bg-blue-100 text-blue-800',
-                        'GPU': 'bg-purple-100 text-purple-800',
-                        'RAM': 'bg-green-100 text-green-800',
-                        'Storage': 'bg-yellow-100 text-yellow-800'
-                    };
-                    
-                    if (predefinedColors[categoryName]) {
-                        return predefinedColors[categoryName];
-                    }
-                    
-                    const dynamicColors = [
-                        'bg-blue-100 text-blue-800',
-                        'bg-red-100 text-red-800',
-                        'bg-green-100 text-green-800',
-                        'bg-yellow-100 text-yellow-800',
-                        'bg-purple-100 text-purple-800',
-                        'bg-pink-100 text-pink-800',
-                        'bg-rose-100 text-rose-800',
-                        'bg-fuchsia-100 text-fuchsia-800',
-                        'bg-indigo-100 text-indigo-800',
-                        'bg-cyan-100 text-cyan-800',
-                        'bg-sky-100 text-sky-800',
-                        'bg-amber-100 text-amber-800',
-                        'bg-orange-100 text-orange-800',
-                        'bg-lime-100 text-lime-800',
-                        'bg-emerald-100 text-emerald-800',
-                        'bg-teal-100 text-teal-800',
-                        'bg-violet-100 text-violet-800',
-                    ];
-                    
-                    const hash = Array.from(categoryName).reduce(
-                        (hash, char) => (hash << 5) - hash + char.charCodeAt(0),
-                        0
-                    );
-                    const colorIndex = Math.abs(hash) % dynamicColors.length;
-                    
-                    return dynamicColors[colorIndex];
                 }
-            }));
+            });
+
+            new Chart(document.getElementById('categoryChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: statsData.categories.map(item => item.name),
+                    datasets: [{
+                        data: statsData.categories.map(item => item.device_count),
+                        backgroundColor: palette,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+
+            new Chart(document.getElementById('statusChart'), {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(statsData.statusData),
+                    datasets: [{
+                        label: 'Geräte',
+                        data: Object.values(statsData.statusData),
+                        backgroundColor: ['#10B981', '#F59E0B', '#EF4444', '#94A3B8']
+                    }]
+                },
+                options: {
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            const locationLabels = statsData.locations.map(item => item.name);
+            const locationCounts = statsData.locations.map(item => item.device_count);
+            if (statsData.unknownLocationCount > 0) {
+                locationLabels.push('Unbekannt');
+                locationCounts.push(statsData.unknownLocationCount);
+            }
+            new Chart(document.getElementById('locationChart'), {
+                type: 'bar',
+                data: {
+                    labels: locationLabels,
+                    datasets: [{
+                        label: 'Geräte',
+                        data: locationCounts,
+                        backgroundColor: '#38BDF8'
+                    }]
+                },
+                options: {
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            new Chart(document.getElementById('ageChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(statsData.ageBuckets),
+                    datasets: [{
+                        data: Object.values(statsData.ageBuckets),
+                        backgroundColor: ['#22C55E', '#38BDF8', '#A855F7', '#F59E0B', '#EF4444']
+                    }]
+                },
+                options: {
+                    plugins: { legend: { position: 'bottom' } }
+                }
+            });
         });
     </script>
-	
-	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-	<!-- Chart.js Integration mit Null-Checks -->
-	<script>
-	document.addEventListener('DOMContentLoaded', function() {
-		// Sicherstellen, dass Daten vorhanden sind
-		const categories = {{ categories|tojson|default([]) }};
-		const statusData = {{ status_data|tojson|default({}) }};
-		
-		// Kategorie-Chart nur rendern wenn Daten vorhanden
-		if (categories.length > 0) {
-			const ctx1 = document.getElementById('categoryChart');
-			new Chart(ctx1, {
-				type: 'pie',
-				data: {
-					labels: categories.map(c => c.name),
-					datasets: [{
-						data: categories.map(c => c.device_count),
-						backgroundColor: [
-							'#3B82F6', '#10B981', '#6366F1', '#F59E0B',
-							'#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'
-						]
-					}]
-				}
-			});
-		}
-		
-		// Status-Chart
-		const ctx2 = document.getElementById('statusChart');
-		new Chart(ctx2, {
-			type: 'bar',
-			data: {
-				labels: Object.keys(statusData),
-				datasets: [{
-					label: 'Geräte',
-					data: Object.values(statusData),
-					backgroundColor: [
-						'#EF4444', '#F59E0B', '#10B981'
-					]
-				}]
-			}
-		});
-	});
-	</script>
 	
 	<script src="https://unpkg.com/feather-icons"></script>
 		<script>
@@ -563,6 +575,7 @@
 			feather.replace();
 		});
 	</script>
-	
+    <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
 </body>
 </html>

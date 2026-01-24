@@ -1,0 +1,380 @@
+document.addEventListener('alpine:init', () => {
+    Alpine.data('ticketsApp', () => ({
+        tickets: [],
+        categories: [],
+        alerts: [],
+        assets: [],
+        selectedTicket: null,
+        userPermissions: window.inventoryPermissions || [],
+        isSuperuser: window.inventoryIsSuperuser || false,
+        filters: {
+            status: '',
+            priority: '',
+            category_id: '',
+            mine: false,
+            search: ''
+        },
+        statusOptions: ['open', 'in_progress', 'pending', 'resolved', 'closed'],
+        statusLabels: {
+            open: 'Offen',
+            in_progress: 'In Bearbeitung',
+            pending: 'Wartet',
+            resolved: 'Gelöst',
+            closed: 'Geschlossen'
+        },
+        priorityOptions: ['low', 'normal', 'high', 'urgent'],
+        stats: {
+            open: 0,
+            in_progress: 0,
+            pending: 0,
+            resolved: 0
+        },
+        ticketModalOpen: false,
+        ticketError: '',
+        newTicket: {
+            title: '',
+            description: '',
+            category_id: '',
+            priority: 'normal',
+            requester_name: '',
+            requester_email: '',
+            assignee: '',
+            assignee_email: '',
+            due_date: '',
+            tags: '',
+            custom_fields: [],
+            asset_ids: []
+        },
+        newComment: '',
+        internalComment: false,
+        newWatcher: '',
+        activeAdminTab: 'categories',
+        newCategory: {
+            name: '',
+            description: '',
+            color: '#2563eb',
+            sla_hours: 72,
+            is_default: false
+        },
+        newAlert: {
+            name: '',
+            event_type: 'created',
+            status_match: '',
+            priority_match: '',
+            category_id: '',
+            recipient_emails: '',
+            is_enabled: true
+        },
+        notificationSettings: {
+            enabled: false,
+            smtp_host: '',
+            smtp_port: 587,
+            smtp_username: '',
+            smtp_password: '',
+            smtp_from: '',
+            use_tls: true,
+            default_recipients: ''
+        },
+        notificationMessage: '',
+        testRecipients: '',
+
+        async init() {
+            await this.loadCategories();
+            await this.loadAssets();
+            await this.loadTickets();
+            if (this.can('ticket_alerts.manage')) {
+                await this.loadAlerts();
+            }
+            if (this.can('notifications.manage')) {
+                await this.loadNotificationSettings();
+            }
+            await this.loadStats();
+            this.$nextTick(() => feather.replace());
+        },
+
+        can(permissionKey) {
+            return this.isSuperuser || this.userPermissions.includes(permissionKey);
+        },
+
+        openNewTicket() {
+            this.ticketError = '';
+            this.ticketModalOpen = true;
+        },
+
+        addCustomField() {
+            this.newTicket.custom_fields.push({ key: '', value: '' });
+        },
+
+        removeCustomField(index) {
+            this.newTicket.custom_fields.splice(index, 1);
+        },
+
+        async loadCategories() {
+            const response = await fetch('/api/ticket-categories');
+            if (response.ok) {
+                this.categories = await response.json();
+            }
+        },
+
+        async loadTickets() {
+            const params = new URLSearchParams();
+            if (this.filters.status) params.append('status', this.filters.status);
+            if (this.filters.priority) params.append('priority', this.filters.priority);
+            if (this.filters.category_id) params.append('category_id', this.filters.category_id);
+            if (this.filters.mine) params.append('mine', '1');
+            if (this.filters.search) params.append('search', this.filters.search);
+
+            const response = await fetch(`/api/tickets?${params.toString()}`);
+            if (response.ok) {
+                this.tickets = await response.json();
+            }
+            this.$nextTick(() => feather.replace());
+        },
+
+        async loadAssets() {
+            const response = await fetch('/api/assets');
+            if (response.ok) {
+                this.assets = await response.json();
+            }
+        },
+
+        async loadStats() {
+            const response = await fetch('/api/tickets');
+            if (!response.ok) return;
+            const allTickets = await response.json();
+            const counts = { open: 0, in_progress: 0, pending: 0, resolved: 0 };
+            allTickets.forEach((ticket) => {
+                if (counts[ticket.status] !== undefined) {
+                    counts[ticket.status] += 1;
+                }
+            });
+            this.stats = counts;
+        },
+
+        async selectTicket(ticket) {
+            const response = await fetch(`/api/tickets/${ticket.id}`);
+            if (response.ok) {
+                this.selectedTicket = await response.json();
+                if (!this.selectedTicket.asset_ids) {
+                    this.selectedTicket.asset_ids = (this.selectedTicket.assets || []).map((asset) => asset.id);
+                }
+                this.newComment = '';
+                this.internalComment = false;
+                this.newWatcher = '';
+                this.$nextTick(() => feather.replace());
+            }
+        },
+
+        closeTicket() {
+            this.selectedTicket = null;
+        },
+
+        async updateTicket() {
+            if (!this.selectedTicket) return;
+            const payload = {
+                title: this.selectedTicket.title,
+                description: this.selectedTicket.description,
+                category_id: this.selectedTicket.category_id,
+                priority: this.selectedTicket.priority,
+                status: this.selectedTicket.status,
+                requester_name: this.selectedTicket.requester_name,
+                requester_email: this.selectedTicket.requester_email,
+                assignee: this.selectedTicket.assignee,
+                assignee_email: this.selectedTicket.assignee_email,
+                due_date: this.selectedTicket.due_date,
+                tags: this.selectedTicket.tags,
+                custom_fields: this.selectedTicket.custom_fields,
+                asset_ids: this.selectedTicket.asset_ids
+            };
+            const response = await fetch(`/api/tickets/${this.selectedTicket.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (response.ok) {
+                await this.selectTicket(this.selectedTicket);
+                await this.loadTickets();
+                await this.loadStats();
+            }
+        },
+
+        async createTicket() {
+            this.ticketError = '';
+            const tags = this.newTicket.tags
+                ? this.newTicket.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+                : [];
+            const customFields = (this.newTicket.custom_fields || []).filter((field) => field.key || field.value);
+
+            const payload = {
+                title: this.newTicket.title,
+                description: this.newTicket.description,
+                category_id: this.newTicket.category_id || null,
+                priority: this.newTicket.priority,
+                requester_name: this.newTicket.requester_name,
+                requester_email: this.newTicket.requester_email,
+                assignee: this.newTicket.assignee,
+                assignee_email: this.newTicket.assignee_email,
+                due_date: this.newTicket.due_date,
+                tags,
+                custom_fields: customFields,
+                asset_ids: this.newTicket.asset_ids
+            };
+
+            const response = await fetch('/api/tickets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                this.ticketModalOpen = false;
+                this.newTicket = {
+                    title: '',
+                    description: '',
+                    category_id: '',
+                    priority: 'normal',
+                    requester_name: '',
+                    requester_email: '',
+                    assignee: '',
+                    assignee_email: '',
+                    due_date: '',
+                    tags: '',
+                    custom_fields: [],
+                    asset_ids: []
+                };
+                await this.loadTickets();
+                await this.loadStats();
+            } else {
+                const error = await response.json();
+                this.ticketError = error.error || 'Ticket konnte nicht erstellt werden.';
+            }
+        },
+
+        async addComment() {
+            if (!this.newComment || !this.selectedTicket) return;
+            const response = await fetch(`/api/tickets/${this.selectedTicket.id}/comments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ body: this.newComment, is_internal: this.internalComment })
+            });
+            if (response.ok) {
+                await this.selectTicket(this.selectedTicket);
+                await this.loadTickets();
+            }
+        },
+
+        async addWatcher() {
+            if (!this.newWatcher || !this.selectedTicket) return;
+            const response = await fetch(`/api/tickets/${this.selectedTicket.id}/watchers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: this.newWatcher })
+            });
+            if (response.ok) {
+                await this.selectTicket(this.selectedTicket);
+                this.newWatcher = '';
+            }
+        },
+
+        selectedAssetsForNewTicket() {
+            const selectedIds = new Set(this.newTicket.asset_ids || []);
+            return this.assets.filter((asset) => selectedIds.has(asset.id));
+        },
+
+        async removeWatcher(watcherId) {
+            if (!this.selectedTicket) return;
+            const response = await fetch(`/api/tickets/${this.selectedTicket.id}/watchers/${watcherId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                await this.selectTicket(this.selectedTicket);
+            }
+        },
+
+        async loadAlerts() {
+            const response = await fetch('/api/ticket-alerts');
+            if (response.ok) {
+                this.alerts = await response.json();
+            }
+        },
+
+        async createCategory() {
+            const payload = { ...this.newCategory };
+            const response = await fetch('/api/ticket-categories', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (response.ok) {
+                this.newCategory = { name: '', description: '', color: '#2563eb', sla_hours: 72, is_default: false };
+                await this.loadCategories();
+            }
+        },
+
+        async createAlert() {
+            const payload = { ...this.newAlert };
+            const response = await fetch('/api/ticket-alerts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (response.ok) {
+                this.newAlert = {
+                    name: '',
+                    event_type: 'created',
+                    status_match: '',
+                    priority_match: '',
+                    category_id: '',
+                    recipient_emails: '',
+                    is_enabled: true
+                };
+                await this.loadAlerts();
+            }
+        },
+
+        async deleteAlert(alertId) {
+            const response = await fetch(`/api/ticket-alerts/${alertId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                await this.loadAlerts();
+            }
+        },
+
+        async loadNotificationSettings() {
+            const response = await fetch('/api/notifications/settings');
+            if (response.ok) {
+                this.notificationSettings = await response.json();
+            }
+        },
+
+        async saveNotificationSettings() {
+            const response = await fetch('/api/notifications/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.notificationSettings)
+            });
+            if (response.ok) {
+                this.notificationSettings = await response.json();
+                this.notificationMessage = 'Einstellungen gespeichert.';
+            } else {
+                this.notificationMessage = 'Einstellungen konnten nicht gespeichert werden.';
+            }
+        },
+
+        async sendTestEmail() {
+            this.notificationMessage = '';
+            const response = await fetch('/api/notifications/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recipients: this.testRecipients })
+            });
+            if (response.ok) {
+                this.notificationMessage = 'Test-E-Mail wurde versendet.';
+            } else {
+                const error = await response.json();
+                this.notificationMessage = error.error || 'Test-E-Mail fehlgeschlagen.';
+            }
+        }
+    }));
+});
