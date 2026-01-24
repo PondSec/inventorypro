@@ -409,7 +409,7 @@
                 </section>
 
                 <section class="grid gap-4 lg:grid-cols-4">
-                    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm overflow-hidden">
+                    <div class="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm overflow-hidden">
                         <div class="flex items-center justify-between">
                             <div>
                                 <p class="text-sm font-semibold text-slate-900">Geräte durchsuchen</p>
@@ -419,9 +419,9 @@
                                 <i data-feather="search" class="h-4 w-4"></i>
                             </span>
                         </div>
-                        <div class="mt-4 space-y-3 text-xs text-slate-500">
+                        <div class="mt-4 min-w-0 space-y-3 text-xs text-slate-500">
                             <div class="relative w-full">
-                                <input type="text" placeholder="Freitext (Gerät, Owner, Kategorie, Standort, Specs...)" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm text-slate-700 shadow-inner focus:border-blue-500 focus:ring-blue-500" x-model="searchQuery" @input.debounce.300ms="searchDevices()">
+                                <input type="text" placeholder="Freitext (Gerät, Owner, Kategorie, Standort, Specs...)" class="w-full min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm text-slate-700 shadow-inner focus:border-blue-500 focus:ring-blue-500" x-model="searchQuery" @input.debounce.300ms="searchDevices()">
                                 <button @click="toggleSortDropdown()" aria-label="Sort options" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-600 shadow-sm hover:bg-slate-50">
                                     <i data-feather="filter" class="w-4 h-4"></i>
                                 </button>
@@ -438,15 +438,15 @@
                                 <i data-feather="sliders" class="w-4 h-4"></i>
                                 Filter ein-/ausblenden
                             </button>
-                            <div x-show="filtersOpen" class="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3" x-transition>
+                            <div x-show="filtersOpen" class="grid min-w-0 gap-3 rounded-2xl border border-slate-200 bg-white p-3" x-transition>
                                 <div>
                                     <label class="text-xs font-semibold text-slate-500">Owner enthält</label>
-                                    <input type="text" x-model="ownerQuery" placeholder="z. B. Max Mustermann" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                    <input type="text" x-model="ownerQuery" placeholder="z. B. Max Mustermann" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                 </div>
-                                <div class="grid gap-3 sm:grid-cols-2">
+                                <div class="grid min-w-0 gap-3 sm:grid-cols-2">
                                     <div>
                                         <label class="text-xs font-semibold text-slate-500">Kategorie</label>
-                                        <select x-model="categoryFilter" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                        <select x-model="categoryFilter" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                             <option value="">Alle Kategorien</option>
                                             <template x-for="category in categories" :key="category.id">
                                                 <option :value="category.id" x-text="category.name"></option>
@@ -455,7 +455,7 @@
                                     </div>
                                     <div>
                                         <label class="text-xs font-semibold text-slate-500">Standort</label>
-                                        <select x-model="locationFilter" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                        <select x-model="locationFilter" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                             <option value="">Alle Standorte</option>
                                             <template x-for="location in locations" :key="location.id">
                                                 <option :value="location.id" x-text="location.name"></option>
@@ -463,19 +463,19 @@
                                         </select>
                                     </div>
                                 </div>
-                                <div class="grid gap-3 sm:grid-cols-2">
+                                <div class="grid min-w-0 gap-3 sm:grid-cols-2">
                                     <div>
                                         <label class="text-xs font-semibold text-slate-500">Erstellt von</label>
-                                        <input type="date" x-model="createdFrom" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                        <input type="date" x-model="createdFrom" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                     </div>
                                     <div>
                                         <label class="text-xs font-semibold text-slate-500">Erstellt bis</label>
-                                        <input type="date" x-model="createdTo" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                        <input type="date" x-model="createdTo" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                     </div>
                                 </div>
                                 <div>
                                     <label class="text-xs font-semibold text-slate-500">Spezifikationen enthalten</label>
-                                    <input type="text" x-model="specQuery" placeholder="z. B. i7, 16GB, SSD" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
+                                    <input type="text" x-model="specQuery" placeholder="z. B. i7, 16GB, SSD" class="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:ring-blue-500">
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2 pt-1">
                                     <button type="button" @click="resetDeviceFilters()" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">Filter zurücksetzen</button>
