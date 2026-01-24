@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="de" x-data="timeMachineApp()" x-init="init()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - Zeitmaschine</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app-body bg-slate-950/5 text-slate-900">
+    <div class="app-shell">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
+                <a href="/" class="flex items-center gap-3">
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg">
+                        <i data-feather="cpu" class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <p class="text-lg font-semibold text-slate-900 sidebar-text">Inventory Pro</p>
+                        <p class="text-xs text-slate-500 sidebar-text">Smart Asset Hub</p>
+                    </div>
+                </a>
+            </div>
+            <nav x-data="{ appsOpen: true }" class="p-4 space-y-4 sidebar-scroll sidebar-primary-links">
+                <div class="rounded-2xl border border-slate-200 bg-white/80 shadow-sm">
+                    <button @click="appsOpen = !appsOpen" class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+                        <span class="flex items-center gap-3">
+                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                <i data-feather="grid" class="h-4 w-4"></i>
+                            </span>
+                            <span>
+                                <span class="block text-sm font-semibold text-slate-800 sidebar-text">Apps</span>
+                                <span class="block text-xs text-slate-400 sidebar-text">Verwaltung & Services</span>
+                            </span>
+                        </span>
+                        <svg :class="{ 'rotate-180': appsOpen }" class="h-4 w-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div x-show="appsOpen" x-transition class="bg-slate-50/80 px-3 py-3 space-y-4">
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Verwaltung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'categories.view' in permissions or 'categories.manage' in permissions %}
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="layers" class="h-4 w-4 text-slate-400"></i>
+                                        Kategorien
+                                    </span>
+                                </a>
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="package" class="h-4 w-4 text-slate-400"></i>
+                                        Assets
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'users.manage' in permissions %}
+                                <a href="/users" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="users" class="h-4 w-4 text-slate-400"></i>
+                                        Benutzer
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                                <a href="/locations" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="map-pin" class="h-4 w-4 text-slate-400"></i>
+                                        Standorte
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Services</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                                <a href="/tickets" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="life-buoy" class="h-4 w-4 text-slate-400"></i>
+                                        Ticketsystem
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                                <a href="/roadmap" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="git-merge" class="h-4 w-4 text-slate-400"></i>
+                                        Roadmap
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions %}
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Auswertung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'stats.view' in permissions %}
+                                <a href="/stats" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="bar-chart-2" class="h-4 w-4 text-slate-400"></i>
+                                        Statistiken
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                                <a href="/dependencies" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="share-2" class="h-4 w-4 text-slate-400"></i>
+                                        Dependency-Graph
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'timemachine.view' in permissions %}
+                                <a href="/time-machine" class="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm font-semibold text-cyan-700 shadow-sm">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="clock" class="h-4 w-4 text-cyan-500"></i>
+                                        Zeitmaschine
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </nav>
+        </aside>
+
+        <div class="app-main app-main--fixed">
+            <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
+                <div class="flex items-center gap-4">
+                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                        <i data-feather="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div>
+                        <p class="text-xs uppercase tracking-widest text-slate-400">Change Simulation</p>
+                        <h1 class="text-xl font-semibold text-slate-900">Zeitmaschine</h1>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="hidden sm:block text-right">
+                        <p class="text-xs text-slate-400">Angemeldet als</p>
+                        <p class="text-sm font-semibold text-slate-800">{{ username }}</p>
+                    </div>
+                    <form action="/logout" method="post">
+                        <button type="submit" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-800">
+                            <i data-feather="log-out" class="h-4 w-4"></i>
+                            Logout
+                        </button>
+                    </form>
+                </div>
+            </header>
+
+            <main class="app-content app-content--padded pt-[110px] pb-16 space-y-10">
+                <section class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-cyan-900 px-8 py-8 text-white shadow-2xl shadow-slate-300/40">
+                    <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                        <div class="max-w-2xl">
+                            <p class="text-xs uppercase tracking-[0.3em] text-cyan-200">Zeit als erste Klasse</p>
+                            <h2 class="mt-2 text-3xl font-semibold">Versionskontrolle für deine komplette Realität.</h2>
+                            <p class="mt-3 text-sm text-cyan-100/80">Rendere den Systemzustand zu jedem Zeitpunkt, simuliere Roadmaps und vergleiche alternative Zukünfte wie einen Git-Diff.</p>
+                        </div>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <div class="rounded-2xl bg-white/10 px-4 py-3">
+                                <p class="text-xs uppercase text-cyan-100">Changes</p>
+                                <p class="text-2xl font-semibold" x-text="changes.length"></p>
+                            </div>
+                            <div class="rounded-2xl bg-white/10 px-4 py-3">
+                                <p class="text-xs uppercase text-cyan-100">Branches</p>
+                                <p class="text-2xl font-semibold" x-text="branchOptions.length"></p>
+                            </div>
+                            <div class="rounded-2xl bg-white/10 px-4 py-3">
+                                <p class="text-xs uppercase text-cyan-100">Roadmaps</p>
+                                <p class="text-2xl font-semibold" x-text="roadmaps.length"></p>
+                            </div>
+                            <div class="rounded-2xl bg-white/10 px-4 py-3">
+                                <p class="text-xs uppercase text-cyan-100">Timeline-Range</p>
+                                <p class="text-2xl font-semibold" x-text="rangeLabel"></p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+                        <div class="flex flex-wrap items-center justify-between gap-4">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900">Zustand zu Zeitpunkt T</h3>
+                                <p class="text-sm text-slate-500">Ändere die Zeit und erhalte den vollständigen Systemzustand.</p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <input type="date" x-model="timelineDate" @change="loadState()" class="rounded-full border border-slate-200 px-3 py-2 text-sm">
+                                <button @click="setDateOffset(-6)" class="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">-6 Monate</button>
+                                <button @click="setDateOffset(0)" class="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Heute</button>
+                                <button @click="setDateOffset(3)" class="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">+3 Monate</button>
+                            </div>
+                        </div>
+
+                        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                                <p class="text-xs uppercase tracking-widest text-slate-400">Assets</p>
+                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="state.assets"></p>
+                                <p class="text-xs text-slate-500">Aktive Assets</p>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                                <p class="text-xs uppercase tracking-widest text-slate-400">Geräte</p>
+                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="state.devices"></p>
+                                <p class="text-xs text-slate-500">Inventarisierte Geräte</p>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                                <p class="text-xs uppercase tracking-widest text-slate-400">Tickets</p>
+                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="state.tickets"></p>
+                                <p class="text-xs text-slate-500">Davon offen: <span class="font-semibold" x-text="state.tickets_open"></span></p>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                                <p class="text-xs uppercase tracking-widest text-slate-400">Roadmaps</p>
+                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="state.roadmaps"></p>
+                                <p class="text-xs text-slate-500">Strategische Changes</p>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                                <p class="text-xs uppercase tracking-widest text-slate-400">Dependencies</p>
+                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="state.dependencies"></p>
+                                <p class="text-xs text-slate-500">Graph-Verbindungen</p>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                                <p class="text-xs uppercase tracking-widest text-slate-400">Letztes Change</p>
+                                <p class="mt-2 text-sm font-semibold text-slate-900" x-text="state.last_change"></p>
+                                <p class="text-xs text-slate-500">Geschichte bis zu T</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+                        <div>
+                            <h3 class="text-lg font-semibold text-slate-900">Branches & Simulation</h3>
+                            <p class="text-sm text-slate-500">Alternative Zukünfte auf Basis echter Changes durchspielen.</p>
+                        </div>
+                        <div class="space-y-4">
+                            <label class="block text-xs font-semibold text-slate-500">Branch auswählen</label>
+                            <select x-model="branch" @change="applyBranch()" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                <template x-for="option in branchOptions" :key="option.value">
+                                    <option :value="option.value" x-text="option.label"></option>
+                                </template>
+                            </select>
+
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 space-y-3">
+                                <p class="text-xs uppercase tracking-widest text-slate-400">What-if Regeln</p>
+                                <div class="space-y-2">
+                                    <label class="block text-xs font-semibold text-slate-500">Ticket ignorieren</label>
+                                    <select x-model="branchTicketId" @change="applyBranch()" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                        <option value="">Kein Ticket</option>
+                                        <template x-for="ticket in tickets" :key="ticket.id">
+                                            <option :value="String(ticket.id)" x-text="`#${ticket.id} ${ticket.title}`"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="block text-xs font-semibold text-slate-500">Roadmap-Simulation</label>
+                                    <div class="space-y-2 max-h-40 overflow-auto">
+                                        <template x-for="roadmap in roadmaps" :key="roadmap.id">
+                                            <label class="flex items-center gap-2 text-xs text-slate-600">
+                                                <input type="checkbox" class="rounded border-slate-300 text-cyan-600" :value="String(roadmap.id)" x-model="selectedRoadmaps" @change="applyBranch()">
+                                                <span x-text="roadmap.title"></span>
+                                            </label>
+                                        </template>
+                                        <p x-show="roadmaps.length === 0" class="text-xs text-slate-400">Noch keine Roadmaps.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rounded-2xl border border-cyan-100 bg-cyan-50 px-4 py-4">
+                                <p class="text-xs font-semibold text-cyan-700">Branch-Effekt</p>
+                                <p class="text-xs text-cyan-700/80 mt-2" x-text="branchSummary"></p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-slate-900">Timeline-View</h3>
+                            <p class="text-sm text-slate-500">Vertikale Zeitachse mit Ebenen für Assets, Geräte, Tickets und Roadmaps.</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <select x-model="selectedLayer" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs">
+                                <option value="all">Alle Ebenen</option>
+                                <template x-for="layer in layers" :key="layer.key">
+                                    <option :value="layer.key" x-text="layer.label"></option>
+                                </template>
+                            </select>
+                            <button @click="toggleCompare()" class="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100" x-text="compareEnabled ? 'Vergleich schließen' : 'Vergleich aktivieren'"></button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-6">
+                        <template x-for="layer in filteredLayers()" :key="layer.key">
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <p class="text-xs font-semibold uppercase tracking-widest text-slate-500" x-text="layer.label"></p>
+                                    <span class="text-xs text-slate-400" x-text="`${layerChanges(layer.key).length} Changes`"></span>
+                                </div>
+                                <div class="mt-4 space-y-4">
+                                    <template x-for="change in layerChanges(layer.key)" :key="change.key">
+                                        <div class="flex flex-col gap-3 rounded-2xl border border-transparent bg-white px-4 py-3 shadow-sm transition hover:border-cyan-300 sm:flex-row sm:items-start">
+                                            <div class="flex items-start gap-3 sm:w-40">
+                                                <span class="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-500"></span>
+                                                <div>
+                                                    <p class="text-[10px] uppercase tracking-widest text-slate-400">Zeitpunkt</p>
+                                                    <p class="text-xs font-semibold text-slate-700" x-text="formatDate(change.timestamp)"></p>
+                                                </div>
+                                            </div>
+                                            <button @click="selectChange(change)" class="flex-1 text-left">
+                                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                                    <span class="text-sm font-semibold text-slate-800" x-text="change.title"></span>
+                                                    <span class="rounded-full bg-slate-100 px-2 py-1 text-[10px] uppercase tracking-widest" :class="change.is_planned ? 'text-cyan-600' : 'text-slate-400'" x-text="change.is_planned ? 'geplant' : 'live'"></span>
+                                                </div>
+                                                <p class="mt-2 text-xs text-slate-500" x-text="change.description"></p>
+                                            </button>
+                                        </div>
+                                    </template>
+                                    <p x-show="layerChanges(layer.key).length === 0" class="text-xs text-slate-400">Keine Changes für diese Ebene.</p>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </section>
+
+                <section class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-lg font-semibold text-slate-900">Change-Details</h3>
+                            <span class="text-xs text-slate-400">Klick auf ein Event in der Timeline</span>
+                        </div>
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 space-y-2" x-show="selectedChange">
+                            <p class="text-xs uppercase tracking-widest text-slate-400" x-text="selectedChange?.layer_label"></p>
+                            <h4 class="text-lg font-semibold text-slate-900" x-text="selectedChange?.title"></h4>
+                            <p class="text-sm text-slate-600" x-text="selectedChange?.description"></p>
+                            <div class="flex flex-wrap gap-2 text-xs text-slate-500">
+                                <span class="rounded-full bg-white px-2 py-1" x-text="`Zeitpunkt: ${formatDate(selectedChange?.timestamp)}`"></span>
+                                <span class="rounded-full bg-white px-2 py-1" x-text="`Quelle: ${selectedChange?.source}`"></span>
+                                <span class="rounded-full bg-white px-2 py-1" x-text="`Impact: ${selectedChange?.impact}`"></span>
+                            </div>
+                        </div>
+                        <p x-show="!selectedChange" class="text-sm text-slate-400">Noch kein Change ausgewählt.</p>
+                        <div class="rounded-2xl border border-cyan-100 bg-cyan-50 px-4 py-4">
+                            <h4 class="text-sm font-semibold text-cyan-800">Rückwärts verstehen</h4>
+                            <p class="mt-2 text-xs text-cyan-700/80">Springe von jedem Change zur Ursache (Ticket, Roadmap, Entscheidung) und sieh die Historie eines Assets in Sekunden.</p>
+                        </div>
+                    </div>
+
+                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-lg font-semibold text-slate-900">Vergleichsmodus</h3>
+                            <span class="text-xs text-slate-400">Realität vs. Simulation</span>
+                        </div>
+                        <div class="space-y-3">
+                            <label class="block text-xs font-semibold text-slate-500">Vergleichsdatum</label>
+                            <input type="date" x-model="compareDate" @change="loadComparisonState()" :disabled="!compareEnabled" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                        </div>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <template x-for="metric in comparisonMetrics" :key="metric.key">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                    <p class="text-xs uppercase tracking-widest text-slate-400" x-text="metric.label"></p>
+                                    <p class="mt-2 text-lg font-semibold text-slate-900" x-text="metric.value"></p>
+                                    <p class="text-xs" :class="metric.deltaClass" x-text="metric.delta"></p>
+                                </div>
+                            </template>
+                        </div>
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-xs text-slate-500">
+                            <p>Nutze den Vergleich, um neue Risiken, zusätzliche Abhängigkeiten oder den Impact der Roadmaps sichtbar zu machen.</p>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        function timeMachineApp() {
+            return {
+                changes: [],
+                roadmaps: [],
+                tickets: [],
+                range: { start: null, end: null },
+                state: {
+                    assets: 0,
+                    devices: 0,
+                    tickets: 0,
+                    tickets_open: 0,
+                    roadmaps: 0,
+                    dependencies: 0,
+                    last_change: '—'
+                },
+                comparisonState: null,
+                selectedChange: null,
+                timelineDate: '',
+                compareDate: '',
+                compareEnabled: false,
+                branch: 'main',
+                branchTicketId: '',
+                selectedRoadmaps: [],
+                selectedLayer: 'all',
+                layers: [
+                    { key: 'devices', label: 'Geräte', color: 'slate' },
+                    { key: 'assets', label: 'Assets', color: 'indigo' },
+                    { key: 'tickets', label: 'Tickets', color: 'amber' },
+                    { key: 'roadmaps', label: 'Roadmaps', color: 'cyan' },
+                    { key: 'dependencies', label: 'Dependencies', color: 'purple' },
+                    { key: 'organisation', label: 'Organisation', color: 'emerald' }
+                ],
+                branchOptions: [
+                    { value: 'main', label: 'Realität (Main)' },
+                    { value: 'no-ticket', label: 'Branch: Ticket ignorieren' },
+                    { value: 'roadmap-sim', label: 'Branch: Roadmap-Simulation' }
+                ],
+                async init() {
+                    await this.loadChanges();
+                    this.setToday();
+                    await this.loadState();
+                    this.applyBranch();
+                },
+                setToday() {
+                    const today = new Date();
+                    this.timelineDate = today.toISOString().slice(0, 10);
+                    this.compareDate = new Date(today.setMonth(today.getMonth() + 3)).toISOString().slice(0, 10);
+                },
+                async loadChanges() {
+                    const response = await fetch('/api/time-machine/changes');
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    this.changes = data.changes || [];
+                    this.roadmaps = data.roadmaps || [];
+                    this.tickets = data.tickets || [];
+                    this.range = data.range || { start: null, end: null };
+                },
+                async loadState() {
+                    if (!this.timelineDate) return;
+                    const response = await fetch(`/api/time-machine/state?timestamp=${this.timelineDate}`);
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    this.state = data;
+                    this.state.last_change = data.last_change || '—';
+                    this.loadComparisonState();
+                },
+                async loadComparisonState() {
+                    if (!this.compareEnabled || !this.compareDate) {
+                        this.comparisonState = null;
+                        return;
+                    }
+                    const response = await fetch(`/api/time-machine/state?timestamp=${this.compareDate}`);
+                    if (!response.ok) return;
+                    this.comparisonState = await response.json();
+                },
+                setDateOffset(months) {
+                    const base = new Date();
+                    base.setMonth(base.getMonth() + months);
+                    this.timelineDate = base.toISOString().slice(0, 10);
+                    this.loadState();
+                },
+                applyBranch() {
+                    if (this.branch !== 'roadmap-sim') {
+                        this.selectedRoadmaps = [];
+                    }
+                },
+                toggleCompare() {
+                    this.compareEnabled = !this.compareEnabled;
+                    if (this.compareEnabled) {
+                        this.loadComparisonState();
+                    } else {
+                        this.comparisonState = null;
+                    }
+                },
+                filteredLayers() {
+                    if (this.selectedLayer === 'all') {
+                        return this.layers;
+                    }
+                    return this.layers.filter(layer => layer.key === this.selectedLayer);
+                },
+                layerChanges(layerKey) {
+                    return this.filteredChanges().filter(change => change.layer === layerKey);
+                },
+                filteredChanges() {
+                    let result = [...this.changes];
+                    if (this.branch === 'no-ticket' && this.branchTicketId) {
+                        result = result.filter(change => !(change.entity_type === 'ticket' && String(change.entity_id) === String(this.branchTicketId)));
+                    }
+                    if (this.branch === 'roadmap-sim') {
+                        if (this.selectedRoadmaps.length > 0) {
+                            result = result.filter(change => !change.is_planned || this.selectedRoadmaps.includes(String(change.roadmap_id || '')));
+                        }
+                    }
+                    return result.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                },
+                selectChange(change) {
+                    this.selectedChange = change;
+                },
+                formatDate(value) {
+                    if (!value) return '—';
+                    const date = new Date(value);
+                    return date.toLocaleString('de-DE');
+                },
+                get rangeLabel() {
+                    if (!this.range.start || !this.range.end) return '—';
+                    const start = new Date(this.range.start).getFullYear();
+                    const end = new Date(this.range.end).getFullYear();
+                    return `${start}–${end}`;
+                },
+                get branchSummary() {
+                    if (this.branch === 'no-ticket' && this.branchTicketId) {
+                        return `Ticket #${this.branchTicketId} wird aus der Historie entfernt. Alle Folgewirkungen sind nicht mehr sichtbar.`;
+                    }
+                    if (this.branch === 'roadmap-sim') {
+                        if (this.selectedRoadmaps.length === 0) {
+                            return 'Wähle Roadmaps aus, um nur diese Zukunft zu simulieren.';
+                        }
+                        return `${this.selectedRoadmaps.length} Roadmap(s) werden als Zukunfts-Changes simuliert.`;
+                    }
+                    return 'Main-Branch zeigt die aktuelle Realität inklusive aller Changes.';
+                },
+                get comparisonMetrics() {
+                    const metrics = [
+                        { key: 'assets', label: 'Assets' },
+                        { key: 'devices', label: 'Geräte' },
+                        { key: 'tickets', label: 'Tickets' },
+                        { key: 'roadmaps', label: 'Roadmaps' },
+                        { key: 'dependencies', label: 'Dependencies' },
+                        { key: 'tickets_open', label: 'Tickets offen' }
+                    ];
+                    return metrics.map(metric => {
+                        const baseValue = this.state?.[metric.key] ?? 0;
+                        const compareValue = this.compareEnabled && this.comparisonState ? (this.comparisonState?.[metric.key] ?? 0) : baseValue;
+                        const deltaValue = compareValue - baseValue;
+                        const deltaLabel = this.compareEnabled ? `${deltaValue >= 0 ? '+' : ''}${deltaValue}` : '—';
+                        return {
+                            key: metric.key,
+                            label: metric.label,
+                            value: compareValue,
+                            delta: `Δ ${deltaLabel}`,
+                            deltaClass: this.compareEnabled ? (deltaValue >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-400'
+                        };
+                    });
+                }
+            };
+        }
+    </script>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            feather.replace();
+        });
+    </script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
+</body>
+</html>

@@ -217,6 +217,72 @@ PERMISSIONS = [
         "label": "Aktivitätslog anzeigen",
         "description": "Aktivitätslog einsehen.",
         "group": "Reporting"
+    },
+    {
+        "key": "roadmap.view",
+        "label": "Roadmaps anzeigen",
+        "description": "Roadmaps und Pläne einsehen.",
+        "group": "Roadmap"
+    },
+    {
+        "key": "roadmap.manage",
+        "label": "Roadmaps verwalten",
+        "description": "Roadmaps erstellen, bearbeiten und löschen.",
+        "group": "Roadmap"
+    },
+    {
+        "key": "dependencies.view",
+        "label": "Abhängigkeits-Graph anzeigen",
+        "description": "Dependency- und Impact-Graph einsehen.",
+        "group": "Abhängigkeiten"
+    },
+    {
+        "key": "dependencies.manage",
+        "label": "Abhängigkeits-Graph verwalten",
+        "description": "Abhängigkeiten modellieren und Impact-Regeln pflegen.",
+        "group": "Abhängigkeiten"
+    },
+    {
+        "key": "timemachine.view",
+        "label": "Zeitmaschine anzeigen",
+        "description": "Zeitachsen, Zustände und Simulationen einsehen.",
+        "group": "Zeitmaschine"
+    },
+    {
+        "key": "software.view",
+        "label": "Software-Inventar anzeigen",
+        "description": "Software-Inventar und Installationen einsehen.",
+        "group": "Software"
+    },
+    {
+        "key": "software.manage",
+        "label": "Software-Inventar verwalten",
+        "description": "Software, Installationen und Eigentümer verwalten.",
+        "group": "Software"
+    },
+    {
+        "key": "teams.view",
+        "label": "Teams anzeigen",
+        "description": "Teams und Verantwortlichkeiten einsehen.",
+        "group": "Organisation"
+    },
+    {
+        "key": "teams.manage",
+        "label": "Teams verwalten",
+        "description": "Teams und Zuordnungen pflegen.",
+        "group": "Organisation"
+    },
+    {
+        "key": "departments.view",
+        "label": "Abteilungen anzeigen",
+        "description": "Abteilungen und Strukturen einsehen.",
+        "group": "Organisation"
+    },
+    {
+        "key": "departments.manage",
+        "label": "Abteilungen verwalten",
+        "description": "Abteilungen erstellen und pflegen.",
+        "group": "Organisation"
     }
 ]
 
@@ -255,7 +321,18 @@ DEFAULT_ROLES = [
             "ticket_alerts.manage",
             "notifications.manage",
             "stats.view",
-            "activity.view"
+            "activity.view",
+            "roadmap.view",
+            "roadmap.manage",
+            "dependencies.view",
+            "dependencies.manage",
+            "timemachine.view",
+            "software.view",
+            "software.manage",
+            "teams.view",
+            "teams.manage",
+            "departments.view",
+            "departments.manage"
         ]
     },
     {
@@ -267,7 +344,8 @@ DEFAULT_ROLES = [
             "tickets.view_own",
             "tickets.create",
             "tickets.comment_own",
-            "tickets.watch_own"
+            "tickets.watch_own",
+            "roadmap.view"
         ]
     }
 ]
@@ -449,6 +527,7 @@ def get_post_login_redirect(access):
         (("categories.view", "categories.manage"), "index"),
         (("tickets.view_all", "tickets.view_own", "tickets.create"), "tickets_page"),
         (("stats.view",), "stats"),
+        (("timemachine.view",), "time_machine_page"),
         (("users.manage",), "users_page"),
         (("locations.view", "locations.manage"), "locations_page")
     ]
@@ -715,12 +794,17 @@ def init_db():
                 category_id INTEGER,
                 priority TEXT DEFAULT 'normal',
                 status TEXT DEFAULT 'open',
+                escalation_level INTEGER DEFAULT 0,
                 requester_name TEXT,
                 requester_email TEXT,
                 created_by TEXT,
                 assignee TEXT,
                 assignee_email TEXT,
                 due_date TEXT,
+                resolved_at TEXT,
+                resolution_action TEXT,
+                resolution_outcome TEXT,
+                resolution_notes TEXT,
                 tags TEXT,
                 custom_fields TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -728,6 +812,18 @@ def init_db():
                 FOREIGN KEY (category_id) REFERENCES ticket_categories(id)
             )
         ''')
+
+        for column, column_type in (
+            ("escalation_level", "INTEGER DEFAULT 0"),
+            ("resolved_at", "TEXT"),
+            ("resolution_action", "TEXT"),
+            ("resolution_outcome", "TEXT"),
+            ("resolution_notes", "TEXT"),
+        ):
+            try:
+                c.execute(f'ALTER TABLE tickets ADD COLUMN {column} {column_type}')
+            except sqlite3.OperationalError:
+                pass
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS ticket_comments (
@@ -738,6 +834,154 @@ def init_db():
                 is_internal INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (ticket_id) REFERENCES tickets(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS services (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                owner TEXT,
+                sla_hours INTEGER DEFAULT 72,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_services (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                service_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(asset_id, service_id),
+                FOREIGN KEY (asset_id) REFERENCES assets(id),
+                FOREIGN KEY (service_id) REFERENCES services(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                user_identifier TEXT NOT NULL,
+                location_id INTEGER,
+                service_id INTEGER,
+                assigned_at TEXT,
+                released_at TEXT,
+                is_primary INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (asset_id) REFERENCES assets(id),
+                FOREIGN KEY (location_id) REFERENCES locations(id),
+                FOREIGN KEY (service_id) REFERENCES services(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_lifecycle_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                event_date TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (asset_id) REFERENCES assets(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS departments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS teams (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                department_id INTEGER,
+                lead_user TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (department_id) REFERENCES departments(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS software (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                vendor TEXT,
+                version TEXT,
+                license_type TEXT,
+                criticality TEXT DEFAULT 'medium',
+                description TEXT,
+                owner_team_id INTEGER,
+                support_contact TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(name, vendor, version),
+                FOREIGN KEY (owner_team_id) REFERENCES teams(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS software_installations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                software_id INTEGER NOT NULL,
+                device_id INTEGER,
+                asset_id INTEGER,
+                installed_version TEXT,
+                environment TEXT DEFAULT 'production',
+                status TEXT DEFAULT 'active',
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (software_id) REFERENCES software(id),
+                FOREIGN KEY (device_id) REFERENCES devices(id),
+                FOREIGN KEY (asset_id) REFERENCES assets(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS dependency_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_type TEXT NOT NULL,
+                source_id INTEGER NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id INTEGER NOT NULL,
+                relation TEXT DEFAULT 'depends_on',
+                criticality TEXT DEFAULT 'medium',
+                redundancy_group TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(source_type, source_id, target_type, target_id, relation)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS rule_overrides (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_key TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                decision TEXT NOT NULL,
+                reason TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS rule_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_key TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                outcome TEXT NOT NULL,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
 
@@ -842,6 +1086,38 @@ def init_db():
             )
         ''')
 
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS roadmaps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket_id INTEGER UNIQUE,
+                title TEXT NOT NULL,
+                objective TEXT,
+                status TEXT DEFAULT 'planned',
+                owner TEXT,
+                start_date TEXT,
+                target_date TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (ticket_id) REFERENCES tickets(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS roadmap_steps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                roadmap_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT DEFAULT 'planned',
+                position INTEGER DEFAULT 0,
+                owner TEXT,
+                due_date TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (roadmap_id) REFERENCES roadmaps(id)
+            )
+        ''')
+
         # Default-Kategorien
         default_categories = [
             ("CPU", "cpu", '{"cores":"number","clock":"text","manufacturer":"text"}'),
@@ -866,7 +1142,8 @@ def init_db():
             ("Allgemein", "Allgemeine Anfragen und Rückfragen", "#2563eb", 72, 1),
             ("Incident", "Störungen und dringende Ausfälle", "#dc2626", 24, 0),
             ("Service Request", "Bestellungen und Service-Anfragen", "#0f766e", 120, 0),
-            ("Change", "Geplante Änderungen und Wartungen", "#7c3aed", 168, 0)
+            ("Change", "Geplante Änderungen und Wartungen", "#7c3aed", 168, 0),
+            ("Verbesserungen", "Optimierungen, neue Features und Produktideen", "#0ea5e9", 168, 0)
         ]
         c.executemany('''
             INSERT OR IGNORE INTO ticket_categories (name, description, color, sla_hours, is_default)
@@ -936,6 +1213,467 @@ def log_activity(db, action, entity_type, entity_id=None, details=None):
         INSERT INTO activity_log (username, action, entity_type, entity_id, details)
         VALUES (?, ?, ?, ?, ?)
     ''', (username, action, entity_type, entity_id, json.dumps(details or {})))
+
+def parse_time_machine_timestamp(value):
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(value.replace("Z", ""))
+    except ValueError:
+        return None
+
+def format_time_machine_change(entity_label, action_label, details):
+    suffix = ""
+    if details:
+        for key in ("title", "name", "id"):
+            value = details.get(key)
+            if value:
+                suffix = f" · {value}"
+                break
+    return f"{entity_label} {action_label}{suffix}"
+
+DEPENDENCY_ENTITY_TYPES = {
+    "asset": {"table": "assets", "label": "Asset", "name_col": "name"},
+    "device": {"table": "devices", "label": "Gerät", "name_col": "name"},
+    "software": {"table": "software", "label": "Software", "name_col": "name"},
+    "service": {"table": "services", "label": "Service", "name_col": "name"},
+    "team": {"table": "teams", "label": "Team", "name_col": "name"},
+    "department": {"table": "departments", "label": "Abteilung", "name_col": "name"},
+    "location": {"table": "locations", "label": "Standort", "name_col": "name"},
+    "user": {"table": "users", "label": "Benutzer", "name_col": "username"},
+    "ticket": {"table": "tickets", "label": "Ticket", "name_col": "title"},
+    "roadmap": {"table": "roadmaps", "label": "Roadmap", "name_col": "title"},
+    "roadmap_step": {"table": "roadmap_steps", "label": "Roadmap-Schritt", "name_col": "title"}
+}
+
+def fetch_entity_label(db, entity_type, entity_id):
+    meta = DEPENDENCY_ENTITY_TYPES.get(entity_type)
+    if not meta:
+        return None
+    row = db.execute(
+        f"SELECT {meta['name_col']} AS name FROM {meta['table']} WHERE id = ?",
+        (entity_id,)
+    ).fetchone()
+    return row["name"] if row else None
+
+def prune_dependency_links(db):
+    rows = db.execute('''
+        SELECT *
+        FROM dependency_links
+        ORDER BY created_at DESC
+    ''').fetchall()
+    valid_rows = []
+    stale_ids = []
+    for row in rows:
+        if fetch_entity_label(db, row["source_type"], row["source_id"]) and fetch_entity_label(db, row["target_type"], row["target_id"]):
+            valid_rows.append(row)
+        else:
+            stale_ids.append(row["id"])
+    if stale_ids:
+        placeholders = ",".join("?" for _ in stale_ids)
+        db.execute(f'DELETE FROM dependency_links WHERE id IN ({placeholders})', stale_ids)
+        db.commit()
+    return valid_rows
+
+def fetch_entity_options(db):
+    options = {}
+    for entity_type, meta in DEPENDENCY_ENTITY_TYPES.items():
+        rows = db.execute(
+            f"SELECT id, {meta['name_col']} AS name FROM {meta['table']} ORDER BY {meta['name_col']}"
+        ).fetchall()
+        options[entity_type] = [dict(row) for row in rows]
+    return options
+
+def build_dependency_edges(db):
+    edges = []
+    link_rows = prune_dependency_links(db)
+    for row in link_rows:
+        edges.append({
+            "id": row["id"],
+            "source_type": row["source_type"],
+            "source_id": row["source_id"],
+            "target_type": row["target_type"],
+            "target_id": row["target_id"],
+            "relation": row["relation"],
+            "criticality": row["criticality"],
+            "redundancy_group": row["redundancy_group"],
+            "notes": row["notes"],
+            "implicit": False
+        })
+
+    asset_device_rows = db.execute('''
+        SELECT ad.asset_id, ad.device_id
+        FROM asset_devices ad
+        JOIN assets a ON a.id = ad.asset_id
+        JOIN devices d ON d.id = ad.device_id
+    ''').fetchall()
+    for row in asset_device_rows:
+        edges.append({
+            "source_type": "asset",
+            "source_id": row["asset_id"],
+            "target_type": "device",
+            "target_id": row["device_id"],
+            "relation": "uses_device",
+            "criticality": "medium",
+            "redundancy_group": None,
+            "notes": None,
+            "implicit": True
+        })
+
+    asset_service_rows = db.execute('''
+        SELECT ads.asset_id, ads.service_id
+        FROM asset_services ads
+        JOIN assets a ON a.id = ads.asset_id
+        JOIN services s ON s.id = ads.service_id
+    ''').fetchall()
+    for row in asset_service_rows:
+        edges.append({
+            "source_type": "asset",
+            "source_id": row["asset_id"],
+            "target_type": "service",
+            "target_id": row["service_id"],
+            "relation": "consumes_service",
+            "criticality": "medium",
+            "redundancy_group": None,
+            "notes": None,
+            "implicit": True
+        })
+
+    assignment_rows = db.execute('''
+        SELECT aa.asset_id, aa.user_identifier, aa.location_id
+        FROM asset_assignments aa
+        JOIN assets a ON a.id = aa.asset_id
+        WHERE aa.released_at IS NULL OR aa.released_at = ''
+    ''').fetchall()
+    for row in assignment_rows:
+        if row["location_id"]:
+            location_row = db.execute('SELECT id FROM locations WHERE id = ?', (row["location_id"],)).fetchone()
+            if location_row:
+                edges.append({
+                    "source_type": "asset",
+                    "source_id": row["asset_id"],
+                    "target_type": "location",
+                    "target_id": row["location_id"],
+                    "relation": "located_at",
+                    "criticality": "low",
+                    "redundancy_group": None,
+                    "notes": None,
+                    "implicit": True
+                })
+        if row["user_identifier"]:
+            user_row = db.execute('SELECT id FROM users WHERE username = ?', (row["user_identifier"],)).fetchone()
+            if user_row:
+                edges.append({
+                    "source_type": "asset",
+                    "source_id": row["asset_id"],
+                    "target_type": "user",
+                    "target_id": user_row["id"],
+                    "relation": "assigned_to",
+                    "criticality": "low",
+                    "redundancy_group": None,
+                    "notes": None,
+                    "implicit": True
+                })
+
+    installation_rows = db.execute('''
+        SELECT si.software_id, si.device_id, si.asset_id
+        FROM software_installations si
+        JOIN software s ON s.id = si.software_id
+    ''').fetchall()
+    for row in installation_rows:
+        if row["device_id"]:
+            device_row = db.execute('SELECT id FROM devices WHERE id = ?', (row["device_id"],)).fetchone()
+            if not device_row:
+                continue
+            edges.append({
+                "source_type": "device",
+                "source_id": row["device_id"],
+                "target_type": "software",
+                "target_id": row["software_id"],
+                "relation": "runs_software",
+                "criticality": "medium",
+                "redundancy_group": None,
+                "notes": None,
+                "implicit": True
+            })
+        if row["asset_id"]:
+            asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (row["asset_id"],)).fetchone()
+            if not asset_row:
+                continue
+            edges.append({
+                "source_type": "asset",
+                "source_id": row["asset_id"],
+                "target_type": "software",
+                "target_id": row["software_id"],
+                "relation": "runs_software",
+                "criticality": "medium",
+                "redundancy_group": None,
+                "notes": None,
+                "implicit": True
+            })
+
+    software_rows = db.execute('SELECT id, owner_team_id FROM software WHERE owner_team_id IS NOT NULL').fetchall()
+    for row in software_rows:
+        edges.append({
+            "source_type": "software",
+            "source_id": row["id"],
+            "target_type": "team",
+            "target_id": row["owner_team_id"],
+            "relation": "maintained_by",
+            "criticality": "medium",
+            "redundancy_group": None,
+            "notes": None,
+            "implicit": True
+        })
+
+    team_rows = db.execute('SELECT id, department_id FROM teams WHERE department_id IS NOT NULL').fetchall()
+    for row in team_rows:
+        edges.append({
+            "source_type": "team",
+            "source_id": row["id"],
+            "target_type": "department",
+            "target_id": row["department_id"],
+            "relation": "part_of",
+            "criticality": "low",
+            "redundancy_group": None,
+            "notes": None,
+            "implicit": True
+        })
+
+    ticket_asset_rows = db.execute('SELECT ticket_id, asset_id FROM ticket_assets').fetchall()
+    for row in ticket_asset_rows:
+        ticket_row = db.execute('SELECT id FROM tickets WHERE id = ?', (row["ticket_id"],)).fetchone()
+        asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (row["asset_id"],)).fetchone()
+        if ticket_row and asset_row:
+            edges.append({
+                "source_type": "ticket",
+                "source_id": row["ticket_id"],
+                "target_type": "asset",
+                "target_id": row["asset_id"],
+                "relation": "related_asset",
+                "criticality": "medium",
+                "redundancy_group": None,
+                "notes": None,
+                "implicit": True
+            })
+
+    roadmap_step_rows = db.execute('SELECT id, roadmap_id FROM roadmap_steps WHERE roadmap_id IS NOT NULL').fetchall()
+    for row in roadmap_step_rows:
+        roadmap_row = db.execute('SELECT id FROM roadmaps WHERE id = ?', (row["roadmap_id"],)).fetchone()
+        if roadmap_row:
+            edges.append({
+                "source_type": "roadmap_step",
+                "source_id": row["id"],
+                "target_type": "roadmap",
+                "target_id": row["roadmap_id"],
+                "relation": "part_of",
+                "criticality": "low",
+                "redundancy_group": None,
+                "notes": None,
+                "implicit": True
+            })
+
+    return edges
+
+def dependency_node_key(entity_type, entity_id):
+    return f"{entity_type}:{entity_id}"
+
+def build_dependency_nodes(db):
+    nodes = []
+    for entity_type, meta in DEPENDENCY_ENTITY_TYPES.items():
+        rows = db.execute(
+            f"SELECT id, {meta['name_col']} AS name FROM {meta['table']} ORDER BY {meta['name_col']}"
+        ).fetchall()
+        for row in rows:
+            nodes.append({
+                "key": dependency_node_key(entity_type, row["id"]),
+                "id": row["id"],
+                "type": entity_type,
+                "label": row["name"]
+            })
+    return nodes
+
+def build_dependency_graph_data(db):
+    nodes = build_dependency_nodes(db)
+    node_map = {node["key"]: node for node in nodes}
+    edges = build_dependency_edges(db)
+    for edge in edges:
+        source_key = dependency_node_key(edge["source_type"], edge["source_id"])
+        target_key = dependency_node_key(edge["target_type"], edge["target_id"])
+        if source_key not in node_map:
+            label = fetch_entity_label(db, edge["source_type"], edge["source_id"]) or f"{edge['source_type']} #{edge['source_id']}"
+            node_map[source_key] = {
+                "key": source_key,
+                "id": edge["source_id"],
+                "type": edge["source_type"],
+                "label": label
+            }
+        if target_key not in node_map:
+            label = fetch_entity_label(db, edge["target_type"], edge["target_id"]) or f"{edge['target_type']} #{edge['target_id']}"
+            node_map[target_key] = {
+                "key": target_key,
+                "id": edge["target_id"],
+                "type": edge["target_type"],
+                "label": label
+            }
+    return list(node_map.values()), edges
+
+def find_tickets_for_node(db, entity_type, entity_id):
+    ticket_ids = set()
+    if entity_type == "ticket":
+        ticket_ids.add(entity_id)
+    if entity_type == "asset":
+        rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (entity_id,)).fetchall()
+        ticket_ids.update(row["ticket_id"] for row in rows)
+    if entity_type == "device":
+        asset_rows = db.execute('SELECT asset_id FROM asset_devices WHERE device_id = ?', (entity_id,)).fetchall()
+        for asset_row in asset_rows:
+            rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (asset_row["asset_id"],)).fetchall()
+            ticket_ids.update(row["ticket_id"] for row in rows)
+    if entity_type == "software":
+        install_rows = db.execute('''
+            SELECT asset_id, device_id
+            FROM software_installations
+            WHERE software_id = ?
+        ''', (entity_id,)).fetchall()
+        for install in install_rows:
+            if install["asset_id"]:
+                rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (install["asset_id"],)).fetchall()
+                ticket_ids.update(row["ticket_id"] for row in rows)
+            if install["device_id"]:
+                asset_rows = db.execute('SELECT asset_id FROM asset_devices WHERE device_id = ?', (install["device_id"],)).fetchall()
+                for asset_row in asset_rows:
+                    rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (asset_row["asset_id"],)).fetchall()
+                    ticket_ids.update(row["ticket_id"] for row in rows)
+    if entity_type == "service":
+        asset_rows = db.execute('SELECT asset_id FROM asset_services WHERE service_id = ?', (entity_id,)).fetchall()
+        for asset_row in asset_rows:
+            rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (asset_row["asset_id"],)).fetchall()
+            ticket_ids.update(row["ticket_id"] for row in rows)
+    if entity_type == "location":
+        asset_rows = db.execute('SELECT asset_id FROM asset_assignments WHERE location_id = ?', (entity_id,)).fetchall()
+        for asset_row in asset_rows:
+            rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (asset_row["asset_id"],)).fetchall()
+            ticket_ids.update(row["ticket_id"] for row in rows)
+    if entity_type == "user":
+        user_row = db.execute('SELECT username FROM users WHERE id = ?', (entity_id,)).fetchone()
+        if user_row:
+            asset_rows = db.execute('SELECT asset_id FROM asset_assignments WHERE user_identifier = ?', (user_row["username"],)).fetchall()
+            for asset_row in asset_rows:
+                rows = db.execute('SELECT ticket_id FROM ticket_assets WHERE asset_id = ?', (asset_row["asset_id"],)).fetchall()
+                ticket_ids.update(row["ticket_id"] for row in rows)
+    if not ticket_ids:
+        return []
+    placeholders = ",".join("?" for _ in ticket_ids)
+    rows = db.execute(f'''
+        SELECT id, title, status, priority, escalation_level, due_date
+        FROM tickets
+        WHERE id IN ({placeholders})
+        ORDER BY created_at DESC
+    ''', tuple(ticket_ids)).fetchall()
+    return [dict(row) for row in rows]
+
+def analyze_dependency_impact(db, source_type, source_id, max_depth=None):
+    nodes, edges = build_dependency_graph_data(db)
+    node_map = {node["key"]: node for node in nodes}
+    reverse_adj = {}
+    for edge in edges:
+        source_key = dependency_node_key(edge["source_type"], edge["source_id"])
+        target_key = dependency_node_key(edge["target_type"], edge["target_id"])
+        reverse_adj.setdefault(target_key, []).append({
+            "key": source_key,
+            "relation": edge["relation"],
+            "criticality": edge["criticality"]
+        })
+
+    start_key = dependency_node_key(source_type, source_id)
+    visited = {start_key}
+    impact = []
+    queue = [(start_key, 0)]
+    while queue:
+        current_key, depth = queue.pop(0)
+        if max_depth is not None and depth >= max_depth:
+            continue
+        for neighbor in reverse_adj.get(current_key, []):
+            neighbor_key = neighbor["key"]
+            if neighbor_key in visited:
+                continue
+            visited.add(neighbor_key)
+            node = node_map.get(neighbor_key, {
+                "key": neighbor_key,
+                "type": neighbor_key.split(":")[0],
+                "id": int(neighbor_key.split(":")[1]),
+                "label": neighbor_key
+            })
+            impact.append({
+                "key": neighbor_key,
+                "type": node["type"],
+                "id": node["id"],
+                "label": node["label"],
+                "depth": depth + 1,
+                "relation": neighbor["relation"],
+                "criticality": neighbor["criticality"]
+            })
+            queue.append((neighbor_key, depth + 1))
+
+    impacted_ticket_ids = set()
+    for item in impact:
+        ticket_rows = find_tickets_for_node(db, item["type"], item["id"])
+        impacted_ticket_ids.update(ticket["id"] for ticket in ticket_rows)
+    direct_ticket_rows = find_tickets_for_node(db, source_type, source_id)
+    impacted_ticket_ids.update(ticket["id"] for ticket in direct_ticket_rows)
+
+    tickets = []
+    if impacted_ticket_ids:
+        placeholders = ",".join("?" for _ in impacted_ticket_ids)
+        ticket_rows = db.execute(f'''
+            SELECT id, title, status, priority, escalation_level, due_date
+            FROM tickets
+            WHERE id IN ({placeholders})
+            ORDER BY created_at DESC
+        ''', tuple(impacted_ticket_ids)).fetchall()
+        tickets = [dict(row) for row in ticket_rows]
+
+    critical_tickets = [
+        ticket for ticket in tickets
+        if (ticket.get("priority") or "").lower() in {"high", "urgent", "critical"}
+        or (ticket.get("escalation_level") or 0) > 0
+    ]
+    return impact, tickets, critical_tickets
+
+def calculate_spof_nodes(db):
+    rows = db.execute('''
+        SELECT source_type, source_id, target_type, target_id, redundancy_group
+        FROM dependency_links
+    ''').fetchall()
+    dependents = {}
+    redundancy_targets = set()
+    for row in rows:
+        target_key = dependency_node_key(row["target_type"], row["target_id"])
+        source_key = dependency_node_key(row["source_type"], row["source_id"])
+        dependents.setdefault(target_key, set()).add(source_key)
+        if row["redundancy_group"]:
+            redundancy_targets.add(target_key)
+    spof = []
+    for target_key, sources in dependents.items():
+        if target_key in redundancy_targets:
+            continue
+        entity_type, entity_id = target_key.split(":")
+        label = fetch_entity_label(db, entity_type, int(entity_id)) or target_key
+        spof.append({
+            "key": target_key,
+            "type": entity_type,
+            "id": int(entity_id),
+            "label": label,
+            "dependent_count": len(sources)
+        })
+    spof.sort(key=lambda item: item["dependent_count"], reverse=True)
+    return spof
 
 def pro_required(f):
     @wraps(f)
@@ -1113,6 +1851,95 @@ def parse_date(value):
     except ValueError:
         return None
 
+def parse_datetime(value):
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+def is_closed_status(status):
+    return (status or "").strip().lower() in {"closed", "resolved", "done"}
+
+def should_auto_create_roadmap(category_name):
+    if not category_name:
+        return False
+    lowered = category_name.strip().lower()
+    keywords = ("verbesser", "improvement", "enhancement", "feature", "upgrade", "optim")
+    return any(keyword in lowered for keyword in keywords)
+
+def create_roadmap_for_ticket(db, ticket, category_name=None, created_by=None):
+    if not ticket:
+        return None
+    existing = db.execute('SELECT id FROM roadmaps WHERE ticket_id = ?', (ticket["id"],)).fetchone()
+    if existing:
+        return existing["id"]
+    title = f"Roadmap: {ticket['title']}"
+    objective = f"Umsetzungsplan für Ticket #{ticket['id']}: {ticket['title']}"
+    owner = ticket.get("assignee") or ticket.get("created_by")
+    start_date = datetime.utcnow().strftime("%Y-%m-%d")
+    target_date = ticket.get("due_date") or None
+    roadmap_cursor = db.execute('''
+        INSERT INTO roadmaps (ticket_id, title, objective, status, owner, start_date, target_date, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        ticket["id"],
+        title,
+        objective,
+        "planned",
+        owner,
+        start_date,
+        target_date,
+        created_by or session.get('username')
+    ))
+    roadmap_id = roadmap_cursor.lastrowid
+    default_steps = [
+        ("Analyse & Scope", "Ziele, Anforderungen und Erfolgskriterien definieren.", "planned"),
+        ("Konzept & Design", "Architektur, UI/UX und technische Umsetzung planen.", "planned"),
+        ("Implementierung", "Features entwickeln und integrieren.", "planned"),
+        ("Qualitätssicherung", "Tests, Review und Abnahme durchführen.", "planned"),
+        ("Rollout & Monitoring", "Deployment, Dokumentation und Monitoring vorbereiten.", "planned")
+    ]
+    for position, (step_title, description, status) in enumerate(default_steps, start=1):
+        db.execute('''
+            INSERT INTO roadmap_steps (roadmap_id, title, description, status, position)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (roadmap_id, step_title, description, status, position))
+    log_activity(db, "create", "roadmap", roadmap_id, {
+        "ticket_id": ticket["id"],
+        "title": title,
+        "category": category_name
+    })
+    return roadmap_id
+
+def fetch_roadmap(db, roadmap_id):
+    row = db.execute('''
+        SELECT r.*, t.title as ticket_title, t.status as ticket_status, t.created_by as ticket_owner
+        FROM roadmaps r
+        LEFT JOIN tickets t ON r.ticket_id = t.id
+        WHERE r.id = ?
+    ''', (roadmap_id,)).fetchone()
+    return dict(row) if row else None
+
+def fetch_roadmap_for_ticket(db, ticket_id):
+    row = db.execute('SELECT * FROM roadmaps WHERE ticket_id = ?', (ticket_id,)).fetchone()
+    return dict(row) if row else None
+
+def fetch_roadmap_steps(db, roadmap_id):
+    rows = db.execute('''
+        SELECT *
+        FROM roadmap_steps
+        WHERE roadmap_id = ?
+        ORDER BY position ASC, created_at ASC
+    ''', (roadmap_id,)).fetchall()
+    return [dict(row) for row in rows]
+
 def warranty_status(warranty_end):
     parsed = parse_date(warranty_end)
     if not parsed:
@@ -1138,6 +1965,46 @@ def summarize_device_info(device_rows):
         if location_name and location_name not in locations:
             locations.append(location_name)
     return serials, locations
+
+def mark_devices_as_used(db, device_ids):
+    unique_ids = [device_id for device_id in dict.fromkeys(device_ids) if device_id]
+    if not unique_ids:
+        return
+    placeholders = ",".join(["?"] * len(unique_ids))
+    rows = db.execute(
+        f"SELECT id, specs FROM devices WHERE id IN ({placeholders})",
+        unique_ids,
+    ).fetchall()
+    for row in rows:
+        try:
+            specs = json.loads(row["specs"] or "{}")
+        except json.JSONDecodeError:
+            specs = {}
+        specs["Status"] = "Verwendet"
+        db.execute(
+            "UPDATE devices SET specs = ? WHERE id = ?",
+            (json.dumps(specs), row["id"]),
+        )
+
+def mark_devices_as_in_stock(db, device_ids):
+    unique_ids = [device_id for device_id in dict.fromkeys(device_ids) if device_id]
+    if not unique_ids:
+        return
+    placeholders = ",".join(["?"] * len(unique_ids))
+    rows = db.execute(
+        f"SELECT id, specs FROM devices WHERE id IN ({placeholders})",
+        unique_ids,
+    ).fetchall()
+    for row in rows:
+        try:
+            specs = json.loads(row["specs"] or "{}")
+        except json.JSONDecodeError:
+            specs = {}
+        specs["Status"] = "Lager"
+        db.execute(
+            "UPDATE devices SET specs = ? WHERE id = ?",
+            (json.dumps(specs), row["id"]),
+        )
 
 def get_asset_devices_info(db, asset_id):
     rows = db.execute('''
@@ -1399,6 +2266,27 @@ def tickets_page():
     access = get_user_access(get_db())
     return render_template('tickets.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
+@app.route('/roadmap')
+@login_required
+@require_permissions('roadmap.view', 'roadmap.manage')
+def roadmap_page():
+    access = get_user_access(get_db())
+    return render_template('roadmap.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
+@app.route('/dependencies')
+@login_required
+@require_permissions('dependencies.view', 'dependencies.manage')
+def dependencies_page():
+    access = get_user_access(get_db())
+    return render_template('dependencies.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
+@app.route('/time-machine')
+@login_required
+@require_permission('timemachine.view')
+def time_machine_page():
+    access = get_user_access(get_db())
+    return render_template('time_machine.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
 @app.route('/api/categories/<int:category_id>', methods=['PUT', 'DELETE'])
 @login_required
 def handle_category(category_id):
@@ -1506,6 +2394,13 @@ def handle_device(device_id):
             return jsonify({"error": f"Ungültige Daten: {str(e)}"}), 400
 
     elif request.method == 'DELETE':
+        db.execute('DELETE FROM asset_devices WHERE device_id = ?', (device_id,))
+        db.execute('DELETE FROM software_installations WHERE device_id = ?', (device_id,))
+        db.execute('''
+            DELETE FROM dependency_links
+            WHERE (source_type = 'device' AND source_id = ?)
+               OR (target_type = 'device' AND target_id = ?)
+        ''', (device_id, device_id))
         result = db.execute('DELETE FROM devices WHERE id = ?', (device_id,))
         if result.rowcount == 0:
             return jsonify({"error": "Gerät nicht gefunden"}), 404
@@ -1624,6 +2519,7 @@ def manage_assets():
                     INSERT INTO asset_devices (asset_id, device_id)
                     VALUES (?, ?)
                 ''', (asset_id, device_id))
+            mark_devices_as_used(db, device_ids)
             for relation in relations:
                 related_asset_id = relation.get("related_asset_id")
                 relation_type_id = relation.get("relation_type_id")
@@ -1743,6 +2639,7 @@ def asset_detail(asset_id):
                 INSERT INTO asset_devices (asset_id, device_id)
                 VALUES (?, ?)
             ''', (asset_id, device_id))
+        mark_devices_as_used(db, device_ids)
         db.execute('DELETE FROM asset_relations WHERE asset_id = ?', (asset_id,))
         for relation in relations:
             related_asset_id = relation.get("related_asset_id")
@@ -1759,6 +2656,12 @@ def asset_detail(asset_id):
 
     if not user_can('assets.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    device_rows = db.execute(
+        'SELECT device_id FROM asset_devices WHERE asset_id = ?',
+        (asset_id,),
+    ).fetchall()
+    device_ids = [row["device_id"] for row in device_rows]
+    mark_devices_as_in_stock(db, device_ids)
     db.execute('DELETE FROM ticket_assets WHERE asset_id = ?', (asset_id,))
     db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
     db.execute('DELETE FROM asset_relations WHERE asset_id = ? OR related_asset_id = ?', (asset_id, asset_id))
@@ -1899,12 +2802,714 @@ def ticket_category_detail(category_id):
 
     if not user_can('ticket_categories.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    affected_tickets = db.execute(
+        'SELECT id FROM tickets WHERE category_id = ?',
+        (category_id,)
+    ).fetchall()
+    if affected_tickets:
+        db.execute('UPDATE tickets SET category_id = NULL WHERE category_id = ?', (category_id,))
     result = db.execute('DELETE FROM ticket_categories WHERE id = ?', (category_id,))
     if result.rowcount == 0:
         return jsonify({"error": "Kategorie nicht gefunden"}), 404
-    log_activity(db, "delete", "ticket_category", category_id)
+    log_activity(
+        db,
+        "delete",
+        "ticket_category",
+        category_id,
+        {"updated_tickets": len(affected_tickets)}
+    )
     db.commit()
     return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/roadmaps', methods=['GET', 'POST'])
+@login_required
+def roadmaps():
+    db = get_db()
+    access = get_user_access(db)
+    if request.method == 'POST':
+        if not user_can('roadmap.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        ticket_id = data.get('ticket_id')
+        title = (data.get('title') or '').strip()
+        objective = (data.get('objective') or '').strip()
+        status = (data.get('status') or 'planned').strip()
+        owner = (data.get('owner') or '').strip()
+        start_date = (data.get('start_date') or '').strip()
+        target_date = (data.get('target_date') or '').strip()
+        steps = data.get('steps') or []
+        ticket = None
+        if ticket_id:
+            ticket = fetch_ticket(db, ticket_id)
+            if not ticket:
+                return jsonify({"error": "Ticket nicht gefunden"}), 404
+            if not ensure_ticket_access(ticket, access, require_owner_permission=True):
+                return jsonify({"error": "Keine Berechtigung"}), 403
+            existing = db.execute('SELECT id FROM roadmaps WHERE ticket_id = ?', (ticket_id,)).fetchone()
+            if existing:
+                return jsonify({"error": "Roadmap für dieses Ticket existiert bereits"}), 400
+            if not title:
+                title = f"Roadmap: {ticket['title']}"
+            if not objective:
+                objective = f"Umsetzungsplan für Ticket #{ticket['id']}: {ticket['title']}"
+            if not owner:
+                owner = ticket.get("assignee") or ticket.get("created_by") or ''
+
+        if not title:
+            return jsonify({"error": "Titel ist erforderlich"}), 400
+
+        cursor = db.execute('''
+            INSERT INTO roadmaps (ticket_id, title, objective, status, owner, start_date, target_date, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            ticket_id,
+            title,
+            objective,
+            status,
+            owner,
+            start_date or None,
+            target_date or None,
+            session.get('username')
+        ))
+        roadmap_id = cursor.lastrowid
+        for index, step in enumerate(steps, start=1):
+            step_title = (step.get('title') or '').strip()
+            if not step_title:
+                continue
+            db.execute('''
+                INSERT INTO roadmap_steps (roadmap_id, title, description, status, position, owner, due_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                roadmap_id,
+                step_title,
+                (step.get('description') or '').strip(),
+                (step.get('status') or 'planned').strip(),
+                int(step.get('position') or index),
+                (step.get('owner') or '').strip(),
+                (step.get('due_date') or '').strip() or None
+            ))
+        log_activity(db, "create", "roadmap", roadmap_id, {"title": title, "ticket_id": ticket_id})
+        db.commit()
+        return jsonify({"status": "created", "id": roadmap_id}), 201
+
+    if not user_can('roadmap.view'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+
+    filters = []
+    params = []
+    status = (request.args.get('status') or '').strip()
+    search = (request.args.get('search') or '').strip()
+    ticket_id = request.args.get('ticket_id')
+    mine = request.args.get('mine')
+
+    if status:
+        filters.append('r.status = ?')
+        params.append(status)
+    if ticket_id:
+        filters.append('r.ticket_id = ?')
+        params.append(ticket_id)
+    if search:
+        filters.append('(r.title LIKE ? OR r.objective LIKE ? OR t.title LIKE ?)')
+        params.extend([f'%{search}%', f'%{search}%', f'%{search}%'])
+    if mine:
+        filters.append('(r.created_by = ? OR t.created_by = ?)')
+        params.extend([session.get('username'), session.get('username')])
+    if not access["is_superuser"] and 'tickets.view_all' not in access["permissions"]:
+        filters.append('(t.created_by = ? OR r.created_by = ?)')
+        params.extend([session.get('username'), session.get('username')])
+
+    query = '''
+        SELECT r.*, t.title as ticket_title, t.status as ticket_status,
+               c.name as category_name, c.color as category_color,
+               (SELECT COUNT(*) FROM roadmap_steps rs WHERE rs.roadmap_id = r.id) as step_count
+        FROM roadmaps r
+        LEFT JOIN tickets t ON r.ticket_id = t.id
+        LEFT JOIN ticket_categories c ON t.category_id = c.id
+    '''
+    if filters:
+        query += ' WHERE ' + ' AND '.join(filters)
+    query += ' ORDER BY r.updated_at DESC, r.created_at DESC'
+    rows = db.execute(query, params).fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/roadmaps/<int:roadmap_id>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def roadmap_detail(roadmap_id):
+    db = get_db()
+    access = get_user_access(db)
+    roadmap = fetch_roadmap(db, roadmap_id)
+    if not roadmap:
+        return jsonify({"error": "Roadmap nicht gefunden"}), 404
+    if roadmap.get("ticket_id"):
+        ticket = fetch_ticket(db, roadmap["ticket_id"])
+        if not ensure_ticket_access(ticket, access):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+    elif not user_can('roadmap.view'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+
+    if request.method == 'GET':
+        roadmap["steps"] = fetch_roadmap_steps(db, roadmap_id)
+        return jsonify(roadmap)
+
+    if request.method == 'PUT':
+        if not user_can('roadmap.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        title = (data.get('title') or roadmap.get('title') or '').strip()
+        objective = (data.get('objective') or roadmap.get('objective') or '').strip()
+        status = (data.get('status') or roadmap.get('status') or 'planned').strip()
+        owner = (data.get('owner') or roadmap.get('owner') or '').strip()
+        start_date = (data.get('start_date') or roadmap.get('start_date') or '').strip()
+        target_date = (data.get('target_date') or roadmap.get('target_date') or '').strip()
+        if not title:
+            return jsonify({"error": "Titel ist erforderlich"}), 400
+        db.execute('''
+            UPDATE roadmaps
+            SET title = ?, objective = ?, status = ?, owner = ?, start_date = ?, target_date = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (title, objective, status, owner, start_date or None, target_date or None, roadmap_id))
+        log_activity(db, "update", "roadmap", roadmap_id, {"title": title})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    if not user_can('roadmap.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    db.execute('DELETE FROM roadmap_steps WHERE roadmap_id = ?', (roadmap_id,))
+    db.execute('DELETE FROM roadmaps WHERE id = ?', (roadmap_id,))
+    log_activity(db, "delete", "roadmap", roadmap_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/roadmaps/<int:roadmap_id>/steps', methods=['POST'])
+@login_required
+def roadmap_steps_create(roadmap_id):
+    db = get_db()
+    access = get_user_access(db)
+    roadmap = fetch_roadmap(db, roadmap_id)
+    if not roadmap:
+        return jsonify({"error": "Roadmap nicht gefunden"}), 404
+    if roadmap.get("ticket_id"):
+        ticket = fetch_ticket(db, roadmap["ticket_id"])
+        if not ensure_ticket_access(ticket, access):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+    if not user_can('roadmap.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip()
+    if not title:
+        return jsonify({"error": "Titel ist erforderlich"}), 400
+    description = (data.get('description') or '').strip()
+    status = (data.get('status') or 'planned').strip()
+    owner = (data.get('owner') or '').strip()
+    due_date = (data.get('due_date') or '').strip()
+    position = int(data.get('position') or 0)
+    if position <= 0:
+        row = db.execute('SELECT MAX(position) as max_pos FROM roadmap_steps WHERE roadmap_id = ?', (roadmap_id,)).fetchone()
+        position = (row["max_pos"] or 0) + 1
+    cursor = db.execute('''
+        INSERT INTO roadmap_steps (roadmap_id, title, description, status, position, owner, due_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (roadmap_id, title, description, status, position, owner, due_date or None))
+    db.execute('UPDATE roadmaps SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (roadmap_id,))
+    log_activity(db, "create", "roadmap_step", cursor.lastrowid, {"roadmap_id": roadmap_id, "title": title})
+    db.commit()
+    return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+
+@app.route('/api/roadmaps/<int:roadmap_id>/steps/<int:step_id>', methods=['PUT', 'DELETE'])
+@login_required
+def roadmap_steps_detail(roadmap_id, step_id):
+    db = get_db()
+    access = get_user_access(db)
+    roadmap = fetch_roadmap(db, roadmap_id)
+    if not roadmap:
+        return jsonify({"error": "Roadmap nicht gefunden"}), 404
+    if roadmap.get("ticket_id"):
+        ticket = fetch_ticket(db, roadmap["ticket_id"])
+        if not ensure_ticket_access(ticket, access):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+    if not user_can('roadmap.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    step = db.execute('SELECT * FROM roadmap_steps WHERE id = ? AND roadmap_id = ?', (step_id, roadmap_id)).fetchone()
+    if not step:
+        return jsonify({"error": "Step nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        title = (data.get('title') or step["title"]).strip()
+        description = (data.get('description') or step["description"] or '').strip()
+        status = (data.get('status') or step["status"] or 'planned').strip()
+        owner = (data.get('owner') or step["owner"] or '').strip()
+        due_date = (data.get('due_date') or step["due_date"] or '').strip()
+        position = int(data.get('position') or step["position"] or 0)
+        if not title:
+            return jsonify({"error": "Titel ist erforderlich"}), 400
+        db.execute('''
+            UPDATE roadmap_steps
+            SET title = ?, description = ?, status = ?, owner = ?, due_date = ?, position = ?
+            WHERE id = ? AND roadmap_id = ?
+        ''', (title, description, status, owner, due_date or None, position, step_id, roadmap_id))
+        db.execute('UPDATE roadmaps SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (roadmap_id,))
+        log_activity(db, "update", "roadmap_step", step_id, {"roadmap_id": roadmap_id, "title": title})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM roadmap_steps WHERE id = ? AND roadmap_id = ?', (step_id, roadmap_id))
+    db.execute('UPDATE roadmaps SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (roadmap_id,))
+    log_activity(db, "delete", "roadmap_step", step_id, {"roadmap_id": roadmap_id})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/departments', methods=['GET', 'POST'])
+@login_required
+def departments():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('departments.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO departments (name, description)
+                VALUES (?, ?)
+            ''', (name, description))
+            log_activity(db, "create", "department", cursor.lastrowid, {"name": name})
+            db.commit()
+            return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Abteilung existiert bereits"}), 400
+
+    if not (user_can('departments.view') or user_can('departments.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('SELECT * FROM departments ORDER BY name').fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/departments/<int:department_id>', methods=['PUT', 'DELETE'])
+@login_required
+def department_detail(department_id):
+    db = get_db()
+    if not user_can('departments.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    department = db.execute('SELECT * FROM departments WHERE id = ?', (department_id,)).fetchone()
+    if not department:
+        return jsonify({"error": "Abteilung nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        name = (data.get('name') or department["name"] or '').strip()
+        description = (data.get('description') or department["description"] or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        db.execute('''
+            UPDATE departments
+            SET name = ?, description = ?
+            WHERE id = ?
+        ''', (name, description, department_id))
+        log_activity(db, "update", "department", department_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM departments WHERE id = ?', (department_id,))
+    log_activity(db, "delete", "department", department_id, {"name": department["name"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/teams', methods=['GET', 'POST'])
+@login_required
+def teams():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('teams.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        department_id = data.get('department_id')
+        lead_user = (data.get('lead_user') or '').strip()
+        notes = (data.get('notes') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO teams (name, department_id, lead_user, notes)
+                VALUES (?, ?, ?, ?)
+            ''', (name, department_id, lead_user, notes))
+            log_activity(db, "create", "team", cursor.lastrowid, {"name": name})
+            db.commit()
+            return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Team existiert bereits"}), 400
+
+    if not (user_can('teams.view') or user_can('teams.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('''
+        SELECT t.*, d.name as department_name
+        FROM teams t
+        LEFT JOIN departments d ON t.department_id = d.id
+        ORDER BY t.name
+    ''').fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/teams/<int:team_id>', methods=['PUT', 'DELETE'])
+@login_required
+def team_detail(team_id):
+    db = get_db()
+    if not user_can('teams.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    team = db.execute('SELECT * FROM teams WHERE id = ?', (team_id,)).fetchone()
+    if not team:
+        return jsonify({"error": "Team nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        name = (data.get('name') or team["name"] or '').strip()
+        department_id = data.get('department_id')
+        lead_user = (data.get('lead_user') or team["lead_user"] or '').strip()
+        notes = (data.get('notes') or team["notes"] or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        db.execute('''
+            UPDATE teams
+            SET name = ?, department_id = ?, lead_user = ?, notes = ?
+            WHERE id = ?
+        ''', (name, department_id, lead_user, notes, team_id))
+        log_activity(db, "update", "team", team_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM teams WHERE id = ?', (team_id,))
+    log_activity(db, "delete", "team", team_id, {"name": team["name"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/software', methods=['GET', 'POST'])
+@login_required
+def software_inventory():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('software.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        vendor = (data.get('vendor') or '').strip()
+        version = (data.get('version') or '').strip()
+        license_type = (data.get('license_type') or '').strip()
+        criticality = (data.get('criticality') or 'medium').strip()
+        description = (data.get('description') or '').strip()
+        owner_team_id = data.get('owner_team_id')
+        support_contact = (data.get('support_contact') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO software (name, vendor, version, license_type, criticality, description, owner_team_id, support_contact)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (name, vendor, version, license_type, criticality, description, owner_team_id, support_contact))
+            log_activity(db, "create", "software", cursor.lastrowid, {"name": name})
+            db.commit()
+            return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Software existiert bereits"}), 400
+
+    if not (user_can('software.view') or user_can('software.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('''
+        SELECT s.*, t.name as owner_team_name
+        FROM software s
+        LEFT JOIN teams t ON s.owner_team_id = t.id
+        ORDER BY s.name
+    ''').fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/software/<int:software_id>', methods=['PUT', 'DELETE'])
+@login_required
+def software_detail(software_id):
+    db = get_db()
+    if not user_can('software.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    software_row = db.execute('SELECT * FROM software WHERE id = ?', (software_id,)).fetchone()
+    if not software_row:
+        return jsonify({"error": "Software nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        name = (data.get('name') or software_row["name"] or '').strip()
+        vendor = (data.get('vendor') or software_row["vendor"] or '').strip()
+        version = (data.get('version') or software_row["version"] or '').strip()
+        license_type = (data.get('license_type') or software_row["license_type"] or '').strip()
+        criticality = (data.get('criticality') or software_row["criticality"] or 'medium').strip()
+        description = (data.get('description') or software_row["description"] or '').strip()
+        owner_team_id = data.get('owner_team_id')
+        support_contact = (data.get('support_contact') or software_row["support_contact"] or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        db.execute('''
+            UPDATE software
+            SET name = ?, vendor = ?, version = ?, license_type = ?, criticality = ?, description = ?, owner_team_id = ?, support_contact = ?
+            WHERE id = ?
+        ''', (name, vendor, version, license_type, criticality, description, owner_team_id, support_contact, software_id))
+        log_activity(db, "update", "software", software_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM software WHERE id = ?', (software_id,))
+    log_activity(db, "delete", "software", software_id, {"name": software_row["name"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/software-installations', methods=['GET', 'POST'])
+@login_required
+def software_installations():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('software.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        software_id = data.get('software_id')
+        device_id = data.get('device_id')
+        asset_id = data.get('asset_id')
+        if not software_id or not (device_id or asset_id):
+            return jsonify({"error": "Software sowie Gerät oder Asset sind erforderlich"}), 400
+        installed_version = (data.get('installed_version') or '').strip()
+        environment = (data.get('environment') or 'production').strip()
+        status = (data.get('status') or 'active').strip()
+        notes = (data.get('notes') or '').strip()
+        cursor = db.execute('''
+            INSERT INTO software_installations (
+                software_id, device_id, asset_id, installed_version, environment, status, notes
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (software_id, device_id, asset_id, installed_version, environment, status, notes))
+        log_activity(db, "create", "software_installation", cursor.lastrowid, {
+            "software_id": software_id,
+            "device_id": device_id,
+            "asset_id": asset_id
+        })
+        db.commit()
+        return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+
+    if not (user_can('software.view') or user_can('software.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    software_id = request.args.get('software_id')
+    device_id = request.args.get('device_id')
+    asset_id = request.args.get('asset_id')
+    query = '''
+        SELECT si.*, s.name as software_name, d.name as device_name, a.name as asset_name
+        FROM software_installations si
+        JOIN software s ON si.software_id = s.id
+        LEFT JOIN devices d ON si.device_id = d.id
+        LEFT JOIN assets a ON si.asset_id = a.id
+    '''
+    conditions = []
+    params = []
+    if software_id:
+        conditions.append('si.software_id = ?')
+        params.append(software_id)
+    if device_id:
+        conditions.append('si.device_id = ?')
+        params.append(device_id)
+    if asset_id:
+        conditions.append('si.asset_id = ?')
+        params.append(asset_id)
+    if conditions:
+        query += ' WHERE ' + ' AND '.join(conditions)
+    query += ' ORDER BY si.created_at DESC'
+    rows = db.execute(query, params).fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/software-installations/<int:installation_id>', methods=['PUT', 'DELETE'])
+@login_required
+def software_installation_detail(installation_id):
+    db = get_db()
+    if not user_can('software.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    installation = db.execute('SELECT * FROM software_installations WHERE id = ?', (installation_id,)).fetchone()
+    if not installation:
+        return jsonify({"error": "Installation nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        installed_version = (data.get('installed_version') or installation["installed_version"] or '').strip()
+        environment = (data.get('environment') or installation["environment"] or 'production').strip()
+        status = (data.get('status') or installation["status"] or 'active').strip()
+        notes = (data.get('notes') or installation["notes"] or '').strip()
+        db.execute('''
+            UPDATE software_installations
+            SET installed_version = ?, environment = ?, status = ?, notes = ?
+            WHERE id = ?
+        ''', (installed_version, environment, status, notes, installation_id))
+        log_activity(db, "update", "software_installation", installation_id, {"software_id": installation["software_id"]})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM software_installations WHERE id = ?', (installation_id,))
+    log_activity(db, "delete", "software_installation", installation_id, {"software_id": installation["software_id"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/dependency-links', methods=['GET', 'POST'])
+@login_required
+def dependency_links():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('dependencies.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        source_type = (data.get('source_type') or '').strip()
+        source_id = data.get('source_id')
+        target_type = (data.get('target_type') or '').strip()
+        target_id = data.get('target_id')
+        relation = (data.get('relation') or 'depends_on').strip()
+        criticality = (data.get('criticality') or 'medium').strip()
+        redundancy_group = (data.get('redundancy_group') or '').strip() or None
+        notes = (data.get('notes') or '').strip()
+        if source_type not in DEPENDENCY_ENTITY_TYPES or target_type not in DEPENDENCY_ENTITY_TYPES:
+            return jsonify({"error": "Ungültiger Entity-Typ"}), 400
+        if not source_id or not target_id:
+            return jsonify({"error": "Quelle und Ziel sind erforderlich"}), 400
+        try:
+            source_id = int(source_id)
+            target_id = int(target_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Ungültige IDs"}), 400
+        if not fetch_entity_label(db, source_type, source_id) or not fetch_entity_label(db, target_type, target_id):
+            return jsonify({"error": "Quelle oder Ziel existiert nicht"}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO dependency_links (
+                    source_type, source_id, target_type, target_id, relation, criticality, redundancy_group, notes
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (source_type, source_id, target_type, target_id, relation, criticality, redundancy_group, notes))
+            log_activity(db, "create", "dependency_link", cursor.lastrowid, {
+                "source_type": source_type,
+                "source_id": source_id,
+                "target_type": target_type,
+                "target_id": target_id
+            })
+            db.commit()
+            return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Abhängigkeit existiert bereits"}), 400
+
+    if not (user_can('dependencies.view') or user_can('dependencies.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = prune_dependency_links(db)
+    links = []
+    for row in rows:
+        source_label = fetch_entity_label(db, row["source_type"], row["source_id"]) or f"{row['source_type']} #{row['source_id']}"
+        target_label = fetch_entity_label(db, row["target_type"], row["target_id"]) or f"{row['target_type']} #{row['target_id']}"
+        links.append({
+            **dict(row),
+            "source_label": source_label,
+            "target_label": target_label
+        })
+    return jsonify(links)
+
+@app.route('/api/dependency-links/<int:link_id>', methods=['PUT', 'DELETE'])
+@login_required
+def dependency_link_detail(link_id):
+    db = get_db()
+    if not user_can('dependencies.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    link_row = db.execute('SELECT * FROM dependency_links WHERE id = ?', (link_id,)).fetchone()
+    if not link_row:
+        return jsonify({"error": "Abhängigkeit nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        relation = (data.get('relation') or link_row["relation"] or 'depends_on').strip()
+        criticality = (data.get('criticality') or link_row["criticality"] or 'medium').strip()
+        redundancy_group = (data.get('redundancy_group') or link_row["redundancy_group"] or '').strip() or None
+        notes = (data.get('notes') or link_row["notes"] or '').strip()
+        db.execute('''
+            UPDATE dependency_links
+            SET relation = ?, criticality = ?, redundancy_group = ?, notes = ?
+            WHERE id = ?
+        ''', (relation, criticality, redundancy_group, notes, link_id))
+        log_activity(db, "update", "dependency_link", link_id, {
+            "source_type": link_row["source_type"],
+            "source_id": link_row["source_id"]
+        })
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM dependency_links WHERE id = ?', (link_id,))
+    log_activity(db, "delete", "dependency_link", link_id, {
+        "source_type": link_row["source_type"],
+        "source_id": link_row["source_id"]
+    })
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/dependency-nodes', methods=['GET'])
+@login_required
+def dependency_nodes():
+    db = get_db()
+    if not (user_can('dependencies.view') or user_can('dependencies.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    return jsonify(fetch_entity_options(db))
+
+@app.route('/api/dependency-graph', methods=['GET'])
+@login_required
+def dependency_graph():
+    db = get_db()
+    if not (user_can('dependencies.view') or user_can('dependencies.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    nodes, edges = build_dependency_graph_data(db)
+    graph_edges = []
+    for edge in edges:
+        source_key = dependency_node_key(edge["source_type"], edge["source_id"])
+        target_key = dependency_node_key(edge["target_type"], edge["target_id"])
+        graph_edges.append({
+            "source": source_key,
+            "target": target_key,
+            "relation": edge["relation"],
+            "criticality": edge["criticality"],
+            "implicit": edge["implicit"]
+        })
+    return jsonify({
+        "nodes": nodes,
+        "edges": graph_edges
+    })
+
+@app.route('/api/impact-analysis', methods=['GET'])
+@login_required
+def impact_analysis():
+    db = get_db()
+    if not (user_can('dependencies.view') or user_can('dependencies.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    source_type = (request.args.get('source_type') or '').strip()
+    source_id = request.args.get('source_id')
+    max_depth = request.args.get('depth')
+    if source_type not in DEPENDENCY_ENTITY_TYPES or not source_id:
+        return jsonify({"error": "Quelle ist erforderlich"}), 400
+    label = fetch_entity_label(db, source_type, int(source_id))
+    if not label:
+        return jsonify({"error": "Quelle nicht gefunden"}), 404
+    depth_value = int(max_depth) if max_depth is not None and str(max_depth).isdigit() else None
+    impact, tickets, critical_tickets = analyze_dependency_impact(db, source_type, int(source_id), depth_value)
+    return jsonify({
+        "source": {
+            "type": source_type,
+            "id": int(source_id),
+            "label": label
+        },
+        "impact": impact,
+        "tickets": tickets,
+        "critical_tickets": critical_tickets,
+        "spof": calculate_spof_nodes(db)
+    })
+
+@app.route('/api/single-points', methods=['GET'])
+@login_required
+def single_points():
+    db = get_db()
+    if not (user_can('dependencies.view') or user_can('dependencies.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    return jsonify(calculate_spof_nodes(db))
 
 @app.route('/api/tickets', methods=['GET', 'POST'])
 @login_required
@@ -1920,30 +3525,45 @@ def tickets():
         category_id = data.get('category_id')
         priority = (data.get('priority') or 'normal').strip()
         status = (data.get('status') or 'open').strip()
+        escalation_level = int(data.get('escalation_level') or 0)
         requester_name = (data.get('requester_name') or session.get('username') or '').strip()
         requester_email = (data.get('requester_email') or '').strip()
         assignee = (data.get('assignee') or '').strip()
         assignee_email = (data.get('assignee_email') or '').strip()
         due_date = (data.get('due_date') or '').strip()
+        resolution_action = (data.get('resolution_action') or '').strip()
+        resolution_outcome = (data.get('resolution_outcome') or '').strip()
+        resolution_notes = (data.get('resolution_notes') or '').strip()
         if not user_can('tickets.update'):
             status = 'open'
             assignee = ''
             assignee_email = ''
             due_date = ''
+            escalation_level = 0
+            resolution_action = ''
+            resolution_outcome = ''
+            resolution_notes = ''
         tags = json.dumps(data.get('tags') or [])
         custom_fields = json.dumps(data.get('custom_fields') or [])
         asset_ids = data.get('asset_ids') or []
+        resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
         if not title or not description:
             return jsonify({"error": "Titel und Beschreibung sind erforderlich"}), 400
+        category_name = None
+        if category_id:
+            category_row = db.execute('SELECT name FROM ticket_categories WHERE id = ?', (category_id,)).fetchone()
+            category_name = category_row["name"] if category_row else None
         cursor = db.execute('''
             INSERT INTO tickets (
                 title, description, category_id, priority, status, requester_name,
-                requester_email, created_by, assignee, assignee_email, due_date, tags, custom_fields
+                requester_email, created_by, assignee, assignee_email, due_date, escalation_level,
+                resolved_at, resolution_action, resolution_outcome, resolution_notes, tags, custom_fields
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             title, description, category_id, priority, status, requester_name, requester_email,
-            session.get('username'), assignee, assignee_email, due_date, tags, custom_fields
+            session.get('username'), assignee, assignee_email, due_date, escalation_level,
+            resolved_at, resolution_action, resolution_outcome, resolution_notes, tags, custom_fields
         ))
         ticket_id = cursor.lastrowid
         for asset_id in asset_ids:
@@ -1951,6 +3571,22 @@ def tickets():
                 INSERT OR IGNORE INTO ticket_assets (ticket_id, asset_id)
                 VALUES (?, ?)
             ''', (ticket_id, asset_id))
+        new_ticket = {
+            "id": ticket_id,
+            "title": title,
+            "description": description,
+            "category_id": category_id,
+            "priority": priority,
+            "status": status,
+            "requester_name": requester_name,
+            "requester_email": requester_email,
+            "created_by": session.get('username'),
+            "assignee": assignee,
+            "assignee_email": assignee_email,
+            "due_date": due_date
+        }
+        if should_auto_create_roadmap(category_name):
+            create_roadmap_for_ticket(db, new_ticket, category_name, created_by=session.get('username'))
         log_activity(db, "create", "ticket", ticket_id, {"title": title})
         db.commit()
         ticket = fetch_ticket(db, ticket_id)
@@ -2035,6 +3671,10 @@ def ticket_detail(ticket_id):
         ticket_assets = fetch_ticket_assets(db, ticket_id)
         ticket['assets'] = ticket_assets
         ticket['asset_ids'] = [asset["id"] for asset in ticket_assets]
+        roadmap = fetch_roadmap_for_ticket(db, ticket_id)
+        if roadmap:
+            roadmap["steps"] = fetch_roadmap_steps(db, roadmap["id"])
+        ticket['roadmap'] = roadmap
         return jsonify(ticket)
 
     if request.method == 'PUT':
@@ -2048,25 +3688,42 @@ def ticket_detail(ticket_id):
         category_id = data.get('category_id')
         priority = (data.get('priority') or ticket['priority']).strip()
         status = (data.get('status') or ticket['status']).strip()
+        escalation_level = int(data.get('escalation_level') or ticket.get('escalation_level') or 0)
         requester_name = (data.get('requester_name') or ticket.get('requester_name') or '').strip()
         requester_email = (data.get('requester_email') or ticket.get('requester_email') or '').strip()
         assignee = (data.get('assignee') or ticket.get('assignee') or '').strip()
         assignee_email = (data.get('assignee_email') or ticket.get('assignee_email') or '').strip()
         due_date = (data.get('due_date') or ticket.get('due_date') or '').strip()
+        resolution_action = (data.get('resolution_action') or ticket.get('resolution_action') or '').strip()
+        resolution_outcome = (data.get('resolution_outcome') or ticket.get('resolution_outcome') or '').strip()
+        resolution_notes = (data.get('resolution_notes') or ticket.get('resolution_notes') or '').strip()
         tags = json.dumps(data.get('tags') or json.loads(ticket.get('tags') or '[]'))
         custom_fields = json.dumps(data.get('custom_fields') or json.loads(ticket.get('custom_fields') or '[]'))
         asset_ids = data.get('asset_ids')
         status_changed = status != ticket.get('status')
+        resolved_at = ticket.get('resolved_at')
+        if status_changed:
+            if is_closed_status(status):
+                resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                resolved_at = None
+        category_name = None
+        if category_id:
+            category_row = db.execute('SELECT name FROM ticket_categories WHERE id = ?', (category_id,)).fetchone()
+            category_name = category_row["name"] if category_row else None
 
         db.execute('''
             UPDATE tickets
             SET title = ?, description = ?, category_id = ?, priority = ?, status = ?,
+                escalation_level = ?,
                 requester_name = ?, requester_email = ?, assignee = ?, assignee_email = ?,
-                due_date = ?, tags = ?, custom_fields = ?, updated_at = CURRENT_TIMESTAMP
+                due_date = ?, resolved_at = ?, resolution_action = ?, resolution_outcome = ?, resolution_notes = ?,
+                tags = ?, custom_fields = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         ''', (
-            title, description, category_id, priority, status, requester_name, requester_email,
-            assignee, assignee_email, due_date, tags, custom_fields, ticket_id
+            title, description, category_id, priority, status, escalation_level, requester_name, requester_email,
+            assignee, assignee_email, due_date, resolved_at, resolution_action, resolution_outcome, resolution_notes,
+            tags, custom_fields, ticket_id
         ))
         if asset_ids is not None:
             db.execute('DELETE FROM ticket_assets WHERE ticket_id = ?', (ticket_id,))
@@ -2076,6 +3733,22 @@ def ticket_detail(ticket_id):
                     VALUES (?, ?)
                 ''', (ticket_id, asset_id))
         log_activity(db, "update", "ticket", ticket_id, {"title": title})
+        if should_auto_create_roadmap(category_name):
+            updated_ticket = {
+                "id": ticket_id,
+                "title": title,
+                "description": description,
+                "category_id": category_id,
+                "priority": priority,
+                "status": status,
+                "requester_name": requester_name,
+                "requester_email": requester_email,
+                "created_by": ticket.get('created_by'),
+                "assignee": assignee,
+                "assignee_email": assignee_email,
+                "due_date": due_date
+            }
+            create_roadmap_for_ticket(db, updated_ticket, category_name, created_by=session.get('username'))
         db.commit()
         updated_ticket = fetch_ticket(db, ticket_id)
         if updated_ticket:
@@ -2330,6 +4003,268 @@ def feature_flags():
         "pro_enabled": PRO_ENABLED,
         "pro_features": PRO_FEATURES,
         "free_features": FREE_FEATURES
+    })
+
+@app.route('/api/time-machine/changes', methods=['GET'])
+@login_required
+@require_permission('timemachine.view')
+def time_machine_changes():
+    db = get_db()
+    activity_rows = db.execute('''
+        SELECT id, action, entity_type, entity_id, details, created_at, username
+        FROM activity_log
+        ORDER BY created_at ASC
+    ''').fetchall()
+
+    action_labels = {
+        "create": "erstellt",
+        "update": "aktualisiert",
+        "delete": "gelöscht",
+        "comment": "kommentiert",
+        "watch": "beobachtet",
+        "unwatch": "Beobachtung beendet",
+        "login": "angemeldet",
+        "logout": "abgemeldet"
+    }
+    entity_labels = {
+        "asset": "Asset",
+        "device": "Gerät",
+        "ticket": "Ticket",
+        "roadmap": "Roadmap",
+        "roadmap_step": "Roadmap-Schritt",
+        "dependency_link": "Dependency",
+        "team": "Team",
+        "department": "Abteilung",
+        "software": "Software",
+        "location": "Standort",
+        "user": "Benutzer"
+    }
+    layer_map = {
+        "asset": "assets",
+        "device": "devices",
+        "ticket": "tickets",
+        "roadmap": "roadmaps",
+        "roadmap_step": "roadmaps",
+        "dependency_link": "dependencies",
+        "team": "organisation",
+        "department": "organisation",
+        "software": "assets",
+        "location": "assets",
+        "user": "organisation"
+    }
+
+    changes = []
+    for row in activity_rows:
+        try:
+            details = json.loads(row["details"]) if row["details"] else {}
+        except json.JSONDecodeError:
+            details = {}
+        action_label = action_labels.get(row["action"], row["action"])
+        entity_label = entity_labels.get(row["entity_type"], row["entity_type"])
+        timestamp = parse_time_machine_timestamp(row["created_at"])
+        if not timestamp:
+            continue
+        changes.append({
+            "key": f"activity-{row['id']}",
+            "timestamp": timestamp.isoformat(),
+            "title": format_time_machine_change(entity_label, action_label, details),
+            "description": details.get("description") or details.get("notes") or row["action"],
+            "layer": layer_map.get(row["entity_type"], "events"),
+            "layer_label": entity_label,
+            "source": "Aktivitätslog",
+            "entity_type": row["entity_type"],
+            "entity_id": row["entity_id"],
+            "impact": details.get("impact", "n/a"),
+            "is_planned": False
+        })
+
+    roadmap_rows = db.execute('''
+        SELECT id, title, status, start_date, target_date, owner, created_at
+        FROM roadmaps
+        ORDER BY created_at ASC
+    ''').fetchall()
+    roadmap_step_rows = db.execute('''
+        SELECT id, roadmap_id, title, status, due_date, created_at
+        FROM roadmap_steps
+        ORDER BY created_at ASC
+    ''').fetchall()
+
+    roadmaps = []
+    for row in roadmap_rows:
+        roadmaps.append({
+            "id": row["id"],
+            "title": row["title"],
+            "status": row["status"],
+            "start_date": row["start_date"],
+            "target_date": row["target_date"],
+            "owner": row["owner"]
+        })
+
+        start_timestamp = parse_time_machine_timestamp(row["start_date"]) or parse_time_machine_timestamp(row["created_at"])
+        if start_timestamp:
+            changes.append({
+                "key": f"roadmap-start-{row['id']}",
+                "timestamp": start_timestamp.isoformat(),
+                "title": f"Roadmap gestartet · {row['title']}",
+                "description": "Roadmap-Start geplant oder umgesetzt.",
+                "layer": "roadmaps",
+                "layer_label": "Roadmap",
+                "source": "Roadmap",
+                "entity_type": "roadmap",
+                "entity_id": row["id"],
+                "roadmap_id": row["id"],
+                "impact": row["status"] or "planned",
+                "is_planned": True
+            })
+        target_timestamp = parse_time_machine_timestamp(row["target_date"])
+        if target_timestamp:
+            changes.append({
+                "key": f"roadmap-target-{row['id']}",
+                "timestamp": target_timestamp.isoformat(),
+                "title": f"Roadmap Zieltermin · {row['title']}",
+                "description": "Geplanter Abschluss oder Meilenstein.",
+                "layer": "roadmaps",
+                "layer_label": "Roadmap",
+                "source": "Roadmap",
+                "entity_type": "roadmap",
+                "entity_id": row["id"],
+                "roadmap_id": row["id"],
+                "impact": "target",
+                "is_planned": True
+            })
+
+    for row in roadmap_step_rows:
+        step_timestamp = parse_time_machine_timestamp(row["due_date"]) or parse_time_machine_timestamp(row["created_at"])
+        if not step_timestamp:
+            continue
+        changes.append({
+            "key": f"roadmap-step-{row['id']}",
+            "timestamp": step_timestamp.isoformat(),
+            "title": f"Roadmap-Schritt · {row['title']}",
+            "description": "Geplanter Change aus Roadmap.",
+            "layer": "roadmaps",
+            "layer_label": "Roadmap",
+            "source": "Roadmap",
+            "entity_type": "roadmap_step",
+            "entity_id": row["id"],
+            "roadmap_id": row["roadmap_id"],
+            "impact": row["status"] or "planned",
+            "is_planned": True
+        })
+
+    ticket_rows = db.execute('''
+        SELECT id, title, status, created_at, resolved_at
+        FROM tickets
+        ORDER BY created_at DESC
+    ''').fetchall()
+    tickets = [dict(row) for row in ticket_rows]
+
+    timestamps = [parse_time_machine_timestamp(change["timestamp"]) for change in changes]
+    timestamps = [ts for ts in timestamps if ts]
+    now = datetime.utcnow()
+    range_start = min(timestamps) if timestamps else now
+    range_end = max(timestamps) if timestamps else now
+
+    return jsonify({
+        "changes": changes,
+        "roadmaps": roadmaps,
+        "tickets": tickets,
+        "range": {
+            "start": range_start.isoformat(),
+            "end": range_end.isoformat()
+        }
+    })
+
+@app.route('/api/time-machine/state', methods=['GET'])
+@login_required
+@require_permission('timemachine.view')
+def time_machine_state():
+    db = get_db()
+    timestamp_raw = request.args.get('timestamp')
+    timestamp = parse_time_machine_timestamp(timestamp_raw) or datetime.utcnow()
+    timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+    assets = db.execute('''
+        SELECT COUNT(*) as total
+        FROM assets
+        WHERE created_at <= ?
+          AND (retirement_date IS NULL OR retirement_date = '' OR retirement_date > ?)
+    ''', (timestamp_str, timestamp_str)).fetchone()["total"]
+    devices = db.execute('''
+        SELECT COUNT(*) as total
+        FROM devices
+        WHERE created_at <= ?
+    ''', (timestamp_str,)).fetchone()["total"]
+    tickets_total = db.execute('''
+        SELECT COUNT(*) as total
+        FROM tickets
+        WHERE created_at <= ?
+    ''', (timestamp_str,)).fetchone()["total"]
+    tickets_open = db.execute('''
+        SELECT COUNT(*) as total
+        FROM tickets
+        WHERE created_at <= ?
+          AND (resolved_at IS NULL OR resolved_at = '' OR resolved_at > ?)
+    ''', (timestamp_str, timestamp_str)).fetchone()["total"]
+    roadmaps_total = db.execute('''
+        SELECT COUNT(*) as total
+        FROM roadmaps
+        WHERE created_at <= ?
+    ''', (timestamp_str,)).fetchone()["total"]
+    dependencies_total = db.execute('''
+        SELECT COUNT(*) as total
+        FROM dependency_links
+        WHERE created_at <= ?
+    ''', (timestamp_str,)).fetchone()["total"]
+    last_change_row = db.execute('''
+        SELECT action, entity_type, details, created_at
+        FROM activity_log
+        WHERE created_at <= ?
+        ORDER BY created_at DESC
+        LIMIT 1
+    ''', (timestamp_str,)).fetchone()
+    last_change_label = "—"
+    if last_change_row:
+        entity_labels = {
+            "asset": "Asset",
+            "device": "Gerät",
+            "ticket": "Ticket",
+            "roadmap": "Roadmap",
+            "roadmap_step": "Roadmap-Schritt",
+            "dependency_link": "Dependency",
+            "team": "Team",
+            "department": "Abteilung",
+            "software": "Software",
+            "location": "Standort",
+            "user": "Benutzer"
+        }
+        action_labels = {
+            "create": "erstellt",
+            "update": "aktualisiert",
+            "delete": "gelöscht",
+            "comment": "kommentiert",
+            "watch": "beobachtet",
+            "unwatch": "Beobachtung beendet",
+            "login": "angemeldet",
+            "logout": "abgemeldet"
+        }
+        try:
+            details = json.loads(last_change_row["details"]) if last_change_row["details"] else {}
+        except json.JSONDecodeError:
+            details = {}
+        entity_label = entity_labels.get(last_change_row["entity_type"], last_change_row["entity_type"])
+        action_label = action_labels.get(last_change_row["action"], last_change_row["action"])
+        last_change_label = format_time_machine_change(entity_label, action_label, details)
+
+    return jsonify({
+        "timestamp": timestamp.isoformat(),
+        "assets": assets,
+        "devices": devices,
+        "tickets": tickets_total,
+        "tickets_open": tickets_open,
+        "roadmaps": roadmaps_total,
+        "dependencies": dependencies_total,
+        "last_change": last_change_label
     })
 
 @app.route('/api/activity', methods=['GET'])
@@ -3062,6 +4997,210 @@ def stats():
         LIMIT 5
     ''').fetchall()
     recent_devices_data = [dict(d) for d in recent_devices] if recent_devices else []
+
+    # 5. Asset-, Ticket- und Nutzeranalysen (proaktive Phase 1-3)
+    total_assets = db.execute('SELECT COUNT(*) FROM assets').fetchone()[0] or 0
+    retired_assets = db.execute('''
+        SELECT COUNT(*) FROM assets
+        WHERE retirement_date IS NOT NULL AND retirement_date != ''
+    ''').fetchone()[0] or 0
+    active_assets = total_assets - retired_assets
+
+    ticket_total = db.execute('SELECT COUNT(*) FROM tickets').fetchone()[0] or 0
+    ticket_closed = db.execute('''
+        SELECT COUNT(*) FROM tickets
+        WHERE status IN ('closed', 'resolved', 'done')
+    ''').fetchone()[0] or 0
+    ticket_open = ticket_total - ticket_closed
+
+    ticket_type_rows = db.execute('''
+        SELECT COALESCE(tc.name, 'Unkategorisiert') as name, COUNT(*) as total
+        FROM tickets t
+        LEFT JOIN ticket_categories tc ON t.category_id = tc.id
+        GROUP BY tc.name
+        ORDER BY total DESC
+    ''').fetchall()
+    ticket_type_breakdown = [dict(row) for row in ticket_type_rows] if ticket_type_rows else []
+
+    escalation_rows = db.execute('''
+        SELECT escalation_level as level, COUNT(*) as total
+        FROM tickets
+        GROUP BY escalation_level
+        ORDER BY escalation_level
+    ''').fetchall()
+    escalation_breakdown = [dict(row) for row in escalation_rows] if escalation_rows else []
+
+    closed_ticket_rows = db.execute('''
+        SELECT created_at, COALESCE(resolved_at, updated_at) as resolved_at
+        FROM tickets
+        WHERE status IN ('closed', 'resolved', 'done')
+    ''').fetchall()
+    total_resolution_hours = 0
+    resolved_count = 0
+    for row in closed_ticket_rows:
+        created_at = parse_datetime(row['created_at'])
+        resolved_at = parse_datetime(row['resolved_at'])
+        if created_at and resolved_at:
+            total_resolution_hours += max(0, (resolved_at - created_at).total_seconds() / 3600)
+            resolved_count += 1
+    avg_resolution_hours = round(total_resolution_hours / resolved_count, 1) if resolved_count else 0
+
+    action_rows = db.execute('''
+        SELECT resolution_action,
+               SUM(CASE WHEN resolution_outcome = 'success' THEN 1 ELSE 0 END) as success_count,
+               COUNT(*) as total
+        FROM tickets
+        WHERE resolution_action IS NOT NULL AND resolution_action != ''
+        GROUP BY resolution_action
+        ORDER BY total DESC
+        LIMIT 5
+    ''').fetchall()
+    action_success_rates = []
+    for row in action_rows:
+        total = row['total'] or 0
+        success = row['success_count'] or 0
+        rate = round((success / total) * 100) if total else 0
+        action_success_rates.append({
+            "action": row['resolution_action'],
+            "total": total,
+            "success": success,
+            "rate": rate
+        })
+
+    asset_ticket_rows = db.execute('''
+        SELECT a.id, a.name, a.acquisition_date, a.commissioning_date, a.warranty_end,
+               COUNT(ta.ticket_id) as ticket_count,
+               (
+                   SELECT aa.user_identifier
+                   FROM asset_assignments aa
+                   WHERE aa.asset_id = a.id AND (aa.released_at IS NULL OR aa.released_at = '')
+                   ORDER BY aa.assigned_at DESC, aa.created_at DESC
+                   LIMIT 1
+               ) as assigned_user
+        FROM assets a
+        LEFT JOIN ticket_assets ta ON ta.asset_id = a.id
+        GROUP BY a.id
+        ORDER BY ticket_count DESC, a.name
+        LIMIT 8
+    ''').fetchall()
+    asset_ticket_stats = []
+    today = datetime.utcnow().date()
+    ticket_counts = []
+    for row in asset_ticket_rows:
+        commissioning_date = parse_date(row['commissioning_date']) or parse_date(row['acquisition_date'])
+        age_months = None
+        if commissioning_date:
+            age_months = round((today - commissioning_date).days / 30.4, 1)
+        ticket_counts.append(row['ticket_count'] or 0)
+        asset_ticket_stats.append({
+            "id": row["id"],
+            "name": row["name"],
+            "ticket_count": row["ticket_count"] or 0,
+            "assigned_user": row["assigned_user"] or "—",
+            "age_months": age_months,
+            "warranty_status": warranty_status(row["warranty_end"])
+        })
+
+    reporter_rows = db.execute('''
+        SELECT t.id,
+               COALESCE(t.created_by, t.requester_name, 'Unbekannt') as reporter,
+               t.priority,
+               COUNT(tc.id) as comment_count
+        FROM tickets t
+        LEFT JOIN ticket_comments tc ON tc.ticket_id = t.id
+        GROUP BY t.id
+    ''').fetchall()
+    reporter_stats = {}
+    priority_weights = {"low": 1, "normal": 2, "high": 3, "urgent": 4}
+    for row in reporter_rows:
+        reporter = row["reporter"] or "Unbekannt"
+        stats = reporter_stats.setdefault(reporter, {"tickets": 0, "comments": 0, "priority_score": 0})
+        stats["tickets"] += 1
+        stats["comments"] += row["comment_count"] or 0
+        stats["priority_score"] += priority_weights.get((row["priority"] or "normal").lower(), 2)
+    user_behavior_stats = []
+    for reporter, stats in reporter_stats.items():
+        avg_comments = round(stats["comments"] / stats["tickets"], 1) if stats["tickets"] else 0
+        avg_priority = round(stats["priority_score"] / stats["tickets"], 1) if stats["tickets"] else 0
+        user_behavior_stats.append({
+            "reporter": reporter,
+            "tickets": stats["tickets"],
+            "avg_comments": avg_comments,
+            "avg_priority": avg_priority
+        })
+    user_behavior_stats.sort(key=lambda item: item["tickets"], reverse=True)
+    user_behavior_stats = user_behavior_stats[:6]
+
+    proactive_insights = []
+    if ticket_counts:
+        avg_tickets = sum(ticket_counts) / len(ticket_counts)
+        variance = sum((count - avg_tickets) ** 2 for count in ticket_counts) / len(ticket_counts)
+        threshold = max(3, avg_tickets + variance ** 0.5)
+        noisy_assets = [a for a in asset_ticket_stats if a["ticket_count"] >= threshold]
+        if noisy_assets:
+            top_asset = noisy_assets[0]
+            proactive_insights.append({
+                "title": f"Hohe Ticketlast bei {top_asset['name']}",
+                "severity": "warning",
+                "description": f"{top_asset['ticket_count']} Tickets (Ø {avg_tickets:.1f}) – Empfehlung: Austausch prüfen oder Ursachenanalyse starten.",
+                "evidence": f"Aktuell zugewiesen an {top_asset['assigned_user']}."
+            })
+
+    warranty_rows = db.execute('SELECT id, name, warranty_end, retirement_date FROM assets').fetchall()
+    expiring_assets = []
+    for row in warranty_rows:
+        if row["retirement_date"]:
+            continue
+        warranty_end = parse_date(row["warranty_end"])
+        if not warranty_end:
+            continue
+        days_left = (warranty_end - today).days
+        if 0 <= days_left <= 45:
+            expiring_assets.append((row["name"], days_left))
+    if expiring_assets:
+        expiring_assets.sort(key=lambda item: item[1])
+        name, days_left = expiring_assets[0]
+        proactive_insights.append({
+            "title": "Garantie läuft aus",
+            "severity": "info",
+            "description": f"{len(expiring_assets)} Assets haben eine auslaufende Garantie in den nächsten 45 Tagen.",
+            "evidence": f"Nächstes Asset: {name} (in {days_left} Tagen)."
+        })
+
+    sla_risk_rows = db.execute('''
+        SELECT t.id, t.title, t.created_at, t.status, tc.sla_hours, tc.name as category_name
+        FROM tickets t
+        LEFT JOIN ticket_categories tc ON t.category_id = tc.id
+        WHERE t.status NOT IN ('closed', 'resolved', 'done')
+    ''').fetchall()
+    sla_risks = []
+    for row in sla_risk_rows:
+        created_at = parse_datetime(row["created_at"])
+        if not created_at:
+            continue
+        sla_hours = row["sla_hours"] or 72
+        age_hours = (datetime.utcnow() - created_at).total_seconds() / 3600
+        if age_hours > sla_hours:
+            sla_risks.append(row)
+    if sla_risks:
+        sample = sla_risks[0]
+        proactive_insights.append({
+            "title": "SLA-Risiko bei offenen Tickets",
+            "severity": "critical",
+            "description": f"{len(sla_risks)} offene Tickets überschreiten aktuell die SLA-Zeit.",
+            "evidence": f"Beispiel: #{sample['id']} ({sample['category_name'] or 'Unkategorisiert'})."
+        })
+
+    if user_behavior_stats:
+        avg_reporter_tickets = sum(item["tickets"] for item in user_behavior_stats) / len(user_behavior_stats)
+        top_reporter = user_behavior_stats[0]
+        if top_reporter["tickets"] >= max(3, avg_reporter_tickets * 1.5):
+            proactive_insights.append({
+                "title": "Auffälliges Nutzerverhalten",
+                "severity": "warning",
+                "description": f"{top_reporter['reporter']} meldet überdurchschnittlich viele Tickets.",
+                "evidence": f"{top_reporter['tickets']} Tickets vs. Ø {avg_reporter_tickets:.1f}."
+            })
     
     context = {
         'total_devices': total_devices,
@@ -3089,6 +5228,19 @@ def stats():
         'activity_summary': activity_summary_data,
         'top_categories': top_categories,
         'recent_devices': recent_devices_data,
+        'total_assets': total_assets,
+        'active_assets': active_assets,
+        'retired_assets': retired_assets,
+        'ticket_total': ticket_total,
+        'ticket_open': ticket_open,
+        'ticket_closed': ticket_closed,
+        'avg_resolution_hours': avg_resolution_hours,
+        'ticket_type_breakdown': ticket_type_breakdown,
+        'escalation_breakdown': escalation_breakdown,
+        'action_success_rates': action_success_rates,
+        'asset_ticket_stats': asset_ticket_stats,
+        'user_behavior_stats': user_behavior_stats,
+        'proactive_insights': proactive_insights,
         'username': session.get('username', ''),
         'permissions': sorted(access["permissions"]),
         'is_superuser': access["is_superuser"]
