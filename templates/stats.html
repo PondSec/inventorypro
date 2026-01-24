@@ -66,6 +66,17 @@
                     <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
                 </a>
                 {% endif %}
+                {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                <a href="/roadmap" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white/70 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors">
+                    <span class="flex items-center">
+                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 mr-3">
+                            <i data-feather="git-merge" class="w-4 h-4"></i>
+                        </span>
+                        <span class="sidebar-text">Roadmap</span>
+                    </span>
+                    <i data-feather="arrow-up-right" class="w-4 h-4 text-slate-400"></i>
+                </a>
+                {% endif %}
 				<a href="/stats" class="flex items-center justify-between px-4 py-3 rounded-2xl border border-indigo-100 bg-indigo-50 text-sm font-semibold text-indigo-700">
                     <span class="flex items-center">
                         <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 mr-3">
