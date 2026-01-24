@@ -9,6 +9,7 @@ document.addEventListener('alpine:init', () => {
         assets: [],
         relationTypes: [],
         activeCategory: null,
+        inventoryTab: 'devices',
         searchQuery: '',
         categorySearchQuery: '',
         ownerQuery: '',

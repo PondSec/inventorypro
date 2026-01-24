@@ -5,6 +5,8 @@ document.addEventListener('alpine:init', () => {
         alerts: [],
         assets: [],
         selectedTicket: null,
+        knowledgeSuggestions: [],
+        knowledgeLoading: false,
         userPermissions: window.inventoryPermissions || [],
         isSuperuser: window.inventoryIsSuperuser || false,
         filters: {
@@ -95,6 +97,11 @@ document.addEventListener('alpine:init', () => {
                 await this.loadNotificationSettings();
             }
             await this.loadStats();
+            const params = new URLSearchParams(window.location.search);
+            const ticketId = params.get('ticket_id');
+            if (ticketId) {
+                await this.selectTicket({ id: ticketId });
+            }
             this.$nextTick(() => feather.replace());
         },
 
@@ -167,12 +174,34 @@ document.addEventListener('alpine:init', () => {
                 this.newComment = '';
                 this.internalComment = false;
                 this.newWatcher = '';
+                await this.loadKnowledgeSuggestions();
                 this.$nextTick(() => feather.replace());
             }
         },
 
         closeTicket() {
             this.selectedTicket = null;
+            this.knowledgeSuggestions = [];
+        },
+
+        async loadKnowledgeSuggestions() {
+            if (!this.selectedTicket) return;
+            if (!(this.can('knowledge.view') || this.can('knowledge.manage'))) {
+                this.knowledgeSuggestions = [];
+                return;
+            }
+            this.knowledgeLoading = true;
+            const queryParts = [this.selectedTicket.title, this.selectedTicket.description].filter(Boolean).join(' ');
+            const params = new URLSearchParams();
+            if (queryParts) params.append('query', queryParts);
+            if (this.selectedTicket.id) params.append('ticket_id', this.selectedTicket.id);
+            const response = await fetch(`/api/knowledge/suggestions?${params.toString()}`);
+            if (response.ok) {
+                this.knowledgeSuggestions = await response.json();
+            } else {
+                this.knowledgeSuggestions = [];
+            }
+            this.knowledgeLoading = false;
         },
 
         async updateTicket() {
