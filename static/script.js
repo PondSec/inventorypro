@@ -2,8 +2,12 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('app', () => ({
         // State
         categories: [],
+        locations: [],
         devices: [],
         filteredDevices: [],
+        allDevices: [],
+        assets: [],
+        relationTypes: [],
         activeCategory: null,
         searchQuery: '',
         sortDropdownOpen: false,
@@ -20,6 +24,8 @@ document.addEventListener('alpine:init', () => {
         activityFeed: [],
         selectedDevice: null,
         deviceDetailOpen: false,
+        selectedAsset: null,
+        assetDetailOpen: false,
         deviceTags: [],
         deviceNotes: [],
         maintenanceTasks: [],
@@ -30,49 +36,65 @@ document.addEventListener('alpine:init', () => {
             due_date: ''
         },
         currentSort: { field: null, direction: null },
-		
-		showSortMenu: false,
-		currentSort: null,
-		sortOptions: [
-			{ value: 'clock_asc', label: 'Clock ▲', field: 'clock', order: 'asc' },
-			{ value: 'clock_desc', label: 'Clock ▼', field: 'clock', order: 'desc' },
-			{ value: 'name_asc', label: 'Name A-Z', field: 'name', order: 'asc' },
-			{ value: 'name_desc', label: 'Name Z-A', field: 'name', order: 'desc' },
-			{ value: 'none', label: 'No sorting' }
-		],
         
         // Modals
         isCategoryModalOpen: false,
         isDeviceModalOpen: false,
+        isAssetModalOpen: false,
         editingCategory: null,
         editingDevice: null,
+        editingAsset: null,
         categoryMenuOpen: null,  // Geändert von openCategoryId zu categoryMenuOpen für Konsistenz
         openDeviceId: null,
+        iconSearch: '',
+        iconCatalog: [],
         
         // Current Items
         currentCategory: {
             id: null,
             name: '',
             icon: 'cpu',
-            fields: '{}'
+            fields: []
         },
         currentDevice: {
             id: null,
             name: '',
             category_id: null,
             serial_number: '',
-            specs: {}
+            location_id: '',
+            specs: {},
+            extraSpecs: []
+        },
+        currentAsset: {
+            id: null,
+            name: '',
+            notes: '',
+            specs: [],
+            device_ids: [],
+            acquisition_date: '',
+            commissioning_date: '',
+            warranty_end: '',
+            depreciation_months: '',
+            retirement_date: '',
+            retirement_reason: '',
+            relations: []
         },
 
         // Initialization
         async init() {
             await this.loadCategories();
+            await this.loadLocations();
+            await this.loadAllDevices();
             await this.loadDevices();
+            await this.loadAssets();
+            await this.loadRelationTypes();
             await this.loadFeatureFlags();
             await this.loadMaintenanceSummary();
             await this.loadActivityFeed();
+            this.loadIconCatalog();
             this.$watch('searchQuery', () => this.searchDevices());
             feather.replace();
+            this.startLiveRefresh();
         },
 
         async loadFeatureFlags() {
@@ -99,7 +121,7 @@ document.addEventListener('alpine:init', () => {
 
         async loadActivityFeed() {
             try {
-                const response = await fetch('/api/activity?limit=6');
+                const response = await fetch('/api/activity');
                 if (response.ok) {
                     this.activityFeed = await response.json();
                 }
@@ -107,11 +129,27 @@ document.addEventListener('alpine:init', () => {
                 console.error('Error loading activity feed:', error);
             }
         },
+
+        startLiveRefresh() {
+            setInterval(async () => {
+                await this.loadActivityFeed();
+                await this.loadMaintenanceSummary();
+            }, 15000);
+        },
 		
         // Data Loading
         async loadCategories() {
             const response = await fetch('/api/categories');
-            this.categories = await response.json();
+            if (response.ok) {
+                this.categories = await response.json();
+            }
+        },
+
+        async loadLocations() {
+            const response = await fetch('/api/locations');
+            if (response.ok) {
+                this.locations = await response.json();
+            }
         },
 
         async loadDevices(categoryId = null) {
@@ -121,14 +159,45 @@ document.addEventListener('alpine:init', () => {
                 : '/api/devices';
             
             const response = await fetch(url);
-            this.devices = await response.json();
-            this.filteredDevices = this.devices;
+            if (response.ok) {
+                this.devices = await response.json();
+                this.filteredDevices = this.devices;
+            }
             if (this.selectedDevice) {
                 const updated = this.devices.find(device => device.id === this.selectedDevice.id);
                 if (updated) {
                     this.selectedDevice = updated;
                 }
             }
+        },
+		
+        async loadAllDevices() {
+            const response = await fetch('/api/devices');
+            if (response.ok) {
+                this.allDevices = await response.json();
+            }
+        },
+
+        async loadAssets() {
+            const response = await fetch('/api/assets');
+            if (response.ok) {
+                this.assets = await response.json();
+            }
+        },
+
+        async loadRelationTypes() {
+            const response = await fetch('/api/asset-relation-types');
+            if (response.ok) {
+                this.relationTypes = await response.json();
+            }
+        },
+
+        loadIconCatalog() {
+            if (!window.feather || !feather.icons) {
+                this.iconCatalog = [];
+                return;
+            }
+            this.iconCatalog = Object.keys(feather.icons).sort();
         },
 
         // Search and Sort
@@ -185,20 +254,42 @@ document.addEventListener('alpine:init', () => {
                 id: null,
                 name: '',
                 icon: 'cpu',
-                fields: '{}'
+                fields: []
             };
+            this.iconSearch = '';
             this.isCategoryModalOpen = true;
             this.categoryMenuOpen = null; // Menü schließen beim Öffnen des Modals
         },
 
 		editCategoryModal(category) {  // <-- Parameter korrekt entgegennehmen
+            const fieldsObject = JSON.parse(category.fields || '{}');
 			this.editingCategory = true;
 			this.currentCategory = {
 				id: category.id,
 				name: category.name,
 				icon: category.icon,
-				fields: JSON.stringify(JSON.parse(category.fields), null, 2)
+				fields: Object.entries(fieldsObject).map(([fieldName, fieldConfig]) => {
+                    if (typeof fieldConfig === 'string') {
+                        return {
+                            id: crypto.randomUUID(),
+                            name: fieldName,
+                            type: fieldConfig,
+                            options: [],
+                            optionsText: ''
+                        };
+                    }
+
+                    const options = Array.isArray(fieldConfig?.options) ? fieldConfig.options : [];
+                    return {
+                        id: crypto.randomUUID(),
+                        name: fieldName,
+                        type: fieldConfig?.type || 'text',
+                        options,
+                        optionsText: options.join(', ')
+                    };
+                })
 			};
+            this.iconSearch = '';
 			this.isCategoryModalOpen = true;
 			this.categoryMenuOpen = null; // Menü schließen beim Öffnen des Modals
 		},
@@ -207,12 +298,56 @@ document.addEventListener('alpine:init', () => {
             this.isCategoryModalOpen = false;
         },
 
+        addCategoryField() {
+            this.currentCategory.fields.push({
+                id: crypto.randomUUID(),
+                name: '',
+                type: 'text',
+                options: [],
+                optionsText: ''
+            });
+        },
+
+        removeCategoryField(fieldId) {
+            this.currentCategory.fields = this.currentCategory.fields.filter(field => field.id !== fieldId);
+        },
+
+        filteredIconCatalog() {
+            const query = this.iconSearch.trim().toLowerCase();
+            if (!query) {
+                return this.iconCatalog;
+            }
+            return this.iconCatalog.filter(iconName => iconName.includes(query));
+        },
+
+        selectIcon(iconName) {
+            this.currentCategory.icon = iconName;
+        },
+
         async saveCategory() {
             try {
+                const fields = {};
+                for (const field of this.currentCategory.fields) {
+                    const trimmedName = field.name.trim();
+                    if (!trimmedName) continue;
+                    if (field.type === 'select') {
+                        const options = (field.optionsText || '')
+                            .split(',')
+                            .map(option => option.trim())
+                            .filter(Boolean);
+                        fields[trimmedName] = {
+                            type: field.type,
+                            options
+                        };
+                    } else {
+                        fields[trimmedName] = field.type;
+                    }
+                }
+
                 const categoryData = {
                     name: this.currentCategory.name,
                     icon: this.currentCategory.icon,
-                    fields: JSON.parse(this.currentCategory.fields)
+                    fields
                 };
 
                 let response;
@@ -230,14 +365,14 @@ document.addEventListener('alpine:init', () => {
                     });
                 }
 
-                if (response.ok) {
-                    await this.loadCategories();
-                    this.closeCategoryModal();
-                    await this.loadActivityFeed();
-                } else {
+                if (!response.ok) {
                     const error = await response.json();
                     throw new Error(error.error || 'Failed to save category');
                 }
+
+                await this.loadCategories();
+                this.closeCategoryModal();
+                await this.loadActivityFeed();
             } catch (error) {
                 console.error('Error saving category:', error);
                 alert('Error saving category: ' + error.message);
@@ -245,21 +380,31 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteCategory(categoryId) {
-            if (confirm('Are you sure you want to delete this category and all its devices?')) {
-                const response = await fetch(`/api/categories/${categoryId}`, {
-                    method: 'DELETE'
-                });
-                if (response.ok) {
-                    await this.loadCategories();
-                    if (this.activeCategory === categoryId) {
-                        await this.loadDevices();
-                    }
-                    this.categoryMenuOpen = null; // Menü schließen nach Löschen
-                    await this.loadActivityFeed();
-                } else {
-                    const error = await response.json();
-                    alert('Error deleting category: ' + (error.error || 'Unknown error'));
+            if (!confirm('Are you sure you want to delete this category and all its devices?')) {
+                return false;
+            }
+            const response = await fetch(`/api/categories/${categoryId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                await this.loadCategories();
+                if (this.activeCategory === categoryId) {
+                    await this.loadDevices();
                 }
+                this.categoryMenuOpen = null; // Menü schließen nach Löschen
+                await this.loadActivityFeed();
+                return true;
+            }
+            const error = await response.json();
+            alert('Error deleting category: ' + (error.error || 'Unknown error'));
+            return false;
+        },
+
+        async confirmDeleteCategory() {
+            if (!this.currentCategory.id) return;
+            const deleted = await this.deleteCategory(this.currentCategory.id);
+            if (deleted) {
+                this.closeCategoryModal();
             }
         },
 
@@ -279,19 +424,39 @@ document.addEventListener('alpine:init', () => {
                 name: '',
                 category_id: this.activeCategory,
                 serial_number: '',
-                specs: {}
+                location_id: '',
+                specs: {},
+                extraSpecs: []
             };
             this.isDeviceModalOpen = true;
         },
 
         openEditDeviceModal(device) {
+            const specs = JSON.parse(device.specs || '{}');
+            const categoryFields = this.getCategoryFields(device.category_id) || {};
+            const baseSpecs = {};
+            const extraSpecs = [];
+
+            Object.entries(specs).forEach(([key, value]) => {
+                if (categoryFields && Object.prototype.hasOwnProperty.call(categoryFields, key)) {
+                    baseSpecs[key] = value;
+                } else {
+                    extraSpecs.push({
+                        id: crypto.randomUUID(),
+                        name: key,
+                        value
+                    });
+                }
+            });
             this.editingDevice = true;
             this.currentDevice = {
                 id: device.id,
                 name: device.name,
                 category_id: device.category_id,
                 serial_number: device.serial_number,
-                specs: JSON.parse(device.specs || '{}')
+                location_id: device.location_id || '',
+                specs: baseSpecs,
+                extraSpecs
             };
             this.isDeviceModalOpen = true;
         },
@@ -300,13 +465,33 @@ document.addEventListener('alpine:init', () => {
             this.isDeviceModalOpen = false;
         },
 
+        addExtraSpec() {
+            this.currentDevice.extraSpecs.push({
+                id: crypto.randomUUID(),
+                name: '',
+                value: ''
+            });
+        },
+
+        removeExtraSpec(specId) {
+            this.currentDevice.extraSpecs = this.currentDevice.extraSpecs.filter(spec => spec.id !== specId);
+        },
+
         async saveDevice() {
             try {
+                const specs = { ...this.currentDevice.specs };
+                this.currentDevice.extraSpecs.forEach((spec) => {
+                    const trimmedName = spec.name.trim();
+                    if (!trimmedName) return;
+                    specs[trimmedName] = spec.value;
+                });
+
                 const deviceData = {
                     name: this.currentDevice.name,
                     category_id: this.currentDevice.category_id || this.activeCategory,
                     serial_number: this.currentDevice.serial_number,
-                    specs: this.currentDevice.specs
+                    location_id: this.currentDevice.location_id || null,
+                    specs
                 };
 
                 let response;
@@ -324,14 +509,15 @@ document.addEventListener('alpine:init', () => {
                     });
                 }
 
-                if (response.ok) {
-                    await this.loadDevices(this.activeCategory);
-                    this.closeDeviceModal();
-                    await this.loadActivityFeed();
-                } else {
+                if (!response.ok) {
                     const error = await response.json();
                     throw new Error(error.error || 'Failed to save device');
                 }
+
+                await this.loadDevices(this.activeCategory);
+                await this.loadAllDevices();
+                this.closeDeviceModal();
+                await this.loadActivityFeed();
             } catch (error) {
                 console.error('Error saving device:', error);
                 alert('Error saving device: ' + error.message);
@@ -345,6 +531,7 @@ document.addEventListener('alpine:init', () => {
                 });
                 if (response.ok) {
                     await this.loadDevices(this.activeCategory);
+                    await this.loadAllDevices();
                     await this.loadActivityFeed();
                 } else {
                     const error = await response.json();
@@ -391,15 +578,13 @@ document.addEventListener('alpine:init', () => {
                 console.error('Error loading device extras:', error);
             }
 
-            if (this.featureFlags.pro_enabled) {
-                try {
-                    const maintenanceRes = await fetch(`/api/maintenance?device_id=${deviceId}`);
-                    if (maintenanceRes.ok) {
-                        this.maintenanceTasks = await maintenanceRes.json();
-                    }
-                } catch (error) {
-                    console.error('Error loading maintenance tasks:', error);
+            try {
+                const maintenanceRes = await fetch(`/api/maintenance?device_id=${deviceId}`);
+                if (maintenanceRes.ok) {
+                    this.maintenanceTasks = await maintenanceRes.json();
                 }
+            } catch (error) {
+                console.error('Error loading maintenance tasks:', error);
             }
         },
 
@@ -476,7 +661,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async addMaintenanceTask() {
-            if (!this.featureFlags.pro_enabled || !this.selectedDevice) return;
+            if (!this.selectedDevice) return;
             if (!this.newMaintenance.title.trim()) return;
             try {
                 const response = await fetch('/api/maintenance', {
@@ -503,7 +688,6 @@ document.addEventListener('alpine:init', () => {
         },
 
         async updateMaintenanceStatus(taskId, status) {
-            if (!this.featureFlags.pro_enabled) return;
             try {
                 const response = await fetch(`/api/maintenance/${taskId}`, {
                     method: 'PATCH',
@@ -526,15 +710,258 @@ document.addEventListener('alpine:init', () => {
             return `${label}${name ? ` • ${name}` : ''}`;
         },
 
+        // Asset Methods
+        async openAddAssetModal() {
+            this.editingAsset = false;
+            this.currentAsset = {
+                id: null,
+                name: '',
+                notes: '',
+                specs: [],
+                device_ids: [],
+                acquisition_date: '',
+                commissioning_date: '',
+                warranty_end: '',
+                depreciation_months: '',
+                retirement_date: '',
+                retirement_reason: '',
+                relations: []
+            };
+            if (this.allDevices.length === 0) {
+                await this.loadAllDevices();
+            }
+            if (this.relationTypes.length === 0) {
+                await this.loadRelationTypes();
+            }
+            this.isAssetModalOpen = true;
+        },
+
+        async openEditAssetModal(asset) {
+            try {
+                const response = await fetch(`/api/assets/${asset.id}`);
+                if (!response.ok) {
+                    throw new Error('Asset konnte nicht geladen werden');
+                }
+                const data = await response.json();
+                this.editingAsset = true;
+                this.currentAsset = {
+                    id: data.id,
+                    name: data.name,
+                    notes: data.notes || '',
+                    specs: Object.entries(data.specs || {}).map(([key, value]) => ({
+                        id: crypto.randomUUID(),
+                        name: key,
+                        value
+                    })),
+                    device_ids: (data.devices || []).map(device => device.id),
+                    acquisition_date: data.acquisition_date || '',
+                    commissioning_date: data.commissioning_date || '',
+                    warranty_end: data.warranty_end || '',
+                    depreciation_months: data.depreciation_months ?? '',
+                    retirement_date: data.retirement_date || '',
+                    retirement_reason: data.retirement_reason || '',
+                    relations: (data.relations || [])
+                        .filter(relation => relation.direction === 'outgoing')
+                        .map((relation) => ({
+                            id: relation.id || crypto.randomUUID(),
+                            related_asset_id: relation.related_asset_id,
+                            relation_type_id: relation.relation_type_id || ''
+                        }))
+                };
+                if (this.relationTypes.length === 0) {
+                    await this.loadRelationTypes();
+                }
+                this.isAssetModalOpen = true;
+            } catch (error) {
+                console.error('Error loading asset:', error);
+                alert(error.message);
+            }
+        },
+
+        closeAssetModal() {
+            this.isAssetModalOpen = false;
+        },
+
+        addAssetSpec() {
+            this.currentAsset.specs.push({
+                id: crypto.randomUUID(),
+                name: '',
+                value: ''
+            });
+        },
+
+        removeAssetSpec(specId) {
+            this.currentAsset.specs = this.currentAsset.specs.filter(spec => spec.id !== specId);
+        },
+
+        addAssetRelation() {
+            this.currentAsset.relations.push({
+                id: crypto.randomUUID(),
+                related_asset_id: '',
+                relation_type_id: ''
+            });
+        },
+
+        removeAssetRelation(relationId) {
+            this.currentAsset.relations = this.currentAsset.relations.filter(relation => relation.id !== relationId);
+        },
+
+        async saveAsset() {
+            try {
+                const specs = {};
+                this.currentAsset.specs.forEach((spec) => {
+                    const trimmedName = spec.name.trim();
+                    if (!trimmedName) return;
+                    specs[trimmedName] = spec.value;
+                });
+
+                const payload = {
+                    name: this.currentAsset.name,
+                    notes: this.currentAsset.notes,
+                    specs,
+                    device_ids: this.currentAsset.device_ids,
+                    acquisition_date: this.currentAsset.acquisition_date,
+                    commissioning_date: this.currentAsset.commissioning_date,
+                    warranty_end: this.currentAsset.warranty_end,
+                    depreciation_months: this.currentAsset.depreciation_months || null,
+                    retirement_date: this.currentAsset.retirement_date,
+                    retirement_reason: this.currentAsset.retirement_reason,
+                    relations: this.currentAsset.relations
+                        .filter(relation => relation.related_asset_id)
+                        .map((relation) => ({
+                            related_asset_id: relation.related_asset_id,
+                            relation_type_id: relation.relation_type_id || null
+                        }))
+                };
+
+                let response;
+                if (this.editingAsset) {
+                    response = await fetch(`/api/assets/${this.currentAsset.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    response = await fetch('/api/assets', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Asset konnte nicht gespeichert werden');
+                }
+
+                await this.loadAssets();
+                this.closeAssetModal();
+                await this.loadActivityFeed();
+            } catch (error) {
+                console.error('Error saving asset:', error);
+                alert('Error saving asset: ' + error.message);
+            }
+        },
+
+        async deleteAsset(assetId) {
+            if (!confirm('Möchten Sie dieses Asset wirklich löschen?')) {
+                return;
+            }
+            const response = await fetch(`/api/assets/${assetId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                await this.loadAssets();
+                await this.loadActivityFeed();
+            } else {
+                const error = await response.json();
+                alert(error.error || 'Asset konnte nicht gelöscht werden');
+            }
+        },
+
+        async openAssetDetail(asset) {
+            try {
+                const response = await fetch(`/api/assets/${asset.id}`);
+                if (!response.ok) {
+                    throw new Error('Asset konnte nicht geladen werden');
+                }
+                this.selectedAsset = await response.json();
+                this.assetDetailOpen = true;
+            } catch (error) {
+                console.error('Error loading asset detail:', error);
+                alert(error.message);
+            }
+        },
+
+        closeAssetDetail() {
+            this.assetDetailOpen = false;
+            this.selectedAsset = null;
+        },
+
         // Helper Methods
+        getCategoryById(categoryId) {
+            return this.categories.find(c => c.id === categoryId) || null;
+        },
+
         getCategoryName(categoryId) {
-            const category = this.categories.find(c => c.id === categoryId);
+            const category = this.getCategoryById(categoryId);
             return category ? category.name : 'Unknown';
         },
 
         getCategoryFields(categoryId) {
-            const category = this.categories.find(c => c.id === categoryId);
-            return category ? JSON.parse(category.fields || '{}') : null;
+            const category = this.getCategoryById(categoryId);
+            if (!category) return null;
+            let parsed;
+            try {
+                parsed = JSON.parse(category.fields || '{}');
+            } catch (error) {
+                console.error('Error parsing category fields:', error);
+                return null;
+            }
+
+            return Object.fromEntries(
+                Object.entries(parsed).map(([fieldName, fieldConfig]) => {
+                    if (typeof fieldConfig === 'string') {
+                        return [fieldName, { type: fieldConfig, options: [] }];
+                    }
+                    return [
+                        fieldName,
+                        {
+                            type: fieldConfig?.type || 'text',
+                            options: Array.isArray(fieldConfig?.options) ? fieldConfig.options : []
+                        }
+                    ];
+                })
+            );
+        },
+
+        formatSpecValue(value) {
+            if (value === null || value === undefined || value === '') {
+                return '-';
+            }
+            if (typeof value === 'boolean') {
+                return value ? 'Ja' : 'Nein';
+            }
+            return value;
+        },
+
+        getDeviceSpecEntries(device) {
+            if (!device) return [];
+            let parsed;
+            try {
+                parsed = JSON.parse(device.specs || '{}');
+            } catch (error) {
+                console.error('Error parsing device specs:', error);
+                return [];
+            }
+            return Object.entries(parsed).map(([key, value]) => ({
+                key,
+                value: this.formatSpecValue(value)
+            }));
+        },
+
+        getDevicesForCategory(categoryId) {
+            return this.allDevices.filter(device => device.category_id === categoryId);
         },
 
 		getCategoryColor(categoryName) {
