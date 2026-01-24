@@ -1390,6 +1390,26 @@ def mark_devices_as_used(db, device_ids):
             (json.dumps(specs), row["id"]),
         )
 
+def mark_devices_as_in_stock(db, device_ids):
+    unique_ids = [device_id for device_id in dict.fromkeys(device_ids) if device_id]
+    if not unique_ids:
+        return
+    placeholders = ",".join(["?"] * len(unique_ids))
+    rows = db.execute(
+        f"SELECT id, specs FROM devices WHERE id IN ({placeholders})",
+        unique_ids,
+    ).fetchall()
+    for row in rows:
+        try:
+            specs = json.loads(row["specs"] or "{}")
+        except json.JSONDecodeError:
+            specs = {}
+        specs["Status"] = "Lager"
+        db.execute(
+            "UPDATE devices SET specs = ? WHERE id = ?",
+            (json.dumps(specs), row["id"]),
+        )
+
 def get_asset_devices_info(db, asset_id):
     rows = db.execute('''
         SELECT d.serial_number, l.name as location_name
@@ -2019,6 +2039,12 @@ def asset_detail(asset_id):
 
     if not user_can('assets.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    device_rows = db.execute(
+        'SELECT device_id FROM asset_devices WHERE asset_id = ?',
+        (asset_id,),
+    ).fetchall()
+    device_ids = [row["device_id"] for row in device_rows]
+    mark_devices_as_in_stock(db, device_ids)
     db.execute('DELETE FROM ticket_assets WHERE asset_id = ?', (asset_id,))
     db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
     db.execute('DELETE FROM asset_relations WHERE asset_id = ? OR related_asset_id = ?', (asset_id, asset_id))
