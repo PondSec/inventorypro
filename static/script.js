@@ -10,7 +10,15 @@ document.addEventListener('alpine:init', () => {
         relationTypes: [],
         activeCategory: null,
         searchQuery: '',
+        categorySearchQuery: '',
+        ownerQuery: '',
+        locationFilter: '',
+        categoryFilter: '',
+        createdFrom: '',
+        createdTo: '',
+        specQuery: '',
         sortDropdownOpen: false,
+        filtersOpen: true,
         featureFlags: {
             pro_enabled: false,
             pro_features: [],
@@ -93,6 +101,13 @@ document.addEventListener('alpine:init', () => {
             await this.loadActivityFeed();
             this.loadIconCatalog();
             this.$watch('searchQuery', () => this.searchDevices());
+            this.$watch('categorySearchQuery', () => this.filterCategories());
+            this.$watch('ownerQuery', () => this.searchDevices());
+            this.$watch('locationFilter', () => this.searchDevices());
+            this.$watch('categoryFilter', () => this.searchDevices());
+            this.$watch('createdFrom', () => this.searchDevices());
+            this.$watch('createdTo', () => this.searchDevices());
+            this.$watch('specQuery', () => this.searchDevices());
             feather.replace();
             this.startLiveRefresh();
         },
@@ -161,7 +176,7 @@ document.addEventListener('alpine:init', () => {
             const response = await fetch(url);
             if (response.ok) {
                 this.devices = await response.json();
-                this.filteredDevices = this.devices;
+                this.searchDevices();
             }
             if (this.selectedDevice) {
                 const updated = this.devices.find(device => device.id === this.selectedDevice.id);
@@ -202,21 +217,86 @@ document.addEventListener('alpine:init', () => {
 
         // Search and Sort
         searchDevices() {
+            const matchesCreatedRange = (deviceDate) => {
+                if (!deviceDate) return !this.createdFrom && !this.createdTo;
+                const value = new Date(deviceDate);
+                if (Number.isNaN(value.getTime())) return true;
+                if (this.createdFrom) {
+                    const fromDate = new Date(this.createdFrom);
+                    if (!Number.isNaN(fromDate.getTime()) && value < fromDate) return false;
+                }
+                if (this.createdTo) {
+                    const toDate = new Date(this.createdTo);
+                    if (!Number.isNaN(toDate.getTime())) {
+                        const endOfDay = new Date(toDate);
+                        endOfDay.setHours(23, 59, 59, 999);
+                        if (value > endOfDay) return false;
+                    }
+                }
+                return true;
+            };
+            const normalize = (value) => (value || '').toString().toLowerCase();
+            const query = normalize(this.searchQuery).trim();
+            const ownerQuery = normalize(this.ownerQuery).trim();
+            const specQuery = normalize(this.specQuery).trim();
+            const locationFilter = this.locationFilter ? String(this.locationFilter) : '';
+            const categoryFilter = this.categoryFilter ? String(this.categoryFilter) : '';
+
             if (!this.searchQuery) {
                 this.filteredDevices = [...this.devices];
-            } else {
-                const query = this.searchQuery.toLowerCase();
-                this.filteredDevices = this.devices.filter(device => 
-                    device.name.toLowerCase().includes(query) ||
-                    (device.serial_number && device.serial_number.toLowerCase().includes(query)) ||
-                    JSON.stringify(device.specs).toLowerCase().includes(query)
-                );
             }
+            this.filteredDevices = this.devices.filter(device => {
+                const deviceName = normalize(device.name);
+                const ownerName = normalize(device.serial_number);
+                const categoryName = normalize(device.category_name);
+                const locationName = normalize(device.location_name);
+                const specsString = normalize(JSON.stringify(device.specs || {}));
+                const createdAt = device.created_at;
+
+                const matchesQuery = !query ||
+                    deviceName.includes(query) ||
+                    ownerName.includes(query) ||
+                    categoryName.includes(query) ||
+                    locationName.includes(query) ||
+                    specsString.includes(query);
+
+                const matchesOwner = !ownerQuery || ownerName.includes(ownerQuery);
+                const matchesLocation = !locationFilter || String(device.location_id || '') === locationFilter;
+                const matchesCategory = !categoryFilter || String(device.category_id || '') === categoryFilter;
+                const matchesSpecs = !specQuery || specsString.includes(specQuery);
+
+                return matchesQuery && matchesOwner && matchesLocation && matchesCategory && matchesSpecs && matchesCreatedRange(createdAt);
+            });
             
             // Apply current sort if one is active
             if (this.currentSort.field) {
                 this.sortDevices(this.currentSort.field, this.currentSort.direction);
             }
+        },
+
+        filterCategories() {
+            return this.filteredCategories();
+        },
+
+        filteredCategories() {
+            const query = (this.categorySearchQuery || '').toLowerCase().trim();
+            if (!query) {
+                return this.categories;
+            }
+            return this.categories.filter(category =>
+                (category.name || '').toLowerCase().includes(query)
+            );
+        },
+
+        resetDeviceFilters() {
+            this.searchQuery = '';
+            this.ownerQuery = '';
+            this.locationFilter = '';
+            this.categoryFilter = '';
+            this.createdFrom = '';
+            this.createdTo = '';
+            this.specQuery = '';
+            this.searchDevices();
         },
 
         toggleSortDropdown() {
