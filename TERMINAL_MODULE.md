@@ -66,6 +66,23 @@ Sensible Daten werden vor dem Speichern redacted.
 * `/api/terminal/db/query` – Read-only SQL (SELECT/EXPLAIN)
 * `/api/terminal/db/execute` – Write SQL (nur mit `terminal.db_write` + EXECUTE + optional Break-Glass)
 
+## Command Console (UI)
+Im Terminal-Tab gibt es zusätzlich eine **Command Console**. Diese ist **kein Shell**, sondern mappt kurze Kommandos auf die vorhandenen Recipes.
+
+Beispiele:
+
+* `ping example.com 4`
+* `dns example.com`
+* `tcp host 443`
+* `http https://example.com GET`
+* `service status nginx`
+* `service restart nginx`
+* `logs tail app 50`
+* `logs search app error 100`
+* `env`
+* `db.query SELECT * FROM assets LIMIT 5`
+* `db.exec EXECUTE UPDATE assets SET status='retired' WHERE id=1`
+
 ## Adding New Recipes
 1. Implementiere einen Handler in `app.py` (z. B. `run_custom_recipe`).
 2. Registriere ihn im `TERMINAL_RECIPES`-Registry.

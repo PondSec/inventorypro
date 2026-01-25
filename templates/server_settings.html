@@ -1148,6 +1148,15 @@
                                             <button type="button" @click="clearTerminalOutput" class="btn-secondary">Clear</button>
                                         </div>
                                     </div>
+                                    <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                        <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Command Console (Recipes only)</label>
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            <input type="text" x-model="terminalCommand" @keydown.enter.prevent="runTerminalCommand" class="flex-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono text-slate-700 focus:border-indigo-500 focus:ring-indigo-500" placeholder="ping example.com 4">
+                                            <button type="button" @click="runTerminalCommand" class="btn-secondary">Run</button>
+                                            <button type="button" @click="showTerminalHelp" class="btn-secondary">Help</button>
+                                        </div>
+                                        <p class="mt-2 text-[11px] text-slate-400">Nur Whitelist-Kommandos. Beispiele: <span class="font-mono">ping example.com 4</span>, <span class="font-mono">dns example.com</span>, <span class="font-mono">tcp host 443</span>, <span class="font-mono">http https://example.com GET</span></p>
+                                    </div>
                                     <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-900 p-4 text-xs text-slate-100">
                                         <template x-if="!terminalOutput.length">
                                             <p class="text-slate-400">Noch keine Ausgabe.</p>
@@ -1338,6 +1347,7 @@
                 terminalSessionExpiresAt: null,
                 terminalBusy: false,
                 terminalError: '',
+                terminalCommand: '',
                 terminalPassword: '',
                 terminalOtp: '',
                 terminalAllowlists: { services: [], logs: [] },
@@ -1472,6 +1482,113 @@
                 },
                 clearTerminalOutput() {
                     this.terminalOutput = [];
+                },
+                showTerminalHelp() {
+                    this.pushTerminalOutput({
+                        time: this.formatTerminalTimestamp(),
+                        title: 'help',
+                        status: 'ok',
+                        output: [
+                            'Allowed commands:',
+                            'ping <host> [count]',
+                            'dns <domain>',
+                            'tcp <host> <port>',
+                            'http <url> [GET|HEAD]',
+                            'service status <name>',
+                            'service restart <name>',
+                            'logs tail <source> [lines]',
+                            'logs search <source> <keyword> [lines]',
+                            'env',
+                            'db.query <sql>',
+                            'db.exec EXECUTE <sql>'
+                        ].join('\\n')
+                    });
+                },
+                async runTerminalCommand() {
+                    const raw = (this.terminalCommand || '').trim();
+                    if (!raw) return;
+                    if (!this.terminalSessionId) {
+                        this.terminalError = 'Session nicht aktiv.';
+                        return;
+                    }
+                    const parts = raw.split(' ');
+                    const command = parts[0].toLowerCase();
+                    const args = parts.slice(1);
+                    this.terminalCommand = '';
+                    if (command === 'help' || command === '?') {
+                        this.showTerminalHelp();
+                        return;
+                    }
+                    if (command === 'ping') {
+                        await this.runTerminalRecipe('ping', { host: args[0] || '', count: args[1] || 4 });
+                        return;
+                    }
+                    if (command === 'dns') {
+                        await this.runTerminalRecipe('dns_lookup', { domain: args[0] || '' });
+                        return;
+                    }
+                    if (command === 'tcp') {
+                        await this.runTerminalRecipe('tcp_check', { host: args[0] || '', port: args[1] || '' });
+                        return;
+                    }
+                    if (command === 'http') {
+                        await this.runTerminalRecipe('http_check', { url: args[0] || '', method: (args[1] || 'GET').toUpperCase() });
+                        return;
+                    }
+                    if (command === 'service') {
+                        const action = (args[0] || '').toLowerCase();
+                        const name = args[1] || '';
+                        if (action === 'status') {
+                            await this.runTerminalRecipe('service_status', { service: name });
+                            return;
+                        }
+                        if (action === 'restart') {
+                            await this.runTerminalRecipe('service_restart', { service: name, confirm: true });
+                            return;
+                        }
+                    }
+                    if (command === 'logs') {
+                        const action = (args[0] || '').toLowerCase();
+                        const source = args[1] || '';
+                        if (action === 'tail') {
+                            await this.runTerminalRecipe('logs_tail', { source: source, lines: args[2] || 50 });
+                            return;
+                        }
+                        if (action === 'search') {
+                            await this.runTerminalRecipe('logs_search', { source: source, keyword: args[2] || '', lines: args[3] || 100 });
+                            return;
+                        }
+                    }
+                    if (command === 'env') {
+                        await this.runTerminalRecipe('environment_snapshot', {});
+                        return;
+                    }
+                    if (command === 'db.query') {
+                        this.terminalInputs.sqlQuery = raw.replace(/^db\\.query\\s+/i, '');
+                        await this.runDbQuery();
+                        return;
+                    }
+                    if (command === 'db.exec') {
+                        if (args[0] !== 'EXECUTE') {
+                            this.pushTerminalOutput({
+                                time: this.formatTerminalTimestamp(),
+                                title: 'db.exec',
+                                status: 'error',
+                                output: 'Bestätigung fehlt. Verwende: db.exec EXECUTE <sql>'
+                            });
+                            return;
+                        }
+                        this.terminalInputs.sqlWriteQuery = raw.replace(/^db\\.exec\\s+EXECUTE\\s+/i, '');
+                        this.terminalInputs.sqlConfirm = 'EXECUTE';
+                        await this.runDbExecute();
+                        return;
+                    }
+                    this.pushTerminalOutput({
+                        time: this.formatTerminalTimestamp(),
+                        title: 'command',
+                        status: 'error',
+                        output: 'Unbekanntes Kommando. Tippe help für die Liste.'
+                    });
                 },
                 async copyTerminalOutput() {
                     const text = this.terminalOutput.map(item => `[${item.time}] ${item.title}\n${item.output}`).join('\n\n');
