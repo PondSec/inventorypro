@@ -220,8 +220,8 @@ PERMISSIONS = [
     },
     {
         "key": "server_settings.manage",
-        "label": "Servereinstellungen verwalten",
-        "description": "Serverkonfigurationen wie Port und Debug-Modus anpassen.",
+        "label": "Einstellungen verwalten",
+        "description": "Serverkonfigurationen und UI-Anpassungen verwalten.",
         "group": "Administration"
     },
     {

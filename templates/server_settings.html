@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventory Pro - Servereinstellungen</title>
+    <title>Inventory Pro - Einstellungen</title>
     <script src="/static/theme.js"></script>
     <script>
         tailwind.config = { darkMode: 'class' };
@@ -78,7 +78,7 @@
                                 <a href="/settings" class="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm">
                                     <span class="flex items-center gap-2">
                                         <i data-feather="settings" class="h-4 w-4 text-indigo-500"></i>
-                                        Servereinstellungen
+                                        Einstellungen
                                     </span>
                                 </a>
                                 {% endif %}
@@ -165,7 +165,7 @@
                     </button>
                     <div>
                         <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Admin</p>
-                        <h1 class="text-2xl font-semibold text-slate-900">Servereinstellungen</h1>
+                        <h1 class="text-2xl font-semibold text-slate-900">Einstellungen</h1>
                     </div>
                 </div>
                 <div class="flex items-center gap-2 sm:gap-3">
@@ -182,75 +182,380 @@
             </header>
 
             <main class="app-content px-8 pt-[120px] pb-10" x-cloak>
-                <div class="max-w-4xl">
-                    <div class="mb-6 rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4 text-sm text-indigo-700">
-                        <div class="flex items-start gap-3">
-                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm">
-                                <i data-feather="info" class="h-4 w-4"></i>
-                            </span>
+                <div class="max-w-6xl space-y-6">
+                    <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                             <div>
-                                <p class="font-semibold">Hinweis</p>
-                                <p class="text-sm text-indigo-700/90">Änderungen an Host, Port oder Debug-Modus werden erst nach einem Neustart des Servers aktiv.</p>
+                                <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Einstellungen</p>
+                                <h2 class="text-2xl font-semibold text-slate-900">Steuere Server, Layout und Branding aus einem Bereich</h2>
+                                <p class="mt-2 text-sm text-slate-500">Wechsle zwischen Servereinstellungen und dem neuen Customize-Modul, um die Oberfläche vollständig zu individualisieren.</p>
+                            </div>
+                            <div class="flex flex-wrap gap-3">
+                                <button type="button" @click="activeSection = 'server'" :class="activeSection === 'server' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 text-slate-600'" class="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition">
+                                    <i data-feather="server" class="h-4 w-4"></i>
+                                    Servereinstellungen
+                                </button>
+                                <button type="button" @click="activeSection = 'customize'" :class="activeSection === 'customize' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 text-slate-600'" class="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition">
+                                    <i data-feather="sliders" class="h-4 w-4"></i>
+                                    Customize
+                                </button>
                             </div>
                         </div>
                     </div>
 
-                    <form @submit.prevent="saveSettings" class="space-y-6">
-                        <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-                            <div class="flex items-center gap-3">
-                                <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                                    <i data-feather="server" class="h-5 w-5"></i>
+                    <section x-show="activeSection === 'server'" x-transition>
+                        <div class="mb-6 rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4 text-sm text-indigo-700">
+                            <div class="flex items-start gap-3">
+                                <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm">
+                                    <i data-feather="info" class="h-4 w-4"></i>
                                 </span>
                                 <div>
-                                    <h2 class="text-xl font-semibold text-slate-900">Serverkonfiguration</h2>
-                                    <p class="text-sm text-slate-500">Passe die grundlegenden Runtime-Einstellungen der Anwendung an.</p>
+                                    <p class="font-semibold">Hinweis</p>
+                                    <p class="text-sm text-indigo-700/90">Änderungen an Host, Port oder Debug-Modus werden erst nach einem Neustart des Servers aktiv.</p>
                                 </div>
-                            </div>
-
-                            <div class="mt-6 grid gap-6 md:grid-cols-2">
-                                <div class="space-y-2">
-                                    <label class="text-sm font-semibold text-slate-700">Host</label>
-                                    <input type="text" x-model="settings.host" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="0.0.0.0">
-                                    <p class="text-xs text-slate-400">IP-Adresse oder Hostname für den Flask-Server.</p>
-                                </div>
-                                <div class="space-y-2">
-                                    <label class="text-sm font-semibold text-slate-700">Port</label>
-                                    <input type="number" min="1" max="65535" x-model.number="settings.port" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="5000">
-                                    <p class="text-xs text-slate-400">Port, unter dem der Server erreichbar sein soll.</p>
-                                </div>
-                            </div>
-
-                            <div class="mt-6 grid gap-4 md:grid-cols-2">
-                                <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                                    <input type="checkbox" x-model="settings.debug" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-                                    <div>
-                                        <p class="text-sm font-semibold text-slate-700">Debug-Modus aktivieren</p>
-                                        <p class="text-xs text-slate-500">Aktiviert ausführliche Logs und Fehlerseiten (nur für Entwicklung).</p>
-                                    </div>
-                                </label>
-                                <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                                    <input type="checkbox" x-model="settings.pro_enabled" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-                                    <div>
-                                        <p class="text-sm font-semibold text-slate-700">Pro-Features aktiv</p>
-                                        <p class="text-xs text-slate-500">Steuert, ob erweiterte Module in der UI verfügbar sind.</p>
-                                    </div>
-                                </label>
                             </div>
                         </div>
 
-                        <div class="flex flex-wrap items-center gap-3">
-                            <button type="submit" :disabled="saving" class="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70">
-                                <span x-show="!saving">Einstellungen speichern</span>
-                                <span x-show="saving">Speichert...</span>
-                            </button>
-                            <button type="button" @click="fetchSettings" class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50">
-                                <i data-feather="refresh-cw" class="h-4 w-4"></i>
-                                Neu laden
-                            </button>
-                            <span x-show="errorMessage" class="text-sm text-rose-600" x-text="errorMessage"></span>
-                            <span x-show="successMessage" class="text-sm text-emerald-600" x-text="successMessage"></span>
+                        <form @submit.prevent="saveSettings" class="space-y-6">
+                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                        <i data-feather="server" class="h-5 w-5"></i>
+                                    </span>
+                                    <div>
+                                        <h2 class="text-xl font-semibold text-slate-900">Serverkonfiguration</h2>
+                                        <p class="text-sm text-slate-500">Passe die grundlegenden Runtime-Einstellungen der Anwendung an.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-6 md:grid-cols-2">
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Host</label>
+                                        <input type="text" x-model="settings.host" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="0.0.0.0">
+                                        <p class="text-xs text-slate-400">IP-Adresse oder Hostname für den Flask-Server.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Port</label>
+                                        <input type="number" min="1" max="65535" x-model.number="settings.port" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="5000">
+                                        <p class="text-xs text-slate-400">Port, unter dem der Server erreichbar sein soll.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.debug" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Debug-Modus aktivieren</p>
+                                            <p class="text-xs text-slate-500">Aktiviert ausführliche Logs und Fehlerseiten (nur für Entwicklung).</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.pro_enabled" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Pro-Features aktiv</p>
+                                            <p class="text-xs text-slate-500">Steuert, ob erweiterte Module in der UI verfügbar sind.</p>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-3">
+                                <button type="submit" :disabled="saving" class="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70">
+                                    <span x-show="!saving">Einstellungen speichern</span>
+                                    <span x-show="saving">Speichert...</span>
+                                </button>
+                                <button type="button" @click="fetchSettings" class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50">
+                                    <i data-feather="refresh-cw" class="h-4 w-4"></i>
+                                    Neu laden
+                                </button>
+                                <span x-show="errorMessage" class="text-sm text-rose-600" x-text="errorMessage"></span>
+                                <span x-show="successMessage" class="text-sm text-emerald-600" x-text="successMessage"></span>
+                            </div>
+                        </form>
+                    </section>
+
+                    <section x-show="activeSection === 'customize'" x-transition>
+                        <div class="rounded-3xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-700">
+                            <div class="flex items-start gap-3">
+                                <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white text-emerald-600 shadow-sm">
+                                    <i data-feather="sparkles" class="h-4 w-4"></i>
+                                </span>
+                                <div>
+                                    <p class="font-semibold">Customize Studio</p>
+                                    <p class="text-sm text-emerald-700/90">Passe Logo, Farben, Größen und Layout flexibel an. Die Vorschau bleibt responsiv, damit sich keine Widgets überlappen.</p>
+                                </div>
+                            </div>
                         </div>
-                    </form>
+
+                        <div class="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                            <div class="space-y-6">
+                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="image" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Branding & Logo</h2>
+                                            <p class="text-sm text-slate-500">Füge dein eigenes Logo hinzu und definiere Farben, Namen und Schriften.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Firmenname</label>
+                                            <input type="text" x-model="customization.branding.name" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="Dein Firmenname">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Tagline</label>
+                                            <input type="text" x-model="customization.branding.tagline" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="Kurzbeschreibung">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Primärfarbe</label>
+                                            <input type="color" x-model="customization.branding.primary" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Akzentfarbe</label>
+                                            <input type="color" x-model="customization.branding.accent" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Hintergrund</label>
+                                            <input type="color" x-model="customization.branding.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Kantenradius</label>
+                                            <input type="range" min="8" max="24" step="2" x-model.number="customization.branding.radius" class="w-full">
+                                            <p class="text-xs text-slate-400">Aktuell: <span x-text="customization.branding.radius + 'px'"></span></p>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Dichte</label>
+                                            <input type="range" min="0.8" max="1.3" step="0.05" x-model.number="customization.branding.density" class="w-full">
+                                            <p class="text-xs text-slate-400">Skaliert Abstände & Größen für kompakt oder großzügig.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6">
+                                        <label class="text-sm font-semibold text-slate-700">Logo hochladen</label>
+                                        <div class="mt-2 flex flex-col gap-4 md:flex-row md:items-center">
+                                            <input type="file" accept="image/*" @change="handleLogoUpload" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                                            <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                                                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100">
+                                                    <template x-if="customization.branding.logoDataUrl">
+                                                        <img :src="customization.branding.logoDataUrl" alt="Logo" class="h-10 w-10 rounded-2xl object-cover">
+                                                    </template>
+                                                    <template x-if="!customization.branding.logoDataUrl">
+                                                        <i data-feather="image" class="h-4 w-4 text-slate-400"></i>
+                                                    </template>
+                                                </span>
+                                                <span x-text="customization.branding.logoDataUrl ? 'Logo geladen' : 'Noch kein Logo'"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="layout" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Layout & Widgets</h2>
+                                            <p class="text-sm text-slate-500">Verschiebe Module, ändere Größen und setze Farben pro Widget.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 space-y-4">
+                                        <template x-for="(widget, index) in customization.layout.widgets" :key="widget.id">
+                                            <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm" :class="widget.visible ? '' : 'opacity-60'">
+                                                <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                                    <div class="flex items-center gap-3">
+                                                        <button type="button" draggable="true" @dragstart="startDrag(widget.id)" @dragend="clearDrag" class="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 cursor-move">
+                                                            <i data-feather="move" class="h-4 w-4"></i>
+                                                        </button>
+                                                        <div>
+                                                            <p class="text-sm font-semibold text-slate-800" x-text="widget.label"></p>
+                                                            <p class="text-xs text-slate-500" x-text="widget.type"></p>
+                                                        </div>
+                                                    </div>
+                                                    <div class="flex flex-wrap gap-2">
+                                                        <button type="button" @click="moveWidget(index, -1)" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">▲</button>
+                                                        <button type="button" @click="moveWidget(index, 1)" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">▼</button>
+                                                        <button type="button" @click="toggleWidget(widget)" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100" x-text="widget.visible ? 'Ausblenden' : 'Einblenden'"></button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="mt-4 grid gap-4 md:grid-cols-3">
+                                                    <div class="space-y-2">
+                                                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Breite</label>
+                                                        <input type="range" min="1" max="3" step="1" x-model.number="widget.colSpan" class="w-full">
+                                                        <p class="text-xs text-slate-400">Spalten: <span x-text="widget.colSpan"></span></p>
+                                                    </div>
+                                                    <div class="space-y-2">
+                                                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Höhe</label>
+                                                        <input type="range" min="1" max="2" step="1" x-model.number="widget.rowSpan" class="w-full">
+                                                        <p class="text-xs text-slate-400">Zeilen: <span x-text="widget.rowSpan"></span></p>
+                                                    </div>
+                                                    <div class="space-y-2">
+                                                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Farbe</label>
+                                                        <input type="color" x-model="widget.color" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                                    </div>
+                                                </div>
+                                                <div class="mt-4 flex flex-wrap items-center gap-4">
+                                                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Textfarbe</label>
+                                                    <input type="color" x-model="widget.textColor" class="h-10 w-20 rounded-2xl border border-slate-200 bg-white">
+                                                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Beschriftung</label>
+                                                    <input type="text" x-model="widget.label" class="flex-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs">
+                                                </div>
+                                            </div>
+                                        </template>
+
+                                        <div class="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-4">
+                                            <p class="text-sm font-semibold text-slate-700">Neue Widgets hinzufügen</p>
+                                            <div class="mt-3 flex flex-wrap gap-2">
+                                                <template x-for="item in widgetLibrary" :key="item.type">
+                                                    <button type="button" @click="addWidget(item)" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                                                        <span x-text="item.label"></span>
+                                                    </button>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="edit-3" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Buttons & Felder</h2>
+                                            <p class="text-sm text-slate-500">Stelle Farben, Größen und Hover-Stile für UI-Elemente ein.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Button-Farbe</label>
+                                            <input type="color" x-model="customization.formStyle.buttonColor" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Button-Text</label>
+                                            <input type="color" x-model="customization.formStyle.buttonText" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Input-Hintergrund</label>
+                                            <input type="color" x-model="customization.formStyle.inputBackground" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Input-Rand</label>
+                                            <input type="color" x-model="customization.formStyle.inputBorder" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6">
+                                        <label class="text-sm font-semibold text-slate-700">Abstand zwischen Feldern</label>
+                                        <input type="range" min="8" max="24" step="2" x-model.number="customization.formStyle.spacing" class="w-full">
+                                        <p class="text-xs text-slate-400">Spacing: <span x-text="customization.formStyle.spacing + 'px'"></span></p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="space-y-6">
+                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="eye" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Live-Vorschau</h2>
+                                            <p class="text-sm text-slate-500">Das Layout passt sich automatisch an und verhindert Überlappungen.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 rounded-3xl border border-slate-200 p-4" :style="{ background: customization.branding.background }">
+                                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                            <div class="flex items-center gap-3">
+                                                <span class="inline-flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-sm" :style="{ borderRadius: customization.branding.radius + 'px' }">
+                                                    <template x-if="customization.branding.logoDataUrl">
+                                                        <img :src="customization.branding.logoDataUrl" alt="Logo" class="h-full w-full object-cover">
+                                                    </template>
+                                                    <template x-if="!customization.branding.logoDataUrl">
+                                                        <i data-feather="cpu" class="h-5 w-5 text-slate-400"></i>
+                                                    </template>
+                                                </span>
+                                                <div>
+                                                    <p class="text-sm font-semibold text-slate-900" x-text="customization.branding.name"></p>
+                                                    <div class="mt-1 flex flex-wrap items-center gap-2">
+                                                        <p class="text-xs text-slate-500" x-text="customization.branding.tagline"></p>
+                                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide" :style="{ background: customization.branding.accent, color: '#ffffff' }">Accent</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button type="button" class="rounded-2xl px-4 py-2 text-xs font-semibold" :style="{ background: customization.formStyle.buttonColor, color: customization.formStyle.buttonText, borderRadius: customization.branding.radius + 'px' }">
+                                                Aktion
+                                            </button>
+                                        </div>
+
+                                        <div class="mt-6 grid" :style="previewGridStyle()" @dragover.prevent>
+                                            <template x-for="widget in customization.layout.widgets" :key="widget.id">
+                                                <div x-show="widget.visible" draggable="true" @dragstart="startDrag(widget.id)" @dragover.prevent @drop="handleDrop(widget.id)" class="rounded-3xl border border-white/40 p-4 shadow-sm transition" :style="widgetStyle(widget)">
+                                                    <p class="text-sm font-semibold" x-text="widget.label"></p>
+                                                    <p class="text-xs opacity-80" x-text="widget.type"></p>
+                                                    <div class="mt-3 h-2 w-2/3 rounded-full bg-white/40"></div>
+                                                    <div class="mt-2 h-2 w-1/2 rounded-full bg-white/30"></div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="shield" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Layout-Regeln</h2>
+                                            <p class="text-sm text-slate-500">Diese Regeln halten das Dashboard flexibel und kollisionsfrei.</p>
+                                        </div>
+                                    </div>
+                                    <ul class="mt-4 space-y-3 text-sm text-slate-600">
+                                        <li class="flex items-start gap-2">
+                                            <span class="mt-1 h-2 w-2 rounded-full bg-emerald-500"></span>
+                                            Widgets reflowen automatisch in ein responsives Grid, sobald du Größen veränderst.
+                                        </li>
+                                        <li class="flex items-start gap-2">
+                                            <span class="mt-1 h-2 w-2 rounded-full bg-emerald-500"></span>
+                                            Spaltenbreiten werden je nach Bildschirmgröße angepasst (2/4/6 Spalten).
+                                        </li>
+                                        <li class="flex items-start gap-2">
+                                            <span class="mt-1 h-2 w-2 rounded-full bg-emerald-500"></span>
+                                            Drag & Drop sowie Pfeile verschieben Widgets ohne Überlappungen.
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div>
+                                            <h2 class="text-lg font-semibold text-slate-900">Anpassungen sichern</h2>
+                                            <p class="text-sm text-slate-500">Speichere deine Einstellungen lokal oder setze alles zurück.</p>
+                                        </div>
+                                        <div class="flex flex-wrap gap-2">
+                                            <button type="button" @click="saveCustomization" class="rounded-2xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500">Customize speichern</button>
+                                            <button type="button" @click="resetCustomization" class="rounded-2xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Zurücksetzen</button>
+                                        </div>
+                                    </div>
+                                    <p class="mt-3 text-xs text-emerald-600" x-show="customizeMessage" x-text="customizeMessage"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </main>
         </div>
@@ -260,19 +565,61 @@
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('serverSettingsApp', () => ({
+                activeSection: 'server',
                 settings: {
                     host: '0.0.0.0',
                     port: 5000,
                     debug: true,
                     pro_enabled: true
                 },
+                customization: {
+                    branding: {
+                        name: 'Inventory Pro',
+                        tagline: 'Smart Asset Hub',
+                        primary: '#4f46e5',
+                        accent: '#14b8a6',
+                        background: '#f8fafc',
+                        radius: 16,
+                        density: 1,
+                        logoDataUrl: ''
+                    },
+                    formStyle: {
+                        buttonColor: '#4f46e5',
+                        buttonText: '#ffffff',
+                        inputBackground: '#ffffff',
+                        inputBorder: '#e2e8f0',
+                        spacing: 16
+                    },
+                    layout: {
+                        widgets: [
+                            { id: 'widget-hero', label: 'Hero KPI', type: 'KPI-Box', colSpan: 2, rowSpan: 1, color: '#6366f1', textColor: '#ffffff', visible: true },
+                            { id: 'widget-table', label: 'Assets Tabelle', type: 'Tabelle', colSpan: 3, rowSpan: 1, color: '#0ea5e9', textColor: '#ffffff', visible: true },
+                            { id: 'widget-form', label: 'Schnellformular', type: 'Formular', colSpan: 1, rowSpan: 2, color: '#f97316', textColor: '#ffffff', visible: true },
+                            { id: 'widget-tickets', label: 'Tickets', type: 'Box', colSpan: 2, rowSpan: 1, color: '#14b8a6', textColor: '#ffffff', visible: true },
+                            { id: 'widget-buttons', label: 'Aktionen', type: 'Button-Grid', colSpan: 2, rowSpan: 1, color: '#64748b', textColor: '#ffffff', visible: true }
+                        ]
+                    }
+                },
+                widgetLibrary: [
+                    { type: 'Feld', label: 'Neues Feld', colSpan: 1, rowSpan: 1, color: '#6366f1', textColor: '#ffffff' },
+                    { type: 'Button', label: 'Aktion-Button', colSpan: 1, rowSpan: 1, color: '#0ea5e9', textColor: '#ffffff' },
+                    { type: 'Box', label: 'Info-Box', colSpan: 2, rowSpan: 1, color: '#14b8a6', textColor: '#ffffff' },
+                    { type: 'Diagramm', label: 'Chart', colSpan: 2, rowSpan: 1, color: '#f97316', textColor: '#ffffff' },
+                    { type: 'Liste', label: 'Liste', colSpan: 2, rowSpan: 1, color: '#64748b', textColor: '#ffffff' }
+                ],
                 loading: false,
                 saving: false,
                 errorMessage: '',
                 successMessage: '',
+                customizeMessage: '',
+                draggedWidgetId: null,
+                currentColumns: 6,
 
                 async init() {
                     await this.fetchSettings();
+                    this.loadCustomization();
+                    this.updateColumns();
+                    window.addEventListener('resize', () => this.updateColumns());
                     this.$nextTick(() => feather.replace());
                 },
 
@@ -317,6 +664,144 @@
                         this.saving = false;
                         this.$nextTick(() => feather.replace());
                     }
+                },
+
+                updateColumns() {
+                    const width = window.innerWidth;
+                    if (width < 640) {
+                        this.currentColumns = 2;
+                    } else if (width < 1024) {
+                        this.currentColumns = 4;
+                    } else {
+                        this.currentColumns = 6;
+                    }
+                },
+
+                previewGridStyle() {
+                    return `grid-template-columns: repeat(${this.currentColumns}, minmax(0, 1fr)); gap: ${this.customization.formStyle.spacing}px;`;
+                },
+
+                widgetStyle(widget) {
+                    const colSpan = Math.min(widget.colSpan, this.currentColumns);
+                    const rowSpan = Math.max(widget.rowSpan, 1);
+                    const padding = 16 * this.customization.branding.density;
+                    return `grid-column: span ${colSpan}; grid-row: span ${rowSpan}; background: ${widget.color}; color: ${widget.textColor}; border-radius: ${this.customization.branding.radius}px; padding: ${padding}px;`;
+                },
+
+                handleLogoUpload(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        this.customization.branding.logoDataUrl = reader.result;
+                    };
+                    reader.readAsDataURL(file);
+                },
+
+                addWidget(item) {
+                    const id = `widget-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+                    this.customization.layout.widgets.push({
+                        id,
+                        label: item.label,
+                        type: item.type,
+                        colSpan: item.colSpan,
+                        rowSpan: item.rowSpan,
+                        color: item.color,
+                        textColor: item.textColor,
+                        visible: true
+                    });
+                    this.$nextTick(() => feather.replace());
+                },
+
+                moveWidget(index, direction) {
+                    const newIndex = index + direction;
+                    if (newIndex < 0 || newIndex >= this.customization.layout.widgets.length) return;
+                    const widgets = this.customization.layout.widgets;
+                    [widgets[index], widgets[newIndex]] = [widgets[newIndex], widgets[index]];
+                },
+
+                toggleWidget(widget) {
+                    widget.visible = !widget.visible;
+                },
+
+                startDrag(widgetId) {
+                    this.draggedWidgetId = widgetId;
+                },
+
+                clearDrag() {
+                    this.draggedWidgetId = null;
+                },
+
+                handleDrop(targetId) {
+                    if (!this.draggedWidgetId || this.draggedWidgetId === targetId) return;
+                    const widgets = this.customization.layout.widgets;
+                    const fromIndex = widgets.findIndex((item) => item.id === this.draggedWidgetId);
+                    const toIndex = widgets.findIndex((item) => item.id === targetId);
+                    if (fromIndex === -1 || toIndex === -1) return;
+                    const [moved] = widgets.splice(fromIndex, 1);
+                    widgets.splice(toIndex, 0, moved);
+                    this.draggedWidgetId = null;
+                },
+
+                saveCustomization() {
+                    localStorage.setItem('inventorypro.customization', JSON.stringify(this.customization));
+                    this.customizeMessage = 'Customize-Einstellungen gespeichert (lokal im Browser).';
+                    setTimeout(() => {
+                        this.customizeMessage = '';
+                    }, 3000);
+                },
+
+                loadCustomization() {
+                    const saved = localStorage.getItem('inventorypro.customization');
+                    if (!saved) return;
+                    try {
+                        const data = JSON.parse(saved);
+                        this.customization = {
+                            ...this.customization,
+                            ...data,
+                            branding: { ...this.customization.branding, ...(data.branding || {}) },
+                            formStyle: { ...this.customization.formStyle, ...(data.formStyle || {}) },
+                            layout: { ...this.customization.layout, ...(data.layout || {}) }
+                        };
+                    } catch (error) {
+                        console.warn('Customize settings could not be loaded', error);
+                    }
+                },
+
+                resetCustomization() {
+                    localStorage.removeItem('inventorypro.customization');
+                    this.customization = {
+                        branding: {
+                            name: 'Inventory Pro',
+                            tagline: 'Smart Asset Hub',
+                            primary: '#4f46e5',
+                            accent: '#14b8a6',
+                            background: '#f8fafc',
+                            radius: 16,
+                            density: 1,
+                            logoDataUrl: ''
+                        },
+                        formStyle: {
+                            buttonColor: '#4f46e5',
+                            buttonText: '#ffffff',
+                            inputBackground: '#ffffff',
+                            inputBorder: '#e2e8f0',
+                            spacing: 16
+                        },
+                        layout: {
+                            widgets: [
+                                { id: 'widget-hero', label: 'Hero KPI', type: 'KPI-Box', colSpan: 2, rowSpan: 1, color: '#6366f1', textColor: '#ffffff', visible: true },
+                                { id: 'widget-table', label: 'Assets Tabelle', type: 'Tabelle', colSpan: 3, rowSpan: 1, color: '#0ea5e9', textColor: '#ffffff', visible: true },
+                                { id: 'widget-form', label: 'Schnellformular', type: 'Formular', colSpan: 1, rowSpan: 2, color: '#f97316', textColor: '#ffffff', visible: true },
+                                { id: 'widget-tickets', label: 'Tickets', type: 'Box', colSpan: 2, rowSpan: 1, color: '#14b8a6', textColor: '#ffffff', visible: true },
+                                { id: 'widget-buttons', label: 'Aktionen', type: 'Button-Grid', colSpan: 2, rowSpan: 1, color: '#64748b', textColor: '#ffffff', visible: true }
+                            ]
+                        }
+                    };
+                    this.customizeMessage = 'Alle Anpassungen wurden zurückgesetzt.';
+                    setTimeout(() => {
+                        this.customizeMessage = '';
+                    }, 3000);
                 }
             }));
         });
