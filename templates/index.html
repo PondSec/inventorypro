@@ -28,72 +28,11 @@
                 </a>
             </div>
 
-            <nav x-data="{
-                categoriesOpen: true,
-                assetsOpen: true,
-                appsOpen: false,
-                otpModalOpen: false,
-                otpSecret: '',
-                otpQrCode: '',
-                otpEnabled: false,
-                init() {
-                    this.$nextTick(() => feather.replace());
-                    this.checkOTPStatus();
-                },
-                async checkOTPStatus() {
-                    try {
-                        const response = await fetch('/api/otp/status', {
-                            method: 'GET',
-                            headers: { 'Content-Type': 'application/json' },
-                            credentials: 'include'
-                        });
-                        const data = await response.json();
-                        this.otpEnabled = data.enabled;
-                    } catch (error) {
-                        console.error('Fehler beim Abrufen des 2FA-Status:', error);
-                    }
-                },
-                async setupOTP() {
-                    try {
-                        const response = await fetch('/api/otp/setup', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            credentials: 'include'
-                        });
-                        const data = await response.json();
-
-                        if (data.enabled) {
-                            const confirmed = confirm('2FA ist bereits aktiviert. Möchten Sie es deaktivieren?');
-                            if (confirmed) {
-                                const disableResponse = await fetch('/api/otp/disable', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    credentials: 'include'
-                                });
-                                const disableData = await disableResponse.json();
-                                if (disableData.disabled) {
-                                    this.otpEnabled = false;
-                                    alert('2FA wurde deaktiviert.');
-                                } else {
-                                    alert('Fehler beim Deaktivieren von 2FA.');
-                                }
-                            }
-                            return;
-                        }
-
-                        this.otpSecret = data.secret;
-                        this.otpQrCode = data.qr_code;
-                        this.otpModalOpen = true;
-                    } catch (error) {
-                        console.error('Fehler:', error);
-                        alert('Ein Fehler ist aufgetreten');
-                    }
-                }
-            }" class="p-4 overflow-y-auto max-h-[calc(100vh-8rem)] space-y-4 sidebar-scroll scrollbar-hide">
-                <div class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm sidebar-compact-hidden">
+            <nav class="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-8rem)] sidebar-scroll scrollbar-hide">
+                <div class="sidebar-card sidebar-compact-hidden">
                     <p class="text-xs uppercase tracking-widest text-slate-400 sidebar-text">Willkommen zurück</p>
                     <p class="text-lg font-semibold text-slate-900 sidebar-text">{{ username }}</p>
-                    <div class="mt-2 flex items-center gap-2 text-xs text-slate-500 sidebar-text">
+                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 sidebar-text">
                         <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1">
                             <i data-feather="activity" class="w-3 h-3"></i>
                             Live-Übersicht
@@ -105,254 +44,185 @@
                     </div>
                 </div>
 
-                    <div class="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white sidebar-compact-hidden">
-                        <button @click="categoriesOpen = !categoriesOpen"
-                            class="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors">
-                            <span class="flex items-center gap-3">
-                                <span class="flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-600">
-                                    <i data-feather="layers" class="w-4 h-4"></i>
-                                </span>
-                                <span class="text-sm font-semibold text-slate-800 sidebar-text">Kategorien</span>
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Hauptbereiche</p>
+                    <div class="mt-3 space-y-1">
+                        <a href="/" class="sidebar-link active">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="home" class="w-4 h-4"></i></span>
+                                Dashboard
+                            </span>
+                        </a>
+                        {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                        <a href="/locations" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="map-pin" class="w-4 h-4"></i></span>
+                                Standorte
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                        <a href="/tickets" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="life-buoy" class="w-4 h-4"></i></span>
+                                Ticketsystem
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
+                        <a href="/knowledge" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="book-open" class="w-4 h-4"></i></span>
+                                Wissensbasis
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                        <a href="/roadmap" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="git-merge" class="w-4 h-4"></i></span>
+                                Roadmap
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="sidebar-panel">
+                    <div class="flex items-center justify-between">
+                        <p class="sidebar-panel-title">Inventar-Explorer</p>
+                        <span class="text-xs text-slate-400">Filter & Pflege</span>
+                    </div>
+                    <div class="mt-3 space-y-3">
+                        <button @click="categoriesOpen = !categoriesOpen" class="sidebar-toggle" type="button">
+                            <span class="flex items-center gap-2">
+                                <span class="sidebar-link-icon"><i data-feather="layers" class="w-4 h-4"></i></span>
+                                Kategorien
                             </span>
                             <svg :class="{ 'rotate-180': categoriesOpen }" class="w-4 h-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                             </svg>
                         </button>
-
-                    <div x-show="categoriesOpen" x-transition class="bg-slate-50 px-2 py-2 space-y-1 text-sm text-slate-800">
-                        <div class="px-3 pb-2">
-                            <div class="relative">
-                                <input type="text" x-model="categorySearchQuery" placeholder="Kategorien filtern..." class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 pr-9 text-xs text-slate-600 focus:border-blue-500 focus:ring-blue-500">
-                                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                                    <i data-feather="search" class="w-3 h-3"></i>
-                                </span>
+                        <div x-show="categoriesOpen" x-transition class="rounded-2xl border border-slate-200 bg-slate-50 px-2 py-2 space-y-1 text-sm text-slate-800">
+                            <div class="px-3 pb-2">
+                                <div class="relative">
+                                    <input type="text" x-model="categorySearchQuery" placeholder="Kategorien filtern..." class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 pr-9 text-xs text-slate-600 focus:border-blue-500 focus:ring-blue-500">
+                                    <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                                        <i data-feather="search" class="w-3 h-3"></i>
+                                    </span>
+                                </div>
                             </div>
+                            <template x-for="category in filteredCategories()" :key="category.id">
+                                <div class="group flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white transition-colors">
+                                    <button @click="loadDevices(category.id)" class="flex items-center gap-2 flex-1 min-w-0 text-left">
+                                        <div x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-slate-500' })"></div>
+                                        <span class="sidebar-text truncate" x-text="category.name"></span>
+                                    </button>
+                                    <div class="flex items-center gap-2">
+                                        <button @click="editCategoryModal(category)" class="text-slate-500 hover:text-slate-900">
+                                            <i data-feather="edit" class="w-4 h-4"></i>
+                                        </button>
+                                        <button @click="deleteCategory(category.id)" class="text-rose-500 hover:text-rose-700">
+                                            <i data-feather="trash-2" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+                            <button @click="openAddCategoryModal()" class="flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-blue-600 hover:text-blue-800 w-full rounded-xl hover:bg-white transition-colors sidebar-text">
+                                <i data-feather="plus-circle" class="w-4 h-4"></i>
+                                Kategorie hinzufügen
+                            </button>
                         </div>
-                        <template x-for="category in filteredCategories()" :key="category.id">
-                            <div class="group flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white transition-colors">
-                                <button @click="loadDevices(category.id)" class="flex items-center gap-2 flex-1 min-w-0 text-left">
-                                    <div x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-slate-500' })"></div>
-                                    <span class="sidebar-text truncate" x-text="category.name"></span>
-                                </button>
-                                <div class="flex items-center gap-2">
-                                    <button @click="editCategoryModal(category)" class="text-slate-500 hover:text-slate-900">
-                                        <i data-feather="edit" class="w-4 h-4"></i>
-                                    </button>
-                                    <button @click="deleteCategory(category.id)" class="text-rose-500 hover:text-rose-700">
-                                        <i data-feather="trash-2" class="w-4 h-4"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </template>
-                        <button @click="openAddCategoryModal()" class="flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-blue-600 hover:text-blue-800 w-full rounded-xl hover:bg-white transition-colors sidebar-text">
-                            <i data-feather="plus-circle" class="w-4 h-4"></i>
-                            Kategorie hinzufügen
+
+                        <button @click="assetsOpen = !assetsOpen" class="sidebar-toggle" type="button">
+                            <span class="flex items-center gap-2">
+                                <span class="sidebar-link-icon"><i data-feather="package" class="w-4 h-4"></i></span>
+                                Assets
+                            </span>
+                            <svg :class="{ 'rotate-180': assetsOpen }" class="w-4 h-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
                         </button>
+                        <div x-show="assetsOpen" x-transition class="rounded-2xl border border-slate-200 bg-slate-50 px-2 py-2 space-y-1 text-sm text-slate-800">
+                            <template x-for="asset in assets" :key="asset.id">
+                                <div class="group flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white transition-colors">
+                                    <button @click="openAssetDetail(asset)" class="flex items-center gap-2 flex-1 min-w-0 text-left">
+                                        <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 text-xs font-semibold" x-text="asset.device_count || 0"></span>
+                                        <span class="sidebar-text truncate" x-text="asset.name"></span>
+                                    </button>
+                                    <div class="flex items-center gap-2">
+                                        <button @click="openEditAssetModal(asset)" class="text-slate-500 hover:text-slate-900">
+                                            <i data-feather="edit" class="w-4 h-4"></i>
+                                        </button>
+                                        <button @click="deleteAsset(asset.id)" class="text-rose-500 hover:text-rose-700">
+                                            <i data-feather="trash-2" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+                            <button @click="openAddAssetModal()" class="flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-indigo-600 hover:text-indigo-800 w-full rounded-xl hover:bg-white transition-colors sidebar-text">
+                                <i data-feather="plus-circle" class="w-4 h-4"></i>
+                                Asset hinzufügen
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <div class="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white sidebar-compact-hidden">
-                    <button @click="assetsOpen = !assetsOpen"
-                            class="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors">
-                        <span class="flex items-center gap-3">
-                            <span class="flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-600">
-                                <i data-feather="package" class="w-4 h-4"></i>
-                            </span>
-                            <span class="text-sm font-semibold text-slate-800 sidebar-text">Assets</span>
-                        </span>
-                        <svg :class="{ 'rotate-180': assetsOpen }" class="w-4 h-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
-
-                    <div x-show="assetsOpen" x-transition class="bg-slate-50 px-2 py-2 space-y-1 text-sm text-slate-800">
-                        <template x-for="asset in assets" :key="asset.id">
-                            <div class="group flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white transition-colors">
-                                <button @click="openAssetDetail(asset)" class="flex items-center gap-2 flex-1 min-w-0 text-left">
-                                    <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 text-xs font-semibold" x-text="asset.device_count || 0"></span>
-                                    <span class="sidebar-text truncate" x-text="asset.name"></span>
-                                </button>
-                                <div class="flex items-center gap-2">
-                                    <button @click="openEditAssetModal(asset)" class="text-slate-500 hover:text-slate-900">
-                                        <i data-feather="edit" class="w-4 h-4"></i>
-                                    </button>
-                                    <button @click="deleteAsset(asset.id)" class="text-rose-500 hover:text-rose-700">
-                                        <i data-feather="trash-2" class="w-4 h-4"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </template>
-                        <button @click="openAddAssetModal()" class="flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-indigo-600 hover:text-indigo-800 w-full rounded-xl hover:bg-white transition-colors sidebar-text">
-                            <i data-feather="plus-circle" class="w-4 h-4"></i>
-                            Asset hinzufügen
-                        </button>
-                    </div>
-                </div>
-
-                <div class="rounded-2xl border border-slate-200 bg-white/80 shadow-sm sidebar-primary-links">
-                    <button @click="appsOpen = !appsOpen" class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors">
-                        <span class="flex items-center gap-3">
-                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                                <i data-feather="grid" class="h-4 w-4"></i>
-                            </span>
+                {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Auswertung</p>
+                    <div class="mt-3 space-y-1">
+                        {% if 'stats.view' in permissions %}
+                        <a href="/stats" class="sidebar-link">
                             <span>
-                                <span class="block text-sm font-semibold text-slate-800 sidebar-text">Apps</span>
-                                <span class="block text-xs text-slate-400 sidebar-text">Verwaltung & Services</span>
+                                <span class="sidebar-link-icon"><i data-feather="bar-chart-2" class="w-4 h-4"></i></span>
+                                Statistiken
                             </span>
-                        </span>
-                        <svg :class="{ 'rotate-180': appsOpen }" class="h-4 w-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
-                    <div x-show="appsOpen" x-transition class="bg-slate-50/80 px-3 py-3 space-y-4">
-                        <div>
-                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Verwaltung</p>
-                            <div class="mt-2 space-y-1">
-                                {% if 'categories.view' in permissions or 'categories.manage' in permissions %}
-                                <a href="/" class="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="layers" class="h-4 w-4 text-indigo-500"></i>
-                                        Kategorien
-                                    </span>
-                                </a>
-                                <a href="/" class="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="package" class="h-4 w-4 text-indigo-500"></i>
-                                        Assets
-                                    </span>
-                                </a>
-                                {% endif %}
-                                {% if 'users.manage' in permissions %}
-                                <a href="/users" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="users" class="h-4 w-4 text-slate-400"></i>
-                                        Benutzer
-                                    </span>
-                                </a>
-                                {% endif %}
-                                {% if 'server_settings.manage' in permissions %}
-                                <a href="/settings" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="settings" class="h-4 w-4 text-slate-400"></i>
-                                        Einstellungen
-                                    </span>
-                                </a>
-                                {% endif %}
-                                {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
-                                <a href="/locations" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="map-pin" class="h-4 w-4 text-slate-400"></i>
-                                        Standorte
-                                    </span>
-                                </a>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div>
-                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Services</p>
-                            <div class="mt-2 space-y-1">
-                                {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
-                                <a href="/tickets" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="life-buoy" class="h-4 w-4 text-slate-400"></i>
-                                        Ticketsystem
-                                    </span>
-                                </a>
-                                {% endif %}
-                                {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
-                                <a href="/knowledge" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="book-open" class="h-4 w-4 text-slate-400"></i>
-                                        Wissensbasis
-                                    </span>
-                                </a>
-                                {% endif %}
-                                {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
-                                <a href="/roadmap" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="git-merge" class="h-4 w-4 text-slate-400"></i>
-                                        Roadmap
-                                    </span>
-                                </a>
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions %}
-                        <div>
-                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Auswertung</p>
-                            <div class="mt-2 space-y-1">
-                                {% if 'stats.view' in permissions %}
-                                <a href="/stats" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="bar-chart-2" class="h-4 w-4 text-slate-400"></i>
-                                        Statistiken
-                                    </span>
-                                </a>
-                                {% endif %}
-                                {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
-                                <a href="/dependencies" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="share-2" class="h-4 w-4 text-slate-400"></i>
-                                        Dependency-Graph
-                                    </span>
-                                </a>
-                                {% endif %}
-                                {% if 'timemachine.view' in permissions %}
-                                <a href="/time-machine" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="clock" class="h-4 w-4 text-slate-400"></i>
-                                        Zeitmaschine
-                                    </span>
-                                </a>
-                                {% endif %}
-                            </div>
-                        </div>
+                        </a>
+                        {% endif %}
+                        {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                        <a href="/dependencies" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="share-2" class="w-4 h-4"></i></span>
+                                Dependency-Graph
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'timemachine.view' in permissions %}
+                        <a href="/time-machine" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="clock" class="w-4 h-4"></i></span>
+                                Zeitmaschine
+                            </span>
+                        </a>
                         {% endif %}
                     </div>
                 </div>
+                {% endif %}
 
-                <div class="space-y-3 sidebar-compact-hidden">
-                    <button @click="setupOTP()" class="flex items-center px-4 py-3 text-sm font-semibold text-emerald-600 hover:text-emerald-800 w-full rounded-2xl hover:bg-white transition-colors border border-emerald-100 bg-emerald-50/70">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 mr-3">
-                            <i data-feather="shield" class="w-4 h-4"></i>
-                        </span>
-                        <span>2FA Einrichten</span>
-                        <span x-show="otpEnabled" class="ml-2 text-green-500">
-                            <i data-feather="check-circle" class="w-4 h-4"></i>
-                        </span>
-                        <span x-show="!otpEnabled" class="ml-2 text-red-500">
-                            <i data-feather="x-circle" class="w-4 h-4"></i>
-                        </span>
-                    </button>
-
-                    <a href="/reset" class="flex items-center px-4 py-3 text-sm font-semibold text-slate-600 hover:text-slate-900 w-full rounded-2xl hover:bg-white transition-colors border border-slate-200 bg-white/50">
-                        <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 text-slate-500 mr-3">
-                            <i data-feather="lock" class="w-4 h-4"></i>
-                        </span>
-                        <span class="sidebar-text">Passwort setzen</span>
-                    </a>
-                </div>
-
-                <div x-show="otpModalOpen" x-transition class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div @click.away="otpModalOpen = false" class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 scrollbar-hide">
-                        <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-lg font-medium text-gray-900">Google Authenticator einrichten</h3>
-                            <button @click="otpModalOpen = false" class="text-gray-500 hover:text-gray-700">
-                                <i data-feather="x" class="w-5 h-5"></i>
-                            </button>
-                        </div>
-                        <div class="space-y-4">
-                            <div class="text-sm text-gray-600">
-                                <p>Scannen Sie diesen QR-Code mit der Google Authenticator App:</p>
-                            </div>
-                            <img :src="otpQrCode" alt="QR Code" x-show="otpQrCode">
-                            <div class="text-sm text-gray-600">
-                                <p class="font-medium">Oder geben Sie diesen Code manuell ein:</p>
-                                <div class="mt-1 p-2 bg-gray-100 rounded-md font-mono text-center" x-text="otpSecret"></div>
-                            </div>
-                        </div>
+                {% if 'users.manage' in permissions or 'server_settings.manage' in permissions %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Administration</p>
+                    <div class="mt-3 space-y-1">
+                        {% if 'users.manage' in permissions %}
+                        <a href="/users" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="users" class="w-4 h-4"></i></span>
+                                Benutzer
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'server_settings.manage' in permissions %}
+                        <a href="/settings" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="settings" class="w-4 h-4"></i></span>
+                                Einstellungen
+                            </span>
+                        </a>
+                        {% endif %}
                     </div>
                 </div>
+                {% endif %}
             </nav>
         </aside>
 
@@ -380,6 +250,34 @@
                             <button @click="openAddCategoryModal(); open=false" class="block w-full px-4 py-3 text-left text-sm hover:bg-slate-50">Kategorie anlegen</button>
                             <button @click="openAddAssetModal(); open=false" class="block w-full px-4 py-3 text-left text-sm hover:bg-slate-50">Neues Asset</button>
                             <a href="/api/export/devices" class="block px-4 py-3 text-sm hover:bg-slate-50">CSV Export</a>
+                        </div>
+                    </div>
+                    <div class="relative" x-data="{ open: false }">
+                        <button @click="open = !open" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                            <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                                <i data-feather="user" class="w-4 h-4"></i>
+                            </span>
+                            <span class="hidden sm:inline">Profil</span>
+                        </button>
+                        <div x-show="open" @click.away="open = false" class="absolute right-0 z-30 mt-2 w-60 rounded-2xl border border-slate-200 bg-white shadow-xl" x-transition>
+                            <button @click="setupOTP(); open=false" class="flex w-full items-center gap-2 px-4 py-3 text-left text-sm hover:bg-slate-50">
+                                <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                                    <i data-feather="shield" class="w-4 h-4"></i>
+                                </span>
+                                <span class="flex-1">2FA verwalten</span>
+                                <span x-show="otpEnabled" class="text-emerald-500">
+                                    <i data-feather="check-circle" class="w-4 h-4"></i>
+                                </span>
+                                <span x-show="!otpEnabled" class="text-rose-500">
+                                    <i data-feather="x-circle" class="w-4 h-4"></i>
+                                </span>
+                            </button>
+                            <a href="/reset" class="flex items-center gap-2 px-4 py-3 text-sm hover:bg-slate-50">
+                                <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                                    <i data-feather="lock" class="w-4 h-4"></i>
+                                </span>
+                                Passwort setzen
+                            </a>
                         </div>
                     </div>
                     <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
@@ -1328,6 +1226,27 @@
                     <button type="submit" class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Speichern</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div x-show="otpModalOpen" x-transition class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div @click.away="otpModalOpen = false" class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 scrollbar-hide">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-gray-900">Google Authenticator einrichten</h3>
+                <button @click="otpModalOpen = false" class="text-gray-500 hover:text-gray-700">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div class="text-sm text-gray-600">
+                    <p>Scannen Sie diesen QR-Code mit der Google Authenticator App:</p>
+                </div>
+                <img :src="otpQrCode" alt="QR Code" x-show="otpQrCode">
+                <div class="text-sm text-gray-600">
+                    <p class="font-medium">Oder geben Sie diesen Code manuell ein:</p>
+                    <div class="mt-1 p-2 bg-gray-100 rounded-md font-mono text-center" x-text="otpSecret"></div>
+                </div>
+            </div>
         </div>
     </div>
 
