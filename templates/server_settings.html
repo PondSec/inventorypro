@@ -445,8 +445,7 @@
                             </div>
                         </form>
                     </section>
-
-                    <section x-show="activeSection === 'customize'" x-transition>
+                    <section x-show="activeSection === 'customize'" x-transition @input.debounce.300ms="trackChange">
                         <div class="rounded-3xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-700">
                             <div class="flex items-start gap-3">
                                 <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white text-emerald-600 shadow-sm">
@@ -454,60 +453,32 @@
                                 </span>
                                 <div>
                                     <p class="font-semibold">Customize Studio</p>
-                                    <p class="text-sm text-emerald-700/90">Passe Logo, Farben, Größen und Layout flexibel an. Die Vorschau bleibt responsiv, damit sich keine Widgets überlappen.</p>
+                                    <p class="text-sm text-emerald-700/90">Konfiguriere Tokens, Komponenten und Verhalten. Änderungen werden live in der Vorschau gerendert und serverseitig versioniert gespeichert.</p>
                                 </div>
                             </div>
                         </div>
 
                         <div class="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                             <div class="space-y-6">
-                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="ui-card p-6">
                                     <div class="flex items-center gap-3">
                                         <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                             <i data-feather="image" class="h-5 w-5"></i>
                                         </span>
                                         <div>
-                                            <h2 class="text-xl font-semibold text-slate-900">Branding & Logo</h2>
-                                            <p class="text-sm text-slate-500">Füge dein eigenes Logo hinzu und definiere Farben, Namen und Schriften.</p>
+                                            <h2 class="text-xl font-semibold text-slate-900">Branding</h2>
+                                            <p class="text-sm text-slate-500">Name, Tagline und Logo für Kopfbereich und Login.</p>
                                         </div>
                                     </div>
 
                                     <div class="mt-6 grid gap-4 md:grid-cols-2">
                                         <div class="space-y-2">
                                             <label class="text-sm font-semibold text-slate-700">Firmenname</label>
-                                            <input type="text" x-model="customization.branding.name" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="Dein Firmenname">
+                                            <input type="text" x-model="customization.branding.name" class="input-field" placeholder="Dein Firmenname">
                                         </div>
                                         <div class="space-y-2">
                                             <label class="text-sm font-semibold text-slate-700">Tagline</label>
-                                            <input type="text" x-model="customization.branding.tagline" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="Kurzbeschreibung">
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Primärfarbe</label>
-                                            <input type="color" x-model="customization.branding.primary" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
-                                        </div>
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Akzentfarbe</label>
-                                            <input type="color" x-model="customization.branding.accent" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
-                                        </div>
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Hintergrund</label>
-                                            <input type="color" x-model="customization.branding.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Kantenradius</label>
-                                            <input type="range" min="8" max="24" step="2" x-model.number="customization.branding.radius" class="w-full">
-                                            <p class="text-xs text-slate-400">Aktuell: <span x-text="customization.branding.radius + 'px'"></span></p>
-                                        </div>
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Dichte</label>
-                                            <input type="range" min="0.8" max="1.3" step="0.05" x-model.number="customization.branding.density" class="w-full">
-                                            <p class="text-xs text-slate-400">Skaliert Abstände & Größen für kompakt oder großzügig.</p>
+                                            <input type="text" x-model="customization.branding.tagline" class="input-field" placeholder="Kurzbeschreibung">
                                         </div>
                                     </div>
 
@@ -530,204 +501,386 @@
                                     </div>
                                 </div>
 
-                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="ui-card p-6">
                                     <div class="flex items-center gap-3">
                                         <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                                            <i data-feather="layout" class="h-5 w-5"></i>
+                                            <i data-feather="palette" class="h-5 w-5"></i>
                                         </span>
                                         <div>
-                                            <h2 class="text-xl font-semibold text-slate-900">Layout & Widgets</h2>
-                                            <p class="text-sm text-slate-500">Verschiebe Module, ändere Größen und setze Farben pro Widget.</p>
+                                            <h2 class="text-xl font-semibold text-slate-900">Theme Tokens</h2>
+                                            <p class="text-sm text-slate-500">Grundfarben und States für die gesamte UI.</p>
                                         </div>
                                     </div>
 
-                                    <div class="mt-6 space-y-4">
-                                        <template x-for="(widget, index) in customization.layout.widgets" :key="widget.id">
-                                            <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm" :class="widget.visible ? '' : 'opacity-60'">
-                                                <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                                                    <div class="flex items-center gap-3">
-                                                        <button type="button" draggable="true" @dragstart="startDrag(widget.id)" @dragend="clearDrag" class="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 cursor-move">
-                                                            <i data-feather="move" class="h-4 w-4"></i>
-                                                        </button>
-                                                        <div>
-                                                            <p class="text-sm font-semibold text-slate-800" x-text="widget.label"></p>
-                                                            <p class="text-xs text-slate-500" x-text="widget.type"></p>
-                                                        </div>
-                                                    </div>
-                                                    <div class="flex flex-wrap gap-2">
-                                                        <button type="button" @click="moveWidget(index, -1)" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">▲</button>
-                                                        <button type="button" @click="moveWidget(index, 1)" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">▼</button>
-                                                        <button type="button" @click="toggleWidget(widget)" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100" x-text="widget.visible ? 'Ausblenden' : 'Einblenden'"></button>
-                                                    </div>
-                                                </div>
-
-                                                <div class="mt-4 grid gap-4 md:grid-cols-3">
-                                                    <div class="space-y-2">
-                                                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Breite</label>
-                                                        <input type="range" min="1" max="3" step="1" x-model.number="widget.colSpan" class="w-full">
-                                                        <p class="text-xs text-slate-400">Spalten: <span x-text="widget.colSpan"></span></p>
-                                                    </div>
-                                                    <div class="space-y-2">
-                                                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Höhe</label>
-                                                        <input type="range" min="1" max="2" step="1" x-model.number="widget.rowSpan" class="w-full">
-                                                        <p class="text-xs text-slate-400">Zeilen: <span x-text="widget.rowSpan"></span></p>
-                                                    </div>
-                                                    <div class="space-y-2">
-                                                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Farbe</label>
-                                                        <input type="color" x-model="widget.color" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
-                                                    </div>
-                                                </div>
-                                                <div class="mt-4 flex flex-wrap items-center gap-4">
-                                                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Textfarbe</label>
-                                                    <input type="color" x-model="widget.textColor" class="h-10 w-20 rounded-2xl border border-slate-200 bg-white">
-                                                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Beschriftung</label>
-                                                    <input type="text" x-model="widget.label" class="flex-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs">
-                                                </div>
-                                            </div>
-                                        </template>
-
-                                        <div class="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-4">
-                                            <p class="text-sm font-semibold text-slate-700">Neue Widgets hinzufügen</p>
-                                            <div class="mt-3 flex flex-wrap gap-2">
-                                                <template x-for="item in widgetLibrary" :key="item.type">
-                                                    <button type="button" @click="addWidget(item)" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                                                        <span x-text="item.label"></span>
-                                                    </button>
-                                                </template>
-                                            </div>
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Primary</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.primary" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
                                         </div>
-                                    </div>
-                                </div>
-
-                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-                                    <div class="flex items-center gap-3">
-                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                                            <i data-feather="edit-3" class="h-5 w-5"></i>
-                                        </span>
-                                        <div>
-                                            <h2 class="text-xl font-semibold text-slate-900">Buttons & Felder</h2>
-                                            <p class="text-sm text-slate-500">Stelle Farben, Größen und Hover-Stile für UI-Elemente ein.</p>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Secondary</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.secondary" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Accent</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.accent" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Background</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Surface</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.surface" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Text</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.text" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Border</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.border" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Focus Ring</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.focus" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Success</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.success" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
                                         </div>
                                     </div>
 
                                     <div class="mt-6 grid gap-4 md:grid-cols-2">
                                         <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Button-Farbe</label>
-                                            <input type="color" x-model="customization.formStyle.buttonColor" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                            <label class="text-sm font-semibold text-slate-700">Hover-Intensität</label>
+                                            <input type="range" min="0.8" max="1" step="0.02" x-model.number="customization.baseTokens.states.hover" class="w-full">
+                                            <p class="text-xs text-slate-400">Skaliert Hover-Zustände für Farben.</p>
                                         </div>
                                         <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Button-Text</label>
-                                            <input type="color" x-model="customization.formStyle.buttonText" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                            <label class="text-sm font-semibold text-slate-700">Disabled-Intensität</label>
+                                            <input type="range" min="0.4" max="0.9" step="0.05" x-model.number="customization.baseTokens.states.disabled" class="w-full">
+                                            <p class="text-xs text-slate-400">Legt Opacity für deaktivierte Controls fest.</p>
                                         </div>
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Input-Hintergrund</label>
-                                            <input type="color" x-model="customization.formStyle.inputBackground" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
-                                        </div>
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Input-Rand</label>
-                                            <input type="color" x-model="customization.formStyle.inputBorder" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="type" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Typografie</h2>
+                                            <p class="text-sm text-slate-500">Font-Family, Größen und Gewichtungen.</p>
                                         </div>
                                     </div>
 
-                                    <div class="mt-6">
-                                        <label class="text-sm font-semibold text-slate-700">Abstand zwischen Feldern</label>
-                                        <input type="range" min="8" max="24" step="2" x-model.number="customization.formStyle.spacing" class="w-full">
-                                        <p class="text-xs text-slate-400">Spacing: <span x-text="customization.formStyle.spacing + 'px'"></span></p>
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Font Family</label>
+                                            <input type="text" x-model="customization.baseTokens.typography.fontFamily" class="input-field" placeholder="Inter, system-ui">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Basisgröße</label>
+                                            <input type="text" x-model="customization.baseTokens.typography.fontSizes.base" class="input-field" placeholder="15px">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">XS</label>
+                                            <input type="text" x-model="customization.baseTokens.typography.fontSizes.xs" class="input-field">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">SM</label>
+                                            <input type="text" x-model="customization.baseTokens.typography.fontSizes.sm" class="input-field">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">LG</label>
+                                            <input type="text" x-model="customization.baseTokens.typography.fontSizes.lg" class="input-field">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="maximize-2" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Spacing & Layout</h2>
+                                            <p class="text-sm text-slate-500">Radius, Dichte, Container und Tabellenmodus.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Radius MD</label>
+                                            <input type="range" min="6" max="24" step="1" x-model.number="customization.baseTokens.spacing.radius.md" class="w-full">
+                                            <p class="text-xs text-slate-400" x-text="customization.baseTokens.spacing.radius.md + 'px'"></p>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Dichte</label>
+                                            <input type="range" min="0.8" max="1.3" step="0.05" x-model.number="customization.layoutPrefs.density" class="w-full">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Containerbreite</label>
+                                            <input type="number" min="960" max="1600" step="20" x-model.number="customization.layoutPrefs.containerWidth" class="input-field">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Sidebar</label>
+                                            <input type="number" min="220" max="360" step="10" x-model.number="customization.layoutPrefs.sidebarWidth" class="input-field">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Tabellen-Dichte</label>
+                                            <select x-model="customization.layoutPrefs.tableDensity" class="select-field">
+                                                <option value="compact">Compact</option>
+                                                <option value="normal">Normal</option>
+                                                <option value="comfortable">Comfortable</option>
+                                            </select>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Zeilenhöhe</label>
+                                            <input type="number" min="32" max="64" step="2" x-model.number="customization.layoutPrefs.rowHeight" class="input-field">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="square" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Komponenten-Overrides</h2>
+                                            <p class="text-sm text-slate-500">Buttons, Inputs, Cards, Tables.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Primary Button</label>
+                                            <input type="color" x-model="customization.componentOverrides.button.primary.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Primary Text</label>
+                                            <input type="color" x-model="customization.componentOverrides.button.primary.text" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Input Background</label>
+                                            <input type="color" x-model="customization.componentOverrides.input.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Input Border</label>
+                                            <input type="color" x-model="customization.componentOverrides.input.border" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Card BG</label>
+                                            <input type="color" x-model="customization.componentOverrides.card.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Table Header</label>
+                                            <input type="color" x-model="customization.componentOverrides.table.headerBg" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Badge BG</label>
+                                            <input type="color" x-model="customization.componentOverrides.badge.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="sliders" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Feature Preferences</h2>
+                                            <p class="text-sm text-slate-500">Optionale UI-Defaults pro Nutzer.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Icon-Set</label>
+                                            <select x-model="customization.featurePrefs.iconSet" class="select-field">
+                                                <option value="feather">Feather</option>
+                                                <option value="heroicons">Heroicons</option>
+                                                <option value="phosphor">Phosphor</option>
+                                            </select>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Zebra Striping</label>
+                                            <select x-model="customization.layoutPrefs.zebraStriping" class="select-field">
+                                                <option :value="true">Aktiv</option>
+                                                <option :value="false">Aus</option>
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             <div class="space-y-6">
-                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="ui-card p-6">
                                     <div class="flex items-center gap-3">
                                         <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                             <i data-feather="eye" class="h-5 w-5"></i>
                                         </span>
                                         <div>
-                                            <h2 class="text-xl font-semibold text-slate-900">Live-Vorschau</h2>
-                                            <p class="text-sm text-slate-500">Das Layout passt sich automatisch an und verhindert Überlappungen.</p>
+                                            <h2 class="text-xl font-semibold text-slate-900">Live Preview</h2>
+                                            <p class="text-sm text-slate-500">Tokens wirken sofort auf Buttons, Inputs und Tabellen.</p>
                                         </div>
                                     </div>
 
-                                    <div class="mt-6 rounded-3xl border border-slate-200 p-4" :style="{ background: customization.branding.background }">
-                                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div class="mt-6 space-y-4 rounded-3xl border border-slate-200 p-5" :style="{ background: customization.baseTokens.colors.background }">
+                                        <div class="flex items-center justify-between gap-3">
                                             <div class="flex items-center gap-3">
-                                                <span class="inline-flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-sm" :style="{ borderRadius: customization.branding.radius + 'px' }">
+                                                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm">
                                                     <template x-if="customization.branding.logoDataUrl">
-                                                        <img :src="customization.branding.logoDataUrl" alt="Logo" class="h-full w-full object-cover">
+                                                        <img :src="customization.branding.logoDataUrl" alt="Logo" class="h-10 w-10 rounded-2xl object-cover">
                                                     </template>
                                                     <template x-if="!customization.branding.logoDataUrl">
-                                                        <i data-feather="cpu" class="h-5 w-5 text-slate-400"></i>
+                                                        <i data-feather="cpu" class="h-4 w-4 text-slate-500"></i>
                                                     </template>
                                                 </span>
                                                 <div>
-                                                    <p class="text-sm font-semibold text-slate-900" x-text="customization.branding.name"></p>
-                                                    <div class="mt-1 flex flex-wrap items-center gap-2">
-                                                        <p class="text-xs text-slate-500" x-text="customization.branding.tagline"></p>
-                                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide" :style="{ background: customization.branding.accent, color: '#ffffff' }">Accent</span>
-                                                    </div>
+                                                    <p class="text-sm font-semibold" x-text="customization.branding.name"></p>
+                                                    <p class="text-xs text-slate-500" x-text="customization.branding.tagline"></p>
                                                 </div>
                                             </div>
-                                            <button type="button" class="rounded-2xl px-4 py-2 text-xs font-semibold" :style="{ background: customization.formStyle.buttonColor, color: customization.formStyle.buttonText, borderRadius: customization.branding.radius + 'px' }">
-                                                Aktion
-                                            </button>
+                                            <span class="ui-badge">Live</span>
                                         </div>
 
-                                        <div class="mt-6 grid" :style="previewGridStyle()" @dragover.prevent>
-                                            <template x-for="widget in customization.layout.widgets" :key="widget.id">
-                                                <div x-show="widget.visible" draggable="true" @dragstart="startDrag(widget.id)" @dragover.prevent @drop="handleDrop(widget.id)" class="rounded-3xl border border-white/40 p-4 shadow-sm transition" :style="widgetStyle(widget)">
-                                                    <p class="text-sm font-semibold" x-text="widget.label"></p>
-                                                    <p class="text-xs opacity-80" x-text="widget.type"></p>
-                                                    <div class="mt-3 h-2 w-2/3 rounded-full bg-white/40"></div>
-                                                    <div class="mt-2 h-2 w-1/2 rounded-full bg-white/30"></div>
-                                                </div>
-                                            </template>
+                                        <div class="grid gap-3 md:grid-cols-2">
+                                            <input type="text" class="input-field" placeholder="Suche nach Assets">
+                                            <select class="select-field">
+                                                <option>Filter wählen</option>
+                                            </select>
                                         </div>
+
+                                        <div class="flex flex-wrap gap-3">
+                                            <button type="button" class="btn-primary">Primary</button>
+                                            <button type="button" class="btn-secondary">Secondary</button>
+                                        </div>
+
+                                        <table class="ui-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Asset</th>
+                                                    <th>Status</th>
+                                                    <th>Owner</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>Scanner 12</td>
+                                                    <td><span class="ui-badge">Active</span></td>
+                                                    <td>Ada</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Notebook 44</td>
+                                                    <td><span class="ui-badge">Repair</span></td>
+                                                    <td>Team Ops</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700" x-show="contrastWarnings.length">
+                                        <p class="font-semibold">Kontrast-Warnung</p>
+                                        <ul class="mt-2 list-disc space-y-1 pl-4">
+                                            <template x-for="warning in contrastWarnings" :key="warning">
+                                                <li x-text="warning"></li>
+                                            </template>
+                                        </ul>
                                     </div>
                                 </div>
 
-                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="ui-card p-6">
                                     <div class="flex items-center gap-3">
                                         <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                                            <i data-feather="shield" class="h-5 w-5"></i>
+                                            <i data-feather="archive" class="h-5 w-5"></i>
                                         </span>
                                         <div>
-                                            <h2 class="text-xl font-semibold text-slate-900">Layout-Regeln</h2>
-                                            <p class="text-sm text-slate-500">Diese Regeln halten das Dashboard flexibel und kollisionsfrei.</p>
+                                            <h2 class="text-xl font-semibold text-slate-900">Import / Export</h2>
+                                            <p class="text-sm text-slate-500">JSON-Dateien austauschen oder Presets laden.</p>
                                         </div>
                                     </div>
-                                    <ul class="mt-4 space-y-3 text-sm text-slate-600">
-                                        <li class="flex items-start gap-2">
-                                            <span class="mt-1 h-2 w-2 rounded-full bg-emerald-500"></span>
-                                            Widgets reflowen automatisch in ein responsives Grid, sobald du Größen veränderst.
-                                        </li>
-                                        <li class="flex items-start gap-2">
-                                            <span class="mt-1 h-2 w-2 rounded-full bg-emerald-500"></span>
-                                            Spaltenbreiten werden je nach Bildschirmgröße angepasst (2/4/6 Spalten).
-                                        </li>
-                                        <li class="flex items-start gap-2">
-                                            <span class="mt-1 h-2 w-2 rounded-full bg-emerald-500"></span>
-                                            Drag & Drop sowie Pfeile verschieben Widgets ohne Überlappungen.
-                                        </li>
-                                    </ul>
+
+                                    <div class="mt-4 flex flex-wrap gap-2">
+                                        <button type="button" @click="exportCustomization" class="btn-secondary">Exportieren</button>
+                                        <button type="button" @click="$refs.importFile.click()" class="btn-secondary">Importieren</button>
+                                        <select x-model="selectedPreset" @change="applyPreset" class="select-field max-w-xs">
+                                            <option value="">Preset wählen…</option>
+                                            <template x-for="preset in presets" :key="preset.id">
+                                                <option :value="preset.id" x-text="preset.label"></option>
+                                            </template>
+                                        </select>
+                                        <input type="file" accept="application/json" x-ref="importFile" @change="importCustomization" class="hidden">
+                                    </div>
                                 </div>
 
-                                <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="ui-card p-6">
                                     <div class="flex items-center justify-between gap-3">
                                         <div>
                                             <h2 class="text-lg font-semibold text-slate-900">Anpassungen sichern</h2>
-                                            <p class="text-sm text-slate-500">Speichere deine Einstellungen lokal oder setze alles zurück.</p>
+                                            <p class="text-sm text-slate-500">Server ist die Quelle der Wahrheit, lokale Overrides sind optional.</p>
                                         </div>
                                         <div class="flex flex-wrap gap-2">
-                                            <button type="button" @click="saveCustomization" class="rounded-2xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500">Customize speichern</button>
-                                            <button type="button" @click="resetCustomization" class="rounded-2xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Zurücksetzen</button>
+                                            <button type="button" @click="undoChange" class="btn-secondary">Undo</button>
+                                            <button type="button" @click="redoChange" class="btn-secondary">Redo</button>
                                         </div>
                                     </div>
+
+                                    <div class="mt-4 flex flex-wrap items-center gap-3">
+                                        <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                            <input type="checkbox" x-model="saveLocalOnly" class="rounded border-slate-300 text-emerald-600">
+                                            Nur lokal speichern (Override)
+                                        </label>
+                                        <button type="button" @click="saveCustomization" class="btn-primary">Speichern</button>
+                                        <button type="button" @click="resetCustomization" class="btn-secondary">Alles zurücksetzen</button>
+                                        <button type="button" @click="resetSection('tokens')" class="btn-secondary">Tokens reset</button>
+                                        <button type="button" @click="resetSection('components')" class="btn-secondary">Components reset</button>
+                                    </div>
                                     <p class="mt-3 text-xs text-emerald-600" x-show="customizeMessage" x-text="customizeMessage"></p>
+                                    <p class="mt-2 text-xs text-rose-600" x-show="customizeError" x-text="customizeError"></p>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="clock" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Versionen & Rollback</h2>
+                                            <p class="text-sm text-slate-500">Letzte Revisionen mit Rollback.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-4 space-y-3" x-show="customizationHistory.length">
+                                        <template x-for="revision in customizationHistory" :key="revision.id">
+                                            <div class="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                                                <div>
+                                                    <p class="font-semibold text-slate-800" x-text="revision.label"></p>
+                                                    <p class="text-xs text-slate-500" x-text="revision.meta"></p>
+                                                </div>
+                                                <button type="button" class="btn-secondary" @click="rollbackRevision(revision.id)">Rollback</button>
+                                            </div>
+                                        </template>
+                                    </div>
+                                    <p class="mt-3 text-xs text-slate-500" x-show="!customizationHistory.length">Noch keine Revisionen gespeichert.</p>
                                 </div>
                             </div>
                         </div>
                     </section>
+
                 </div>
             </main>
         </div>
@@ -764,54 +917,78 @@
                     password_min_length: 10,
                     enforce_mfa: false
                 },
-                customization: {
-                    branding: {
-                        name: 'Inventory Pro',
-                        tagline: 'Smart Asset Hub',
-                        primary: '#4f46e5',
-                        accent: '#14b8a6',
-                        background: '#f8fafc',
-                        radius: 16,
-                        density: 1,
-                        logoDataUrl: ''
+                customization: window.InventoryCustomization ? window.InventoryCustomization.defaults() : {},
+                customizationHistory: [],
+                presets: [
+                    {
+                        id: 'default-light',
+                        label: 'Default Light',
+                        data: window.InventoryCustomization ? window.InventoryCustomization.defaults() : {},
                     },
-                    formStyle: {
-                        buttonColor: '#4f46e5',
-                        buttonText: '#ffffff',
-                        inputBackground: '#ffffff',
-                        inputBorder: '#e2e8f0',
-                        spacing: 16
+                    {
+                        id: 'midnight',
+                        label: 'Midnight Indigo',
+                        data: {
+                            baseTokens: {
+                                colors: {
+                                    primary: '#4338ca',
+                                    secondary: '#7c3aed',
+                                    accent: '#22c55e',
+                                    background: '#0b1120',
+                                    surface: '#111827',
+                                    text: '#e2e8f0',
+                                    border: '#1f2937',
+                                },
+                            },
+                            componentOverrides: {
+                                card: { background: '#0f172a' },
+                                button: { primary: { background: '#4338ca' } },
+                            },
+                        },
                     },
-                    layout: {
-                        widgets: [
-                            { id: 'widget-hero', label: 'Hero KPI', type: 'KPI-Box', colSpan: 2, rowSpan: 1, color: '#6366f1', textColor: '#ffffff', visible: true },
-                            { id: 'widget-table', label: 'Assets Tabelle', type: 'Tabelle', colSpan: 3, rowSpan: 1, color: '#0ea5e9', textColor: '#ffffff', visible: true },
-                            { id: 'widget-form', label: 'Schnellformular', type: 'Formular', colSpan: 1, rowSpan: 2, color: '#f97316', textColor: '#ffffff', visible: true },
-                            { id: 'widget-tickets', label: 'Tickets', type: 'Box', colSpan: 2, rowSpan: 1, color: '#14b8a6', textColor: '#ffffff', visible: true },
-                            { id: 'widget-buttons', label: 'Aktionen', type: 'Button-Grid', colSpan: 2, rowSpan: 1, color: '#64748b', textColor: '#ffffff', visible: true }
-                        ]
-                    }
-                },
-                widgetLibrary: [
-                    { type: 'Feld', label: 'Neues Feld', colSpan: 1, rowSpan: 1, color: '#6366f1', textColor: '#ffffff' },
-                    { type: 'Button', label: 'Aktion-Button', colSpan: 1, rowSpan: 1, color: '#0ea5e9', textColor: '#ffffff' },
-                    { type: 'Box', label: 'Info-Box', colSpan: 2, rowSpan: 1, color: '#14b8a6', textColor: '#ffffff' },
-                    { type: 'Diagramm', label: 'Chart', colSpan: 2, rowSpan: 1, color: '#f97316', textColor: '#ffffff' },
-                    { type: 'Liste', label: 'Liste', colSpan: 2, rowSpan: 1, color: '#64748b', textColor: '#ffffff' }
+                    {
+                        id: 'warm-sand',
+                        label: 'Warm Sand',
+                        data: {
+                            baseTokens: {
+                                colors: {
+                                    primary: '#c2410c',
+                                    secondary: '#ea580c',
+                                    accent: '#f97316',
+                                    background: '#fff7ed',
+                                    surface: '#ffffff',
+                                    text: '#431407',
+                                    border: '#fed7aa',
+                                },
+                            },
+                        },
+                    },
                 ],
+                selectedPreset: '',
+                saveLocalOnly: false,
                 loading: false,
                 saving: false,
                 errorMessage: '',
                 successMessage: '',
                 customizeMessage: '',
-                draggedWidgetId: null,
-                currentColumns: 6,
+                customizeError: '',
+                contrastWarnings: [],
+                history: [],
+                future: [],
+                suppressHistory: false,
 
                 async init() {
                     await this.fetchSettings();
-                    this.loadCustomization();
-                    this.updateColumns();
-                    window.addEventListener('resize', () => this.updateColumns());
+                    await this.loadCustomization();
+                    await this.fetchCustomizationHistory();
+                    this.applyCustomization();
+                    this.updateContrastWarnings();
+                    this.resetHistory();
+                    this.$watch('customization', () => {
+                        if (this.suppressHistory) return;
+                        this.applyCustomization();
+                        this.updateContrastWarnings();
+                    });
                     this.$nextTick(() => feather.replace());
                 },
 
@@ -858,26 +1035,101 @@
                     }
                 },
 
-                updateColumns() {
-                    const width = window.innerWidth;
-                    if (width < 640) {
-                        this.currentColumns = 2;
-                    } else if (width < 1024) {
-                        this.currentColumns = 4;
-                    } else {
-                        this.currentColumns = 6;
+                cloneCustomization() {
+                    return JSON.parse(JSON.stringify(this.customization));
+                },
+
+                resetHistory() {
+                    this.history = [this.cloneCustomization()];
+                    this.future = [];
+                },
+
+                trackChange() {
+                    if (this.suppressHistory) return;
+                    this.history.push(this.cloneCustomization());
+                    if (this.history.length > 50) {
+                        this.history.shift();
+                    }
+                    this.future = [];
+                },
+
+                undoChange() {
+                    if (this.history.length <= 1) return;
+                    this.suppressHistory = true;
+                    const current = this.history.pop();
+                    this.future.push(current);
+                    this.customization = JSON.parse(JSON.stringify(this.history[this.history.length - 1]));
+                    this.suppressHistory = false;
+                    this.applyCustomization();
+                    this.updateContrastWarnings();
+                },
+
+                redoChange() {
+                    if (!this.future.length) return;
+                    this.suppressHistory = true;
+                    const next = this.future.pop();
+                    this.history.push(JSON.parse(JSON.stringify(next)));
+                    this.customization = JSON.parse(JSON.stringify(next));
+                    this.suppressHistory = false;
+                    this.applyCustomization();
+                    this.updateContrastWarnings();
+                },
+
+                async loadCustomization() {
+                    this.customizeError = '';
+                    const defaults = window.InventoryCustomization ? window.InventoryCustomization.defaults() : {};
+                    this.customization = defaults;
+                    try {
+                        const response = await fetch('/api/customize', { credentials: 'same-origin' });
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.customization) {
+                                this.customization = window.InventoryCustomization.migrate(data.customization);
+                            }
+                        }
+                    } catch (error) {
+                        this.customizeError = error.message || 'Customize konnte nicht geladen werden.';
+                    }
+                    const localOverride = window.InventoryCustomization ? window.InventoryCustomization.getLocalOverride() : null;
+                    if (localOverride) {
+                        this.customization = window.InventoryCustomization.merge(this.customization, localOverride);
+                        this.saveLocalOnly = true;
+                    }
+                    this.applyCustomization();
+                },
+
+                applyCustomization() {
+                    if (window.InventoryCustomization) {
+                        window.InventoryCustomization.apply(this.customization);
                     }
                 },
 
-                previewGridStyle() {
-                    return `grid-template-columns: repeat(${this.currentColumns}, minmax(0, 1fr)); gap: ${this.customization.formStyle.spacing}px;`;
+                updateContrastWarnings() {
+                    const warnings = [];
+                    const primary = this.customization.componentOverrides.button.primary.background;
+                    const primaryText = this.customization.componentOverrides.button.primary.text;
+                    const bg = this.customization.baseTokens.colors.background;
+                    const text = this.customization.baseTokens.colors.text;
+                    if (this.contrastRatio(primary, primaryText) < 3.5) {
+                        warnings.push('Button-Text hat zu wenig Kontrast zum Primärhintergrund.');
+                    }
+                    if (this.contrastRatio(bg, text) < 4.5) {
+                        warnings.push('Fließtext hat zu wenig Kontrast zum Hintergrund.');
+                    }
+                    this.contrastWarnings = warnings;
                 },
 
-                widgetStyle(widget) {
-                    const colSpan = Math.min(widget.colSpan, this.currentColumns);
-                    const rowSpan = Math.max(widget.rowSpan, 1);
-                    const padding = 16 * this.customization.branding.density;
-                    return `grid-column: span ${colSpan}; grid-row: span ${rowSpan}; background: ${widget.color}; color: ${widget.textColor}; border-radius: ${this.customization.branding.radius}px; padding: ${padding}px;`;
+                contrastRatio(hex1, hex2) {
+                    const lum = (hex) => {
+                        const rgb = hex.replace('#', '').match(/.{2}/g).map((v) => parseInt(v, 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+                        return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+                    };
+                    if (!hex1 || !hex2 || hex1.length < 4 || hex2.length < 4) return 1;
+                    const l1 = lum(hex1);
+                    const l2 = lum(hex2);
+                    const lighter = Math.max(l1, l2);
+                    const darker = Math.min(l1, l2);
+                    return (lighter + 0.05) / (darker + 0.05);
                 },
 
                 handleLogoUpload(event) {
@@ -890,117 +1142,146 @@
                     reader.readAsDataURL(file);
                 },
 
-                addWidget(item) {
-                    const id = `widget-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-                    this.customization.layout.widgets.push({
-                        id,
-                        label: item.label,
-                        type: item.type,
-                        colSpan: item.colSpan,
-                        rowSpan: item.rowSpan,
-                        color: item.color,
-                        textColor: item.textColor,
-                        visible: true
-                    });
-                    this.$nextTick(() => feather.replace());
-                },
-
-                moveWidget(index, direction) {
-                    const newIndex = index + direction;
-                    if (newIndex < 0 || newIndex >= this.customization.layout.widgets.length) return;
-                    const widgets = this.customization.layout.widgets;
-                    [widgets[index], widgets[newIndex]] = [widgets[newIndex], widgets[index]];
-                },
-
-                toggleWidget(widget) {
-                    widget.visible = !widget.visible;
-                },
-
-                startDrag(widgetId) {
-                    this.draggedWidgetId = widgetId;
-                },
-
-                clearDrag() {
-                    this.draggedWidgetId = null;
-                },
-
-                handleDrop(targetId) {
-                    if (!this.draggedWidgetId || this.draggedWidgetId === targetId) return;
-                    const widgets = this.customization.layout.widgets;
-                    const fromIndex = widgets.findIndex((item) => item.id === this.draggedWidgetId);
-                    const toIndex = widgets.findIndex((item) => item.id === targetId);
-                    if (fromIndex === -1 || toIndex === -1) return;
-                    const [moved] = widgets.splice(fromIndex, 1);
-                    widgets.splice(toIndex, 0, moved);
-                    this.draggedWidgetId = null;
-                },
-
-                saveCustomization() {
-                    localStorage.setItem('inventorypro.customization', JSON.stringify(this.customization));
-                    if (window.InventoryCustomization) {
-                        window.InventoryCustomization.apply(this.customization);
-                    }
-                    this.customizeMessage = 'Customize-Einstellungen gespeichert (lokal im Browser).';
-                    setTimeout(() => {
-                        this.customizeMessage = '';
-                    }, 3000);
-                },
-
-                loadCustomization() {
-                    const saved = localStorage.getItem('inventorypro.customization');
-                    if (!saved) return;
-                    try {
-                        const data = JSON.parse(saved);
-                        this.customization = {
-                            ...this.customization,
-                            ...data,
-                            branding: { ...this.customization.branding, ...(data.branding || {}) },
-                            formStyle: { ...this.customization.formStyle, ...(data.formStyle || {}) },
-                            layout: { ...this.customization.layout, ...(data.layout || {}) }
-                        };
-                    } catch (error) {
-                        console.warn('Customize settings could not be loaded', error);
-                    }
-                },
-
                 resetCustomization() {
-                    localStorage.removeItem('inventorypro.customization');
-                    this.customization = {
-                        branding: {
-                            name: 'Inventory Pro',
-                            tagline: 'Smart Asset Hub',
-                            primary: '#4f46e5',
-                            accent: '#14b8a6',
-                            background: '#f8fafc',
-                            radius: 16,
-                            density: 1,
-                            logoDataUrl: ''
-                        },
-                        formStyle: {
-                            buttonColor: '#4f46e5',
-                            buttonText: '#ffffff',
-                            inputBackground: '#ffffff',
-                            inputBorder: '#e2e8f0',
-                            spacing: 16
-                        },
-                        layout: {
-                            widgets: [
-                                { id: 'widget-hero', label: 'Hero KPI', type: 'KPI-Box', colSpan: 2, rowSpan: 1, color: '#6366f1', textColor: '#ffffff', visible: true },
-                                { id: 'widget-table', label: 'Assets Tabelle', type: 'Tabelle', colSpan: 3, rowSpan: 1, color: '#0ea5e9', textColor: '#ffffff', visible: true },
-                                { id: 'widget-form', label: 'Schnellformular', type: 'Formular', colSpan: 1, rowSpan: 2, color: '#f97316', textColor: '#ffffff', visible: true },
-                                { id: 'widget-tickets', label: 'Tickets', type: 'Box', colSpan: 2, rowSpan: 1, color: '#14b8a6', textColor: '#ffffff', visible: true },
-                                { id: 'widget-buttons', label: 'Aktionen', type: 'Button-Grid', colSpan: 2, rowSpan: 1, color: '#64748b', textColor: '#ffffff', visible: true }
-                            ]
-                        }
-                    };
+                    const defaults = window.InventoryCustomization ? window.InventoryCustomization.defaults() : {};
+                    this.customization = defaults;
+                    this.saveLocalOnly = false;
                     if (window.InventoryCustomization) {
-                        window.InventoryCustomization.apply(this.customization);
+                        window.InventoryCustomization.setLocalOverride(null);
                     }
                     this.customizeMessage = 'Alle Anpassungen wurden zurückgesetzt.';
+                    this.customizeError = '';
+                    this.resetHistory();
                     setTimeout(() => {
                         this.customizeMessage = '';
                     }, 3000);
-                }
+                },
+
+                resetSection(section) {
+                    const defaults = window.InventoryCustomization ? window.InventoryCustomization.defaults() : {};
+                    if (section === 'tokens') {
+                        this.customization.baseTokens = defaults.baseTokens;
+                    }
+                    if (section === 'components') {
+                        this.customization.componentOverrides = defaults.componentOverrides;
+                    }
+                    this.customizeMessage = 'Bereich wurde zurückgesetzt.';
+                    setTimeout(() => {
+                        this.customizeMessage = '';
+                    }, 3000);
+                },
+
+                async saveCustomization() {
+                    this.customizeMessage = '';
+                    this.customizeError = '';
+                    if (this.saveLocalOnly) {
+                        if (window.InventoryCustomization) {
+                            window.InventoryCustomization.setLocalOverride(this.customization);
+                        }
+                        this.customizeMessage = 'Lokal gespeichert. Server-Konfiguration bleibt unverändert.';
+                        setTimeout(() => {
+                            this.customizeMessage = '';
+                        }, 3000);
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch('/api/customize', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.customization),
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Speichern fehlgeschlagen.');
+                        }
+                        this.customization = window.InventoryCustomization.migrate(data.customization || this.customization);
+                        if (window.InventoryCustomization) {
+                            window.InventoryCustomization.setLocalOverride(null);
+                            window.InventoryCustomization.setCached({
+                                customization: this.customization,
+                                updatedAt: data.updated_at,
+                                revisionId: data.revision_id,
+                                cachedAt: new Date().toISOString(),
+                            });
+                        }
+                        this.customizeMessage = 'Customize-Einstellungen gespeichert.';
+                        await this.fetchCustomizationHistory();
+                    } catch (error) {
+                        this.customizeError = error.message || 'Speichern fehlgeschlagen.';
+                    }
+                },
+
+                exportCustomization() {
+                    const payload = JSON.stringify(this.customization, null, 2);
+                    const blob = new Blob([payload], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `inventorypro-customize-${new Date().toISOString().slice(0, 10)}.json`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                },
+
+                importCustomization(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        try {
+                            const parsed = JSON.parse(reader.result);
+                            this.customization = window.InventoryCustomization.migrate(parsed);
+                            this.customizeMessage = 'Import erfolgreich geladen.';
+                            this.resetHistory();
+                        } catch (error) {
+                            this.customizeError = 'Import fehlgeschlagen: JSON ungültig.';
+                        }
+                    };
+                    reader.readAsText(file);
+                },
+
+                applyPreset() {
+                    if (!this.selectedPreset) return;
+                    const preset = this.presets.find((item) => item.id === this.selectedPreset);
+                    if (!preset) return;
+                    const defaults = window.InventoryCustomization ? window.InventoryCustomization.defaults() : {};
+                    this.customization = window.InventoryCustomization.merge(defaults, preset.data);
+                    this.customizeMessage = `Preset "${preset.label}" geladen.`;
+                    this.resetHistory();
+                },
+
+                async fetchCustomizationHistory() {
+                    try {
+                        const response = await fetch('/api/customize/history', { credentials: 'same-origin' });
+                        if (!response.ok) return;
+                        const data = await response.json();
+                        this.customizationHistory = (data.revisions || []).map((revision) => ({
+                            id: revision.id,
+                            label: revision.created_by ? `Update von ${revision.created_by}` : 'System-Update',
+                            meta: new Date(revision.created_at).toLocaleString('de-DE'),
+                        }));
+                    } catch (error) {
+                        console.warn('History could not be loaded', error);
+                    }
+                },
+
+                async rollbackRevision(revisionId) {
+                    try {
+                        const response = await fetch(`/api/customize/rollback/${revisionId}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Rollback fehlgeschlagen.');
+                        }
+                        this.customization = window.InventoryCustomization.migrate(data.customization);
+                        this.customizeMessage = 'Rollback erfolgreich.';
+                        await this.fetchCustomizationHistory();
+                    } catch (error) {
+                        this.customizeError = error.message || 'Rollback fehlgeschlagen.';
+                    }
+                },
             }));
         });
 
