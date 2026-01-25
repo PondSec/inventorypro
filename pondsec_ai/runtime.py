@@ -50,19 +50,61 @@ class AgentRuntime:
         access = user_ctx.get("access") or {}
         ui_ctx = (ui_context or {}).get("ui_context") or {}
         entity_ctx = (ui_context or {}).get("context") or {}
+        parsed_refs = context.parse_entity_refs(message)
+        explicit_ticket_id = parsed_refs.get("ticket_id")
+        effective_context = dict(entity_ctx) if entity_ctx else {}
+        list_types = {"tickets", "ticket_list", "unknown"}
+        if explicit_ticket_id and (not effective_context or effective_context.get("type") in list_types):
+            effective_context = {"type": "ticket", "id": explicit_ticket_id}
         context_payload = {
             "ui_context": ui_ctx,
-            "context": entity_ctx,
+            "context": effective_context,
             "entity_refs": ui_ctx.get("entity_refs", []) if ui_ctx else [],
-            "ticket_id": entity_ctx.get("id") if entity_ctx.get("type") == "ticket" else None,
+            "ticket_id": effective_context.get("id") if effective_context.get("type") == "ticket" else None,
         }
+        if explicit_ticket_id and not any(
+            ref.get("type") == "ticket" and ref.get("id") == explicit_ticket_id
+            for ref in context_payload["entity_refs"]
+        ):
+            context_payload["entity_refs"].append({"type": "ticket", "id": explicit_ticket_id})
         if context_payload.get("ticket_id"):
             ticket = self.db.execute(
                 "SELECT id, title, description, status, priority, requester_name, assignee, due_date FROM tickets WHERE id = ?",
                 (context_payload["ticket_id"],),
             ).fetchone()
+            if not ticket and explicit_ticket_id:
+                return {
+                    "insights": (
+                        f"Ich konnte kein Ticket mit der ID #{explicit_ticket_id} finden. "
+                        "Bitte prüfe die ID oder starte eine Suche."
+                    ),
+                    "proposed_actions": [
+                        {
+                            "title": "Ticket-Suche",
+                            "rationale": "Ticket-ID nicht gefunden.",
+                            "risk": "low",
+                            "steps": [{
+                                "tool": "ticket.search",
+                                "input": {
+                                    "query": message.strip() or f"ticket {explicit_ticket_id}",
+                                    "limit": 5,
+                                },
+                            }],
+                            "requires_approval": False,
+                            "status": "proposed",
+                        }
+                    ],
+                    "references": context_payload.get("entity_refs", []),
+                }
             if ticket:
-                context_payload["ticket"] = dict(ticket)
+                ticket_dict = dict(ticket)
+                if not context.ensure_ticket_access(ticket_dict, access):
+                    return {
+                        "insights": "Ich habe keine Berechtigung, dieses Ticket zu sehen.",
+                        "proposed_actions": [],
+                        "references": context_payload.get("entity_refs", []),
+                    }
+                context_payload["ticket"] = ticket_dict
         plan = self.planner.plan(message, context_payload)
         plan_steps = plan.get("steps", [])
         summary = plan.get("summary", "")
