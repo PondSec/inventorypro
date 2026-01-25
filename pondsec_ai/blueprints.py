@@ -53,8 +53,9 @@ def ai_chat():
     except Exception as exc:
         logger.exception("pondsec_ai.chat.error %s", exc)
         response = {
-            "insights": "LLM crashed; using fallback. Bitte erneut versuchen.",
+            "insights": f"AI error: {str(exc)[:120]}. Using fallback.",
             "proposed_actions": [],
+            "questions": [],
             "references": [],
         }
     return jsonify(response)
