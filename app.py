@@ -7,6 +7,7 @@ from datetime import datetime
 from functools import wraps
 import os
 import csv
+import re
 import pyotp
 import qrcode
 import qrcode.image.svg
@@ -1488,10 +1489,56 @@ def init_db():
                 port INTEGER DEFAULT 5000,
                 debug_mode INTEGER DEFAULT 1,
                 pro_enabled INTEGER DEFAULT 1,
+                backup_enabled INTEGER DEFAULT 0,
+                backup_schedule TEXT DEFAULT 'daily',
+                backup_time TEXT DEFAULT '02:00',
+                backup_retention_days INTEGER DEFAULT 14,
+                backup_location TEXT DEFAULT 'backups/',
+                backup_compress INTEGER DEFAULT 1,
+                backup_encrypt INTEGER DEFAULT 0,
+                backup_notify_email TEXT,
+                allow_db_import INTEGER DEFAULT 0,
+                allow_db_export INTEGER DEFAULT 1,
+                export_format TEXT DEFAULT 'sqlite',
+                import_mode TEXT DEFAULT 'merge',
+                include_uploads INTEGER DEFAULT 1,
+                require_https INTEGER DEFAULT 0,
+                session_timeout_minutes INTEGER DEFAULT 60,
+                max_failed_logins INTEGER DEFAULT 5,
+                lockout_minutes INTEGER DEFAULT 15,
+                allowed_ip_ranges TEXT,
+                password_min_length INTEGER DEFAULT 10,
+                enforce_mfa INTEGER DEFAULT 0,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         c.execute('INSERT OR IGNORE INTO server_settings (id) VALUES (1)')
+        for column, column_type in (
+            ("backup_enabled", "INTEGER DEFAULT 0"),
+            ("backup_schedule", "TEXT DEFAULT 'daily'"),
+            ("backup_time", "TEXT DEFAULT '02:00'"),
+            ("backup_retention_days", "INTEGER DEFAULT 14"),
+            ("backup_location", "TEXT DEFAULT 'backups/'"),
+            ("backup_compress", "INTEGER DEFAULT 1"),
+            ("backup_encrypt", "INTEGER DEFAULT 0"),
+            ("backup_notify_email", "TEXT"),
+            ("allow_db_import", "INTEGER DEFAULT 0"),
+            ("allow_db_export", "INTEGER DEFAULT 1"),
+            ("export_format", "TEXT DEFAULT 'sqlite'"),
+            ("import_mode", "TEXT DEFAULT 'merge'"),
+            ("include_uploads", "INTEGER DEFAULT 1"),
+            ("require_https", "INTEGER DEFAULT 0"),
+            ("session_timeout_minutes", "INTEGER DEFAULT 60"),
+            ("max_failed_logins", "INTEGER DEFAULT 5"),
+            ("lockout_minutes", "INTEGER DEFAULT 15"),
+            ("allowed_ip_ranges", "TEXT"),
+            ("password_min_length", "INTEGER DEFAULT 10"),
+            ("enforce_mfa", "INTEGER DEFAULT 0"),
+        ):
+            try:
+                c.execute(f'ALTER TABLE server_settings ADD COLUMN {column} {column_type}')
+            except sqlite3.OperationalError:
+                pass
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS device_tags (
@@ -2537,13 +2584,53 @@ def serialize_server_settings(settings):
             "host": "0.0.0.0",
             "port": 5000,
             "debug": True,
-            "pro_enabled": True
+            "pro_enabled": True,
+            "backup_enabled": False,
+            "backup_schedule": "daily",
+            "backup_time": "02:00",
+            "backup_retention_days": 14,
+            "backup_location": "backups/",
+            "backup_compress": True,
+            "backup_encrypt": False,
+            "backup_notify_email": "",
+            "allow_db_import": False,
+            "allow_db_export": True,
+            "export_format": "sqlite",
+            "import_mode": "merge",
+            "include_uploads": True,
+            "require_https": False,
+            "session_timeout_minutes": 60,
+            "max_failed_logins": 5,
+            "lockout_minutes": 15,
+            "allowed_ip_ranges": "",
+            "password_min_length": 10,
+            "enforce_mfa": False
         }
     return {
         "host": settings["host"] or "0.0.0.0",
         "port": settings["port"] or 5000,
         "debug": bool(settings["debug_mode"]),
-        "pro_enabled": bool(settings["pro_enabled"])
+        "pro_enabled": bool(settings["pro_enabled"] if settings["pro_enabled"] is not None else 1),
+        "backup_enabled": bool(settings["backup_enabled"]),
+        "backup_schedule": settings["backup_schedule"] or "daily",
+        "backup_time": settings["backup_time"] or "02:00",
+        "backup_retention_days": settings["backup_retention_days"] or 14,
+        "backup_location": settings["backup_location"] or "backups/",
+        "backup_compress": bool(settings["backup_compress"] if settings["backup_compress"] is not None else 1),
+        "backup_encrypt": bool(settings["backup_encrypt"]),
+        "backup_notify_email": settings["backup_notify_email"] or "",
+        "allow_db_import": bool(settings["allow_db_import"]),
+        "allow_db_export": bool(settings["allow_db_export"] if settings["allow_db_export"] is not None else 1),
+        "export_format": settings["export_format"] or "sqlite",
+        "import_mode": settings["import_mode"] or "merge",
+        "include_uploads": bool(settings["include_uploads"] if settings["include_uploads"] is not None else 1),
+        "require_https": bool(settings["require_https"]),
+        "session_timeout_minutes": settings["session_timeout_minutes"] or 60,
+        "max_failed_logins": settings["max_failed_logins"] or 5,
+        "lockout_minutes": settings["lockout_minutes"] or 15,
+        "allowed_ip_ranges": settings["allowed_ip_ranges"] or "",
+        "password_min_length": settings["password_min_length"] or 10,
+        "enforce_mfa": bool(settings["enforce_mfa"])
     }
 
 def domain_to_base_dn(domain):
@@ -5215,6 +5302,20 @@ def server_settings():
     db = get_db()
     if request.method == 'POST':
         data = request.get_json() or {}
+        def parse_int_field(name, default, minimum=None, maximum=None):
+            raw_value = data.get(name, default)
+            if raw_value is None or raw_value == '':
+                raw_value = default
+            try:
+                parsed = int(raw_value)
+            except (TypeError, ValueError):
+                return None, f"{name.replace('_', ' ').capitalize()} muss eine Zahl sein"
+            if minimum is not None and parsed < minimum:
+                return None, f"{name.replace('_', ' ').capitalize()} muss mindestens {minimum} sein"
+            if maximum is not None and parsed > maximum:
+                return None, f"{name.replace('_', ' ').capitalize()} darf höchstens {maximum} sein"
+            return parsed, None
+
         host = (data.get('host') or '0.0.0.0').strip()
         try:
             port = int(data.get('port') or 5000)
@@ -5224,18 +5325,125 @@ def server_settings():
             return jsonify({"error": "Port muss zwischen 1 und 65535 liegen"}), 400
         debug_mode = 1 if data.get('debug') else 0
         pro_enabled = 1 if data.get('pro_enabled') else 0
+        backup_enabled = 1 if data.get('backup_enabled') else 0
+        backup_schedule = (data.get('backup_schedule') or 'daily').strip().lower()
+        backup_time = (data.get('backup_time') or '02:00').strip()
+        backup_retention_days, error = parse_int_field('backup_retention_days', 14, 1, 3650)
+        if error:
+            return jsonify({"error": error}), 400
+        backup_location = (data.get('backup_location') or 'backups/').strip()
+        backup_compress = 1 if data.get('backup_compress') else 0
+        backup_encrypt = 1 if data.get('backup_encrypt') else 0
+        backup_notify_email = (data.get('backup_notify_email') or '').strip()
+        allow_db_import = 1 if data.get('allow_db_import') else 0
+        allow_db_export = 1 if data.get('allow_db_export') else 0
+        export_format = (data.get('export_format') or 'sqlite').strip().lower()
+        import_mode = (data.get('import_mode') or 'merge').strip().lower()
+        include_uploads = 1 if data.get('include_uploads') else 0
+        require_https = 1 if data.get('require_https') else 0
+        session_timeout_minutes, error = parse_int_field('session_timeout_minutes', 60, 5, 1440)
+        if error:
+            return jsonify({"error": error}), 400
+        max_failed_logins, error = parse_int_field('max_failed_logins', 5, 1, 20)
+        if error:
+            return jsonify({"error": error}), 400
+        lockout_minutes, error = parse_int_field('lockout_minutes', 15, 1, 240)
+        if error:
+            return jsonify({"error": error}), 400
+        allowed_ip_ranges = (data.get('allowed_ip_ranges') or '').strip()
+        password_min_length, error = parse_int_field('password_min_length', 10, 6, 64)
+        if error:
+            return jsonify({"error": error}), 400
+        enforce_mfa = 1 if data.get('enforce_mfa') else 0
         if not host:
             return jsonify({"error": "Host darf nicht leer sein"}), 400
+        if backup_schedule not in {'hourly', 'daily', 'weekly', 'monthly', 'custom'}:
+            return jsonify({"error": "Backup-Rhythmus ist ungültig"}), 400
+        if backup_time and not re.match(r'^([01]\\d|2[0-3]):[0-5]\\d$', backup_time):
+            return jsonify({"error": "Backup-Zeit muss im Format HH:MM sein"}), 400
+        if export_format not in {'sqlite', 'csv', 'json'}:
+            return jsonify({"error": "Export-Format ist ungültig"}), 400
+        if import_mode not in {'merge', 'replace'}:
+            return jsonify({"error": "Import-Modus ist ungültig"}), 400
         db.execute('''
             UPDATE server_settings
-            SET host = ?, port = ?, debug_mode = ?, pro_enabled = ?, updated_at = CURRENT_TIMESTAMP
+            SET host = ?,
+                port = ?,
+                debug_mode = ?,
+                pro_enabled = ?,
+                backup_enabled = ?,
+                backup_schedule = ?,
+                backup_time = ?,
+                backup_retention_days = ?,
+                backup_location = ?,
+                backup_compress = ?,
+                backup_encrypt = ?,
+                backup_notify_email = ?,
+                allow_db_import = ?,
+                allow_db_export = ?,
+                export_format = ?,
+                import_mode = ?,
+                include_uploads = ?,
+                require_https = ?,
+                session_timeout_minutes = ?,
+                max_failed_logins = ?,
+                lockout_minutes = ?,
+                allowed_ip_ranges = ?,
+                password_min_length = ?,
+                enforce_mfa = ?,
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = 1
-        ''', (host, port, debug_mode, pro_enabled))
+        ''', (
+            host,
+            port,
+            debug_mode,
+            pro_enabled,
+            backup_enabled,
+            backup_schedule,
+            backup_time,
+            backup_retention_days,
+            backup_location,
+            backup_compress,
+            backup_encrypt,
+            backup_notify_email,
+            allow_db_import,
+            allow_db_export,
+            export_format,
+            import_mode,
+            include_uploads,
+            require_https,
+            session_timeout_minutes,
+            max_failed_logins,
+            lockout_minutes,
+            allowed_ip_ranges,
+            password_min_length,
+            enforce_mfa
+        ))
         log_activity(db, "update", "server_settings", details={
             "host": host,
             "port": port,
             "debug_mode": bool(debug_mode),
-            "pro_enabled": bool(pro_enabled)
+            "pro_enabled": bool(pro_enabled),
+            "backup_enabled": bool(backup_enabled),
+            "backup_schedule": backup_schedule,
+            "backup_time": backup_time,
+            "backup_retention_days": backup_retention_days,
+            "backup_location": backup_location,
+            "backup_compress": bool(backup_compress),
+            "backup_encrypt": bool(backup_encrypt),
+            "backup_notify_email": backup_notify_email,
+            "allow_db_import": bool(allow_db_import),
+            "allow_db_export": bool(allow_db_export),
+            "export_format": export_format,
+            "import_mode": import_mode,
+            "include_uploads": bool(include_uploads),
+            "require_https": bool(require_https),
+            "session_timeout_minutes": session_timeout_minutes,
+            "max_failed_logins": max_failed_logins,
+            "lockout_minutes": lockout_minutes,
+            "allowed_ip_ranges": allowed_ip_ranges,
+            "password_min_length": password_min_length,
+            "enforce_mfa": bool(enforce_mfa)
         })
         db.commit()
     settings = get_server_settings(db)
