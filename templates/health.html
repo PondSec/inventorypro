@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="de" x-data="healthApp()" x-init="init()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - Health</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app-body">
+    <div class="app-shell">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
+                <a href="/" class="flex items-center gap-3">
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg" data-brand-logo>
+                        <i data-feather="cpu" data-brand-logo-icon class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <p class="text-lg font-semibold text-slate-900 sidebar-text" data-brand-name>Inventory Pro</p>
+                        <p class="text-xs text-slate-500 sidebar-text" data-brand-tagline>Smart Asset Hub</p>
+                    </div>
+                </a>
+            </div>
+            <nav class="p-4 space-y-4 sidebar-scroll sidebar-primary-links">
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Hauptbereiche</p>
+                    <div class="mt-3 space-y-1">
+                        <a href="/" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="home" class="w-4 h-4"></i></span>
+                                Dashboard
+                            </span>
+                        </a>
+                        {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                        <a href="/locations" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="map-pin" class="w-4 h-4"></i></span>
+                                Standorte
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                        <a href="/tickets" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="life-buoy" class="w-4 h-4"></i></span>
+                                Ticketsystem
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
+                        <a href="/knowledge" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="book-open" class="w-4 h-4"></i></span>
+                                Wissensbasis
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                        <a href="/roadmap" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="git-merge" class="w-4 h-4"></i></span>
+                                Roadmap
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Auswertung</p>
+                    <div class="mt-3 space-y-1">
+                        {% if 'stats.view' in permissions %}
+                        <a href="/stats" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="bar-chart-2" class="w-4 h-4"></i></span>
+                                Statistiken
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                        <a href="/dependencies" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="share-2" class="w-4 h-4"></i></span>
+                                Dependency-Graph
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'timemachine.view' in permissions %}
+                        <a href="/time-machine" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="clock" class="w-4 h-4"></i></span>
+                                Zeitmaschine
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
+                        <a href="/health" class="sidebar-link active">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="activity" class="w-4 h-4"></i></span>
+                                Health
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if 'users.manage' in permissions or 'server_settings.manage' in permissions %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Administration</p>
+                    <div class="mt-3 space-y-1">
+                        {% if 'users.manage' in permissions %}
+                        <a href="/users" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="users" class="w-4 h-4"></i></span>
+                                Benutzer
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'server_settings.manage' in permissions %}
+                        <a href="/settings" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="settings" class="w-4 h-4"></i></span>
+                                Einstellungen
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </nav>
+        </aside>
+
+        <div class="app-main app-main--fixed">
+            <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
+                <div class="flex items-center gap-4">
+                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                        <i data-feather="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div>
+                        <p class="text-xs uppercase tracking-widest text-slate-400">Server Monitoring</p>
+                        <h1 class="text-xl font-semibold text-slate-900">Health</h1>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="hidden sm:block text-right">
+                        <p class="text-xs text-slate-400">Angemeldet als</p>
+                        <p class="text-sm font-semibold text-slate-800">{{ username }}</p>
+                    </div>
+                    <form action="/logout" method="post">
+                        <button type="submit" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-800">
+                            <i data-feather="log-out" class="h-4 w-4"></i>
+                            Logout
+                        </button>
+                    </form>
+                </div>
+            </header>
+
+            <main class="app-content app-content--padded pt-[110px] pb-16 space-y-8">
+                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Health Overview</p>
+                            <h2 class="text-2xl font-semibold text-slate-900">System- & Service-Health</h2>
+                            <div class="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                                <span :class="statusBadgeClass(summary.overall_status)" class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold">
+                                    <span x-text="summary.overall_status"></span>
+                                </span>
+                                <span x-text="summary.last_updated ? `Letztes Update: ${summary.last_updated}` : 'Noch keine Runs'" class="text-xs"></span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button @click="runNow" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-800">
+                                <i data-feather="play" class="h-4 w-4"></i>
+                                Run now
+                            </button>
+                            <button @click="refreshAll" class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                                <i data-feather="refresh-cw" class="h-4 w-4"></i>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <template x-for="card in summary.summary_cards" :key="card.key">
+                        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-xs uppercase text-slate-400" x-text="card.label"></p>
+                                    <p class="text-xl font-semibold text-slate-900" x-text="card.metric !== null && card.metric !== undefined ? card.metric : '-' "></p>
+                                </div>
+                                <span :class="statusBadgeClass(card.status)" class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold" x-text="card.status"></span>
+                            </div>
+                        </div>
+                    </template>
+                </section>
+
+                <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <template x-for="tab in tabs" :key="tab.key">
+                            <button @click="activeTab = tab.key" :class="activeTab === tab.key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">
+                                <span x-text="tab.label"></span>
+                            </button>
+                        </template>
+                    </div>
+                </section>
+
+                <section x-show="activeTab === 'overview'" x-transition class="space-y-6">
+                    <div class="grid gap-6 lg:grid-cols-2">
+                        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-slate-900">Recent Events</h3>
+                                    <p class="text-xs text-slate-500">Letzte Statuswechsel</p>
+                                </div>
+                            </div>
+                            <div class="mt-4 space-y-3">
+                                <template x-if="summary.events.length === 0">
+                                    <p class="text-sm text-slate-500">Keine Events verfügbar.</p>
+                                </template>
+                                <template x-for="event in summary.events" :key="event.id">
+                                    <div class="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-800" x-text="event.name"></p>
+                                            <p class="text-xs text-slate-500" x-text="event.reason"></p>
+                                        </div>
+                                        <div class="text-right">
+                                            <span :class="statusBadgeClass(event.current_status)" class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold" x-text="event.current_status"></span>
+                                            <p class="text-xs text-slate-400" x-text="event.observed_at"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                            <div>
+                                <h3 class="text-sm font-semibold text-slate-900">Open Incidents</h3>
+                                <p class="text-xs text-slate-500">Aktive Incidents mit CRIT-Dauer.</p>
+                            </div>
+                            <div class="mt-4 space-y-3">
+                                <template x-if="summary.incidents.length === 0">
+                                    <p class="text-sm text-slate-500">Keine offenen Incidents.</p>
+                                </template>
+                                <template x-for="incident in summary.incidents" :key="incident.id">
+                                    <div class="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-800" x-text="incident.name"></p>
+                                            <p class="text-xs text-slate-500" x-text="incident.summary"></p>
+                                        </div>
+                                        <div class="text-right">
+                                            <span :class="statusBadgeClass(incident.last_status)" class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold" x-text="incident.last_status"></span>
+                                            <p class="text-xs text-slate-400" x-text="incident.opened_at"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section x-show="activeTab === 'services'" x-transition class="space-y-4">
+                    <div class="filter-bar flex flex-wrap items-center justify-between gap-3">
+                        <input type="text" x-model="serviceFilter" placeholder="Service suchen" class="rounded-full border border-slate-200 px-4 py-2 text-sm">
+                        <span class="text-xs text-slate-400" x-text="`${filteredServices.length} Services`"></span>
+                    </div>
+                    <div class="table-wrapper overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                        <table class="table w-full text-sm">
+                            <thead class="bg-slate-50 text-xs uppercase text-slate-400">
+                                <tr>
+                                    <th class="px-4 py-3 text-left">Service</th>
+                                    <th class="px-4 py-3 text-left">Status</th>
+                                    <th class="px-4 py-3 text-left">Uptime</th>
+                                    <th class="px-4 py-3 text-left">Last Exit</th>
+                                    <th class="px-4 py-3 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="service in filteredServices" :key="service.check_id">
+                                    <tr class="border-t border-slate-100">
+                                        <td class="px-4 py-3">
+                                            <p class="font-semibold text-slate-900" x-text="service.name"></p>
+                                        </td>
+                                        <td class="px-4 py-3">
+                                            <span :class="statusBadgeClass(service.status)" class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold" x-text="service.status"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-slate-600" x-text="service.uptime || '-' "></td>
+                                        <td class="px-4 py-3 text-slate-600" x-text="service.last_exit || '-' "></td>
+                                        <td class="px-4 py-3 text-right">
+                                            <button @click="openCheckDetail(service.check_id)" class="text-xs font-semibold text-blue-600 hover:text-blue-800">Details</button>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="filteredServices.length === 0">
+                                    <td colspan="5" class="px-4 py-6 text-center text-sm text-slate-500">Keine Services gefunden.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section x-show="activeTab === 'checks'" x-transition class="space-y-4">
+                    <div class="filter-bar flex flex-wrap items-center justify-between gap-3">
+                        <input type="text" x-model="checkFilter" placeholder="Check suchen" class="rounded-full border border-slate-200 px-4 py-2 text-sm">
+                        <span class="text-xs text-slate-400" x-text="`${filteredChecks.length} Checks`"></span>
+                    </div>
+                    <div class="table-wrapper overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                        <table class="table w-full text-sm">
+                            <thead class="bg-slate-50 text-xs uppercase text-slate-400">
+                                <tr>
+                                    <th class="px-4 py-3 text-left">Check</th>
+                                    <th class="px-4 py-3 text-left">Kategorie</th>
+                                    <th class="px-4 py-3 text-left">Status</th>
+                                    <th class="px-4 py-3 text-left">Interval</th>
+                                    <th class="px-4 py-3 text-right">Enabled</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="check in filteredChecks" :key="check.id">
+                                    <tr class="border-t border-slate-100">
+                                        <td class="px-4 py-3">
+                                            <button @click="openCheckDetail(check.id)" class="font-semibold text-slate-900 hover:text-blue-600" x-text="check.name"></button>
+                                            <p class="text-xs text-slate-500" x-text="check.check_type"></p>
+                                        </td>
+                                        <td class="px-4 py-3 text-slate-600" x-text="check.category"></td>
+                                        <td class="px-4 py-3">
+                                            <span :class="statusBadgeClass(check.last_status || 'UNKNOWN')" class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold" x-text="check.last_status || 'UNKNOWN'"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-slate-600" x-text="`${check.interval_seconds}s`"></td>
+                                        <td class="px-4 py-3 text-right">
+                                            <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+                                                <input type="checkbox" class="rounded" :checked="check.enabled" @change="toggleCheck(check)">
+                                                <span x-text="check.enabled ? 'On' : 'Off'"></span>
+                                            </label>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="filteredChecks.length === 0">
+                                    <td colspan="5" class="px-4 py-6 text-center text-sm text-slate-500">Keine Checks gefunden.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section x-show="activeTab === 'incidents'" x-transition class="space-y-4">
+                    <div class="table-wrapper overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                        <table class="table w-full text-sm">
+                            <thead class="bg-slate-50 text-xs uppercase text-slate-400">
+                                <tr>
+                                    <th class="px-4 py-3 text-left">Incident</th>
+                                    <th class="px-4 py-3 text-left">Status</th>
+                                    <th class="px-4 py-3 text-left">Opened</th>
+                                    <th class="px-4 py-3 text-left">Ack/Mute</th>
+                                    <th class="px-4 py-3 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="incident in incidents" :key="incident.id">
+                                    <tr class="border-t border-slate-100">
+                                        <td class="px-4 py-3">
+                                            <p class="font-semibold text-slate-900" x-text="incident.name"></p>
+                                            <p class="text-xs text-slate-500" x-text="incident.summary"></p>
+                                        </td>
+                                        <td class="px-4 py-3">
+                                            <span :class="statusBadgeClass(incident.last_status || 'UNKNOWN')" class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold" x-text="incident.last_status || 'UNKNOWN'"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-slate-600" x-text="incident.opened_at"></td>
+                                        <td class="px-4 py-3 text-slate-600">
+                                            <span x-text="incident.acknowledged_at ? 'Ack' : '—'"></span>
+                                            <span x-text="incident.muted_until ? `Mute bis ${incident.muted_until}` : ''"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-right space-x-2">
+                                            <button @click="ackIncident(incident)" class="text-xs font-semibold text-blue-600 hover:text-blue-800">Ack</button>
+                                            <button @click="muteIncident(incident)" class="text-xs font-semibold text-amber-600 hover:text-amber-800">Mute</button>
+                                            <button @click="createTicket(incident)" class="text-xs font-semibold text-slate-600 hover:text-slate-800">Ticket</button>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="incidents.length === 0">
+                                    <td colspan="5" class="px-4 py-6 text-center text-sm text-slate-500">Keine Incidents.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section x-show="activeTab === 'history'" x-transition class="space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex gap-2">
+                            <button @click="loadHistory(1)" :class="historyWindow === 1 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">24h</button>
+                            <button @click="loadHistory(7)" :class="historyWindow === 7 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">7d</button>
+                        </div>
+                        <span class="text-xs text-slate-400" x-text="`Events: ${history.events.length}`"></span>
+                    </div>
+                    <div class="grid gap-6 lg:grid-cols-2">
+                        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                            <h3 class="text-sm font-semibold text-slate-900">Timeline</h3>
+                            <div class="mt-4 space-y-2 max-h-72 overflow-y-auto">
+                                <template x-for="event in history.events" :key="event.observed_at + event.current_status">
+                                    <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                                        <span class="text-xs text-slate-500" x-text="event.observed_at"></span>
+                                        <span :class="statusBadgeClass(event.current_status)" class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold" x-text="event.current_status"></span>
+                                    </div>
+                                </template>
+                                <p x-show="history.events.length === 0" class="text-sm text-slate-500">Keine Events im Zeitraum.</p>
+                            </div>
+                        </div>
+                        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                            <h3 class="text-sm font-semibold text-slate-900">Aggregierte Metriken</h3>
+                            <div class="mt-4 space-y-4">
+                                <template x-for="metric in metricSummaries" :key="metric.key">
+                                    <div>
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-xs uppercase text-slate-400" x-text="metric.label"></span>
+                                            <span class="text-sm font-semibold text-slate-900" x-text="metric.value"></span>
+                                        </div>
+                                        <div class="mt-2 h-2 rounded-full bg-slate-100">
+                                            <div class="h-2 rounded-full bg-blue-500" :style="`width: ${metric.percent}%`"></div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+
+            <div x-show="drawerOpen" x-transition class="fixed inset-0 bg-black/30 z-40" @click="closeDrawer"></div>
+            <aside x-show="drawerOpen" x-transition class="fixed right-0 top-0 z-50 h-full w-full max-w-md bg-white shadow-xl border-l border-slate-200 overflow-y-auto">
+                <div class="flex items-center justify-between p-6 border-b border-slate-200">
+                    <div>
+                        <p class="text-xs uppercase text-slate-400">Check Detail</p>
+                        <h3 class="text-lg font-semibold text-slate-900" x-text="selectedCheck?.name || ''"></h3>
+                    </div>
+                    <button @click="closeDrawer" class="rounded-full border border-slate-200 p-2 text-slate-600 hover:bg-slate-50">
+                        <i data-feather="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <div class="p-6 space-y-6">
+                    <div>
+                        <p class="text-xs uppercase text-slate-400">Konfiguration</p>
+                        <textarea x-model="configDraft" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 h-40"></textarea>
+                        <div class="mt-3 flex justify-end">
+                            <button @click="saveCheckConfig" class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Save</button>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase text-slate-400">Letzte Runs</p>
+                        <div class="mt-3 space-y-3">
+                            <template x-for="run in selectedCheckResults" :key="run.id">
+                                <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-sm font-semibold text-slate-800" x-text="run.reason"></span>
+                                        <span :class="statusBadgeClass(run.status)" class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold" x-text="run.status"></span>
+                                    </div>
+                                    <p class="text-xs text-slate-400" x-text="`${run.observed_at} • ${run.duration_ms}ms`"></p>
+                                </div>
+                            </template>
+                            <p x-show="selectedCheckResults.length === 0" class="text-sm text-slate-500">Keine Runs verfügbar.</p>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase text-slate-400">Events</p>
+                        <div class="mt-3 space-y-2">
+                            <template x-for="event in selectedCheckEvents" :key="event.id">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs text-slate-500" x-text="event.observed_at"></span>
+                                    <span :class="statusBadgeClass(event.current_status)" class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold" x-text="event.current_status"></span>
+                                </div>
+                            </template>
+                            <p x-show="selectedCheckEvents.length === 0" class="text-sm text-slate-500">Keine Events.</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <script>
+        function healthApp() {
+            return {
+                tabs: [
+                    { key: 'overview', label: 'Overview' },
+                    { key: 'services', label: 'Services' },
+                    { key: 'checks', label: 'Checks' },
+                    { key: 'incidents', label: 'Incidents' },
+                    { key: 'history', label: 'History' }
+                ],
+                activeTab: 'overview',
+                summary: { overall_status: 'UNKNOWN', last_updated: null, summary_cards: [], events: [], incidents: [] },
+                services: [],
+                checks: [],
+                incidents: [],
+                history: { events: [], metrics: { cpu_load: [], memory: [], disk: [] } },
+                historyWindow: 1,
+                serviceFilter: '',
+                checkFilter: '',
+                drawerOpen: false,
+                selectedCheck: null,
+                selectedCheckResults: [],
+                selectedCheckEvents: [],
+                configDraft: '',
+                init() {
+                    this.refreshAll();
+                    this.loadHistory(1);
+                    setInterval(() => this.fetchSummary(), 20000);
+                },
+                get filteredServices() {
+                    return this.services.filter(service => service.name.toLowerCase().includes(this.serviceFilter.toLowerCase()));
+                },
+                get filteredChecks() {
+                    return this.checks.filter(check => check.name.toLowerCase().includes(this.checkFilter.toLowerCase()));
+                },
+                get metricSummaries() {
+                    const summaries = [];
+                    const cpu = this.history.metrics.cpu_load;
+                    const memory = this.history.metrics.memory;
+                    const disk = this.history.metrics.disk;
+                    summaries.push(this.buildMetricSummary('cpu', 'CPU Load', cpu));
+                    summaries.push(this.buildMetricSummary('memory', 'Memory %', memory));
+                    summaries.push(this.buildMetricSummary('disk', 'Disk %', disk));
+                    return summaries;
+                },
+                buildMetricSummary(key, label, series) {
+                    if (!series.length) {
+                        return { key, label, value: '-', percent: 0 };
+                    }
+                    const values = series.map(item => item.value || 0);
+                    const avg = values.reduce((acc, val) => acc + val, 0) / values.length;
+                    const percent = Math.min(100, Math.max(0, avg));
+                    return { key, label, value: avg.toFixed(1), percent };
+                },
+                statusBadgeClass(status) {
+                    switch (status) {
+                        case 'OK':
+                            return 'bg-emerald-100 text-emerald-700';
+                        case 'WARN':
+                            return 'bg-amber-100 text-amber-700';
+                        case 'CRIT':
+                            return 'bg-rose-100 text-rose-700';
+                        default:
+                            return 'bg-slate-100 text-slate-600';
+                    }
+                },
+                async fetchSummary() {
+                    const response = await fetch('/api/health/summary');
+                    if (response.ok) {
+                        this.summary = await response.json();
+                    }
+                },
+                async fetchServices() {
+                    const response = await fetch('/api/health/services');
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.services = data.services || [];
+                    }
+                },
+                async fetchChecks() {
+                    const response = await fetch('/api/health/checks');
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.checks = data.checks || [];
+                    }
+                },
+                async fetchIncidents() {
+                    const response = await fetch('/api/health/incidents');
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.incidents = data.incidents || [];
+                    }
+                },
+                async loadHistory(days) {
+                    this.historyWindow = days;
+                    const response = await fetch(`/api/health/history?days=${days}`);
+                    if (response.ok) {
+                        this.history = await response.json();
+                    }
+                },
+                async refreshAll() {
+                    await Promise.all([
+                        this.fetchSummary(),
+                        this.fetchServices(),
+                        this.fetchChecks(),
+                        this.fetchIncidents()
+                    ]);
+                },
+                async openCheckDetail(checkId) {
+                    const response = await fetch(`/api/health/checks/${checkId}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.selectedCheck = data.check;
+                        this.selectedCheckResults = data.results || [];
+                        this.selectedCheckEvents = data.events || [];
+                        this.configDraft = JSON.stringify(this.selectedCheck.config || {}, null, 2);
+                        this.drawerOpen = true;
+                    }
+                },
+                closeDrawer() {
+                    this.drawerOpen = false;
+                },
+                async toggleCheck(check) {
+                    const response = await fetch(`/api/health/checks/${check.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ enabled: !check.enabled })
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        const idx = this.checks.findIndex(item => item.id === check.id);
+                        if (idx >= 0) {
+                            this.checks[idx] = data.check;
+                        }
+                    }
+                },
+                async runNow() {
+                    await fetch('/api/health/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+                    setTimeout(() => this.refreshAll(), 2000);
+                },
+                async ackIncident(incident) {
+                    await fetch(`/api/health/incidents/${incident.id}/ack`, { method: 'POST' });
+                    await this.fetchIncidents();
+                },
+                async muteIncident(incident) {
+                    await fetch(`/api/health/incidents/${incident.id}/mute`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ minutes: 30 })
+                    });
+                    await this.fetchIncidents();
+                },
+                async createTicket(incident) {
+                    const response = await fetch(`/api/health/incidents/${incident.id}/ticket`, { method: 'POST' });
+                    if (response.ok) {
+                        await this.fetchIncidents();
+                    }
+                },
+                async saveCheckConfig() {
+                    if (!this.selectedCheck) {
+                        return;
+                    }
+                    let parsed;
+                    try {
+                        parsed = JSON.parse(this.configDraft || '{}');
+                    } catch (error) {
+                        alert('Ungültiges JSON.');
+                        return;
+                    }
+                    const response = await fetch(`/api/health/checks/${this.selectedCheck.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ config: parsed })
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.selectedCheck = data.check;
+                        this.configDraft = JSON.stringify(this.selectedCheck.config || {}, null, 2);
+                        await this.fetchChecks();
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script>
+        feather.replace();
+    </script>
+</body>
+</html>
