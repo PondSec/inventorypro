@@ -25,31 +25,63 @@ class DeterministicFallbackPlanner(Planner):
         wants_summary = any(keyword in message for keyword in ("fasse", "zusammenfassung", "zusammenfassen"))
         wants_internal_note = any(keyword in message for keyword in ("interne notiz", "interner kommentar", "internal note", "notiz erstellen"))
         wants_next_steps = any(keyword in message for keyword in ("nächste schritte", "next steps"))
+        wants_resolution = bool(re.search(r"(wie\s+löse|wie\s+loese|lösen|loesen|resolve|fix|beheben)", message))
 
         if ticket_ctx.get("type") == "ticket" and ticket_id:
-            if wants_summary:
-                # Provide a short, safe summary without executing tools.
-                title = ticket_data.get("title") or "Ticket"
-                priority = ticket_data.get("priority") or "unbekannt"
-                status = ticket_data.get("status") or "unbekannt"
-                description = (ticket_data.get("description") or "").strip()
-                description = description[:240] + ("…" if len(description) > 240 else "")
+            title = ticket_data.get("title") or "Ticket"
+            priority = ticket_data.get("priority") or "unbekannt"
+            status = ticket_data.get("status") or "unbekannt"
+            description = (ticket_data.get("description") or "").strip()
+            description = description[:240] + ("…" if len(description) > 240 else "")
+            next_steps = (
+                "1) Problem und Scope bestätigen\n"
+                "2) Priorität/SLA prüfen und zuständige Person festlegen\n"
+                "3) Reproduktion/Logs sammeln\n"
+                "4) Lösungsschritte durchführen und dokumentieren\n"
+                "5) Rückmeldung geben und Ticket abschließen"
+            )
+
+            if wants_summary or wants_resolution:
                 plan["summary"] = (
                     f"Zusammenfassung: {title} (Status: {status}, Priorität: {priority}). "
-                    f"{description or 'Keine Beschreibung vorhanden.'}"
+                    f"{description or 'Keine Beschreibung vorhanden.'}\n\n"
+                    f"Vermutete nächste Schritte:\n{next_steps}"
                 )
 
-            if wants_internal_note or wants_next_steps:
+            if wants_summary or wants_resolution or wants_internal_note or wants_next_steps:
+                plan["steps"].append({
+                    "title": "Ticket laden",
+                    "tool": "ticket.get",
+                    "input": {
+                        "ticket_id": ticket_id,
+                    },
+                })
+
+            if wants_internal_note or wants_next_steps or wants_resolution:
                 plan["summary"] = plan["summary"] or "Nächste Schritte für das Ticket."
                 plan["steps"].append({
                     "title": "Interne Notiz hinzufügen",
-                    "tool": "ticket.comment",
+                    "tool": "ticket.add_comment",
                     "input": {
                         "ticket_id": ticket_id,
-                        "body": "Nächste Schritte: Ticket priorisieren, Verantwortliche:n festlegen, SLA prüfen und Rückmeldung an den/die Anfragende:n geben.",
-                        "internal_note": True,
+                        "body": f"Nächste Schritte:\n{next_steps}",
+                        "internal": True,
                     },
                 })
+        elif ticket_ctx.get("type") in {"tickets", "ticket_list"}:
+            cleaned = re.sub(r"(ticket|#|\d+)", " ", message, flags=re.IGNORECASE).strip()
+            plan["summary"] = (
+                "Ich sehe eine Ticket-Liste. Bitte nenne eine Ticket-ID oder wähle ein Ticket aus. "
+                "Ich kann sonst nach passenden Tickets suchen."
+            )
+            plan["steps"].append({
+                "title": "Ticket-Suche vorschlagen",
+                "tool": "ticket.search",
+                "input": {
+                    "query": cleaned or message.strip(),
+                    "limit": 5,
+                },
+            })
 
         if re.search(r"(urgent|kritisch|sofort|sla)", message):
             plan["summary"] = plan["summary"] or "Dringlichkeits-Alert erstellen"
