@@ -13,6 +13,7 @@
     <script>
         window.inventoryPermissions = {{ permissions | tojson }};
         window.inventoryIsSuperuser = {{ is_superuser | tojson }};
+        window.inventoryInitialSection = {{ (initial_section or 'server') | tojson }};
     </script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -184,6 +185,10 @@
                                 <button type="button" @click="activeSection = 'customize'" :class="activeSection === 'customize' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 text-slate-600'" class="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition">
                                     <i data-feather="sliders" class="h-4 w-4"></i>
                                     Customize
+                                </button>
+                                <button type="button" x-show="canViewTerminal" @click="activeSection = 'terminal'" :class="activeSection === 'terminal' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 text-slate-600'" class="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition">
+                                    <i data-feather="terminal" class="h-4 w-4"></i>
+                                    Terminal
                                 </button>
                             </div>
                         </div>
@@ -448,6 +453,64 @@
 
                                 <div class="mt-6 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-700">
                                     Hinweis: Diese Einstellungen definieren Richtlinien. Die tatsächliche Umsetzung (z. B. Backup-Jobs, Importprozesse, Gateway-Regeln) erfolgt über deinen Infrastruktur-Stack.
+                                </div>
+                            </div>
+
+                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                        <i data-feather="terminal" class="h-5 w-5"></i>
+                                    </span>
+                                    <div>
+                                        <h2 class="text-xl font-semibold text-slate-900">Terminal Modul</h2>
+                                        <p class="text-sm text-slate-500">Schalte die Maintenance Console frei und begrenze den Zugriff.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.terminal.enabled" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Terminal aktivieren</p>
+                                            <p class="text-xs text-slate-500">Standard in Produktion deaktiviert.</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.terminal.requireReauth" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Re-Auth erzwingen</p>
+                                            <p class="text-xs text-slate-500">Passwort & ggf. OTP vor Session-Start.</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.terminal.allowDbWrite" class="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">DB-Write erlauben</p>
+                                            <p class="text-xs text-slate-500">Nur mit terminal.db_write erlaubt.</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.terminal.allowServiceRestart" class="mt-1 h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Service-Restart erlauben</p>
+                                            <p class="text-xs text-slate-500">Nur für definierte Allowlist.</p>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="mt-6 grid gap-6 md:grid-cols-2">
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Terminal IP-Allowlist</label>
+                                        <input type="text" x-model="terminalAllowlistInput" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="10.0.0.0/24, 192.168.0.10">
+                                        <p class="text-xs text-slate-400">Optional zusätzliche Einschränkung nur für Terminal.</p>
+                                    </div>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.terminal.breakGlassMode" class="mt-1 h-4 w-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-rose-700">Break-Glass Mode</p>
+                                            <p class="text-xs text-rose-600">Hebt DB-Schutzregeln auf (hohes Risiko).</p>
+                                        </div>
+                                    </label>
                                 </div>
                             </div>
 
@@ -901,6 +964,273 @@
                         </div>
                     </section>
 
+                    <section x-show="activeSection === 'terminal'" x-transition>
+                        <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                                <div>
+                                    <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Maintenance Console</p>
+                                    <h2 class="text-2xl font-semibold text-slate-900">Terminal</h2>
+                                    <p class="mt-2 text-sm text-slate-500">Gesicherte Recipes für Diagnose, Services, Logs und Datenbankpflege.</p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-3">
+                                    <span :class="terminalStatusClass()" class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold">
+                                        <i data-feather="shield" class="h-3 w-3"></i>
+                                        <span x-text="terminalStatusLabel()"></span>
+                                    </span>
+                                    <button type="button" @click="startTerminalSession" :disabled="terminalBusy || !canUseTerminal || !settings.terminal.enabled || terminalSessionActive()" class="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60">
+                                        <i data-feather="play" class="h-4 w-4"></i>
+                                        Start Session
+                                    </button>
+                                    <button type="button" @click="stopTerminalSession" x-show="terminalSessionActive()" :disabled="terminalBusy" class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                                        <i data-feather="stop-circle" class="h-4 w-4"></i>
+                                        Stop Session
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,2fr)_minmax(0,0.9fr)]">
+                            <div class="space-y-4">
+                                <div class="ui-card p-5">
+                                    <div class="flex items-center justify-between">
+                                        <h3 class="text-sm font-semibold text-slate-900">Tools / Recipes</h3>
+                                        <span class="text-xs text-slate-400">Whitelist</span>
+                                    </div>
+                                    <div class="mt-4 space-y-4 text-sm">
+                                        <div>
+                                            <p class="text-xs uppercase tracking-wide text-slate-400">Diagnostics</p>
+                                            <div class="mt-2 space-y-1">
+                                                <button type="button" @click="terminalTab = 'diagnostics'" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-slate-600 hover:bg-slate-50">Ping / DNS / Port / HTTP</button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs uppercase tracking-wide text-slate-400">Services</p>
+                                            <div class="mt-2 space-y-1">
+                                                <button type="button" @click="terminalTab = 'services'" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-slate-600 hover:bg-slate-50">Status & Restart</button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs uppercase tracking-wide text-slate-400">Logs</p>
+                                            <div class="mt-2 space-y-1">
+                                                <button type="button" @click="terminalTab = 'logs'" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-slate-600 hover:bg-slate-50">Tail & Search</button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs uppercase tracking-wide text-slate-400">Database</p>
+                                            <div class="mt-2 space-y-1">
+                                                <button type="button" @click="terminalTab = 'database'" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-slate-600 hover:bg-slate-50">SQL Console</button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs uppercase tracking-wide text-slate-400">Environment</p>
+                                            <div class="mt-2 space-y-1">
+                                                <button type="button" @click="terminalTab = 'environment'" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-slate-600 hover:bg-slate-50">Runtime Info</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="space-y-4">
+                                <div class="ui-card p-5">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <button type="button" @click="terminalTab = 'diagnostics'" :class="terminalTab === 'diagnostics' ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">Diagnostics</button>
+                                        <button type="button" @click="terminalTab = 'services'" :class="terminalTab === 'services' ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">Services</button>
+                                        <button type="button" @click="terminalTab = 'logs'" :class="terminalTab === 'logs' ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">Logs</button>
+                                        <button type="button" @click="terminalTab = 'database'" :class="terminalTab === 'database' ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">Database</button>
+                                        <button type="button" @click="terminalTab = 'environment'" :class="terminalTab === 'environment' ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">Environment</button>
+                                    </div>
+
+                                    <div class="mt-6 space-y-6">
+                                        <div x-show="terminalTab === 'diagnostics'" class="space-y-4">
+                                            <div class="grid gap-4 md:grid-cols-2">
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">Ping Host</label>
+                                                    <input type="text" x-model="terminalInputs.pingHost" class="input-field" placeholder="example.com">
+                                                    <div class="flex gap-2">
+                                                        <input type="number" min="1" max="4" x-model.number="terminalInputs.pingCount" class="input-field">
+                                                        <button type="button" @click="runTerminalRecipe('ping', { host: terminalInputs.pingHost, count: terminalInputs.pingCount })" class="btn-primary">Ping</button>
+                                                    </div>
+                                                </div>
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">DNS Resolve</label>
+                                                    <input type="text" x-model="terminalInputs.dnsDomain" class="input-field" placeholder="inventory.local">
+                                                    <button type="button" @click="runTerminalRecipe('dns_lookup', { domain: terminalInputs.dnsDomain })" class="btn-secondary">Resolve</button>
+                                                </div>
+                                            </div>
+                                            <div class="grid gap-4 md:grid-cols-2">
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">TCP Port Check</label>
+                                                    <div class="flex gap-2">
+                                                        <input type="text" x-model="terminalInputs.tcpHost" class="input-field" placeholder="host">
+                                                        <input type="number" min="1" max="65535" x-model.number="terminalInputs.tcpPort" class="input-field" placeholder="443">
+                                                    </div>
+                                                    <button type="button" @click="runTerminalRecipe('tcp_check', { host: terminalInputs.tcpHost, port: terminalInputs.tcpPort })" class="btn-secondary">Check</button>
+                                                </div>
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">HTTP Check</label>
+                                                    <div class="flex gap-2">
+                                                        <input type="text" x-model="terminalInputs.httpUrl" class="input-field" placeholder="https://status.example.com">
+                                                        <select x-model="terminalInputs.httpMethod" class="select-field">
+                                                            <option value="GET">GET</option>
+                                                            <option value="HEAD">HEAD</option>
+                                                        </select>
+                                                    </div>
+                                                    <button type="button" @click="runTerminalRecipe('http_check', { url: terminalInputs.httpUrl, method: terminalInputs.httpMethod })" class="btn-secondary">Run</button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div x-show="terminalTab === 'services'" class="space-y-4">
+                                            <div class="space-y-2">
+                                                <label class="text-xs font-semibold text-slate-500">Service</label>
+                                                <select x-model="terminalInputs.serviceName" class="select-field">
+                                                    <template x-for="service in terminalAllowlists.services" :key="service">
+                                                        <option :value="service" x-text="service"></option>
+                                                    </template>
+                                                </select>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button type="button" @click="runTerminalRecipe('services_list', {})" class="btn-secondary">Liste</button>
+                                                <button type="button" @click="runTerminalRecipe('service_status', { service: terminalInputs.serviceName })" class="btn-secondary">Status</button>
+                                                <button type="button" @click="runTerminalRecipe('service_restart', { service: terminalInputs.serviceName, confirm: true })" class="btn-danger" :disabled="!settings.terminal.allowServiceRestart">Restart (Allowlist)</button>
+                                            </div>
+                                        </div>
+
+                                        <div x-show="terminalTab === 'logs'" class="space-y-4">
+                                            <div class="grid gap-4 md:grid-cols-2">
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">Log Source</label>
+                                                    <select x-model="terminalInputs.logSource" class="select-field">
+                                                        <template x-for="source in terminalAllowlists.logs" :key="source">
+                                                            <option :value="source" x-text="source"></option>
+                                                        </template>
+                                                    </select>
+                                                </div>
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">Lines</label>
+                                                    <input type="number" min="10" max="200" x-model.number="terminalInputs.logLines" class="input-field">
+                                                </div>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button type="button" @click="runTerminalRecipe('logs_tail', { source: terminalInputs.logSource, lines: terminalInputs.logLines })" class="btn-secondary">Tail</button>
+                                                <input type="text" x-model="terminalInputs.logKeyword" class="input-field max-w-xs" placeholder="Keyword / Regex">
+                                                <button type="button" @click="runTerminalRecipe('logs_search', { source: terminalInputs.logSource, lines: terminalInputs.logLines, keyword: terminalInputs.logKeyword })" class="btn-secondary">Search</button>
+                                            </div>
+                                        </div>
+
+                                        <div x-show="terminalTab === 'database'" class="space-y-4">
+                                            <div class="space-y-2">
+                                                <label class="text-xs font-semibold text-slate-500">Read-only SQL</label>
+                                                <textarea rows="5" x-model="terminalInputs.sqlQuery" class="input-field font-mono" placeholder="SELECT * FROM assets LIMIT 10;"></textarea>
+                                                <button type="button" @click="runDbQuery" class="btn-primary">Run (Read-only)</button>
+                                            </div>
+                                            <div class="space-y-2">
+                                                <label class="text-xs font-semibold text-rose-600">Write Execute (Danger)</label>
+                                                <textarea rows="4" x-model="terminalInputs.sqlWriteQuery" class="input-field font-mono" placeholder="UPDATE assets SET status='retired' WHERE id=1;"></textarea>
+                                                <input type="text" x-model="terminalInputs.sqlConfirm" class="input-field" placeholder="Type EXECUTE to confirm">
+                                                <button type="button" @click="runDbExecute" class="btn-danger" :disabled="!canWriteDb || !settings.terminal.allowDbWrite">Write Execute</button>
+                                            </div>
+                                        </div>
+
+                                        <div x-show="terminalTab === 'environment'" class="space-y-4">
+                                            <p class="text-sm text-slate-500">Readonly Runtime-Infos (ohne Secrets).</p>
+                                            <button type="button" @click="runTerminalRecipe('environment_snapshot', {})" class="btn-secondary">Snapshot laden</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-5">
+                                    <div class="flex items-center justify-between">
+                                        <h3 class="text-sm font-semibold text-slate-900">Terminal Output</h3>
+                                        <div class="flex gap-2">
+                                            <button type="button" @click="copyTerminalOutput" class="btn-secondary">Copy</button>
+                                            <button type="button" @click="clearTerminalOutput" class="btn-secondary">Clear</button>
+                                        </div>
+                                    </div>
+                                    <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                        <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Command Console (Recipes only)</label>
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            <input type="text" x-model="terminalCommand" @keydown.enter.prevent="runTerminalCommand" class="flex-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono text-slate-700 focus:border-indigo-500 focus:ring-indigo-500" placeholder="ping example.com 4">
+                                            <button type="button" @click="runTerminalCommand" class="btn-secondary">Run</button>
+                                            <button type="button" @click="showTerminalHelp" class="btn-secondary">Help</button>
+                                        </div>
+                                        <p class="mt-2 text-[11px] text-slate-400">Nur Whitelist-Kommandos. Beispiele: <span class="font-mono">ping example.com 4</span>, <span class="font-mono">dns example.com</span>, <span class="font-mono">tcp host 443</span>, <span class="font-mono">http https://example.com GET</span></p>
+                                    </div>
+                                    <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-900 p-4 text-xs text-slate-100">
+                                        <template x-if="!terminalOutput.length">
+                                            <p class="text-slate-400">Noch keine Ausgabe.</p>
+                                        </template>
+                                        <template x-for="entry in terminalOutput" :key="entry.time + entry.title">
+                                            <div class="mb-4 border-b border-slate-700 pb-3 last:border-none">
+                                                <div class="flex items-center justify-between text-[11px] text-slate-400">
+                                                    <span x-text="entry.time"></span>
+                                                    <span x-text="entry.title"></span>
+                                                </div>
+                                                <pre class="mt-2 whitespace-pre-wrap font-mono text-xs text-slate-100" x-text="entry.output"></pre>
+                                            </div>
+                                        </template>
+                                    </div>
+                                    <p class="mt-2 text-xs text-rose-500" x-show="terminalError" x-text="terminalError"></p>
+                                </div>
+                            </div>
+
+                            <div class="space-y-4">
+                                <div class="ui-card p-5">
+                                    <h3 class="text-sm font-semibold text-slate-900">Session Info</h3>
+                                    <div class="mt-3 space-y-2 text-xs text-slate-500">
+                                        <div class="flex items-center justify-between">
+                                            <span>Status</span>
+                                            <span x-text="terminalSessionActive() ? 'Active' : 'Idle'"></span>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>Expires</span>
+                                            <span x-text="terminalSessionExpiresAt ? new Date(terminalSessionExpiresAt).toLocaleString('de-DE') : '-'"></span>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>Rate Limit</span>
+                                            <span>12 / Min</span>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>Max Output</span>
+                                            <span>200 KB</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-5">
+                                    <h3 class="text-sm font-semibold text-slate-900">Session Security</h3>
+                                    <div class="mt-3 space-y-3 text-xs text-slate-500">
+                                        <p>Re-Auth erforderlich: <strong x-text="settings.terminal.requireReauth ? 'Ja' : 'Nein'"></strong></p>
+                                        <div class="space-y-2">
+                                            <input type="password" x-model="terminalPassword" class="input-field" placeholder="Passwort erneut eingeben">
+                                            <input type="text" x-model="terminalOtp" class="input-field" placeholder="OTP (falls aktiviert)">
+                                        </div>
+                                        <p class="text-[11px] text-slate-400">OTP nur nötig, wenn für dein Konto aktiviert.</p>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-5">
+                                    <h3 class="text-sm font-semibold text-slate-900">Audit & Hinweise</h3>
+                                    <ul class="mt-3 space-y-2 text-xs text-slate-500">
+                                        <li>Alle Aktionen werden audit-logged (User, Zeit, Params, Status).</li>
+                                        <li>Ausgaben werden redacted und bei 200 KB abgeschnitten.</li>
+                                        <li>Keine freien Shell-Kommandos – nur Recipes.</li>
+                                    </ul>
+                                </div>
+
+                                <div class="ui-card p-5">
+                                    <h3 class="text-sm font-semibold text-slate-900">Dev Info Panel</h3>
+                                    <ul class="mt-3 space-y-2 text-xs text-slate-500">
+                                        <li><a href="/health" class="text-indigo-600 hover:underline">Health Module Summary</a></li>
+                                        <li>Environment: <span x-text="settings.server.debug ? 'dev' : 'prod'"></span></li>
+                                        <li>Build: <span x-text="settings.server.port ? `Port ${settings.server.port}` : 'n/a'"></span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
                 </div>
             </main>
         </div>
@@ -910,7 +1240,10 @@
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('serverSettingsApp', () => ({
-                activeSection: 'server',
+                activeSection: window.inventoryInitialSection || 'server',
+                canViewTerminal: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.view'),
+                canUseTerminal: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.use'),
+                canWriteDb: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.db_write'),
                 settings: {
                     server: { host: '0.0.0.0', port: 5000, debug: false },
                     proFeaturesEnabled: false,
@@ -939,11 +1272,20 @@
                         lockoutMinutes: 15,
                         ipWhitelist: [],
                         minPasswordLength: 10
+                    },
+                    terminal: {
+                        enabled: false,
+                        requireReauth: true,
+                        ipAllowlist: [],
+                        allowDbWrite: false,
+                        allowServiceRestart: false,
+                        breakGlassMode: false
                     }
                 },
                 meta: { pendingRestart: false, warnings: [], enforcedCapabilities: {} },
                 originalSettings: null,
                 ipWhitelistInput: '',
+                terminalAllowlistInput: '',
                 customization: window.InventoryCustomization ? window.InventoryCustomization.defaults() : {},
                 customizationHistory: [],
                 presets: [
@@ -999,6 +1341,32 @@
                 successMessage: '',
                 customizeMessage: '',
                 customizeError: '',
+                terminalTab: 'diagnostics',
+                terminalOutput: [],
+                terminalSessionId: null,
+                terminalSessionExpiresAt: null,
+                terminalBusy: false,
+                terminalError: '',
+                terminalCommand: '',
+                terminalPassword: '',
+                terminalOtp: '',
+                terminalAllowlists: { services: [], logs: [] },
+                terminalInputs: {
+                    pingHost: '',
+                    pingCount: 4,
+                    dnsDomain: '',
+                    tcpHost: '',
+                    tcpPort: 443,
+                    httpUrl: '',
+                    httpMethod: 'GET',
+                    serviceName: '',
+                    logSource: '',
+                    logLines: 50,
+                    logKeyword: '',
+                    sqlQuery: '',
+                    sqlWriteQuery: '',
+                    sqlConfirm: ''
+                },
                 contrastWarnings: [],
                 history: [],
                 future: [],
@@ -1006,6 +1374,9 @@
 
                 async init() {
                     await this.fetchSettings();
+                    if (this.activeSection === 'terminal' && !this.canViewTerminal) {
+                        this.activeSection = 'server';
+                    }
                     await this.loadCustomization();
                     await this.fetchCustomizationHistory();
                     this.applyCustomization();
@@ -1034,6 +1405,7 @@
                         this.meta = data.meta;
                         this.originalSettings = JSON.parse(JSON.stringify(this.settings));
                         this.ipWhitelistInput = (this.settings.security.ipWhitelist || []).join(', ');
+                        this.terminalAllowlistInput = (this.settings.terminal.ipAllowlist || []).join(', ');
                     } catch (error) {
                         this.errorMessage = error.message;
                     } finally {
@@ -1084,6 +1456,298 @@
                         .map(item => item.trim())
                         .filter(Boolean);
                     this.settings.security.ipWhitelist = whitelist;
+                    const terminalAllowlist = this.terminalAllowlistInput
+                        .split(',')
+                        .map(item => item.trim())
+                        .filter(Boolean);
+                    this.settings.terminal.ipAllowlist = terminalAllowlist;
+                },
+                terminalStatusLabel() {
+                    return this.settings.terminal.enabled ? 'Enabled' : 'Disabled';
+                },
+                terminalStatusClass() {
+                    return this.settings.terminal.enabled
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-slate-100 text-slate-500';
+                },
+                terminalSessionActive() {
+                    return !!this.terminalSessionId;
+                },
+                formatTerminalTimestamp(value) {
+                    const date = value ? new Date(value) : new Date();
+                    return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                },
+                pushTerminalOutput(entry) {
+                    this.terminalOutput.unshift(entry);
+                },
+                clearTerminalOutput() {
+                    this.terminalOutput = [];
+                },
+                showTerminalHelp() {
+                    this.pushTerminalOutput({
+                        time: this.formatTerminalTimestamp(),
+                        title: 'help',
+                        status: 'ok',
+                        output: [
+                            'Allowed commands:',
+                            'ping <host> [count]',
+                            'dns <domain>',
+                            'tcp <host> <port>',
+                            'http <url> [GET|HEAD]',
+                            'service status <name>',
+                            'service restart <name>',
+                            'logs tail <source> [lines]',
+                            'logs search <source> <keyword> [lines]',
+                            'env',
+                            'db.query <sql>',
+                            'db.exec EXECUTE <sql>'
+                        ].join('\\n')
+                    });
+                },
+                async runTerminalCommand() {
+                    const raw = (this.terminalCommand || '').trim();
+                    if (!raw) return;
+                    if (!this.terminalSessionId) {
+                        this.terminalError = 'Session nicht aktiv.';
+                        return;
+                    }
+                    const parts = raw.split(' ');
+                    const command = parts[0].toLowerCase();
+                    const args = parts.slice(1);
+                    this.terminalCommand = '';
+                    if (command === 'help' || command === '?') {
+                        this.showTerminalHelp();
+                        return;
+                    }
+                    if (command === 'ping') {
+                        await this.runTerminalRecipe('ping', { host: args[0] || '', count: args[1] || 4 });
+                        return;
+                    }
+                    if (command === 'dns') {
+                        await this.runTerminalRecipe('dns_lookup', { domain: args[0] || '' });
+                        return;
+                    }
+                    if (command === 'tcp') {
+                        await this.runTerminalRecipe('tcp_check', { host: args[0] || '', port: args[1] || '' });
+                        return;
+                    }
+                    if (command === 'http') {
+                        await this.runTerminalRecipe('http_check', { url: args[0] || '', method: (args[1] || 'GET').toUpperCase() });
+                        return;
+                    }
+                    if (command === 'service') {
+                        const action = (args[0] || '').toLowerCase();
+                        const name = args[1] || '';
+                        if (action === 'status') {
+                            await this.runTerminalRecipe('service_status', { service: name });
+                            return;
+                        }
+                        if (action === 'restart') {
+                            await this.runTerminalRecipe('service_restart', { service: name, confirm: true });
+                            return;
+                        }
+                    }
+                    if (command === 'logs') {
+                        const action = (args[0] || '').toLowerCase();
+                        const source = args[1] || '';
+                        if (action === 'tail') {
+                            await this.runTerminalRecipe('logs_tail', { source: source, lines: args[2] || 50 });
+                            return;
+                        }
+                        if (action === 'search') {
+                            await this.runTerminalRecipe('logs_search', { source: source, keyword: args[2] || '', lines: args[3] || 100 });
+                            return;
+                        }
+                    }
+                    if (command === 'env') {
+                        await this.runTerminalRecipe('environment_snapshot', {});
+                        return;
+                    }
+                    if (command === 'db.query') {
+                        this.terminalInputs.sqlQuery = raw.replace(/^db\\.query\\s+/i, '');
+                        await this.runDbQuery();
+                        return;
+                    }
+                    if (command === 'db.exec') {
+                        if (args[0] !== 'EXECUTE') {
+                            this.pushTerminalOutput({
+                                time: this.formatTerminalTimestamp(),
+                                title: 'db.exec',
+                                status: 'error',
+                                output: 'Bestätigung fehlt. Verwende: db.exec EXECUTE <sql>'
+                            });
+                            return;
+                        }
+                        this.terminalInputs.sqlWriteQuery = raw.replace(/^db\\.exec\\s+EXECUTE\\s+/i, '');
+                        this.terminalInputs.sqlConfirm = 'EXECUTE';
+                        await this.runDbExecute();
+                        return;
+                    }
+                    this.pushTerminalOutput({
+                        time: this.formatTerminalTimestamp(),
+                        title: 'command',
+                        status: 'error',
+                        output: 'Unbekanntes Kommando. Tippe help für die Liste.'
+                    });
+                },
+                async copyTerminalOutput() {
+                    const text = this.terminalOutput.map(item => `[${item.time}] ${item.title}\n${item.output}`).join('\n\n');
+                    await navigator.clipboard.writeText(text);
+                },
+                async startTerminalSession() {
+                    if (!this.canUseTerminal || this.terminalBusy) return;
+                    this.terminalBusy = true;
+                    this.terminalError = '';
+                    try {
+                        const response = await fetch('/api/terminal/session/start', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                password: this.terminalPassword,
+                                otp: this.terminalOtp
+                            })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Session konnte nicht gestartet werden.');
+                        }
+                        this.terminalSessionId = data.session_id;
+                        this.terminalSessionExpiresAt = data.expires_at;
+                        this.terminalAllowlists = data.allowlists || { services: [], logs: [] };
+                        if (this.terminalAllowlists.services.length) {
+                            this.terminalInputs.serviceName = this.terminalAllowlists.services[0];
+                        }
+                        if (this.terminalAllowlists.logs.length) {
+                            this.terminalInputs.logSource = this.terminalAllowlists.logs[0];
+                        }
+                        this.pushTerminalOutput({
+                            time: this.formatTerminalTimestamp(),
+                            title: 'Session gestartet',
+                            status: 'ok',
+                            output: `Session-ID ${data.session_id}`
+                        });
+                    } catch (error) {
+                        this.terminalError = error.message;
+                    } finally {
+                        this.terminalBusy = false;
+                    }
+                },
+                async stopTerminalSession() {
+                    if (!this.terminalSessionId || this.terminalBusy) return;
+                    this.terminalBusy = true;
+                    try {
+                        const response = await fetch('/api/terminal/session/stop', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ session_id: this.terminalSessionId })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Session konnte nicht beendet werden.');
+                        }
+                        this.pushTerminalOutput({
+                            time: this.formatTerminalTimestamp(),
+                            title: 'Session beendet',
+                            status: 'ok',
+                            output: 'Session wurde geschlossen.'
+                        });
+                        this.terminalSessionId = null;
+                        this.terminalSessionExpiresAt = null;
+                    } catch (error) {
+                        this.terminalError = error.message;
+                    } finally {
+                        this.terminalBusy = false;
+                    }
+                },
+                async runTerminalRecipe(recipeId, params) {
+                    if (!this.terminalSessionId || this.terminalBusy) return;
+                    this.terminalBusy = true;
+                    this.terminalError = '';
+                    try {
+                        const response = await fetch('/api/terminal/run', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                session_id: this.terminalSessionId,
+                                recipe_id: recipeId,
+                                params: params
+                            })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Recipe fehlgeschlagen.');
+                        }
+                        this.pushTerminalOutput({
+                            time: this.formatTerminalTimestamp(),
+                            title: recipeId,
+                            status: data.status,
+                            output: data.output || ''
+                        });
+                    } catch (error) {
+                        this.terminalError = error.message;
+                    } finally {
+                        this.terminalBusy = false;
+                    }
+                },
+                async runDbQuery() {
+                    if (!this.terminalSessionId || this.terminalBusy) return;
+                    this.terminalBusy = true;
+                    this.terminalError = '';
+                    try {
+                        const response = await fetch('/api/terminal/db/query', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                session_id: this.terminalSessionId,
+                                query: this.terminalInputs.sqlQuery
+                            })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Query fehlgeschlagen.');
+                        }
+                        this.pushTerminalOutput({
+                            time: this.formatTerminalTimestamp(),
+                            title: 'DB Query',
+                            status: data.status,
+                            output: data.output || ''
+                        });
+                    } catch (error) {
+                        this.terminalError = error.message;
+                    } finally {
+                        this.terminalBusy = false;
+                    }
+                },
+                async runDbExecute() {
+                    if (!this.terminalSessionId || this.terminalBusy) return;
+                    this.terminalBusy = true;
+                    this.terminalError = '';
+                    try {
+                        const response = await fetch('/api/terminal/db/execute', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                session_id: this.terminalSessionId,
+                                query: this.terminalInputs.sqlWriteQuery,
+                                confirm: this.terminalInputs.sqlConfirm
+                            })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Execute fehlgeschlagen.');
+                        }
+                        this.pushTerminalOutput({
+                            time: this.formatTerminalTimestamp(),
+                            title: 'DB Execute',
+                            status: data.status,
+                            output: data.output || ''
+                        });
+                        this.terminalInputs.sqlConfirm = '';
+                    } catch (error) {
+                        this.terminalError = error.message;
+                    } finally {
+                        this.terminalBusy = false;
+                    }
                 },
 
                 async saveSettings() {

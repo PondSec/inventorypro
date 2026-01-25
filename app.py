@@ -48,6 +48,18 @@ MAX_IMPORT_BYTES = int(os.environ.get("INVENTORY_MAX_IMPORT_BYTES", 50 * 1024 * 
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_REQUESTS = 10
 PRO_ENABLED = True
+APP_START_TIME = time.time()
+TERMINAL_RATE_LIMIT_WINDOW_SECONDS = 60
+TERMINAL_RATE_LIMIT_MAX_REQUESTS = 12
+TERMINAL_MAX_OUTPUT_BYTES = 200 * 1024
+TERMINAL_SESSION_TTL_SECONDS = 15 * 60
+TERMINAL_DEFAULT_TIMEOUT_SECONDS = 8
+TERMINAL_LOG_MAX_LINES = 200
+TERMINAL_LOG_MAX_BYTES = 150 * 1024
+TERMINAL_DB_MAX_ROWS = 100
+TERMINAL_DB_MAX_BYTES = 150 * 1024
+TERMINAL_REAUTH_WINDOW_SECONDS = 10 * 60
+TERMINAL_RATE_LIMIT_CACHE = {}
 PRO_FEATURES = [
     "maintenance_schedule",
     "csv_export",
@@ -112,6 +124,14 @@ DEFAULT_SERVER_SETTINGS = {
         "lockoutMinutes": 15,
         "ipWhitelist": [],
         "minPasswordLength": 10
+    },
+    "terminal": {
+        "enabled": False,
+        "requireReauth": True,
+        "ipAllowlist": [],
+        "allowDbWrite": False,
+        "allowServiceRestart": False,
+        "breakGlassMode": False
     }
 }
 PERMISSIONS = [
@@ -299,6 +319,24 @@ PERMISSIONS = [
         "key": "server_settings.manage",
         "label": "Einstellungen verwalten",
         "description": "Serverkonfigurationen und UI-Anpassungen verwalten.",
+        "group": "Administration"
+    },
+    {
+        "key": "terminal.view",
+        "label": "Terminal anzeigen",
+        "description": "Maintenance Console in den Einstellungen öffnen.",
+        "group": "Administration"
+    },
+    {
+        "key": "terminal.use",
+        "label": "Terminal nutzen",
+        "description": "Diagnose- und Service-Recipes ausführen.",
+        "group": "Administration"
+    },
+    {
+        "key": "terminal.db_write",
+        "label": "DB-Console Write-Modus",
+        "description": "Schreibende Datenbankaktionen in der Terminal-Console ausführen.",
         "group": "Administration"
     },
     {
@@ -721,6 +759,7 @@ def serialize_server_settings(settings_row):
         settings = json.loads(json.dumps(DEFAULT_SERVER_SETTINGS))
     else:
         ip_whitelist, _ = parse_ip_whitelist(settings_row["allowed_ip_ranges"] or "")
+        terminal_allowlist, _ = parse_ip_whitelist(settings_row["terminal_ip_allowlist"] or "")
         settings = {
             "schemaVersion": settings_row["schema_version"] or SETTINGS_SCHEMA_VERSION,
             "server": {
@@ -754,6 +793,14 @@ def serialize_server_settings(settings_row):
                 "lockoutMinutes": settings_row["lockout_minutes"] or DEFAULT_SERVER_SETTINGS["security"]["lockoutMinutes"],
                 "ipWhitelist": ip_whitelist,
                 "minPasswordLength": settings_row["password_min_length"] or DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"]
+            },
+            "terminal": {
+                "enabled": bool(settings_row["terminal_enabled"]),
+                "requireReauth": bool(settings_row["terminal_require_reauth"]),
+                "ipAllowlist": terminal_allowlist,
+                "allowDbWrite": bool(settings_row["terminal_allow_db_write"]),
+                "allowServiceRestart": bool(settings_row["terminal_allow_service_restart"]),
+                "breakGlassMode": bool(settings_row["terminal_break_glass"])
             }
         }
     settings["schemaVersion"] = SETTINGS_SCHEMA_VERSION
@@ -774,6 +821,8 @@ def serialize_server_settings(settings_row):
     }
     if settings["backup"]["encrypt"] and not os.environ.get("BACKUP_ENCRYPTION_KEY"):
         meta["warnings"].append("BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung ist nicht verfügbar.")
+    if settings["terminal"]["enabled"]:
+        meta["warnings"].append("Terminal ist aktiviert. Zugriff nur für Admins und freigegebene IPs erlauben.")
     return settings, meta
 
 def validate_settings_payload(payload, partial=False):
@@ -860,6 +909,11 @@ def validate_settings_payload(payload, partial=False):
     if ip_errors:
         errors["security.ipWhitelist"] = f"Ungültige IP/CIDR: {', '.join(ip_errors)}"
 
+    terminal = merged.get("terminal", {})
+    terminal_allowlist, terminal_errors = parse_ip_whitelist(terminal.get("ipAllowlist", []))
+    if terminal_errors:
+        errors["terminal.ipAllowlist"] = f"Ungültige IP/CIDR: {', '.join(terminal_errors)}"
+
     if errors:
         return None, errors
 
@@ -877,6 +931,12 @@ def validate_settings_payload(payload, partial=False):
     merged["security"]["lockoutMinutes"] = lockout
     merged["security"]["minPasswordLength"] = min_password
     merged["security"]["ipWhitelist"] = ip_whitelist
+    merged["terminal"]["enabled"] = bool(terminal.get("enabled"))
+    merged["terminal"]["requireReauth"] = bool(terminal.get("requireReauth"))
+    merged["terminal"]["ipAllowlist"] = terminal_allowlist
+    merged["terminal"]["allowDbWrite"] = bool(terminal.get("allowDbWrite"))
+    merged["terminal"]["allowServiceRestart"] = bool(terminal.get("allowServiceRestart"))
+    merged["terminal"]["breakGlassMode"] = bool(terminal.get("breakGlassMode"))
     merged["schemaVersion"] = SETTINGS_SCHEMA_VERSION
     return merged, None
 
@@ -908,6 +968,12 @@ def persist_server_settings(db, settings, updated_by):
             allowed_ip_ranges = ?,
             password_min_length = ?,
             enforce_mfa = ?,
+            terminal_enabled = ?,
+            terminal_require_reauth = ?,
+            terminal_ip_allowlist = ?,
+            terminal_allow_db_write = ?,
+            terminal_allow_service_restart = ?,
+            terminal_break_glass = ?,
             schema_version = ?,
             updated_by = ?,
             updated_at = CURRENT_TIMESTAMP
@@ -938,6 +1004,12 @@ def persist_server_settings(db, settings, updated_by):
             ",".join(settings["security"]["ipWhitelist"]),
             settings["security"]["minPasswordLength"],
             1 if settings["security"]["requireMfa"] else 0,
+            1 if settings["terminal"]["enabled"] else 0,
+            1 if settings["terminal"]["requireReauth"] else 0,
+            ",".join(settings["terminal"]["ipAllowlist"]),
+            1 if settings["terminal"]["allowDbWrite"] else 0,
+            1 if settings["terminal"]["allowServiceRestart"] else 0,
+            1 if settings["terminal"]["breakGlassMode"] else 0,
             SETTINGS_SCHEMA_VERSION,
             updated_by
         )
@@ -968,6 +1040,432 @@ def should_rate_limit(key):
     entries.append(now)
     RATE_LIMIT_CACHE[key] = entries
     return False
+
+def should_rate_limit_terminal(user_id):
+    now = time.time()
+    window_start = now - TERMINAL_RATE_LIMIT_WINDOW_SECONDS
+    key = f"terminal:{user_id}"
+    entries = TERMINAL_RATE_LIMIT_CACHE.get(key, [])
+    entries = [timestamp for timestamp in entries if timestamp >= window_start]
+    if len(entries) >= TERMINAL_RATE_LIMIT_MAX_REQUESTS:
+        TERMINAL_RATE_LIMIT_CACHE[key] = entries
+        return True
+    entries.append(now)
+    TERMINAL_RATE_LIMIT_CACHE[key] = entries
+    return False
+
+def get_remote_ip():
+    remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+    return (remote_ip or "").split(",")[0].strip()
+
+def is_ip_allowed(remote_ip, allowlist):
+    if not allowlist:
+        return True
+    for entry in allowlist:
+        try:
+            if "/" in entry:
+                if ipaddress.ip_address(remote_ip) in ipaddress.ip_network(entry, strict=False):
+                    return True
+            else:
+                if remote_ip == entry:
+                    return True
+        except ValueError:
+            continue
+    return False
+
+REDACT_PATTERNS = [
+    re.compile(r"(?i)(password|passphrase|token|secret|api_key|apikey|authorization|bearer|private_key|dsn|connection string)\\s*[:=]\\s*([^\\s,;]+)"),
+    re.compile(r"(?i)(aws_access_key_id|aws_secret_access_key|client_secret)\\s*[:=]\\s*([^\\s,;]+)"),
+    re.compile(r"(?i)(jdbc:[^\\s]+)"),
+]
+
+def redact_text(value):
+    if value is None:
+        return ""
+    text = str(value)
+    for pattern in REDACT_PATTERNS:
+        text = pattern.sub(lambda match: f"{match.group(1)}=[REDACTED]", text)
+    return text
+
+def redact_data(value):
+    if isinstance(value, dict):
+        redacted = {}
+        for key, val in value.items():
+            if str(key).lower() in HEALTH_REDACT_KEYS:
+                redacted[key] = "[REDACTED]"
+            else:
+                redacted[key] = redact_data(val)
+        return redacted
+    if isinstance(value, list):
+        return [redact_data(item) for item in value]
+    if isinstance(value, str):
+        return redact_text(value)
+    return value
+
+def truncate_output(text, max_bytes=TERMINAL_MAX_OUTPUT_BYTES):
+    if text is None:
+        return ""
+    encoded = text.encode("utf-8", errors="ignore")
+    if len(encoded) <= max_bytes:
+        return text
+    truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
+    return f"{truncated}\n...output truncated..."
+
+def log_terminal_audit(db, user_id, session_id, action_type, params, status, duration_ms, output_preview=""):
+    sanitized_params = redact_data(params or {})
+    preview = truncate_output(redact_text(output_preview), max_bytes=2000)
+    db.execute(
+        '''
+        INSERT INTO terminal_audit_logs (user_id, session_id, action_type, params_json, status, duration_ms, output_preview)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''',
+        (
+            user_id,
+            session_id,
+            action_type,
+            json.dumps(sanitized_params),
+            status,
+            duration_ms,
+            preview
+        )
+    )
+    db.commit()
+
+def validate_hostname(value):
+    candidate = (value or "").strip()
+    if not candidate or len(candidate) > 255:
+        return None
+    if re.match(r"^[a-zA-Z0-9.-]+$", candidate) is None:
+        return None
+    if ".." in candidate:
+        return None
+    return candidate
+
+def validate_port(value):
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return None
+    if port < 1 or port > 65535:
+        return None
+    return port
+
+def safe_subprocess(command, timeout=TERMINAL_DEFAULT_TIMEOUT_SECONDS):
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "timeout", "output": "Zeitüberschreitung."}
+    output = (result.stdout or "") + (("\n" + result.stderr) if result.stderr else "")
+    return {"status": "ok" if result.returncode == 0 else "error", "output": output.strip()}
+
+TERMINAL_SERVICE_ALLOWLIST = [
+    "inventorypro",
+    "nginx",
+    "postgresql",
+    "redis",
+    "celery"
+]
+
+TERMINAL_LOG_SOURCES = {
+    "app": str(APP_INSTANCE_PATH / "inventorypro.log"),
+    "nginx_access": "/var/log/nginx/access.log",
+    "nginx_error": "/var/log/nginx/error.log",
+    "system": "/var/log/syslog"
+}
+
+def tail_file_lines(path, max_lines=TERMINAL_LOG_MAX_LINES, max_bytes=TERMINAL_LOG_MAX_BYTES):
+    if not Path(path).exists():
+        return {"status": "error", "output": "Logdatei nicht gefunden."}
+    data = []
+    with open(path, "rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        position = handle.tell()
+        buffer = b""
+        while position > 0 and len(data) < max_lines and len(buffer) < max_bytes:
+            read_size = min(1024, position)
+            position -= read_size
+            handle.seek(position)
+            buffer = handle.read(read_size) + buffer
+            lines = buffer.splitlines()
+            if len(lines) > max_lines:
+                lines = lines[-max_lines:]
+            data = lines
+    output = b"\n".join(data).decode("utf-8", errors="ignore")
+    return {"status": "ok", "output": output}
+
+def filter_log_lines(lines_text, keyword):
+    if not keyword:
+        return lines_text
+    try:
+        regex = re.compile(keyword, re.IGNORECASE)
+        filtered = [line for line in lines_text.splitlines() if regex.search(line)]
+    except re.error:
+        filtered = [line for line in lines_text.splitlines() if keyword.lower() in line.lower()]
+    return "\n".join(filtered)
+
+def db_is_postgres():
+    database_url = os.environ.get("DATABASE_URL") or ""
+    return database_url.startswith("postgres")
+
+def normalize_sql_query(query):
+    cleaned = (query or "").strip()
+    cleaned = cleaned.rstrip(";")
+    statements = [stmt.strip() for stmt in cleaned.split(";") if stmt.strip()]
+    if len(statements) != 1:
+        return None
+    return statements[0]
+
+def is_safe_readonly_query(query):
+    if not query:
+        return False
+    normalized = normalize_sql_query(query)
+    if not normalized:
+        return False
+    token = normalized.split()[0].lower()
+    if token not in {"select", "with", "explain"}:
+        return False
+    if re.search(r"\\b(drop|truncate|alter|grant|revoke|create|attach|detach|pragma)\\b", normalized, re.IGNORECASE):
+        return False
+    return True
+
+def is_dangerous_query(query):
+    if not query:
+        return True
+    normalized = normalize_sql_query(query)
+    if not normalized:
+        return True
+    return bool(re.search(r"\\b(drop|truncate|alter|grant|revoke|create|attach|detach|pragma|vacuum)\\b", normalized, re.IGNORECASE))
+
+def run_ping(params):
+    host = validate_hostname(params.get("host"))
+    try:
+        count = int(params.get("count", 4))
+    except (TypeError, ValueError):
+        count = 4
+    count = min(max(count, 1), 4)
+    if not host:
+        return {"status": "error", "output": "Ungültiger Host."}
+    if not shutil.which("ping"):
+        return {"status": "error", "output": "ping ist nicht verfügbar."}
+    return safe_subprocess(["ping", "-c", str(count), "-W", "2", host], timeout=TERMINAL_DEFAULT_TIMEOUT_SECONDS)
+
+def run_dns_lookup(params):
+    domain = validate_hostname(params.get("domain"))
+    if not domain:
+        return {"status": "error", "output": "Ungültige Domain."}
+    try:
+        infos = socket.getaddrinfo(domain, None)
+    except socket.gaierror:
+        return {"status": "error", "output": "DNS-Auflösung fehlgeschlagen."}
+    addresses = sorted({info[4][0] for info in infos})
+    return {"status": "ok", "output": "\n".join(addresses) if addresses else "Keine Einträge gefunden."}
+
+def run_tcp_check(params):
+    host = validate_hostname(params.get("host"))
+    port = validate_port(params.get("port"))
+    if not host or not port:
+        return {"status": "error", "output": "Host oder Port ist ungültig."}
+    start = time.time()
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            latency = (time.time() - start) * 1000
+            return {"status": "ok", "output": f"Port offen. Latenz: {latency:.0f} ms"}
+    except (socket.timeout, ConnectionError, OSError) as exc:
+        return {"status": "error", "output": f"Verbindung fehlgeschlagen: {exc}"}
+
+def run_http_check(params):
+    url = (params.get("url") or "").strip()
+    method = (params.get("method") or "GET").upper()
+    if method not in {"GET", "HEAD"}:
+        return {"status": "error", "output": "Nur GET oder HEAD erlaubt."}
+    if not url.startswith(("http://", "https://")):
+        return {"status": "error", "output": "URL muss mit http:// oder https:// beginnen."}
+    start = time.time()
+    try:
+        req = urllib.request.Request(url, method=method)
+        with urllib.request.urlopen(req, timeout=TERMINAL_DEFAULT_TIMEOUT_SECONDS) as response:
+            latency = (time.time() - start) * 1000
+            return {
+                "status": "ok",
+                "output": f"HTTP {response.status} in {latency:.0f} ms"
+            }
+    except urllib.error.URLError as exc:
+        return {"status": "error", "output": f"HTTP-Check fehlgeschlagen: {exc}"}
+
+def run_service_list(_params):
+    return {"status": "ok", "output": "\n".join(TERMINAL_SERVICE_ALLOWLIST)}
+
+def run_service_status(params):
+    service = (params.get("service") or "").strip()
+    if service not in TERMINAL_SERVICE_ALLOWLIST:
+        return {"status": "error", "output": "Service nicht erlaubt."}
+    if not shutil.which("systemctl"):
+        return {"status": "error", "output": "systemctl nicht verfügbar."}
+    return safe_subprocess(["systemctl", "is-active", service], timeout=5)
+
+def run_service_restart(params, settings):
+    service = (params.get("service") or "").strip()
+    confirm = bool(params.get("confirm"))
+    if not settings["terminal"]["allowServiceRestart"]:
+        return {"status": "error", "output": "Service-Restarts sind deaktiviert."}
+    if not confirm:
+        return {"status": "error", "output": "Bestätigung erforderlich."}
+    if service not in TERMINAL_SERVICE_ALLOWLIST:
+        return {"status": "error", "output": "Service nicht erlaubt."}
+    if not shutil.which("systemctl"):
+        return {"status": "error", "output": "systemctl nicht verfügbar."}
+    return safe_subprocess(["systemctl", "restart", service], timeout=TERMINAL_DEFAULT_TIMEOUT_SECONDS)
+
+def run_logs_tail(params):
+    source = (params.get("source") or "").strip()
+    lines = min(max(int(params.get("lines", 50)), 1), TERMINAL_LOG_MAX_LINES)
+    path = TERMINAL_LOG_SOURCES.get(source)
+    if not path:
+        return {"status": "error", "output": "Logquelle nicht erlaubt."}
+    return tail_file_lines(path, max_lines=lines)
+
+def run_logs_search(params):
+    source = (params.get("source") or "").strip()
+    keyword = (params.get("keyword") or "").strip()
+    lines = min(max(int(params.get("lines", 100)), 1), TERMINAL_LOG_MAX_LINES)
+    path = TERMINAL_LOG_SOURCES.get(source)
+    if not path:
+        return {"status": "error", "output": "Logquelle nicht erlaubt."}
+    result = tail_file_lines(path, max_lines=lines)
+    if result["status"] != "ok":
+        return result
+    filtered = filter_log_lines(result["output"], keyword)
+    return {"status": "ok", "output": filtered or "Keine Treffer."}
+
+def run_environment_snapshot(_params):
+    db = get_db()
+    start = time.time()
+    db_status = "OK"
+    latency_ms = None
+    try:
+        db.execute("SELECT 1").fetchone()
+        latency_ms = int((time.time() - start) * 1000)
+    except Exception:
+        db_status = "ERROR"
+    disk = shutil.disk_usage(str(APP_INSTANCE_PATH if APP_INSTANCE_PATH.exists() else Path(".")))
+    uptime_seconds = int(time.time() - APP_START_TIME)
+    payload = {
+        "app_version": os.environ.get("APP_VERSION", "unbekannt"),
+        "environment": os.environ.get("FLASK_ENV", "production"),
+        "uptime_seconds": uptime_seconds,
+        "db_status": db_status,
+        "db_latency_ms": latency_ms,
+        "disk_free_gb": round(disk.free / (1024 ** 3), 2),
+        "disk_total_gb": round(disk.total / (1024 ** 3), 2)
+    }
+    formatted = "\n".join(f"{key}: {value}" for key, value in payload.items())
+    return {"status": "ok", "output": formatted, "meta": payload}
+
+TERMINAL_RECIPES = {
+    "ping": {
+        "name": "Ping Host",
+        "category": "diagnostics",
+        "handler": run_ping
+    },
+    "dns_lookup": {
+        "name": "DNS Resolve",
+        "category": "diagnostics",
+        "handler": run_dns_lookup
+    },
+    "tcp_check": {
+        "name": "TCP Port Check",
+        "category": "diagnostics",
+        "handler": run_tcp_check
+    },
+    "http_check": {
+        "name": "HTTP Check",
+        "category": "diagnostics",
+        "handler": run_http_check
+    },
+    "services_list": {
+        "name": "Services",
+        "category": "services",
+        "handler": run_service_list
+    },
+    "service_status": {
+        "name": "Service Status",
+        "category": "services",
+        "handler": run_service_status
+    },
+    "service_restart": {
+        "name": "Service Restart",
+        "category": "services",
+        "handler": run_service_restart
+    },
+    "logs_tail": {
+        "name": "Tail Logs",
+        "category": "logs",
+        "handler": run_logs_tail
+    },
+    "logs_search": {
+        "name": "Search Logs",
+        "category": "logs",
+        "handler": run_logs_search
+    },
+    "environment_snapshot": {
+        "name": "Environment Snapshot",
+        "category": "environment",
+        "handler": run_environment_snapshot
+    }
+}
+
+def get_terminal_session(db, session_id, user_id):
+    if not session_id:
+        return None
+    row = db.execute(
+        '''
+        SELECT * FROM terminal_sessions
+        WHERE id = ? AND user_id = ? AND active = 1
+        ''',
+        (session_id, user_id)
+    ).fetchone()
+    if not row:
+        return None
+    expires_at = row["expires_at"]
+    if expires_at and datetime.fromisoformat(expires_at) < datetime.utcnow():
+        db.execute('UPDATE terminal_sessions SET active = 0 WHERE id = ?', (session_id,))
+        db.commit()
+        return None
+    return row
+
+def create_terminal_session(db, user_id, mode, ip, user_agent):
+    expires_at = datetime.utcnow() + timedelta(seconds=TERMINAL_SESSION_TTL_SECONDS)
+    db.execute(
+        '''
+        INSERT INTO terminal_sessions (user_id, expires_at, mode, ip, user_agent)
+        VALUES (?, ?, ?, ?, ?)
+        ''',
+        (user_id, expires_at.isoformat(), mode, ip, user_agent)
+    )
+    session_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    db.commit()
+    return session_id, expires_at
+
+def touch_terminal_session(db, session_id):
+    db.execute(
+        '''
+        UPDATE terminal_sessions
+        SET last_activity = CURRENT_TIMESTAMP
+        WHERE id = ?
+        ''',
+        (session_id,)
+    )
+    db.commit()
+
+def terminate_terminal_session(db, session_id):
+    db.execute('UPDATE terminal_sessions SET active = 0 WHERE id = ?', (session_id,))
+    db.commit()
 
 def ensure_backup_directory(path_value):
     backup_dir = Path(path_value or DEFAULT_SERVER_SETTINGS["backup"]["directory"])
@@ -2534,6 +3032,12 @@ def init_db():
                 allowed_ip_ranges TEXT,
                 password_min_length INTEGER DEFAULT 10,
                 enforce_mfa INTEGER DEFAULT 0,
+                terminal_enabled INTEGER DEFAULT 0,
+                terminal_require_reauth INTEGER DEFAULT 1,
+                terminal_ip_allowlist TEXT,
+                terminal_allow_db_write INTEGER DEFAULT 0,
+                terminal_allow_service_restart INTEGER DEFAULT 0,
+                terminal_break_glass INTEGER DEFAULT 0,
                 schema_version INTEGER DEFAULT 1,
                 updated_by TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -2556,6 +3060,35 @@ def init_db():
                 backup_size_bytes INTEGER,
                 message TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS terminal_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL,
+                mode TEXT DEFAULT 'maintenance',
+                ip TEXT,
+                user_agent TEXT,
+                last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                active INTEGER DEFAULT 1,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS terminal_audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                session_id INTEGER,
+                action_type TEXT NOT NULL,
+                params_json TEXT,
+                status TEXT NOT NULL,
+                duration_ms INTEGER DEFAULT 0,
+                output_preview TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (session_id) REFERENCES terminal_sessions(id)
             )
         ''')
         c.execute('''
@@ -2700,6 +3233,12 @@ def init_db():
             ("allowed_ip_ranges", "TEXT"),
             ("password_min_length", "INTEGER DEFAULT 10"),
             ("enforce_mfa", "INTEGER DEFAULT 0"),
+            ("terminal_enabled", "INTEGER DEFAULT 0"),
+            ("terminal_require_reauth", "INTEGER DEFAULT 1"),
+            ("terminal_ip_allowlist", "TEXT"),
+            ("terminal_allow_db_write", "INTEGER DEFAULT 0"),
+            ("terminal_allow_service_restart", "INTEGER DEFAULT 0"),
+            ("terminal_break_glass", "INTEGER DEFAULT 0"),
             ("schema_version", "INTEGER DEFAULT 1"),
             ("updated_by", "TEXT"),
         ):
@@ -4865,7 +5404,13 @@ def serialize_server_settings_flat(settings):
             "lockout_minutes": DEFAULT_SERVER_SETTINGS["security"]["lockoutMinutes"],
             "allowed_ip_ranges": "",
             "password_min_length": DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"],
-            "enforce_mfa": DEFAULT_SERVER_SETTINGS["security"]["requireMfa"]
+            "enforce_mfa": DEFAULT_SERVER_SETTINGS["security"]["requireMfa"],
+            "terminal_enabled": DEFAULT_SERVER_SETTINGS["terminal"]["enabled"],
+            "terminal_require_reauth": DEFAULT_SERVER_SETTINGS["terminal"]["requireReauth"],
+            "terminal_ip_allowlist": "",
+            "terminal_allow_db_write": DEFAULT_SERVER_SETTINGS["terminal"]["allowDbWrite"],
+            "terminal_allow_service_restart": DEFAULT_SERVER_SETTINGS["terminal"]["allowServiceRestart"],
+            "terminal_break_glass": DEFAULT_SERVER_SETTINGS["terminal"]["breakGlassMode"]
         }
     return {
         "host": settings["host"] or DEFAULT_SERVER_SETTINGS["server"]["host"],
@@ -4891,7 +5436,13 @@ def serialize_server_settings_flat(settings):
         "lockout_minutes": settings["lockout_minutes"] or DEFAULT_SERVER_SETTINGS["security"]["lockoutMinutes"],
         "allowed_ip_ranges": settings["allowed_ip_ranges"] or "",
         "password_min_length": settings["password_min_length"] or DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"],
-        "enforce_mfa": bool(settings["enforce_mfa"])
+        "enforce_mfa": bool(settings["enforce_mfa"]),
+        "terminal_enabled": bool(settings["terminal_enabled"]),
+        "terminal_require_reauth": bool(settings["terminal_require_reauth"]),
+        "terminal_ip_allowlist": settings["terminal_ip_allowlist"] or "",
+        "terminal_allow_db_write": bool(settings["terminal_allow_db_write"]),
+        "terminal_allow_service_restart": bool(settings["terminal_allow_service_restart"]),
+        "terminal_break_glass": bool(settings["terminal_break_glass"])
     }
 
 def domain_to_base_dn(domain):
@@ -5104,7 +5655,29 @@ def users_page():
 @require_permission('server_settings.manage')
 def server_settings_page():
     access = get_user_access(get_db())
-    return render_template('server_settings.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+    initial_section = request.args.get("section") or "server"
+    return render_template(
+        'server_settings.html',
+        username=session.get('username'),
+        permissions=sorted(access["permissions"]),
+        is_superuser=access["is_superuser"],
+        initial_section=initial_section
+    )
+
+@app.route('/settings/terminal')
+@login_required
+@require_permission('server_settings.manage')
+def terminal_settings_page():
+    access = get_user_access(get_db())
+    if not (access["is_superuser"] or "terminal.view" in access["permissions"]):
+        return ("", 403)
+    return render_template(
+        'server_settings.html',
+        username=session.get('username'),
+        permissions=sorted(access["permissions"]),
+        is_superuser=access["is_superuser"],
+        initial_section="terminal"
+    )
 
 @app.route('/locations')
 @login_required
@@ -9151,6 +9724,290 @@ def stats():
     }
     
     return render_template('stats.html', **context)
+
+@app.route('/api/terminal/session/start', methods=['POST'])
+@login_required
+@require_permission('terminal.use')
+def terminal_session_start():
+    db = get_db()
+    access = get_user_access(db)
+    settings_row = get_server_settings(db)
+    settings, _ = serialize_server_settings(settings_row)
+    terminal_settings = settings["terminal"]
+    if not terminal_settings["enabled"]:
+        return jsonify({"error": "Terminal ist deaktiviert."}), 403
+    remote_ip = get_remote_ip()
+    if not is_ip_allowed(remote_ip, terminal_settings["ipAllowlist"]):
+        return jsonify({"error": "IP nicht erlaubt."}), 403
+    user_id = access["user"]["id"]
+    if should_rate_limit_terminal(user_id):
+        return jsonify({"error": "Rate-Limit erreicht."}), 429
+
+    payload = request.get_json(silent=True) or {}
+    if terminal_settings["requireReauth"]:
+        password = payload.get("password") or ""
+        otp_code = payload.get("otp") or ""
+        user_row = db.execute(
+            "SELECT id, password_hash, otp_secret FROM users WHERE id = ?",
+            (user_id,)
+        ).fetchone()
+        if not password or not user_row or not check_password_hash(user_row["password_hash"], password):
+            log_terminal_audit(db, user_id, None, "session_start", {"reason": "password_failed"}, "error", 0)
+            return jsonify({"error": "Re-Auth fehlgeschlagen."}), 403
+        if user_row["otp_secret"]:
+            if not otp_code or not pyotp.TOTP(user_row["otp_secret"]).verify(str(otp_code).strip()):
+                log_terminal_audit(db, user_id, None, "session_start", {"reason": "otp_failed"}, "error", 0)
+                return jsonify({"error": "OTP erforderlich."}), 403
+        session["terminal_reauth_at"] = time.time()
+
+    session_id, expires_at = create_terminal_session(
+        db,
+        user_id,
+        "maintenance",
+        remote_ip,
+        request.headers.get("User-Agent", "")
+    )
+    log_terminal_audit(db, user_id, session_id, "session_start", {"ip": remote_ip}, "ok", 0)
+    return jsonify({
+        "session_id": session_id,
+        "expires_at": expires_at.isoformat(),
+        "limits": {
+            "rate_limit_per_minute": TERMINAL_RATE_LIMIT_MAX_REQUESTS,
+            "max_output_bytes": TERMINAL_MAX_OUTPUT_BYTES,
+            "session_ttl_seconds": TERMINAL_SESSION_TTL_SECONDS
+        },
+        "allowlists": {
+            "services": TERMINAL_SERVICE_ALLOWLIST,
+            "logs": list(TERMINAL_LOG_SOURCES.keys())
+        }
+    })
+
+@app.route('/api/terminal/session/stop', methods=['POST'])
+@login_required
+@require_permission('terminal.use')
+def terminal_session_stop():
+    db = get_db()
+    access = get_user_access(db)
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("session_id")
+    user_id = access["user"]["id"]
+    session_row = get_terminal_session(db, session_id, user_id)
+    if not session_row:
+        return jsonify({"error": "Session nicht gefunden."}), 404
+    terminate_terminal_session(db, session_id)
+    log_terminal_audit(db, user_id, session_id, "session_stop", {}, "ok", 0)
+    return jsonify({"status": "stopped"})
+
+@app.route('/api/terminal/run', methods=['POST'])
+@login_required
+@require_permission('terminal.use')
+def terminal_run_recipe():
+    db = get_db()
+    access = get_user_access(db)
+    settings_row = get_server_settings(db)
+    settings, _ = serialize_server_settings(settings_row)
+    terminal_settings = settings["terminal"]
+    if not terminal_settings["enabled"]:
+        return jsonify({"error": "Terminal ist deaktiviert."}), 403
+    remote_ip = get_remote_ip()
+    if not is_ip_allowed(remote_ip, terminal_settings["ipAllowlist"]):
+        return jsonify({"error": "IP nicht erlaubt."}), 403
+    user_id = access["user"]["id"]
+    if should_rate_limit_terminal(user_id):
+        return jsonify({"error": "Rate-Limit erreicht."}), 429
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("session_id")
+    recipe_id = (payload.get("recipe_id") or "").strip()
+    params = payload.get("params") or {}
+    session_row = get_terminal_session(db, session_id, user_id)
+    if not session_row:
+        return jsonify({"error": "Session ungültig oder abgelaufen."}), 403
+    recipe = TERMINAL_RECIPES.get(recipe_id)
+    if not recipe:
+        return jsonify({"error": "Recipe nicht erlaubt."}), 400
+
+    start_time = time.time()
+    try:
+        if recipe_id == "service_restart":
+            result = recipe["handler"](params, settings)
+        else:
+            result = recipe["handler"](params)
+    except Exception as exc:
+        result = {"status": "error", "output": f"Fehler: {exc}"}
+    duration_ms = int((time.time() - start_time) * 1000)
+    output = truncate_output(redact_text(result.get("output", "")))
+    status = result.get("status", "error")
+    touch_terminal_session(db, session_id)
+    log_terminal_audit(db, user_id, session_id, recipe_id, params, status, duration_ms, output)
+    response = {
+        "status": status,
+        "output": output,
+        "duration_ms": duration_ms
+    }
+    if result.get("meta"):
+        response["meta"] = redact_data(result["meta"])
+    return jsonify(response)
+
+@app.route('/api/terminal/audit', methods=['GET'])
+@login_required
+@require_permission('terminal.view')
+def terminal_audit():
+    db = get_db()
+    access = get_user_access(db)
+    user_id = access["user"]["id"]
+    start = request.args.get("from")
+    end = request.args.get("to")
+    params = [user_id]
+    query = '''
+        SELECT id, action_type, params_json, status, duration_ms, output_preview, created_at
+        FROM terminal_audit_logs
+        WHERE user_id = ?
+    '''
+    if start:
+        query += " AND created_at >= ?"
+        params.append(start)
+    if end:
+        query += " AND created_at <= ?"
+        params.append(end)
+    query += " ORDER BY created_at DESC LIMIT 200"
+    rows = db.execute(query, tuple(params)).fetchall()
+    entries = []
+    for row in rows:
+        try:
+            params_json = json.loads(row["params_json"]) if row["params_json"] else {}
+        except json.JSONDecodeError:
+            params_json = {}
+        entries.append({
+            "id": row["id"],
+            "action": row["action_type"],
+            "params": params_json,
+            "status": row["status"],
+            "duration_ms": row["duration_ms"],
+            "preview": row["output_preview"],
+            "created_at": row["created_at"]
+        })
+    return jsonify({"entries": entries})
+
+@app.route('/api/terminal/db/query', methods=['POST'])
+@login_required
+@require_permission('terminal.use')
+def terminal_db_query():
+    db = get_db()
+    access = get_user_access(db)
+    settings_row = get_server_settings(db)
+    settings, _ = serialize_server_settings(settings_row)
+    terminal_settings = settings["terminal"]
+    if not terminal_settings["enabled"]:
+        return jsonify({"error": "Terminal ist deaktiviert."}), 403
+    remote_ip = get_remote_ip()
+    if not is_ip_allowed(remote_ip, terminal_settings["ipAllowlist"]):
+        return jsonify({"error": "IP nicht erlaubt."}), 403
+    user_id = access["user"]["id"]
+    if should_rate_limit_terminal(user_id):
+        return jsonify({"error": "Rate-Limit erreicht."}), 429
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("session_id")
+    query = payload.get("query") or ""
+    session_row = get_terminal_session(db, session_id, user_id)
+    if not session_row:
+        return jsonify({"error": "Session ungültig oder abgelaufen."}), 403
+    if not is_safe_readonly_query(query):
+        return jsonify({"error": "Nur SELECT/EXPLAIN erlaubt."}), 400
+    if db_is_postgres():
+        return jsonify({"error": "DB-Console nur für SQLite verfügbar."}), 400
+
+    start_time = time.time()
+    normalized = normalize_sql_query(query)
+    result_rows = []
+    columns = []
+    status = "ok"
+    try:
+        with sqlite3.connect(DATABASE) as connection:
+            connection.row_factory = sqlite3.Row
+            cursor = connection.execute(normalized)
+            columns = [col[0] for col in (cursor.description or [])]
+            fetched = cursor.fetchmany(TERMINAL_DB_MAX_ROWS + 1)
+            truncated = len(fetched) > TERMINAL_DB_MAX_ROWS
+            if truncated:
+                fetched = fetched[:TERMINAL_DB_MAX_ROWS]
+            for row in fetched:
+                result_rows.append([redact_data(value) for value in row])
+    except Exception as exc:
+        status = "error"
+        columns = []
+        result_rows = []
+        output = f"Fehler: {exc}"
+    duration_ms = int((time.time() - start_time) * 1000)
+    if status == "ok":
+        output = f"{len(result_rows)} Zeilen zurückgegeben."
+    output = truncate_output(redact_text(output), max_bytes=TERMINAL_DB_MAX_BYTES)
+    touch_terminal_session(db, session_id)
+    log_terminal_audit(db, user_id, session_id, "db_query", {"query": query}, status, duration_ms, output)
+    return jsonify({
+        "status": status,
+        "columns": columns,
+        "rows": result_rows,
+        "duration_ms": duration_ms,
+        "output": output
+    })
+
+@app.route('/api/terminal/db/execute', methods=['POST'])
+@login_required
+@require_permission('terminal.db_write')
+def terminal_db_execute():
+    db = get_db()
+    access = get_user_access(db)
+    settings_row = get_server_settings(db)
+    settings, _ = serialize_server_settings(settings_row)
+    terminal_settings = settings["terminal"]
+    if not terminal_settings["enabled"] or not terminal_settings["allowDbWrite"]:
+        return jsonify({"error": "DB-Write ist deaktiviert."}), 403
+    remote_ip = get_remote_ip()
+    if not is_ip_allowed(remote_ip, terminal_settings["ipAllowlist"]):
+        return jsonify({"error": "IP nicht erlaubt."}), 403
+    user_id = access["user"]["id"]
+    if should_rate_limit_terminal(user_id):
+        return jsonify({"error": "Rate-Limit erreicht."}), 429
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("session_id")
+    query = payload.get("query") or ""
+    confirm = (payload.get("confirm") or "").strip().upper()
+    session_row = get_terminal_session(db, session_id, user_id)
+    if not session_row:
+        return jsonify({"error": "Session ungültig oder abgelaufen."}), 403
+    if confirm != "EXECUTE":
+        return jsonify({"error": "Bestätigung EXECUTE erforderlich."}), 400
+    if not normalize_sql_query(query):
+        return jsonify({"error": "Ungültiges SQL."}), 400
+    if is_safe_readonly_query(query):
+        return jsonify({"error": "Read-only Query bitte über /db/query ausführen."}), 400
+    if not terminal_settings["breakGlassMode"] and is_dangerous_query(query):
+        return jsonify({"error": "Query ist blockiert (Break-Glass deaktiviert)."}), 403
+    if db_is_postgres():
+        return jsonify({"error": "DB-Console nur für SQLite verfügbar."}), 400
+
+    start_time = time.time()
+    status = "ok"
+    rows_affected = 0
+    try:
+        with sqlite3.connect(DATABASE) as connection:
+            cursor = connection.execute(normalize_sql_query(query))
+            rows_affected = cursor.rowcount if cursor.rowcount is not None else 0
+            connection.commit()
+        output = f"{rows_affected} Zeilen geändert."
+    except Exception as exc:
+        status = "error"
+        output = f"Fehler: {exc}"
+    duration_ms = int((time.time() - start_time) * 1000)
+    output = truncate_output(redact_text(output), max_bytes=TERMINAL_DB_MAX_BYTES)
+    touch_terminal_session(db, session_id)
+    log_terminal_audit(db, user_id, session_id, "db_execute", {"query": query}, status, duration_ms, output)
+    return jsonify({
+        "status": status,
+        "rows_affected": rows_affected,
+        "duration_ms": duration_ms,
+        "output": output
+    })
 
 @app.route('/api/otp/setup', methods=['POST'])
 @login_required
