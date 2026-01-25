@@ -38,6 +38,7 @@
         <div>
             <h3 class="text-sm font-semibold text-slate-700">Insights</h3>
             <p id="pondsec-ai-insights" class="mt-2 text-sm text-slate-600">Bereit für deine Anfrage.</p>
+            <div id="pondsec-ai-error" class="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 hidden"></div>
         </div>
         <div>
             <h3 class="text-sm font-semibold text-slate-700">Vorgeschlagene Aktionen</h3>
@@ -53,6 +54,7 @@
     const sendBtn = document.getElementById('pondsec-ai-send');
     const statusEl = document.getElementById('pondsec-ai-status');
     const insightsEl = document.getElementById('pondsec-ai-insights');
+    const errorEl = document.getElementById('pondsec-ai-error');
     const actionsEl = document.getElementById('pondsec-ai-actions');
     const contextText = document.getElementById('pondsec-ai-context-text');
     const selectionPanel = document.getElementById('pondsec-ai-selection');
@@ -99,6 +101,8 @@
             return;
         }
         statusEl.textContent = 'Sende...';
+        errorEl.classList.add('hidden');
+        errorEl.textContent = '';
         actionsEl.innerHTML = '';
         try {
             const response = await fetch('/ai/chat', {
@@ -111,15 +115,29 @@
                     ui_context: window.pondsecUiContext || {}
                 })
             });
-            const data = await response.json();
+            let data = null;
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                throw new Error(text || 'Nicht-JSON Antwort erhalten.');
+            }
             if (!response.ok) {
-                throw new Error(data.error || 'Fehler bei der Anfrage');
+                throw new Error(data?.error || 'Fehler bei der Anfrage');
             }
             insightsEl.textContent = data.insights || 'Keine Insights.';
             renderActions(data.proposed_actions || []);
             statusEl.textContent = 'Antwort erhalten.';
         } catch (error) {
-            statusEl.textContent = error.message || 'Fehler';
+            const message = error?.message || 'Fehler';
+            errorEl.textContent = `${message} (LLM crashed; using fallback)`;
+            errorEl.classList.remove('hidden');
+            statusEl.textContent = 'Fehler bei der Anfrage.';
+        } finally {
+            if (statusEl.textContent === 'Sende...') {
+                statusEl.textContent = '';
+            }
         }
     }
 
