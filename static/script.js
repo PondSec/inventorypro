@@ -21,7 +21,7 @@ document.addEventListener('alpine:init', () => {
         createdTo: '',
         specQuery: '',
         sortDropdownOpen: false,
-        filtersOpen: true,
+        filtersOpen: false,
         featureFlags: {
             pro_enabled: false,
             pro_features: [],
