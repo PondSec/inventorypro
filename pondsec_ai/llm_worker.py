@@ -26,13 +26,16 @@ def _max_tokens() -> int:
 def _resolve_model_path() -> Tuple[Optional[str], Optional[str]]:
     model_path = os.environ.get("PONDSEC_AI_LLM_MODEL_PATH")
     model_name = os.environ.get("PONDSEC_AI_LLM_MODEL_NAME")
+    if not model_name:
+        model_name = "mistral-7b-instruct-v0.2.Q4_K_S.gguf"
     if model_path:
         path = Path(model_path).expanduser()
         if path.exists():
             return path.name, str(path.parent)
         return None, None
-    if not model_name:
-        return None, None
+    model_name_path = Path(model_name).expanduser()
+    if model_name_path.parent != Path(".") and model_name_path.exists():
+        return model_name_path.name, str(model_name_path.parent)
     candidate_paths = [
         Path("./models").expanduser() / model_name,
         Path.home() / ".cache" / "gpt4all" / model_name,
@@ -49,6 +52,7 @@ def _load_model():
     model_name, model_dir = _resolve_model_path()
     if not model_name or not model_dir:
         raise RuntimeError("Local LLM model not configured")
+    logger.info("LLM model path resolved to %s", str(Path(model_dir).resolve() / model_name))
     if provider == "gpt4all":
         from gpt4all import GPT4All
 
