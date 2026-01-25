@@ -171,9 +171,14 @@
                             </div>
                         </div>
                         <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2">
-                            <p class="text-xs font-semibold text-slate-500">Local LLM</p>
-                            <p class="text-sm font-semibold text-slate-800">{{ llm_status }}</p>
-                            <p class="text-xs text-slate-500">Model wird lokal geladen, keine Cloud-Keys.</p>
+                            <p class="text-xs font-semibold text-slate-500">LLM Provider</p>
+                            <p class="text-sm font-semibold text-slate-800">{{ llm_settings.provider }}</p>
+                            <p class="text-xs text-slate-500">Ollama URL: {{ llm_settings.url }}</p>
+                            <p class="text-xs text-slate-500">Ollama Model: {{ llm_settings.model }}</p>
+                            <p class="text-xs text-slate-500">Timeout: {{ llm_settings.timeout }}s</p>
+                            <p class="text-xs text-slate-500">Max Tokens: {{ llm_settings.max_tokens }}</p>
+                            <p class="text-xs font-semibold text-slate-700">Ollama: {{ 'reachable' if ollama_reachable else 'unreachable' }}</p>
+                            <p class="text-xs text-slate-500">{{ llm_status }}</p>
                         </div>
                     </div>
                 </section>

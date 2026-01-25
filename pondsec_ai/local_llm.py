@@ -13,6 +13,8 @@ import threading
 import uuid
 from typing import Deque, Optional, Tuple
 
+from .ollama_client import ping_ollama
+
 logger = logging.getLogger(__name__)
 
 
@@ -145,21 +147,21 @@ class LocalLLM:
 
     @staticmethod
     def _provider_name() -> str:
-        return os.environ.get("PONDSEC_AI_LLM_PROVIDER", "gpt4all").strip().lower()
+        return os.environ.get("PONDSEC_AI_LLM_PROVIDER", "ollama").strip().lower()
 
     @staticmethod
     def _max_tokens() -> int:
         try:
-            return int(os.environ.get("PONDSEC_AI_LLM_MAX_TOKENS", "128"))
+            return int(os.environ.get("PONDSEC_AI_LLM_MAX_TOKENS", "256"))
         except ValueError:
-            return 128
+            return 256
 
     @staticmethod
     def _timeout_seconds() -> float:
         try:
-            return float(os.environ.get("PONDSEC_AI_LLM_TIMEOUT_SECONDS", "120"))
+            return float(os.environ.get("PONDSEC_AI_LLM_TIMEOUT_SECONDS", "30"))
         except ValueError:
-            return 120.0
+            return 30.0
 
     @staticmethod
     def _resolve_model_path() -> Tuple[Optional[str], Optional[str]]:
@@ -208,7 +210,7 @@ class LocalLLM:
     def status(cls) -> str:
         provider = cls._provider_name()
         if provider == "ollama":
-            return "Remote LLM: ready (ollama)"
+            return "Ollama: reachable" if ping_ollama() else "Ollama: unreachable"
         if provider == "auto":
             return "Auto LLM: local/ollama fallback"
         model_name, model_dir = cls._resolve_model_path()

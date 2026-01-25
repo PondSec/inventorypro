@@ -1,6 +1,7 @@
 flask
 flask-cors
 werkzeug
+requests
 pyotp
 qrcode
 pillow
