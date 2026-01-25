@@ -5,5 +5,3 @@ pyotp
 qrcode
 pillow
 ldap3
-apscheduler
-cryptography
