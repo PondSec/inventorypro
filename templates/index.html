@@ -89,6 +89,14 @@
                             </span>
                         </a>
                         {% endif %}
+                        {% if 'ai.use' in permissions or 'ai.manage' in permissions %}
+                        <a href="/ai/activity" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="message-circle" class="w-4 h-4"></i></span>
+                                PondSec AI
+                            </span>
+                        </a>
+                        {% endif %}
                     </div>
                 </div>
 
@@ -254,6 +262,7 @@
                         <i data-feather="plus" class="w-4 h-4"></i>
                         <span>Neues Gerät</span>
                     </button>
+                    {% include 'pondsec_ai_button.html' %}
                     <div class="relative" x-data="{ open: false }">
                         <button @click="open = !open" data-testid="dashboard-action-menu-toggle" class="icon-button inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50" aria-label="Weitere Aktionen">
                             <i data-feather="more-horizontal" class="w-4 h-4"></i>
@@ -395,6 +404,32 @@
                                 <div class="flex flex-wrap items-center gap-2">
                                     <button type="button" @click="resetDeviceFilters()" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">Filter zurücksetzen</button>
                                 </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="grid gap-6 lg:grid-cols-2">
+                        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">PondSec AI</p>
+                                    <h3 class="text-lg font-semibold text-slate-900">PondSec AI Alerts</h3>
+                                </div>
+                                <a href="/ai/alerts" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">Alle ansehen</a>
+                            </div>
+                            <div id="pondsec-ai-alerts" class="mt-4 space-y-3 text-sm text-slate-600">
+                                <p class="text-sm text-slate-500">Lade Alerts...</p>
+                            </div>
+                        </div>
+                        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">PondSec AI</p>
+                                    <h3 class="text-lg font-semibold text-slate-900">Recent Agent Activity</h3>
+                                </div>
+                                <a href="/ai/activity" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">Alle ansehen</a>
+                            </div>
+                            <div id="pondsec-ai-activity" class="mt-4 space-y-3 text-sm text-slate-600">
+                                <p class="text-sm text-slate-500">Lade Aktivität...</p>
                             </div>
                         </div>
                     </section>
@@ -1457,8 +1492,58 @@
             }
         }
     </script>
+    <script>
+        async function loadPondSecWidgets() {
+            const alertsEl = document.getElementById('pondsec-ai-alerts');
+            const activityEl = document.getElementById('pondsec-ai-activity');
+            try {
+                const [alertsResp, activityResp] = await Promise.all([
+                    fetch('/ai/alerts?format=json', { credentials: 'same-origin' }),
+                    fetch('/ai/activity?format=json', { credentials: 'same-origin' })
+                ]);
+                const alerts = alertsResp.ok ? await alertsResp.json() : [];
+                const activities = activityResp.ok ? await activityResp.json() : [];
+                if (alertsEl) {
+                    alertsEl.innerHTML = '';
+                    if (!alerts.length) {
+                        alertsEl.innerHTML = '<p class="text-sm text-slate-500">Keine offenen Alerts.</p>';
+                    } else {
+                        alerts.slice(0, 4).forEach(alert => {
+                            const item = document.createElement('div');
+                            item.className = 'rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3';
+                            item.innerHTML = `<p class=\"text-sm font-semibold text-slate-800\">${alert.title}</p><p class=\"text-xs text-slate-500\">${alert.created_at}</p>`;
+                            alertsEl.appendChild(item);
+                        });
+                    }
+                }
+                if (activityEl) {
+                    activityEl.innerHTML = '';
+                    if (!activities.length) {
+                        activityEl.innerHTML = '<p class="text-sm text-slate-500">Noch keine Aktionen.</p>';
+                    } else {
+                        activities.slice(0, 4).forEach(action => {
+                            const item = document.createElement('div');
+                            item.className = 'rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3';
+                            item.innerHTML = `<p class=\"text-sm font-semibold text-slate-800\">${action.summary_text || 'Aktion'}</p><p class=\"text-xs text-slate-500\">${action.created_at} • ${action.status}</p>`;
+                            activityEl.appendChild(item);
+                        });
+                    }
+                }
+            } catch (error) {
+                if (alertsEl) {
+                    alertsEl.innerHTML = '<p class="text-sm text-slate-500">Alerts konnten nicht geladen werden.</p>';
+                }
+                if (activityEl) {
+                    activityEl.innerHTML = '<p class="text-sm text-slate-500">Aktivität konnte nicht geladen werden.</p>';
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadPondSecWidgets);
+    </script>
     <script src="/static/script.js"></script>
     <script src="/static/ui.js"></script>
     <script src="/static/theme.js"></script>
+    {% include 'pondsec_ai_drawer.html' %}
 </body>
 </html>
