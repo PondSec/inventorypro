@@ -188,6 +188,8 @@ class LocalLLM:
     @classmethod
     def is_available(cls) -> bool:
         provider = cls._provider_name()
+        if provider in {"ollama", "auto"}:
+            return True
         model_name, model_dir = cls._resolve_model_path()
         if not model_name or not model_dir:
             return False
@@ -205,6 +207,10 @@ class LocalLLM:
     @classmethod
     def status(cls) -> str:
         provider = cls._provider_name()
+        if provider == "ollama":
+            return "Remote LLM: ready (ollama)"
+        if provider == "auto":
+            return "Auto LLM: local/ollama fallback"
         model_name, model_dir = cls._resolve_model_path()
         if not model_name or not model_dir:
             return "Local LLM: missing model"
