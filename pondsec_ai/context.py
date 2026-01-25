@@ -1,4 +1,5 @@
 """Shared app context references for PondSec AI."""
+import re
 
 get_db = None
 get_user_access = None
@@ -9,6 +10,22 @@ login_required = None
 require_permission = None
 require_permissions = None
 app = None
+
+
+def parse_entity_refs(message):
+    if not message:
+        return {}
+    patterns = {
+        "ticket_id": r"\b(?:ticket|Ticket)\s*#?\s*(\d+)\b",
+        "asset_id": r"\b(?:asset|gerät|geraet|device)\s*#?\s*(\d+)\b",
+        "kb_id": r"\b(?:kb|knowledge\s*base|wissensbasis)\s*#?\s*(\d+)\b",
+    }
+    refs = {}
+    for key, pattern in patterns.items():
+        match = re.search(pattern, message)
+        if match:
+            refs[key] = int(match.group(1))
+    return refs
 
 
 def init(

@@ -5,6 +5,37 @@ from .. import context
 from ..registry import agent_tool
 
 
+def _create_ticket_comment(ctx, tool_input, *, internal_flag):
+    db = context.get_db()
+    access = ctx.get("access") or context.get_user_access(db)
+    ticket_id = int(tool_input.get("ticket_id"))
+    body = (tool_input.get("body") or "").strip()
+    if not body:
+        return {"error": "body_required"}
+    ticket = db.execute('SELECT * FROM tickets WHERE id = ?', (ticket_id,)).fetchone()
+    if not ticket:
+        return {"error": "not_found"}
+    if not context.ensure_ticket_access(dict(ticket), access):
+        return {"error": "forbidden"}
+    can_comment = access["is_superuser"] or "tickets.comment" in access["permissions"]
+    can_comment_own = "tickets.comment_own" in access["permissions"]
+    if not can_comment and not (can_comment_own and ticket["created_by"] == ctx.get("user", {}).get("username")):
+        return {"error": "forbidden"}
+    allow_internal = access["is_superuser"] or "tickets.comment_internal" in access["permissions"]
+    is_internal = 1 if allow_internal and internal_flag else 0
+    db.execute(
+        '''
+        INSERT INTO ticket_comments (ticket_id, author, body, is_internal)
+        VALUES (?, ?, ?, ?)
+        ''',
+        (ticket_id, ctx.get("user", {}).get("username"), body, is_internal),
+    )
+    db.execute('UPDATE tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (ticket_id,))
+    context.log_activity(db, "comment", "ticket", ticket_id)
+    db.commit()
+    return {"status": "created", "ticket_id": ticket_id}
+
+
 @agent_tool(
     "ticket.search",
     schema={"query": "str", "limit": "int"},
@@ -59,34 +90,18 @@ def ticket_get(ctx, tool_input):
     is_write=True,
 )
 def ticket_comment(ctx, tool_input):
-    db = context.get_db()
-    access = ctx.get("access") or context.get_user_access(db)
-    ticket_id = int(tool_input.get("ticket_id"))
-    body = (tool_input.get("body") or "").strip()
-    if not body:
-        return {"error": "body_required"}
-    ticket = db.execute('SELECT * FROM tickets WHERE id = ?', (ticket_id,)).fetchone()
-    if not ticket:
-        return {"error": "not_found"}
-    if not context.ensure_ticket_access(dict(ticket), access):
-        return {"error": "forbidden"}
-    can_comment = access["is_superuser"] or "tickets.comment" in access["permissions"]
-    can_comment_own = "tickets.comment_own" in access["permissions"]
-    if not can_comment and not (can_comment_own and ticket["created_by"] == ctx.get("user", {}).get("username")):
-        return {"error": "forbidden"}
-    allow_internal = access["is_superuser"] or "tickets.comment_internal" in access["permissions"]
-    is_internal = 1 if allow_internal and tool_input.get("internal_note") else 0
-    db.execute(
-        '''
-        INSERT INTO ticket_comments (ticket_id, author, body, is_internal)
-        VALUES (?, ?, ?, ?)
-        ''',
-        (ticket_id, ctx.get("user", {}).get("username"), body, is_internal),
-    )
-    db.execute('UPDATE tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (ticket_id,))
-    context.log_activity(db, "comment", "ticket", ticket_id)
-    db.commit()
-    return {"status": "created", "ticket_id": ticket_id}
+    return _create_ticket_comment(ctx, tool_input, internal_flag=bool(tool_input.get("internal_note")))
+
+
+@agent_tool(
+    "ticket.add_comment",
+    schema={"ticket_id": "int", "body": "str", "internal": "bool"},
+    required=["ticket_id", "body"],
+    requires_perm="tickets.comment",
+    is_write=True,
+)
+def ticket_add_comment(ctx, tool_input):
+    return _create_ticket_comment(ctx, tool_input, internal_flag=bool(tool_input.get("internal")))
 
 
 @agent_tool(
