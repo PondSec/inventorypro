@@ -193,6 +193,13 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="mb-6 flex flex-wrap items-center gap-3" x-show="pendingRestart || needsRestartLocally()">
+                            <span class="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                                <i data-feather="alert-triangle" class="h-3 w-3"></i>
+                                Neustart erforderlich
+                            </span>
+                            <span class="text-xs text-amber-700">Host/Port/Debug-Änderungen werden nach einem Neustart aktiv.</span>
+                        </div>
 
                         <form @submit.prevent="saveSettings" class="space-y-6">
                             <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
@@ -211,11 +218,13 @@
                                         <label class="text-sm font-semibold text-slate-700">Host</label>
                                         <input type="text" x-model="settings.host" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="0.0.0.0">
                                         <p class="text-xs text-slate-400">IP-Adresse oder Hostname für den Flask-Server.</p>
+                                        <p class="text-xs text-rose-500" x-show="validationErrors.host" x-text="validationErrors.host"></p>
                                     </div>
                                     <div class="space-y-2">
                                         <label class="text-sm font-semibold text-slate-700">Port</label>
                                         <input type="number" min="1" max="65535" x-model.number="settings.port" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="5000">
                                         <p class="text-xs text-slate-400">Port, unter dem der Server erreichbar sein soll.</p>
+                                        <p class="text-xs text-rose-500" x-show="validationErrors.port" x-text="validationErrors.port"></p>
                                     </div>
                                 </div>
 
@@ -269,10 +278,7 @@
                                     <div class="space-y-2">
                                         <label class="text-sm font-semibold text-slate-700">Rhythmus</label>
                                         <select x-model="settings.backup_schedule" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                            <option value="hourly">Stündlich</option>
                                             <option value="daily">Täglich</option>
-                                            <option value="weekly">Wöchentlich</option>
-                                            <option value="monthly">Monatlich</option>
                                             <option value="custom">Benutzerdefiniert</option>
                                         </select>
                                         <p class="text-xs text-slate-400">Nutze „Benutzerdefiniert“ für externe Scheduler.</p>
@@ -281,11 +287,13 @@
                                         <label class="text-sm font-semibold text-slate-700">Backup-Zeit</label>
                                         <input type="time" x-model="settings.backup_time" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                         <p class="text-xs text-slate-400">24h-Format (z. B. 02:00).</p>
+                                        <p class="text-xs text-rose-500" x-show="validationErrors.backup_time" x-text="validationErrors.backup_time"></p>
                                     </div>
                                     <div class="space-y-2">
                                         <label class="text-sm font-semibold text-slate-700">Aufbewahrung (Tage)</label>
                                         <input type="number" min="1" max="3650" x-model.number="settings.backup_retention_days" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                         <p class="text-xs text-slate-400">Wie lange Backups behalten werden.</p>
+                                        <p class="text-xs text-rose-500" x-show="validationErrors.backup_retention_days" x-text="validationErrors.backup_retention_days"></p>
                                     </div>
                                 </div>
 
@@ -299,6 +307,7 @@
                                         <label class="text-sm font-semibold text-slate-700">Benachrichtigungs-E-Mail</label>
                                         <input type="email" x-model="settings.backup_notify_email" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="ops@firma.de">
                                         <p class="text-xs text-slate-400">Optional für Backup-Statusberichte.</p>
+                                        <p class="text-xs text-rose-500" x-show="validationErrors.backup_notify_email" x-text="validationErrors.backup_notify_email"></p>
                                     </div>
                                 </div>
 
@@ -354,6 +363,7 @@
                                         <select x-model="settings.import_mode" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                             <option value="merge">Zusammenführen</option>
                                             <option value="replace">Ersetzen</option>
+                                            <option value="append">Anhängen</option>
                                         </select>
                                         <p class="text-xs text-slate-400">Wie neue Daten in die DB fließen.</p>
                                     </div>
@@ -400,16 +410,19 @@
                                         <label class="text-sm font-semibold text-slate-700">Session-Timeout (Min.)</label>
                                         <input type="number" min="5" max="1440" x-model.number="settings.session_timeout_minutes" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                         <p class="text-xs text-slate-400">Automatisches Logout bei Inaktivität.</p>
+                                        <p class="text-xs text-rose-500" x-show="validationErrors.session_timeout_minutes" x-text="validationErrors.session_timeout_minutes"></p>
                                     </div>
                                     <div class="space-y-2">
                                         <label class="text-sm font-semibold text-slate-700">Max. Fehlversuche</label>
                                         <input type="number" min="1" max="20" x-model.number="settings.max_failed_logins" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                         <p class="text-xs text-slate-400">Nach wie vielen Fehlern gesperrt wird.</p>
+                                        <p class="text-xs text-rose-500" x-show="validationErrors.max_failed_logins" x-text="validationErrors.max_failed_logins"></p>
                                     </div>
                                     <div class="space-y-2">
                                         <label class="text-sm font-semibold text-slate-700">Sperrzeit (Min.)</label>
                                         <input type="number" min="1" max="240" x-model.number="settings.lockout_minutes" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                         <p class="text-xs text-slate-400">Dauer der Sperre nach Fehlversuchen.</p>
+                                        <p class="text-xs text-rose-500" x-show="validationErrors.lockout_minutes" x-text="validationErrors.lockout_minutes"></p>
                                     </div>
                                 </div>
 
@@ -418,12 +431,32 @@
                                         <label class="text-sm font-semibold text-slate-700">IP-Whitelist</label>
                                         <input type="text" x-model="settings.allowed_ip_ranges" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="10.0.0.0/24, 192.168.0.10">
                                         <p class="text-xs text-slate-400">Kommagetrennte CIDR- oder IP-Liste.</p>
+                                        <p class="text-xs text-rose-500" x-show="validationErrors.allowed_ip_ranges" x-text="validationErrors.allowed_ip_ranges"></p>
                                     </div>
                                     <div class="space-y-2">
                                         <label class="text-sm font-semibold text-slate-700">Mindest-Passwortlänge</label>
                                         <input type="number" min="6" max="64" x-model.number="settings.password_min_length" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                         <p class="text-xs text-slate-400">Empfohlen sind 10+ Zeichen.</p>
+                                        <p class="text-xs text-rose-500" x-show="validationErrors.password_min_length" x-text="validationErrors.password_min_length"></p>
                                     </div>
+                                </div>
+
+                                <div class="mt-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-xs text-slate-600">
+                                    <p class="font-semibold text-slate-700">Policy-Status</p>
+                                    <ul class="mt-2 space-y-1">
+                                        <li>
+                                            <span class="font-semibold">HTTPS:</span>
+                                            <span x-text="enforcedCapabilities.forceHttps?.enabled ? 'Enforced (Gateway TLS erforderlich)' : 'Aus'"></span>
+                                        </li>
+                                        <li>
+                                            <span class="font-semibold">MFA:</span>
+                                            <span x-text="enforcedCapabilities.mfa?.enabled ? 'Enforced' : 'Aus'"></span>
+                                        </li>
+                                        <li>
+                                            <span class="font-semibold">IP-Whitelist:</span>
+                                            <span x-text="enforcedCapabilities.ipWhitelist?.enabled ? 'Enforced' : 'Aus'"></span>
+                                        </li>
+                                    </ul>
                                 </div>
 
                                 <div class="mt-6 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-700">
@@ -432,14 +465,17 @@
                             </div>
 
                             <div class="flex flex-wrap items-center gap-3">
-                                <button type="submit" :disabled="saving" class="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70">
+                                <button type="submit" :disabled="saving || !hasChanges() || Object.keys(validationErrors).length" class="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70">
                                     <span x-show="!saving">Einstellungen speichern</span>
                                     <span x-show="saving">Speichert...</span>
                                 </button>
-                                <button type="button" @click="fetchSettings" class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50">
+                                <button type="button" @click="reloadSettings" class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50">
                                     <i data-feather="refresh-cw" class="h-4 w-4"></i>
                                     Neu laden
                                 </button>
+                                <span class="text-xs text-slate-500" x-show="updatedAt">
+                                    Zuletzt aktualisiert: <span x-text="updatedAt"></span>
+                                </span>
                                 <span x-show="errorMessage" class="text-sm text-rose-600" x-text="errorMessage"></span>
                                 <span x-show="successMessage" class="text-sm text-emerald-600" x-text="successMessage"></span>
                             </div>
@@ -894,14 +930,14 @@
                 settings: {
                     host: '0.0.0.0',
                     port: 5000,
-                    debug: true,
-                    pro_enabled: true,
+                    debug: false,
+                    pro_enabled: false,
                     backup_enabled: false,
                     backup_schedule: 'daily',
                     backup_time: '02:00',
                     backup_retention_days: 14,
                     backup_location: 'backups/',
-                    backup_compress: true,
+                    backup_compress: false,
                     backup_encrypt: false,
                     backup_notify_email: '',
                     allow_db_import: false,
@@ -917,6 +953,14 @@
                     password_min_length: 10,
                     enforce_mfa: false
                 },
+                originalSettings: {},
+                enforcedCapabilities: {},
+                schemaVersion: null,
+                updatedAt: null,
+                updatedBy: null,
+                pendingRestart: false,
+                requiresRestartFields: [],
+                validationErrors: {},
                 customization: window.InventoryCustomization ? window.InventoryCustomization.defaults() : {},
                 customizationHistory: [],
                 presets: [
@@ -996,13 +1040,22 @@
                     this.loading = true;
                     this.errorMessage = '';
                     this.successMessage = '';
+                    this.validationErrors = {};
                     try {
-                        const response = await fetch('/api/server-settings');
+                        const response = await fetch('/api/settings/server');
                         if (!response.ok) {
                             const error = await response.json();
                             throw new Error(error.error || 'Konnte Einstellungen nicht laden.');
                         }
-                        this.settings = await response.json();
+                        const data = await response.json();
+                        this.settings = data.settings;
+                        this.originalSettings = JSON.parse(JSON.stringify(data.settings));
+                        this.pendingRestart = data.pendingRestart;
+                        this.requiresRestartFields = data.requiresRestartFields || [];
+                        this.enforcedCapabilities = data.enforcedCapabilities || {};
+                        this.updatedAt = data.updatedAt;
+                        this.updatedBy = data.updatedBy;
+                        this.schemaVersion = data.schemaVersion;
                     } catch (error) {
                         this.errorMessage = error.message;
                     } finally {
@@ -1012,20 +1065,35 @@
                 },
 
                 async saveSettings() {
+                    this.validationErrors = this.validateSettings();
+                    if (Object.keys(this.validationErrors).length) {
+                        this.errorMessage = 'Bitte prüfen Sie die markierten Felder.';
+                        return;
+                    }
                     this.saving = true;
                     this.errorMessage = '';
                     this.successMessage = '';
                     try {
-                        const response = await fetch('/api/server-settings', {
-                            method: 'POST',
+                        const response = await fetch('/api/settings/server', {
+                            method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(this.settings)
                         });
                         const data = await response.json();
                         if (!response.ok) {
+                            if (data.fields) {
+                                this.validationErrors = data.fields;
+                            }
                             throw new Error(data.error || 'Speichern fehlgeschlagen.');
                         }
-                        this.settings = data;
+                        this.settings = data.settings;
+                        this.originalSettings = JSON.parse(JSON.stringify(data.settings));
+                        this.pendingRestart = data.pendingRestart;
+                        this.requiresRestartFields = data.requiresRestartFields || [];
+                        this.enforcedCapabilities = data.enforcedCapabilities || {};
+                        this.updatedAt = data.updatedAt;
+                        this.updatedBy = data.updatedBy;
+                        this.schemaVersion = data.schemaVersion;
                         this.successMessage = 'Einstellungen gespeichert.';
                     } catch (error) {
                         this.errorMessage = error.message;
@@ -1033,6 +1101,60 @@
                         this.saving = false;
                         this.$nextTick(() => feather.replace());
                     }
+                },
+
+                async reloadSettings() {
+                    await this.fetchSettings();
+                },
+
+                hasChanges() {
+                    return JSON.stringify(this.settings) !== JSON.stringify(this.originalSettings);
+                },
+
+                needsRestartLocally() {
+                    return this.requiresRestartFields.some(field => {
+                        const key = field === 'debug' ? 'debug' : field;
+                        return this.settings[key] !== this.originalSettings[key];
+                    });
+                },
+
+                validateSettings() {
+                    const errors = {};
+                    if (!this.settings.host || !this.settings.host.trim()) {
+                        errors.host = 'Host darf nicht leer sein.';
+                    }
+                    if (!Number.isInteger(this.settings.port) || this.settings.port < 1 || this.settings.port > 65535) {
+                        errors.port = 'Port muss zwischen 1 und 65535 liegen.';
+                    }
+                    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(this.settings.backup_time || '')) {
+                        errors.backup_time = 'Backup-Zeit muss HH:MM sein.';
+                    }
+                    if (!Number.isInteger(this.settings.backup_retention_days) || this.settings.backup_retention_days < 1) {
+                        errors.backup_retention_days = 'Retention muss mindestens 1 Tag sein.';
+                    }
+                    if (this.settings.backup_notify_email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(this.settings.backup_notify_email)) {
+                        errors.backup_notify_email = 'E-Mail-Adresse ist ungültig.';
+                    }
+                    if (!Number.isInteger(this.settings.session_timeout_minutes) || this.settings.session_timeout_minutes < 5 || this.settings.session_timeout_minutes > 1440) {
+                        errors.session_timeout_minutes = 'Session-Timeout 5..1440.';
+                    }
+                    if (!Number.isInteger(this.settings.max_failed_logins) || this.settings.max_failed_logins < 1 || this.settings.max_failed_logins > 20) {
+                        errors.max_failed_logins = 'Fehlversuche 1..20.';
+                    }
+                    if (!Number.isInteger(this.settings.lockout_minutes) || this.settings.lockout_minutes < 1 || this.settings.lockout_minutes > 240) {
+                        errors.lockout_minutes = 'Sperrzeit 1..240.';
+                    }
+                    if (!Number.isInteger(this.settings.password_min_length) || this.settings.password_min_length < 6 || this.settings.password_min_length > 64) {
+                        errors.password_min_length = 'Passwortlänge 6..64.';
+                    }
+                    if (this.settings.allowed_ip_ranges) {
+                        const entries = this.settings.allowed_ip_ranges.split(',').map(item => item.trim()).filter(Boolean);
+                        const pattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+                        if (entries.some(entry => !pattern.test(entry))) {
+                            errors.allowed_ip_ranges = 'IP-Whitelist enthält ungültige Einträge.';
+                        }
+                    }
+                    return errors;
                 },
 
                 cloneCustomization() {
