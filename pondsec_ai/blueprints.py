@@ -6,6 +6,7 @@ import json
 from . import context
 from .db import get_agent_settings, update_agent_settings
 from .policy import approve_action, reject_action
+from .local_llm import LocalLLM
 from .registry import TOOL_REGISTRY
 from .runtime import AgentRuntime
 
@@ -105,6 +106,7 @@ def ai_settings():
         permissions=sorted(access["permissions"]),
         is_superuser=access["is_superuser"],
         settings=settings,
+        llm_status=LocalLLM.status(),
         roles=[dict(row) for row in roles],
         tool_permissions=sorted(tool_rows, key=lambda row: row["tool_name"]),
     )

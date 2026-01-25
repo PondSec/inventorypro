@@ -37,7 +37,7 @@
         </div>
         <div>
             <h3 class="text-sm font-semibold text-slate-700">Insights</h3>
-            <p id="pondsec-ai-insights" class="mt-2 text-sm text-slate-600">Noch keine Antwort.</p>
+            <p id="pondsec-ai-insights" class="mt-2 text-sm text-slate-600">Bereit für deine Anfrage.</p>
         </div>
         <div>
             <h3 class="text-sm font-semibold text-slate-700">Vorgeschlagene Aktionen</h3>
@@ -107,7 +107,8 @@
                 credentials: 'same-origin',
                 body: JSON.stringify({
                     message,
-                    context: window.PONDSEC_AI_CONTEXT || { type: 'unknown' }
+                    context: window.PONDSEC_AI_CONTEXT || { type: 'unknown' },
+                    ui_context: window.pondsecUiContext || {}
                 })
             });
             const data = await response.json();
