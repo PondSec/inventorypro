@@ -131,13 +131,13 @@
             statusEl.textContent = 'Antwort erhalten.';
         } catch (error) {
             const message = error?.message || 'Fehler';
-            errorEl.textContent = `${message} (LLM crashed; using fallback)`;
+            errorEl.textContent = `${message} (Antwort fehlgeschlagen, Fallback aktiv).`;
             errorEl.classList.remove('hidden');
             statusEl.textContent = 'Fehler bei der Anfrage.';
+            insightsEl.textContent = 'AI error: Bitte erneut versuchen.';
+            renderActions([]);
         } finally {
-            if (statusEl.textContent === 'Sende...') {
-                statusEl.textContent = '';
-            }
+            statusEl.textContent = '';
         }
     }
 
