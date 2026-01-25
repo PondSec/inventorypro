@@ -9,6 +9,7 @@ from . import context
 from .db import get_agent_settings, update_agent_settings
 from .policy import approve_action, reject_action
 from .local_llm import LocalLLM
+from .ollama_client import ollama_settings, ping_ollama
 from .registry import TOOL_REGISTRY
 from .runtime import AgentRuntime
 
@@ -53,10 +54,10 @@ def ai_chat():
     except Exception as exc:
         logger.exception("pondsec_ai.chat.error %s", exc)
         response = {
-            "insights": f"AI error: {str(exc)[:120]}. Using fallback.",
+            "insights": "Ollama unreachable oder interner Fehler. Fallback aktiviert.",
             "proposed_actions": [],
             "questions": [],
-            "references": [],
+            "references": ui_context.get("entity_refs", []),
         }
     return jsonify(response)
 
@@ -120,6 +121,8 @@ def ai_settings():
         is_superuser=access["is_superuser"],
         settings=settings,
         llm_status=LocalLLM.status(),
+        llm_settings=ollama_settings(),
+        ollama_reachable=ping_ollama(),
         roles=[dict(row) for row in roles],
         tool_permissions=sorted(tool_rows, key=lambda row: row["tool_name"]),
     )

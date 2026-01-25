@@ -82,23 +82,44 @@ Die Anwendung läuft anschließend standardmäßig auf `http://localhost:5000`.
 | `APP_VERSION` | Anzeige in der UI/Diagnostics | `unbekannt` |
 | `FLASK_ENV` | Environment Label | `production` |
 
-### PondSec AI – Local LLM (kostenlos, ohne Cloud)
-PondSec AI kann lokal auf einer CPU mit einem Open-Source-LLM laufen. Es werden **keine** API-Keys benötigt.
+### PondSec AI – Ollama (kostenlos, lokal/remote)
+PondSec AI nutzt Ollama als Standard-LLM. Es werden **keine** API-Keys benötigt.
 
-**Optionen (kostenlos):**
-- `gpt4all` (empfohlen, CPU-first)
-- `llama-cpp-python` (CPU-first, GGUF)
+**Vorbereitung:**
+```bash
+ollama pull mistral
+```
 
-**Setup (Beispiel mit gguf-Datei):**
-1. Lege ein Modell in `./models/` ab, z. B. `./models/mistral-7b-instruct-v0.2.Q4_K_M.gguf`.
-2. Setze die Umgebungsvariablen:
-   ```bash
-   export PONDSEC_AI_LLM_PROVIDER=gpt4all   # oder llamacpp
-   export PONDSEC_AI_LLM_MODEL_NAME=mistral-7b-instruct-v0.2.Q4_K_M.gguf
-   export PONDSEC_AI_LLM_MAX_TOKENS=512
-   ```
+**Option A (Ollama auf dem Host):**
+```bash
+export PONDSEC_AI_LLM_PROVIDER=ollama
+export PONDSEC_AI_OLLAMA_URL=http://host.docker.internal:11434
+export PONDSEC_AI_OLLAMA_MODEL=mistral
+```
 
-**Hinweis:** Das System lädt keine großen Modelle automatisch herunter. Wenn kein Modell gefunden wird, nutzt PondSec AI die deterministische Fallback-Logik.
+**Option B (Ollama als Container via Docker Compose):**
+```yaml
+services:
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+```
+```bash
+export PONDSEC_AI_LLM_PROVIDER=ollama
+export PONDSEC_AI_OLLAMA_URL=http://ollama:11434
+export PONDSEC_AI_OLLAMA_MODEL=mistral
+```
+
+**Zusätzliche Optionen:**
+```bash
+export PONDSEC_AI_LLM_TIMEOUT_SECONDS=30
+export PONDSEC_AI_LLM_MAX_TOKENS=256
+```
+
+**Hinweis:** Wenn Ollama nicht erreichbar ist, nutzt PondSec AI eine deterministische Fallback-Logik.
 
 ### Neue Berechtigungen (Auszug)
 | Permission | Zweck |
