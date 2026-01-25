@@ -1,5 +1,8 @@
 <script>
     window.pondsecUiContext = {{ pondsec_ai_ui_context | tojson }};
+    if (!window.PONDSEC_AI_CONTEXT) {
+        window.PONDSEC_AI_CONTEXT = { type: window.pondsecUiContext?.page || 'global' };
+    }
 </script>
 <div id="pondsec-ai-overlay" class="fixed inset-0 bg-slate-900/40 hidden z-40"></div>
 <aside id="pondsec-ai-drawer" class="fixed right-0 top-0 h-full w-full max-w-lg bg-white shadow-2xl border-l border-slate-200 z-50 transform translate-x-full transition-transform">
@@ -85,7 +88,8 @@
                 credentials: 'same-origin',
                 body: JSON.stringify({
                     message,
-                    ui_context: window.pondsecUiContext || {}
+                    ui_context: window.pondsecUiContext || {},
+                    context: window.PONDSEC_AI_CONTEXT || {}
                 })
             });
             const data = await response.json();

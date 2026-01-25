@@ -36,10 +36,11 @@ def ai_chat():
     payload = request.get_json() or {}
     message = (payload.get("message") or "").strip()
     ui_context = payload.get("ui_context") or {}
+    context_payload = payload.get("context") or {}
     runtime = AgentRuntime(db)
     response = runtime.handle_user_prompt(
         {"access": access, "user": access.get("user"), "roles": access.get("roles")},
-        ui_context,
+        {"ui_context": ui_context, "context": context_payload},
         message,
     )
     return jsonify(response)

@@ -14,35 +14,45 @@ class DeterministicFallbackPlanner(Planner):
     def plan(self, user_message, context):
         message = (user_message or "").lower()
         plan = {
-            "summary": "No actionable request detected.",
+            "summary": "",
             "steps": [],
         }
         if not message.strip():
             return plan
-        if "ticket" in message and "zusammen" in message:
-            ticket_id = context.get("ticket_id")
-            if ticket_id:
-                plan["summary"] = "Ticket zusammenfassen"
-                plan["steps"].append({
-                    "title": "Ticket abrufen",
-                    "tool": "ticket.get",
-                    "input": {"ticket_id": ticket_id},
-                })
-        if "nächste" in message or "next steps" in message:
-            ticket_id = context.get("ticket_id")
-            if ticket_id:
-                plan["summary"] = "Nächste Schritte als internen Kommentar vorschlagen"
+        ticket_ctx = context.get("context") or {}
+        ticket_id = context.get("ticket_id")
+        ticket_data = context.get("ticket") or {}
+        wants_summary = any(keyword in message for keyword in ("fasse", "zusammenfassung", "zusammenfassen"))
+        wants_internal_note = any(keyword in message for keyword in ("interne notiz", "interner kommentar", "internal note", "notiz erstellen"))
+        wants_next_steps = any(keyword in message for keyword in ("nächste schritte", "next steps"))
+
+        if ticket_ctx.get("type") == "ticket" and ticket_id:
+            if wants_summary:
+                # Provide a short, safe summary without executing tools.
+                title = ticket_data.get("title") or "Ticket"
+                priority = ticket_data.get("priority") or "unbekannt"
+                status = ticket_data.get("status") or "unbekannt"
+                description = (ticket_data.get("description") or "").strip()
+                description = description[:240] + ("…" if len(description) > 240 else "")
+                plan["summary"] = (
+                    f"Zusammenfassung: {title} (Status: {status}, Priorität: {priority}). "
+                    f"{description or 'Keine Beschreibung vorhanden.'}"
+                )
+
+            if wants_internal_note or wants_next_steps:
+                plan["summary"] = plan["summary"] or "Nächste Schritte für das Ticket."
                 plan["steps"].append({
                     "title": "Interne Notiz hinzufügen",
                     "tool": "ticket.comment",
                     "input": {
                         "ticket_id": ticket_id,
-                        "body": "Vorschlag: Bitte priorisieren, zuständigen Owner bestimmen und SLA prüfen.",
+                        "body": "Nächste Schritte: Ticket priorisieren, Verantwortliche:n festlegen, SLA prüfen und Rückmeldung an den/die Anfragende:n geben.",
                         "internal_note": True,
                     },
                 })
+
         if re.search(r"(urgent|kritisch|sofort|sla)", message):
-            plan["summary"] = "Dringlichkeits-Alert erstellen"
+            plan["summary"] = plan["summary"] or "Dringlichkeits-Alert erstellen"
             plan["steps"].append({
                 "title": "Alert erstellen",
                 "tool": "alert.create",
@@ -53,8 +63,6 @@ class DeterministicFallbackPlanner(Planner):
                     "entity_refs": context.get("entity_refs", []),
                 },
             })
-        if not plan["steps"]:
-            plan["summary"] = "Keine passenden Tools gefunden."
         return plan
 
 

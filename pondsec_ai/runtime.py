@@ -48,15 +48,37 @@ class AgentRuntime:
 
     def handle_user_prompt(self, user_ctx, ui_context, message):
         access = user_ctx.get("access") or {}
+        ui_ctx = (ui_context or {}).get("ui_context") or {}
+        entity_ctx = (ui_context or {}).get("context") or {}
         context_payload = {
-            "ui_context": ui_context or {},
-            "entity_refs": ui_context.get("entity_refs", []) if ui_context else [],
-            "ticket_id": ui_context.get("ticket_id") if ui_context else None,
+            "ui_context": ui_ctx,
+            "context": entity_ctx,
+            "entity_refs": ui_ctx.get("entity_refs", []) if ui_ctx else [],
+            "ticket_id": entity_ctx.get("id") if entity_ctx.get("type") == "ticket" else None,
         }
+        if context_payload.get("ticket_id"):
+            ticket = self.db.execute(
+                "SELECT id, title, description, status, priority, requester_name, assignee, due_date FROM tickets WHERE id = ?",
+                (context_payload["ticket_id"],),
+            ).fetchone()
+            if ticket:
+                context_payload["ticket"] = dict(ticket)
         plan = self.planner.plan(message, context_payload)
         plan_steps = plan.get("steps", [])
         summary = plan.get("summary", "")
         proposed_actions = []
+        if not plan_steps and not summary:
+            if entity_ctx.get("type") and not entity_ctx.get("id"):
+                summary = (
+                    "Ich sehe den Kontext, aber es fehlt eine konkrete ID. "
+                    "Bitte öffne einen spezifischen Datensatz (z. B. Ticket oder Asset), "
+                    "damit ich arbeiten kann."
+                )
+            else:
+                summary = (
+                    "Ich sehe aktuell keinen konkreten Datensatz (z. B. Ticket oder Asset), mit dem ich arbeiten kann. "
+                    "Öffne bitte ein Ticket oder Asset und versuche es erneut."
+                )
         if not plan_steps:
             return {
                 "insights": summary,
