@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="de" x-data="serverSettingsApp()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - Servereinstellungen</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>
+        window.inventoryPermissions = {{ permissions | tojson }};
+        window.inventoryIsSuperuser = {{ is_superuser | tojson }};
+    </script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app-body">
+    <div class="app-shell">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
+                <a href="/">
+                    <div class="logo flex items-center space-x-3">
+                        <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg">
+                            <i data-feather="cpu" class="w-5 h-5"></i>
+                        </span>
+                        <div>
+                            <p class="text-lg font-semibold text-slate-900 sidebar-text">Inventory Pro</p>
+                            <p class="text-xs text-slate-500 sidebar-text">Smart Asset Hub</p>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            <nav x-data="{ appsOpen: true }" class="p-4 space-y-4 sidebar-scroll sidebar-primary-links">
+                <div class="rounded-2xl border border-slate-200 bg-white/80 shadow-sm">
+                    <button @click="appsOpen = !appsOpen" class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+                        <span class="flex items-center gap-3">
+                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                <i data-feather="grid" class="h-4 w-4"></i>
+                            </span>
+                            <span>
+                                <span class="block text-sm font-semibold text-slate-800 sidebar-text">Apps</span>
+                                <span class="block text-xs text-slate-400 sidebar-text">Verwaltung & Services</span>
+                            </span>
+                        </span>
+                        <svg :class="{ 'rotate-180': appsOpen }" class="h-4 w-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div x-show="appsOpen" x-transition class="bg-slate-50/80 px-3 py-3 space-y-4">
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Verwaltung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'categories.view' in permissions or 'categories.manage' in permissions %}
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="layers" class="h-4 w-4 text-slate-400"></i>
+                                        Kategorien
+                                    </span>
+                                </a>
+                                <a href="/" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="package" class="h-4 w-4 text-slate-400"></i>
+                                        Assets
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'users.manage' in permissions %}
+                                <a href="/users" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="users" class="h-4 w-4 text-slate-400"></i>
+                                        Benutzer
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'server_settings.manage' in permissions %}
+                                <a href="/settings" class="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="settings" class="h-4 w-4 text-indigo-500"></i>
+                                        Servereinstellungen
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                                <a href="/locations" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="map-pin" class="h-4 w-4 text-slate-400"></i>
+                                        Standorte
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Services</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                                <a href="/tickets" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="life-buoy" class="h-4 w-4 text-slate-400"></i>
+                                        Ticketsystem
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
+                                <a href="/knowledge" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="book-open" class="h-4 w-4 text-slate-400"></i>
+                                        Wissensbasis
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                                <a href="/roadmap" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="git-merge" class="h-4 w-4 text-slate-400"></i>
+                                        Roadmap
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions %}
+                        <div>
+                            <p class="px-2 text-xs uppercase tracking-widest text-slate-400">Auswertung</p>
+                            <div class="mt-2 space-y-1">
+                                {% if 'stats.view' in permissions %}
+                                <a href="/stats" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="bar-chart-2" class="h-4 w-4 text-slate-400"></i>
+                                        Statistiken
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                                <a href="/dependencies" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="share-2" class="h-4 w-4 text-slate-400"></i>
+                                        Dependency-Graph
+                                    </span>
+                                </a>
+                                {% endif %}
+                                {% if 'timemachine.view' in permissions %}
+                                <a href="/time-machine" class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                                    <span class="flex items-center gap-2">
+                                        <i data-feather="clock" class="h-4 w-4 text-slate-400"></i>
+                                        Zeitmaschine
+                                    </span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </nav>
+        </aside>
+
+        <div class="app-main app-main--fixed">
+            <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
+                <div class="flex items-center gap-4">
+                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                        <i data-feather="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Admin</p>
+                        <h1 class="text-2xl font-semibold text-slate-900">Servereinstellungen</h1>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <span class="hidden text-sm text-slate-500 sm:inline">Angemeldet als {{ username }}</span>
+                    <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <span data-theme-icon aria-hidden="true">🌙</span>
+                        <span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
+                    </button>
+                    <button onclick="logout()" class="inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <i data-feather="log-out" class="w-4 h-4"></i>
+                        <span class="sr-only sm:not-sr-only">Abmelden</span>
+                    </button>
+                </div>
+            </header>
+
+            <main class="app-content px-8 pt-[120px] pb-10" x-cloak>
+                <div class="max-w-4xl">
+                    <div class="mb-6 rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4 text-sm text-indigo-700">
+                        <div class="flex items-start gap-3">
+                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm">
+                                <i data-feather="info" class="h-4 w-4"></i>
+                            </span>
+                            <div>
+                                <p class="font-semibold">Hinweis</p>
+                                <p class="text-sm text-indigo-700/90">Änderungen an Host, Port oder Debug-Modus werden erst nach einem Neustart des Servers aktiv.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form @submit.prevent="saveSettings" class="space-y-6">
+                        <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                            <div class="flex items-center gap-3">
+                                <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                    <i data-feather="server" class="h-5 w-5"></i>
+                                </span>
+                                <div>
+                                    <h2 class="text-xl font-semibold text-slate-900">Serverkonfiguration</h2>
+                                    <p class="text-sm text-slate-500">Passe die grundlegenden Runtime-Einstellungen der Anwendung an.</p>
+                                </div>
+                            </div>
+
+                            <div class="mt-6 grid gap-6 md:grid-cols-2">
+                                <div class="space-y-2">
+                                    <label class="text-sm font-semibold text-slate-700">Host</label>
+                                    <input type="text" x-model="settings.host" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="0.0.0.0">
+                                    <p class="text-xs text-slate-400">IP-Adresse oder Hostname für den Flask-Server.</p>
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="text-sm font-semibold text-slate-700">Port</label>
+                                    <input type="number" min="1" max="65535" x-model.number="settings.port" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="5000">
+                                    <p class="text-xs text-slate-400">Port, unter dem der Server erreichbar sein soll.</p>
+                                </div>
+                            </div>
+
+                            <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                    <input type="checkbox" x-model="settings.debug" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                    <div>
+                                        <p class="text-sm font-semibold text-slate-700">Debug-Modus aktivieren</p>
+                                        <p class="text-xs text-slate-500">Aktiviert ausführliche Logs und Fehlerseiten (nur für Entwicklung).</p>
+                                    </div>
+                                </label>
+                                <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                    <input type="checkbox" x-model="settings.pro_enabled" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                    <div>
+                                        <p class="text-sm font-semibold text-slate-700">Pro-Features aktiv</p>
+                                        <p class="text-xs text-slate-500">Steuert, ob erweiterte Module in der UI verfügbar sind.</p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-3">
+                            <button type="submit" :disabled="saving" class="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70">
+                                <span x-show="!saving">Einstellungen speichern</span>
+                                <span x-show="saving">Speichert...</span>
+                            </button>
+                            <button type="button" @click="fetchSettings" class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50">
+                                <i data-feather="refresh-cw" class="h-4 w-4"></i>
+                                Neu laden
+                            </button>
+                            <span x-show="errorMessage" class="text-sm text-rose-600" x-text="errorMessage"></span>
+                            <span x-show="successMessage" class="text-sm text-emerald-600" x-text="successMessage"></span>
+                        </div>
+                    </form>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('serverSettingsApp', () => ({
+                settings: {
+                    host: '0.0.0.0',
+                    port: 5000,
+                    debug: true,
+                    pro_enabled: true
+                },
+                loading: false,
+                saving: false,
+                errorMessage: '',
+                successMessage: '',
+
+                async init() {
+                    await this.fetchSettings();
+                    this.$nextTick(() => feather.replace());
+                },
+
+                async fetchSettings() {
+                    this.loading = true;
+                    this.errorMessage = '';
+                    this.successMessage = '';
+                    try {
+                        const response = await fetch('/api/server-settings');
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Konnte Einstellungen nicht laden.');
+                        }
+                        this.settings = await response.json();
+                    } catch (error) {
+                        this.errorMessage = error.message;
+                    } finally {
+                        this.loading = false;
+                        this.$nextTick(() => feather.replace());
+                    }
+                },
+
+                async saveSettings() {
+                    this.saving = true;
+                    this.errorMessage = '';
+                    this.successMessage = '';
+                    try {
+                        const response = await fetch('/api/server-settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.settings)
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Speichern fehlgeschlagen.');
+                        }
+                        this.settings = data;
+                        this.successMessage = 'Einstellungen gespeichert.';
+                    } catch (error) {
+                        this.errorMessage = error.message;
+                    } finally {
+                        this.saving = false;
+                        this.$nextTick(() => feather.replace());
+                    }
+                }
+            }));
+        });
+
+        async function logout() {
+            try {
+                const response = await fetch('/logout', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (response.ok) {
+                    window.location.href = '/login';
+                } else {
+                    const data = await response.json();
+                    alert('Logout failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Network error: ' + error.message);
+            }
+        }
+    </script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
+</body>
+</html>
