@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, g, redirect, url_for, session, Response
+from flask import Flask, render_template, jsonify, request, g, redirect, url_for, session, Response, send_file
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -45,6 +45,9 @@ APP_INSTANCE_PATH = Path(app.instance_path)
 RUNTIME_CONFIG_PATH = APP_INSTANCE_PATH / "runtime_config.json"
 UPLOADS_DIR = Path(os.environ.get("INVENTORY_UPLOADS_DIR", "uploads"))
 MAX_IMPORT_BYTES = int(os.environ.get("INVENTORY_MAX_IMPORT_BYTES", 50 * 1024 * 1024))
+MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_BYTES))
+ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
+BLOCKED_ATTACHMENT_EXTENSIONS = {".exe", ".js", ".html", ".htm", ".bat", ".sh", ".ps1"}
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_REQUESTS = 10
 PRO_ENABLED = True
@@ -172,6 +175,30 @@ PERMISSIONS = [
         "group": "Inventar"
     },
     {
+        "key": "asset.assign",
+        "label": "Assets zuweisen",
+        "description": "Assets Personen oder Teams zuweisen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "asset.checkout",
+        "label": "Assets ausgeben",
+        "description": "Assets ausgeben und Rückgabedaten pflegen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "asset.checkin",
+        "label": "Assets einchecken",
+        "description": "Assets zurücknehmen und Status aktualisieren.",
+        "group": "Inventar"
+    },
+    {
+        "key": "asset.view_history",
+        "label": "Asset-Historie anzeigen",
+        "description": "Zuweisungsverlauf und Check-out/Check-in Historie einsehen.",
+        "group": "Inventar"
+    },
+    {
         "key": "locations.view",
         "label": "Standorte anzeigen",
         "description": "Standorte und Details einsehen.",
@@ -194,6 +221,24 @@ PERMISSIONS = [
         "label": "Wartungen verwalten",
         "description": "Wartungsaufgaben erstellen und aktualisieren.",
         "group": "Inventar"
+    },
+    {
+        "key": "attachment.upload",
+        "label": "Anhänge hochladen",
+        "description": "Dateien an Assets, Tickets und Wartungen anhängen.",
+        "group": "Dokumente"
+    },
+    {
+        "key": "attachment.download",
+        "label": "Anhänge herunterladen",
+        "description": "Anhänge aus Assets, Tickets und Wartungen herunterladen.",
+        "group": "Dokumente"
+    },
+    {
+        "key": "attachment.delete",
+        "label": "Anhänge löschen",
+        "description": "Anhänge aus Assets, Tickets und Wartungen löschen.",
+        "group": "Dokumente"
     },
     {
         "key": "tickets.view_all",
@@ -628,10 +673,17 @@ DEFAULT_ROLES = [
             "devices.manage",
             "assets.view",
             "assets.manage",
+            "asset.assign",
+            "asset.checkout",
+            "asset.checkin",
+            "asset.view_history",
             "locations.view",
             "locations.manage",
             "maintenance.view",
             "maintenance.manage",
+            "attachment.upload",
+            "attachment.download",
+            "attachment.delete",
             "tickets.view_all",
             "tickets.create",
             "tickets.update",
@@ -2841,6 +2893,26 @@ def init_db():
         ''')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_assignment_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                assigned_to_user_id INTEGER,
+                assigned_to_team_id INTEGER,
+                status TEXT NOT NULL,
+                checked_out_at TEXT,
+                due_at TEXT,
+                checked_in_at TEXT,
+                note TEXT,
+                created_by_user_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (asset_id) REFERENCES assets(id),
+                FOREIGN KEY (assigned_to_user_id) REFERENCES users(id),
+                FOREIGN KEY (assigned_to_team_id) REFERENCES teams(id),
+                FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+            )
+        ''')
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS asset_lifecycle_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 asset_id INTEGER NOT NULL,
@@ -2849,6 +2921,22 @@ def init_db():
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (asset_id) REFERENCES assets(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS attachments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER NOT NULL,
+                original_filename TEXT NOT NULL,
+                stored_filename TEXT NOT NULL,
+                mime_type TEXT,
+                size_bytes INTEGER,
+                uploaded_by_user_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                deleted_at TEXT,
+                FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id)
             )
         ''')
 
@@ -5329,6 +5417,133 @@ def build_asset_summary(db, asset_row, device_rows=None):
     asset['warranty_status'] = warranty_status(asset.get("warranty_end"))
     return asset
 
+def fetch_asset_assignment_history(db, asset_id, limit=20):
+    query = '''
+        SELECT ah.*, u.username as assigned_user, t.name as assigned_team, cu.username as created_by
+        FROM asset_assignment_history ah
+        LEFT JOIN users u ON u.id = ah.assigned_to_user_id
+        LEFT JOIN teams t ON t.id = ah.assigned_to_team_id
+        LEFT JOIN users cu ON cu.id = ah.created_by_user_id
+        WHERE ah.asset_id = ?
+        ORDER BY ah.created_at DESC, ah.id DESC
+    '''
+    params = [asset_id]
+    if limit:
+        query += ' LIMIT ?'
+        params.append(limit)
+    rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+def fetch_current_asset_assignment(db, asset_id):
+    row = db.execute('''
+        SELECT ah.*, u.username as assigned_user, t.name as assigned_team
+        FROM asset_assignment_history ah
+        LEFT JOIN users u ON u.id = ah.assigned_to_user_id
+        LEFT JOIN teams t ON t.id = ah.assigned_to_team_id
+        WHERE ah.asset_id = ?
+        ORDER BY ah.created_at DESC, ah.id DESC
+        LIMIT 1
+    ''', (asset_id,)).fetchone()
+    return dict(row) if row else None
+
+def normalize_attachment_filename(filename):
+    safe_name = secure_filename(filename or "")
+    return safe_name or "attachment"
+
+def is_attachment_extension_allowed(filename):
+    extension = Path(filename).suffix.lower()
+    if extension in BLOCKED_ATTACHMENT_EXTENSIONS:
+        return False
+    return extension in ALLOWED_ATTACHMENT_EXTENSIONS
+
+def build_attachment_storage_path(entity_type, entity_id):
+    target_dir = UPLOADS_DIR / "attachments" / entity_type / str(entity_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    return target_dir
+
+def store_attachment_file(file_storage, entity_type, entity_id):
+    if not file_storage:
+        return None, "Keine Datei hochgeladen."
+    if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
+        return None, "Datei ist zu groß."
+    original_filename = normalize_attachment_filename(file_storage.filename)
+    if not is_attachment_extension_allowed(original_filename):
+        return None, "Dateityp ist nicht erlaubt."
+    extension = Path(original_filename).suffix.lower()
+    stored_filename = f"{secrets.token_hex(16)}{extension}"
+    target_dir = build_attachment_storage_path(entity_type, entity_id)
+    file_path = target_dir / stored_filename
+    file_storage.save(file_path)
+    size_bytes = file_path.stat().st_size
+    if size_bytes > MAX_UPLOAD_BYTES:
+        file_path.unlink(missing_ok=True)
+        return None, "Datei ist zu groß."
+    antivirus_error = validate_import_file(file_path)
+    if antivirus_error:
+        file_path.unlink(missing_ok=True)
+        return None, antivirus_error
+    return {
+        "original_filename": original_filename,
+        "stored_filename": stored_filename,
+        "mime_type": file_storage.mimetype,
+        "size_bytes": size_bytes,
+        "file_path": file_path,
+    }, None
+
+def serialize_attachment(row):
+    entry = dict(row)
+    entry["download_url"] = f"/attachments/{entry['id']}/download"
+    return entry
+
+def resolve_assignment_target(db, user_id, team_id):
+    if user_id and team_id:
+        return None, None, "Bitte nur Benutzer oder Team wählen."
+    if not user_id and not team_id:
+        return None, None, "Zielperson oder Team ist erforderlich."
+    if user_id:
+        user_row = db.execute('SELECT id FROM users WHERE id = ?', (user_id,)).fetchone()
+        if not user_row:
+            return None, None, "Benutzer nicht gefunden."
+    if team_id:
+        team_row = db.execute('SELECT id FROM teams WHERE id = ?', (team_id,)).fetchone()
+        if not team_row:
+            return None, None, "Team nicht gefunden."
+    return user_id, team_id, None
+
+def validate_assignment_transition(current_status, action):
+    if action == "checkin" and current_status != "checked_out":
+        return "Asset ist nicht ausgecheckt."
+    if action in {"assign", "checkout", "unassign"} and current_status == "checked_out":
+        return "Asset ist ausgecheckt. Bitte zuerst einchecken."
+    if action == "checkout" and current_status == "checked_out":
+        return "Asset ist bereits ausgecheckt."
+    return None
+
+def ensure_attachment_entity_access(db, entity_type, entity_id, access):
+    if entity_type == "asset":
+        asset = db.execute('SELECT id FROM assets WHERE id = ?', (entity_id,)).fetchone()
+        if not asset:
+            return None, ("Asset nicht gefunden", 404)
+        if not (access["is_superuser"] or "assets.view" in access["permissions"] or "assets.manage" in access["permissions"]):
+            return None, ("Keine Berechtigung", 403)
+        return dict(asset), None
+    if entity_type == "ticket":
+        ticket_row = db.execute('SELECT * FROM tickets WHERE id = ?', (entity_id,)).fetchone()
+        if not ticket_row:
+            return None, ("Ticket nicht gefunden", 404)
+        ticket = dict(ticket_row)
+        if not ensure_ticket_access(ticket, access):
+            return None, ("Keine Berechtigung", 403)
+        return ticket, None
+    if entity_type == "maintenance":
+        task = db.execute('SELECT id, device_id FROM maintenance_tasks WHERE id = ?', (entity_id,)).fetchone()
+        if not task:
+            return None, ("Wartungsaufgabe nicht gefunden", 404)
+        if not (access["is_superuser"] or "maintenance.view" in access["permissions"] or "maintenance.manage" in access["permissions"]):
+            return None, ("Keine Berechtigung", 403)
+        return dict(task), None
+    return None, ("Ungültiger Typ", 400)
+
 def fetch_ticket_assets(db, ticket_id):
     rows = db.execute('''
         SELECT a.*
@@ -6013,6 +6228,11 @@ def asset_detail(asset_id):
         ''', (asset_id,)).fetchall()
         asset = build_asset_summary(db, asset_row, device_rows=[dict(row) for row in device_rows])
         asset['devices'] = [dict(row) for row in device_rows]
+        asset["assignment"] = fetch_current_asset_assignment(db, asset_id)
+        if user_can("asset.view_history"):
+            asset["assignment_history"] = fetch_asset_assignment_history(db, asset_id)
+        else:
+            asset["assignment_history"] = []
         relation_rows = db.execute('''
             SELECT ar.id, ar.asset_id, ar.related_asset_id, ar.relation_type_id,
                    rt.name as relation_type_name,
@@ -6108,6 +6328,348 @@ def asset_detail(asset_id):
     db.execute('DELETE FROM asset_relations WHERE asset_id = ? OR related_asset_id = ?', (asset_id, asset_id))
     db.execute('DELETE FROM assets WHERE id = ?', (asset_id,))
     log_activity(db, "delete", "asset", asset_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/assets/<int:asset_id>/history', methods=['GET'])
+@login_required
+@require_permission('asset.view_history')
+def asset_assignment_history(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset nicht gefunden"}), 404
+    history = fetch_asset_assignment_history(db, asset_id)
+    return jsonify(history)
+
+@app.route('/assets/<int:asset_id>/assign', methods=['POST'])
+@login_required
+@require_permission('asset.assign')
+def assign_asset(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset nicht gefunden"}), 404
+    data = request.get_json() or {}
+    assigned_to_user_id = data.get("assigned_to_user_id")
+    assigned_to_team_id = data.get("assigned_to_team_id")
+    note = (data.get("note") or "").strip()
+    current = fetch_current_asset_assignment(db, asset_id)
+    transition_error = validate_assignment_transition(current["status"] if current else None, "assign")
+    if transition_error:
+        return jsonify({"error": transition_error}), 400
+    assigned_to_user_id, assigned_to_team_id, error = resolve_assignment_target(
+        db,
+        assigned_to_user_id,
+        assigned_to_team_id,
+    )
+    if error:
+        return jsonify({"error": error}), 400
+    status = "assigned"
+    if current and (
+        current.get("assigned_to_user_id") != assigned_to_user_id
+        or current.get("assigned_to_team_id") != assigned_to_team_id
+    ):
+        status = "transferred"
+    created_by_user_id = get_current_user_id(db)
+    now = datetime.utcnow().isoformat()
+    db.execute('''
+        INSERT INTO asset_assignment_history (
+            asset_id, assigned_to_user_id, assigned_to_team_id, status, note, created_by_user_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        asset_id,
+        assigned_to_user_id,
+        assigned_to_team_id,
+        status,
+        note,
+        created_by_user_id,
+        now
+    ))
+    log_activity(db, "ASSET_ASSIGNED", "asset", asset_id, {
+        "assigned_to_user_id": assigned_to_user_id,
+        "assigned_to_team_id": assigned_to_team_id,
+        "status": status,
+        "note": note
+    })
+    db.commit()
+    return jsonify({
+        "status": "ok",
+        "assignment": fetch_current_asset_assignment(db, asset_id),
+        "history": fetch_asset_assignment_history(db, asset_id),
+    }), 200
+
+@app.route('/assets/<int:asset_id>/checkout', methods=['POST'])
+@login_required
+@require_permission('asset.checkout')
+def checkout_asset(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset nicht gefunden"}), 404
+    data = request.get_json() or {}
+    assigned_to_user_id = data.get("assigned_to_user_id")
+    assigned_to_team_id = data.get("assigned_to_team_id")
+    due_at = (data.get("due_at") or "").strip() or None
+    note = (data.get("note") or "").strip()
+    current = fetch_current_asset_assignment(db, asset_id)
+    transition_error = validate_assignment_transition(current["status"] if current else None, "checkout")
+    if transition_error:
+        return jsonify({"error": transition_error}), 400
+    assigned_to_user_id, assigned_to_team_id, error = resolve_assignment_target(
+        db,
+        assigned_to_user_id,
+        assigned_to_team_id,
+    )
+    if error:
+        return jsonify({"error": error}), 400
+    created_by_user_id = get_current_user_id(db)
+    now = datetime.utcnow().isoformat()
+    db.execute('''
+        INSERT INTO asset_assignment_history (
+            asset_id, assigned_to_user_id, assigned_to_team_id, status,
+            checked_out_at, due_at, note, created_by_user_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        asset_id,
+        assigned_to_user_id,
+        assigned_to_team_id,
+        "checked_out",
+        now,
+        due_at,
+        note,
+        created_by_user_id,
+        now
+    ))
+    log_activity(db, "ASSET_CHECKED_OUT", "asset", asset_id, {
+        "assigned_to_user_id": assigned_to_user_id,
+        "assigned_to_team_id": assigned_to_team_id,
+        "due_at": due_at,
+        "note": note
+    })
+    db.commit()
+    return jsonify({
+        "status": "ok",
+        "assignment": fetch_current_asset_assignment(db, asset_id),
+        "history": fetch_asset_assignment_history(db, asset_id),
+    }), 200
+
+@app.route('/assets/<int:asset_id>/checkin', methods=['POST'])
+@login_required
+@require_permission('asset.checkin')
+def checkin_asset(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset nicht gefunden"}), 404
+    data = request.get_json() or {}
+    note = (data.get("note") or "").strip()
+    current = fetch_current_asset_assignment(db, asset_id)
+    transition_error = validate_assignment_transition(current["status"] if current else None, "checkin")
+    if transition_error:
+        return jsonify({"error": transition_error}), 400
+    created_by_user_id = get_current_user_id(db)
+    now = datetime.utcnow().isoformat()
+    db.execute('''
+        INSERT INTO asset_assignment_history (
+            asset_id, assigned_to_user_id, assigned_to_team_id, status,
+            checked_in_at, note, created_by_user_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        asset_id,
+        current.get("assigned_to_user_id") if current else None,
+        current.get("assigned_to_team_id") if current else None,
+        "checked_in",
+        now,
+        note,
+        created_by_user_id,
+        now
+    ))
+    log_activity(db, "ASSET_CHECKED_IN", "asset", asset_id, {
+        "note": note
+    })
+    db.commit()
+    return jsonify({
+        "status": "ok",
+        "assignment": fetch_current_asset_assignment(db, asset_id),
+        "history": fetch_asset_assignment_history(db, asset_id),
+    }), 200
+
+@app.route('/assets/<int:asset_id>/unassign', methods=['POST'])
+@login_required
+@require_permission('asset.assign')
+def unassign_asset(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset nicht gefunden"}), 404
+    data = request.get_json() or {}
+    note = (data.get("note") or "").strip()
+    current = fetch_current_asset_assignment(db, asset_id)
+    transition_error = validate_assignment_transition(current["status"] if current else None, "unassign")
+    if transition_error:
+        return jsonify({"error": transition_error}), 400
+    created_by_user_id = get_current_user_id(db)
+    now = datetime.utcnow().isoformat()
+    db.execute('''
+        INSERT INTO asset_assignment_history (
+            asset_id, assigned_to_user_id, assigned_to_team_id, status, note, created_by_user_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        asset_id,
+        None,
+        None,
+        "unassigned",
+        note,
+        created_by_user_id,
+        now
+    ))
+    log_activity(db, "ASSET_UNASSIGNED", "asset", asset_id, {"note": note})
+    db.commit()
+    return jsonify({
+        "status": "ok",
+        "assignment": fetch_current_asset_assignment(db, asset_id),
+        "history": fetch_asset_assignment_history(db, asset_id),
+    }), 200
+
+@app.route('/api/asset-assignments/options', methods=['GET'])
+@login_required
+@require_permissions('asset.assign', 'asset.checkout')
+def asset_assignment_options():
+    db = get_db()
+    users = db.execute('SELECT id, username FROM users ORDER BY username').fetchall()
+    teams = db.execute('SELECT id, name FROM teams ORDER BY name').fetchall()
+    return jsonify({
+        "users": [dict(row) for row in users],
+        "teams": [dict(row) for row in teams],
+    })
+
+@app.route('/attachments', methods=['GET'])
+@login_required
+@require_permission('attachment.download')
+def list_attachments():
+    db = get_db()
+    entity_type = (request.args.get("entity_type") or "").strip()
+    entity_id = request.args.get("entity_id", type=int)
+    if not entity_type or not entity_id:
+        return jsonify({"error": "Entität fehlt"}), 400
+    access = get_user_access(db)
+    _, error = ensure_attachment_entity_access(db, entity_type, entity_id, access)
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    rows = db.execute('''
+        SELECT a.*, u.username as uploaded_by
+        FROM attachments a
+        LEFT JOIN users u ON u.id = a.uploaded_by_user_id
+        WHERE a.entity_type = ? AND a.entity_id = ? AND a.deleted_at IS NULL
+        ORDER BY a.created_at DESC
+    ''', (entity_type, entity_id)).fetchall()
+    return jsonify([serialize_attachment(row) for row in rows])
+
+@app.route('/attachments/upload', methods=['POST'])
+@login_required
+@require_permission('attachment.upload')
+def upload_attachment():
+    db = get_db()
+    entity_type = (request.form.get("entity_type") or "").strip()
+    entity_id = request.form.get("entity_id", type=int)
+    if not entity_type or not entity_id:
+        return jsonify({"error": "Entität fehlt"}), 400
+    access = get_user_access(db)
+    _, error = ensure_attachment_entity_access(db, entity_type, entity_id, access)
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    file_storage = request.files.get("file")
+    payload, error_message = store_attachment_file(file_storage, entity_type, entity_id)
+    if error_message:
+        return jsonify({"error": error_message}), 400
+    user_id = get_current_user_id(db)
+    cursor = db.execute('''
+        INSERT INTO attachments (
+            entity_type, entity_id, original_filename, stored_filename, mime_type, size_bytes, uploaded_by_user_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        entity_type,
+        entity_id,
+        payload["original_filename"],
+        payload["stored_filename"],
+        payload["mime_type"],
+        payload["size_bytes"],
+        user_id
+    ))
+    attachment_id = cursor.lastrowid
+    log_activity(db, "ATTACHMENT_UPLOADED", "attachment", attachment_id, {
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "filename": payload["original_filename"]
+    })
+    db.commit()
+    row = db.execute('''
+        SELECT a.*, u.username as uploaded_by
+        FROM attachments a
+        LEFT JOIN users u ON u.id = a.uploaded_by_user_id
+        WHERE a.id = ?
+    ''', (attachment_id,)).fetchone()
+    return jsonify(serialize_attachment(row)), 201
+
+@app.route('/attachments/<int:attachment_id>/download', methods=['GET'])
+@login_required
+@require_permission('attachment.download')
+def download_attachment(attachment_id):
+    db = get_db()
+    row = db.execute('''
+        SELECT *
+        FROM attachments
+        WHERE id = ? AND deleted_at IS NULL
+    ''', (attachment_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Anhang nicht gefunden"}), 404
+    access = get_user_access(db)
+    _, error = ensure_attachment_entity_access(db, row["entity_type"], row["entity_id"], access)
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    file_path = UPLOADS_DIR / "attachments" / row["entity_type"] / str(row["entity_id"]) / row["stored_filename"]
+    if not file_path.exists():
+        return jsonify({"error": "Datei nicht gefunden"}), 404
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=row["original_filename"],
+        mimetype=row["mime_type"] or "application/octet-stream",
+    )
+
+@app.route('/attachments/<int:attachment_id>/delete', methods=['POST'])
+@login_required
+@require_permission('attachment.delete')
+def delete_attachment(attachment_id):
+    db = get_db()
+    row = db.execute('''
+        SELECT *
+        FROM attachments
+        WHERE id = ? AND deleted_at IS NULL
+    ''', (attachment_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Anhang nicht gefunden"}), 404
+    access = get_user_access(db)
+    _, error = ensure_attachment_entity_access(db, row["entity_type"], row["entity_id"], access)
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    deleted_at = datetime.utcnow().isoformat()
+    db.execute('UPDATE attachments SET deleted_at = ? WHERE id = ?', (deleted_at, attachment_id))
+    log_activity(db, "ATTACHMENT_DELETED", "attachment", attachment_id, {
+        "entity_type": row["entity_type"],
+        "entity_id": row["entity_id"],
+        "filename": row["original_filename"]
+    })
     db.commit()
     return jsonify({"status": "deleted"}), 200
 
@@ -8733,7 +9295,15 @@ def export_data():
         return jsonify({"error": "Export ist deaktiviert."}), 403
     export_format = settings["importExport"]["exportFormat"]
     include_uploads = settings["importExport"]["includeUploads"]
-    tables = ["categories", "locations", "devices", "assets", "maintenance_tasks"]
+    tables = [
+        "categories",
+        "locations",
+        "devices",
+        "assets",
+        "maintenance_tasks",
+        "asset_assignment_history",
+        "attachments",
+    ]
     temp_dir = Path(tempfile.mkdtemp(prefix="inventory_export_"))
     archive_path = None
     try:
@@ -8815,7 +9385,15 @@ def import_data():
     if antivirus_error:
         shutil.rmtree(file_path.parent, ignore_errors=True)
         return jsonify({"error": antivirus_error}), 400
-    tables = ["categories", "locations", "devices", "assets", "maintenance_tasks"]
+    tables = [
+        "categories",
+        "locations",
+        "devices",
+        "assets",
+        "maintenance_tasks",
+        "asset_assignment_history",
+        "attachments",
+    ]
     try:
         if import_mode == "replace":
             run_backup_job(db, settings, force=True)

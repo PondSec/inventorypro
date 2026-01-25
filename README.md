@@ -20,7 +20,9 @@ Inventory Pro kombiniert Inventarisierung, Ticketing und Wissensdatenbank. Teams
 - **Dynamische Kategorien** für Geräte mit frei definierbaren Feldern.
 - **Geräteverwaltung** mit Seriennummern, Standorten, Tags und Notizen.
 - **Asset-Registry** inkl. Lebenszyklusdaten (Anschaffung, Inbetriebnahme, Abschreibung, Ausmusterung).
+- **Asset-Zuweisung & Checkout** inkl. Historie, Verantwortlichkeit und Rückgaben.
 - **Wartungsplanung** für Geräte inklusive Status-Tracking.
+- **Anhänge & Dokumente** an Assets, Tickets und Wartungsaufgaben.
 
 ### Helpdesk & Wissen
 - **Ticket-System** mit Kategorien, Prioritäten, Status, SLA/Due-Dates und Eskalationsstufen.
@@ -74,10 +76,22 @@ Die Anwendung läuft anschließend standardmäßig auf `http://localhost:5000`.
 | `DATABASE_URL` | Postgres-Backup via `pg_dump` | – |
 | `INVENTORY_UPLOADS_DIR` | Pfad für Uploads | `uploads/` |
 | `INVENTORY_MAX_IMPORT_BYTES` | Max. Importgröße | `52428800` |
+| `INVENTORY_MAX_UPLOAD_BYTES` | Max. Uploadgröße für Anhänge | `INVENTORY_MAX_IMPORT_BYTES` |
 | `BACKUP_ENCRYPTION_KEY` | Schlüssel für Backup-Verschlüsselung | – |
 | `INVENTORY_ANTIVIRUS_COMMAND` | Optionaler AV-Check beim Import | – |
 | `APP_VERSION` | Anzeige in der UI/Diagnostics | `unbekannt` |
 | `FLASK_ENV` | Environment Label | `production` |
+
+### Neue Berechtigungen (Auszug)
+| Permission | Zweck |
+| --- | --- |
+| `asset.assign` | Asset an Benutzer/Team zuweisen |
+| `asset.checkout` | Asset ausgeben (Checkout) |
+| `asset.checkin` | Asset zurücknehmen (Check-in) |
+| `asset.view_history` | Zuweisungs-/Checkout-Historie einsehen |
+| `attachment.upload` | Anhänge hochladen |
+| `attachment.download` | Anhänge herunterladen |
+| `attachment.delete` | Anhänge löschen |
 
 ### Server-Einstellungen (UI)
 Im Admin-Bereich können u. a. Backup-Strategien, Import/Export-Optionen, Sicherheitsrichtlinien, MFA-Pflicht und IP-Whitelists verwaltet werden.
