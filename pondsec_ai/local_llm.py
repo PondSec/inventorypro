@@ -5,11 +5,100 @@ import json
 import logging
 import os
 from pathlib import Path
+import select
 import subprocess
 import sys
+import threading
+import uuid
 from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+class WorkerClient:
+    _instance: Optional["WorkerClient"] = None
+    _instance_lock = threading.Lock()
+
+    def __init__(self) -> None:
+        self._process: Optional[subprocess.Popen[str]] = None
+        self._lock = threading.Lock()
+
+    @classmethod
+    def instance(cls) -> "WorkerClient":
+        with cls._instance_lock:
+            if cls._instance is None:
+                cls._instance = cls()
+            return cls._instance
+
+    def _start_worker(self) -> None:
+        env = os.environ.copy()
+        cmd = [sys.executable, "-m", "pondsec_ai.llm_worker"]
+        logger.info("pondsec_ai.local_llm.worker_start provider=%s", LocalLLM._provider_name())
+        self._process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=None,
+            text=True,
+            bufsize=1,
+            env=env,
+        )
+
+    def _stop_worker(self) -> None:
+        if self._process is None:
+            return
+        if self._process.poll() is None:
+            self._process.terminate()
+            try:
+                self._process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+        self._process = None
+
+    def _ensure_worker(self) -> None:
+        if self._process is None or self._process.poll() is not None:
+            self._stop_worker()
+            self._start_worker()
+
+    def _readline_with_timeout(self, timeout: float) -> Optional[str]:
+        if self._process is None or self._process.stdout is None:
+            return None
+        stdout = self._process.stdout
+        ready, _, _ = select.select([stdout], [], [], timeout)
+        if not ready:
+            return None
+        return stdout.readline()
+
+    def request(self, prompt: str, max_tokens: int) -> dict:
+        request_id = uuid.uuid4().hex
+        payload = {"id": request_id, "prompt": prompt, "max_tokens": max_tokens}
+        with self._lock:
+            self._ensure_worker()
+            if self._process is None or self._process.stdin is None or self._process.stdout is None:
+                return {"id": request_id, "error": "worker_not_running"}
+            try:
+                self._process.stdin.write(json.dumps(payload) + "\n")
+                self._process.stdin.flush()
+            except BrokenPipeError:
+                logger.warning("pondsec_ai.local_llm.worker_broken_pipe")
+                self._stop_worker()
+                return {"id": request_id, "error": "worker_broken_pipe"}
+            timeout_seconds = LocalLLM._timeout_seconds()
+            line = self._readline_with_timeout(timeout_seconds)
+            if line is None:
+                logger.warning("pondsec_ai.local_llm.worker_timeout")
+                self._stop_worker()
+                return {"id": request_id, "error": "timeout"}
+            if not line:
+                logger.warning("pondsec_ai.local_llm.worker_died")
+                self._stop_worker()
+                return {"id": request_id, "error": "worker_died"}
+            try:
+                response = json.loads(line.strip())
+            except json.JSONDecodeError:
+                logger.warning("pondsec_ai.local_llm.worker_invalid_json")
+                return {"id": request_id, "error": "invalid_json"}
+            return response
 
 
 class LocalLLM:
@@ -24,9 +113,16 @@ class LocalLLM:
     @staticmethod
     def _max_tokens() -> int:
         try:
-            return int(os.environ.get("PONDSEC_AI_LLM_MAX_TOKENS", "512"))
+            return int(os.environ.get("PONDSEC_AI_LLM_MAX_TOKENS", "128"))
         except ValueError:
-            return 512
+            return 128
+
+    @staticmethod
+    def _timeout_seconds() -> float:
+        try:
+            return float(os.environ.get("PONDSEC_AI_LLM_TIMEOUT_SECONDS", "180"))
+        except ValueError:
+            return 180.0
 
     @staticmethod
     def _resolve_model_path() -> Tuple[Optional[str], Optional[str]]:
@@ -106,35 +202,17 @@ class LocalLLM:
         return cls._model
 
     @classmethod
-    def generate(cls, prompt: str, max_tokens: int = 512) -> str:
+    def generate(cls, prompt: str, max_tokens: Optional[int] = None) -> str:
         max_tokens = max_tokens or cls._max_tokens()
         if not prompt:
             return ""
-        env = os.environ.copy()
-        env["PONDSEC_AI_LLM_MAX_TOKENS"] = str(max_tokens)
-        cmd = [sys.executable, "-m", "pondsec_ai.llm_worker"]
-        logger.info("pondsec_ai.local_llm.worker_start provider=%s", cls._provider_name())
-        try:
-            result = subprocess.run(
-                cmd,
-                input=prompt,
-                text=True,
-                capture_output=True,
-                timeout=20,
-                env=env,
-            )
-        except subprocess.TimeoutExpired:
-            logger.warning("pondsec_ai.local_llm.worker_timeout")
-            return ""
-        if result.stderr:
-            logger.warning("pondsec_ai.local_llm.worker_stderr=%s", result.stderr.strip())
-        if result.returncode != 0:
-            logger.warning("pondsec_ai.local_llm.worker_failed code=%s", result.returncode)
-            return ""
-        try:
-            payload = json.loads(result.stdout.strip() or "{}")
-        except json.JSONDecodeError:
-            logger.warning("pondsec_ai.local_llm.worker_invalid_json")
-            return ""
-        text = payload.get("text") or ""
+        client = WorkerClient.instance()
+        response = client.request(prompt, max_tokens)
+        error = response.get("error")
+        if error:
+            logger.warning("pondsec_ai.local_llm.worker_error=%s", error)
+            return json.dumps({"error": error})
+        text = response.get("text")
+        if text is None:
+            return json.dumps({"error": "empty_response"})
         return text
