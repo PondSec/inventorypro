@@ -305,6 +305,171 @@ PERMISSIONS = [
     }
 ]
 
+DEFAULT_CUSTOMIZATION = {
+    "schemaVersion": 1,
+    "branding": {
+        "name": "Inventory Pro",
+        "tagline": "Smart Asset Hub",
+        "logoDataUrl": "",
+    },
+    "baseTokens": {
+        "colors": {
+            "primary": "#2563eb",
+            "secondary": "#6366f1",
+            "accent": "#14b8a6",
+            "neutral": "#64748b",
+            "background": "#f6f7fb",
+            "surface": "#ffffff",
+            "text": "#0f172a",
+            "textMuted": "#6b7280",
+            "border": "#e5e7eb",
+            "shadow": "rgba(15, 23, 42, 0.12)",
+            "focus": "rgba(37, 99, 235, 0.35)",
+            "success": "#16a34a",
+            "warning": "#f59e0b",
+            "danger": "#dc2626",
+            "info": "#0ea5e9",
+        },
+        "typography": {
+            "fontFamily": "\"Inter\", \"Segoe UI\", system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+            "fontSizes": {
+                "xs": "12px",
+                "sm": "14px",
+                "base": "15px",
+                "lg": "18px",
+                "xl": "22px",
+            },
+            "fontWeights": {
+                "normal": 400,
+                "medium": 500,
+                "semibold": 600,
+                "bold": 700,
+            },
+            "lineHeights": {
+                "tight": 1.2,
+                "normal": 1.6,
+                "relaxed": 1.75,
+            },
+            "letterSpacing": {
+                "tight": "-0.01em",
+                "normal": "0",
+                "wide": "0.05em",
+            },
+        },
+        "spacing": {
+            "radius": {
+                "sm": 8,
+                "md": 12,
+                "lg": 18,
+                "pill": 999,
+            },
+            "paddingScale": [4, 8, 12, 16, 20, 24, 32, 40, 48, 64],
+            "gapScale": [4, 8, 12, 16, 20, 24, 32, 40],
+        },
+        "layout": {
+            "containerWidth": 1200,
+            "sidebarWidth": 280,
+            "tableDensity": "normal",
+        },
+        "states": {
+            "hover": 0.92,
+            "active": 0.86,
+            "disabled": 0.6,
+        },
+    },
+    "componentOverrides": {
+        "button": {
+            "primary": {
+                "radius": 12,
+                "background": "#2563eb",
+                "text": "#ffffff",
+                "border": "transparent",
+                "shadow": "0 6px 16px rgba(15, 23, 42, 0.08)",
+                "hoverBg": "#1d4ed8",
+                "activeBg": "#1e40af",
+                "disabledBg": "#e5e7eb",
+                "disabledText": "#94a3b8",
+            },
+            "secondary": {
+                "radius": 12,
+                "background": "#ffffff",
+                "text": "#1f2937",
+                "border": "#e2e8f0",
+                "shadow": "none",
+                "hoverBg": "#f8fafc",
+                "activeBg": "#e2e8f0",
+                "disabledBg": "#f1f5f9",
+                "disabledText": "#94a3b8",
+            },
+        },
+        "input": {
+            "radius": 12,
+            "background": "#ffffff",
+            "text": "#0f172a",
+            "border": "#e2e8f0",
+            "focusRing": "rgba(37, 99, 235, 0.35)",
+            "shadow": "0 1px 2px rgba(15, 23, 42, 0.06)",
+            "placeholder": "#94a3b8",
+        },
+        "card": {
+            "radius": 18,
+            "background": "#ffffff",
+            "border": "#e5e7eb",
+            "shadow": "0 12px 30px rgba(15, 23, 42, 0.12)",
+        },
+        "table": {
+            "radius": 16,
+            "headerBg": "#f8fafc",
+            "rowBg": "#ffffff",
+            "zebraBg": "#f8fafc",
+            "border": "#e2e8f0",
+        },
+        "modal": {
+            "radius": 20,
+            "background": "#ffffff",
+            "shadow": "0 20px 50px rgba(15, 23, 42, 0.16)",
+        },
+        "toast": {
+            "radius": 16,
+            "background": "#0f172a",
+            "text": "#ffffff",
+            "shadow": "0 12px 30px rgba(15, 23, 42, 0.2)",
+        },
+        "badge": {
+            "radius": 999,
+            "background": "#eef2ff",
+            "text": "#4338ca",
+        },
+        "navbar": {
+            "background": "#ffffff",
+            "border": "#e5e7eb",
+            "text": "#0f172a",
+        },
+        "sidebar": {
+            "background": "#ffffff",
+            "border": "#e5e7eb",
+            "text": "#0f172a",
+        },
+    },
+    "layoutPrefs": {
+        "density": 1,
+        "containerWidth": 1200,
+        "sidebarWidth": 280,
+        "tableDensity": "normal",
+        "rowHeight": 44,
+        "zebraStriping": True,
+        "formSpacing": 16,
+    },
+    "featurePrefs": {
+        "iconSet": "feather",
+        "tableDefaults": {
+            "defaultSort": "updated_at:desc",
+            "defaultColumns": ["name", "status", "owner", "updated_at"],
+        },
+        "compactSidebar": False,
+    },
+}
+
 DEFAULT_ROLES = [
     {
         "name": "Admin",
@@ -377,6 +542,131 @@ def get_db():
         db = g._database = sqlite3.connect(DATABASE)
         db.row_factory = sqlite3.Row
     return db
+
+def clone_customization(data):
+    return json.loads(json.dumps(data))
+
+def deep_merge(base, override):
+    if not isinstance(base, dict) or not isinstance(override, dict):
+        return override if override is not None else base
+    merged = {**base}
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            merged[key] = deep_merge(base[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+def migrate_customization(data):
+    if not isinstance(data, dict):
+        return clone_customization(DEFAULT_CUSTOMIZATION)
+
+    if ("branding" in data or "formStyle" in data) and "baseTokens" not in data:
+        migrated = clone_customization(DEFAULT_CUSTOMIZATION)
+        branding = data.get("branding", {})
+        form_style = data.get("formStyle", {})
+        migrated["branding"]["name"] = branding.get("name", migrated["branding"]["name"])
+        migrated["branding"]["tagline"] = branding.get("tagline", migrated["branding"]["tagline"])
+        migrated["branding"]["logoDataUrl"] = branding.get("logoDataUrl", migrated["branding"]["logoDataUrl"])
+        migrated["baseTokens"]["colors"]["primary"] = branding.get("primary", migrated["baseTokens"]["colors"]["primary"])
+        migrated["baseTokens"]["colors"]["accent"] = branding.get("accent", migrated["baseTokens"]["colors"]["accent"])
+        migrated["baseTokens"]["colors"]["background"] = branding.get("background", migrated["baseTokens"]["colors"]["background"])
+        migrated["baseTokens"]["spacing"]["radius"]["md"] = branding.get("radius", migrated["baseTokens"]["spacing"]["radius"]["md"])
+        migrated["layoutPrefs"]["density"] = branding.get("density", migrated["layoutPrefs"]["density"])
+        migrated["componentOverrides"]["button"]["primary"]["background"] = form_style.get(
+            "buttonColor", migrated["componentOverrides"]["button"]["primary"]["background"]
+        )
+        migrated["componentOverrides"]["button"]["primary"]["text"] = form_style.get(
+            "buttonText", migrated["componentOverrides"]["button"]["primary"]["text"]
+        )
+        migrated["componentOverrides"]["input"]["background"] = form_style.get(
+            "inputBackground", migrated["componentOverrides"]["input"]["background"]
+        )
+        migrated["componentOverrides"]["input"]["border"] = form_style.get(
+            "inputBorder", migrated["componentOverrides"]["input"]["border"]
+        )
+        migrated["layoutPrefs"]["formSpacing"] = form_style.get("spacing", migrated["layoutPrefs"]["formSpacing"])
+        return migrated
+
+    merged = deep_merge(clone_customization(DEFAULT_CUSTOMIZATION), data)
+    merged["schemaVersion"] = 1
+    return merged
+
+def validate_customization(data):
+    errors = []
+    if not isinstance(data, dict):
+        return False, ["Customization muss ein Objekt sein."]
+    if not isinstance(data.get("schemaVersion"), int):
+        errors.append("schemaVersion fehlt oder ist ungültig.")
+    for key in ("baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs", "branding"):
+        if key not in data:
+            errors.append(f"{key} fehlt.")
+    return len(errors) == 0, errors
+
+def compute_customization_diff(old, new, path=""):
+    changes = []
+    if isinstance(old, dict) and isinstance(new, dict):
+        all_keys = set(old.keys()) | set(new.keys())
+        for key in sorted(all_keys):
+            next_path = f"{path}.{key}" if path else key
+            changes.extend(compute_customization_diff(old.get(key), new.get(key), next_path))
+    elif old != new:
+        changes.append({"path": path, "from": old, "to": new})
+    return changes
+
+def get_current_user_id(db):
+    username = session.get("username")
+    if not username:
+        return None
+    row = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+    return row["id"] if row else None
+
+def get_customization_record(db, user_id, workspace_id=None):
+    if workspace_id is None:
+        return db.execute(
+            "SELECT * FROM ui_customization WHERE user_id = ? AND workspace_id IS NULL",
+            (user_id,),
+        ).fetchone()
+    return db.execute(
+        "SELECT * FROM ui_customization WHERE user_id = ? AND workspace_id = ?",
+        (user_id, workspace_id),
+    ).fetchone()
+
+def save_customization(db, user_id, customization, updated_by, workspace_id=None):
+    existing = get_customization_record(db, user_id, workspace_id)
+    serialized = json.dumps(customization)
+    if existing:
+        db.execute(
+            """
+            UPDATE ui_customization
+            SET customization_json = ?, schema_version = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
+            WHERE id = ?
+            """,
+            (serialized, customization["schemaVersion"], updated_by, existing["id"]),
+        )
+        customization_id = existing["id"]
+    else:
+        db.execute(
+            """
+            INSERT INTO ui_customization (user_id, workspace_id, schema_version, customization_json, updated_by)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (user_id, workspace_id, customization["schemaVersion"], serialized, updated_by),
+        )
+        customization_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    diff = []
+    if existing:
+        diff = compute_customization_diff(json.loads(existing["customization_json"]), customization)
+    db.execute(
+        """
+        INSERT INTO ui_customization_revisions (customization_id, revision_json, diff_json, created_by)
+        VALUES (?, ?, ?, ?)
+        """,
+        (customization_id, serialized, json.dumps(diff), updated_by),
+    )
+    db.commit()
+    return customization_id
 
 def seed_permissions(db):
     for perm in PERMISSIONS:
@@ -1513,6 +1803,32 @@ def init_db():
             )
         ''')
         c.execute('INSERT OR IGNORE INTO server_settings (id) VALUES (1)')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS ui_customization (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                workspace_id INTEGER,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                customization_json TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_by TEXT,
+                UNIQUE(user_id, workspace_id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS ui_customization_revisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customization_id INTEGER NOT NULL,
+                revision_json TEXT NOT NULL,
+                diff_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by TEXT,
+                FOREIGN KEY (customization_id) REFERENCES ui_customization(id)
+            )
+        ''')
         for column, column_type in (
             ("backup_enabled", "INTEGER DEFAULT 0"),
             ("backup_schedule", "TEXT DEFAULT 'daily'"),
@@ -5448,6 +5764,138 @@ def server_settings():
         db.commit()
     settings = get_server_settings(db)
     return jsonify(serialize_server_settings(settings))
+
+@app.route('/api/customize', methods=['GET', 'PUT', 'PATCH'])
+@login_required
+def customize_settings():
+    db = get_db()
+    user_id = get_current_user_id(db)
+    if not user_id:
+        return jsonify({"error": "Benutzer nicht gefunden."}), 401
+
+    record = get_customization_record(db, user_id)
+    existing = None
+    if record:
+        existing = json.loads(record["customization_json"])
+
+    if request.method == 'GET':
+        customization = migrate_customization(existing or DEFAULT_CUSTOMIZATION)
+        latest_revision = None
+        if record:
+            latest_revision = db.execute(
+                """
+                SELECT id FROM ui_customization_revisions
+                WHERE customization_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (record["id"],),
+            ).fetchone()
+        return jsonify({
+            "customization": customization,
+            "updated_at": record["updated_at"] if record else None,
+            "revision_id": latest_revision["id"] if latest_revision else None,
+        })
+
+    payload = request.get_json() or {}
+    if request.method == 'PATCH':
+        merged = deep_merge(existing or DEFAULT_CUSTOMIZATION, payload)
+    else:
+        merged = payload
+
+    customization = migrate_customization(merged)
+    valid, errors = validate_customization(customization)
+    if not valid:
+        return jsonify({"error": "Ungültige Customize-Daten.", "details": errors}), 400
+
+    customization_id = save_customization(db, user_id, customization, session.get("username", "system"))
+    latest_revision = db.execute(
+        """
+        SELECT id FROM ui_customization_revisions
+        WHERE customization_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (customization_id,),
+    ).fetchone()
+    updated_at = db.execute("SELECT updated_at FROM ui_customization WHERE id = ?", (customization_id,)).fetchone()
+    log_activity(db, "update", "ui_customization", entity_id=customization_id)
+    return jsonify({
+        "customization": customization,
+        "updated_at": updated_at["updated_at"] if updated_at else None,
+        "revision_id": latest_revision["id"] if latest_revision else None,
+    })
+
+@app.route('/api/customize/history', methods=['GET'])
+@login_required
+def customize_history():
+    db = get_db()
+    user_id = get_current_user_id(db)
+    if not user_id:
+        return jsonify({"revisions": []})
+    record = get_customization_record(db, user_id)
+    if not record:
+        return jsonify({"revisions": []})
+    rows = db.execute(
+        """
+        SELECT id, created_at, created_by, diff_json
+        FROM ui_customization_revisions
+        WHERE customization_id = ?
+        ORDER BY id DESC
+        LIMIT 20
+        """,
+        (record["id"],),
+    ).fetchall()
+    revisions = []
+    for row in rows:
+        revisions.append({
+            "id": row["id"],
+            "created_at": row["created_at"],
+            "created_by": row["created_by"],
+            "diff": json.loads(row["diff_json"]) if row["diff_json"] else [],
+        })
+    return jsonify({"revisions": revisions})
+
+@app.route('/api/customize/rollback/<int:revision_id>', methods=['POST'])
+@login_required
+def customize_rollback(revision_id):
+    db = get_db()
+    user_id = get_current_user_id(db)
+    if not user_id:
+        return jsonify({"error": "Benutzer nicht gefunden."}), 401
+
+    record = get_customization_record(db, user_id)
+    if not record:
+        return jsonify({"error": "Keine Customize-Konfiguration vorhanden."}), 404
+
+    revision = db.execute(
+        """
+        SELECT revision_json FROM ui_customization_revisions
+        WHERE id = ? AND customization_id = ?
+        """,
+        (revision_id, record["id"]),
+    ).fetchone()
+    if not revision:
+        return jsonify({"error": "Revision nicht gefunden."}), 404
+
+    customization = migrate_customization(json.loads(revision["revision_json"]))
+    customization_id = save_customization(db, user_id, customization, session.get("username", "system"))
+    latest_revision = db.execute(
+        """
+        SELECT id FROM ui_customization_revisions
+        WHERE customization_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (customization_id,),
+    ).fetchone()
+    updated_at = db.execute("SELECT updated_at FROM ui_customization WHERE id = ?", (customization_id,)).fetchone()
+    log_activity(db, "rollback", "ui_customization", entity_id=customization_id)
+    return jsonify({
+        "customization": customization,
+        "updated_at": updated_at["updated_at"] if updated_at else None,
+        "revision_id": latest_revision["id"] if latest_revision else None,
+    })
 
 @app.route('/api/ad/settings', methods=['GET'])
 @login_required
