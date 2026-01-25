@@ -28,6 +28,30 @@ def parse_entity_refs(message):
     return refs
 
 
+def normalize_context(raw_context):
+    if not raw_context:
+        return {"type": "unknown"}
+    if isinstance(raw_context, dict):
+        if "type" in raw_context:
+            ctx_type = (raw_context.get("type") or "unknown").lower()
+            ctx_id = raw_context.get("id") or raw_context.get("entity_id")
+        else:
+            ctx_type = (raw_context.get("entity") or "unknown").lower()
+            ctx_id = raw_context.get("entity_id") or raw_context.get("id")
+        try:
+            ctx_id = int(ctx_id) if ctx_id is not None else None
+        except (TypeError, ValueError):
+            ctx_id = None
+        return {"type": ctx_type, "id": ctx_id}
+    if isinstance(raw_context, str):
+        match = re.search(r"\b(?:ticket|Ticket)\s*#?\s*(\d+)\b", raw_context)
+        if match:
+            return {"type": "ticket", "id": int(match.group(1))}
+        if "ticket" in raw_context.lower():
+            return {"type": "tickets", "id": None}
+    return {"type": "unknown"}
+
+
 def init(
     *,
     get_db,
