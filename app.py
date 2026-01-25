@@ -219,6 +219,12 @@ PERMISSIONS = [
         "group": "Administration"
     },
     {
+        "key": "server_settings.manage",
+        "label": "Servereinstellungen verwalten",
+        "description": "Serverkonfigurationen wie Port und Debug-Modus anpassen.",
+        "group": "Administration"
+    },
+    {
         "key": "stats.view",
         "label": "Statistiken anzeigen",
         "description": "Dashboards und Statistiken einsehen.",
@@ -1476,6 +1482,18 @@ def init_db():
         c.execute('INSERT OR IGNORE INTO ad_settings (id) VALUES (1)')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS server_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                host TEXT DEFAULT '0.0.0.0',
+                port INTEGER DEFAULT 5000,
+                debug_mode INTEGER DEFAULT 1,
+                pro_enabled INTEGER DEFAULT 1,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        c.execute('INSERT OR IGNORE INTO server_settings (id) VALUES (1)')
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS device_tags (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 device_id INTEGER NOT NULL,
@@ -2505,6 +2523,29 @@ def serialize_ad_settings(settings):
         "has_bind_password": bool(settings["bind_password"])
     }
 
+def get_server_settings(db):
+    settings = db.execute('SELECT * FROM server_settings WHERE id = 1').fetchone()
+    if not settings:
+        db.execute('INSERT INTO server_settings (id) VALUES (1)')
+        db.commit()
+        settings = db.execute('SELECT * FROM server_settings WHERE id = 1').fetchone()
+    return settings
+
+def serialize_server_settings(settings):
+    if not settings:
+        return {
+            "host": "0.0.0.0",
+            "port": 5000,
+            "debug": True,
+            "pro_enabled": True
+        }
+    return {
+        "host": settings["host"] or "0.0.0.0",
+        "port": settings["port"] or 5000,
+        "debug": bool(settings["debug_mode"]),
+        "pro_enabled": bool(settings["pro_enabled"])
+    }
+
 def domain_to_base_dn(domain):
     parts = [part for part in (domain or "").split('.') if part]
     if not parts:
@@ -2684,6 +2725,13 @@ def index():
 def users_page():
     access = get_user_access(get_db())
     return render_template('users.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
+@app.route('/settings')
+@login_required
+@require_permission('server_settings.manage')
+def server_settings_page():
+    access = get_user_access(get_db())
+    return render_template('server_settings.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/locations')
 @login_required
@@ -4638,8 +4686,9 @@ def notification_test():
 @app.route('/api/features', methods=['GET'])
 @login_required
 def feature_flags():
+    settings = get_server_settings(get_db())
     return jsonify({
-        "pro_enabled": PRO_ENABLED,
+        "pro_enabled": bool(settings["pro_enabled"]) if settings else PRO_ENABLED,
         "pro_features": PRO_FEATURES,
         "free_features": FREE_FEATURES
     })
@@ -5158,6 +5207,39 @@ def update_user_roles(user_id):
         ORDER BY r.name
     ''', (user_id,)).fetchall()
     return jsonify({"status": "updated", "roles": [dict(role) for role in roles]}), 200
+
+@app.route('/api/server-settings', methods=['GET', 'POST'])
+@login_required
+@require_permission('server_settings.manage')
+def server_settings():
+    db = get_db()
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        host = (data.get('host') or '0.0.0.0').strip()
+        try:
+            port = int(data.get('port') or 5000)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Port muss eine Zahl sein"}), 400
+        if port < 1 or port > 65535:
+            return jsonify({"error": "Port muss zwischen 1 und 65535 liegen"}), 400
+        debug_mode = 1 if data.get('debug') else 0
+        pro_enabled = 1 if data.get('pro_enabled') else 0
+        if not host:
+            return jsonify({"error": "Host darf nicht leer sein"}), 400
+        db.execute('''
+            UPDATE server_settings
+            SET host = ?, port = ?, debug_mode = ?, pro_enabled = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1
+        ''', (host, port, debug_mode, pro_enabled))
+        log_activity(db, "update", "server_settings", details={
+            "host": host,
+            "port": port,
+            "debug_mode": bool(debug_mode),
+            "pro_enabled": bool(pro_enabled)
+        })
+        db.commit()
+    settings = get_server_settings(db)
+    return jsonify(serialize_server_settings(settings))
 
 @app.route('/api/ad/settings', methods=['GET'])
 @login_required
@@ -6006,4 +6088,9 @@ def otp_status():
 
 if __name__ == '__main__':
     init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    with app.app_context():
+        settings = get_server_settings(get_db())
+        runtime_host = settings["host"] if settings else '0.0.0.0'
+        runtime_port = settings["port"] if settings else 5000
+        runtime_debug = bool(settings["debug_mode"]) if settings else True
+    app.run(host=runtime_host, port=runtime_port, debug=runtime_debug)
