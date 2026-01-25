@@ -34,18 +34,6 @@
         {% endif %}
 
         <form method="POST" class="stack">
-            {% if setup_required %}
-            <div class="banner warning" role="alert">
-                MFA ist aktiviert. Bitte richten Sie Ihre Authenticator-App ein.
-            </div>
-            <div class="stack" id="mfa-setup">
-                <button type="button" class="btn btn-ghost" id="mfa-setup-button">QR-Code abrufen</button>
-                <div class="stack" id="mfa-setup-result" style="display:none;">
-                    <img id="mfa-qr" alt="QR Code">
-                    <p class="help-text">Secret: <span id="mfa-secret"></span></p>
-                </div>
-            </div>
-            {% endif %}
             <div class="field">
                 <label class="label" for="otp">6-stelliger Code</label>
                 <input type="text" id="otp" name="otp" autocomplete="one-time-code" required class="input" placeholder="123456">
@@ -58,28 +46,5 @@
             <a href="/login" class="btn btn-ghost">Zurück zum Login</a>
         </div>
     </div>
-    {% if setup_required %}
-    <script>
-        const button = document.getElementById('mfa-setup-button');
-        const result = document.getElementById('mfa-setup-result');
-        const qr = document.getElementById('mfa-qr');
-        const secret = document.getElementById('mfa-secret');
-        if (button) {
-            button.addEventListener('click', async () => {
-                button.disabled = true;
-                button.textContent = 'Lädt...';
-                const response = await fetch('/api/otp/setup', { method: 'POST' });
-                const data = await response.json();
-                if (data.qr_code) {
-                    qr.src = data.qr_code;
-                    secret.textContent = data.secret || '';
-                    result.style.display = 'block';
-                }
-                button.disabled = false;
-                button.textContent = 'QR-Code abrufen';
-            });
-        }
-    </script>
-    {% endif %}
 </body>
 </html>
