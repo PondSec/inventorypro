@@ -1,13 +1,19 @@
-from flask import Flask, render_template, jsonify, request, g, redirect, url_for, session, Response
+from flask import Flask, render_template, jsonify, request, g, redirect, url_for, session, Response, send_file, after_this_request
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 import os
 import csv
 import re
+import ipaddress
+import shutil
+import tempfile
+import zipfile
+import hashlib
+import subprocess
 import pyotp
 import qrcode
 import qrcode.image.svg
@@ -18,14 +24,22 @@ from ldap3 import Server, Connection, BASE, ALL
 from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
 import smtplib
+from apscheduler.schedulers.background import BackgroundScheduler
+from cryptography.fernet import Fernet, InvalidToken
 
 
 app = Flask(__name__)
 CORS(app)
 app.secret_key = os.urandom(24).hex()
+app.config["RUNTIME_SETTINGS"] = {}
+app.config["LAST_ACTIVITY_KEY"] = "last_activity"
+app.config["MAX_IMPORT_SIZE_MB"] = 50
+app.config["MAX_EXPORT_SIZE_MB"] = 100
+
+scheduler = BackgroundScheduler()
 
 DATABASE = 'inventory.db'
-PRO_ENABLED = True
+PRO_ENABLED = False
 PRO_FEATURES = [
     "maintenance_schedule",
     "csv_export",
@@ -36,6 +50,57 @@ FREE_FEATURES = [
     "notes",
     "activity_feed"
 ]
+
+SERVER_SETTINGS_SCHEMA_VERSION = 1
+SERVER_SETTINGS_RUNTIME_FIELDS = ("host", "port", "debug")
+SERVER_SETTINGS_CONFIG_NAME = "server_runtime_config.json"
+
+DEFAULT_SERVER_SETTINGS = {
+    "schemaVersion": SERVER_SETTINGS_SCHEMA_VERSION,
+    "server": {
+        "host": "0.0.0.0",
+        "port": 5000,
+        "debug": False,
+    },
+    "proFeaturesEnabled": False,
+    "backup": {
+        "enabled": False,
+        "compress": False,
+        "schedule": "daily",
+        "time": "02:00",
+        "retentionDays": 14,
+        "directory": "backups/",
+        "notifyEmail": "",
+        "encrypt": False,
+    },
+    "importExport": {
+        "exportAllowed": True,
+        "importAllowed": False,
+        "exportFormat": "sqlite",
+        "importMode": "merge",
+        "includeUploads": True,
+    },
+    "security": {
+        "forceHttps": False,
+        "requireMfa": False,
+        "sessionTimeoutMinutes": 60,
+        "maxFailedAttempts": 5,
+        "lockoutMinutes": 15,
+        "ipWhitelist": [],
+        "minPasswordLength": 10,
+    },
+}
+
+RATE_LIMITS = {
+    "export": {"window_seconds": 60, "max_requests": 5},
+    "import": {"window_seconds": 60, "max_requests": 3},
+    "backup": {"window_seconds": 60, "max_requests": 5},
+}
+RATE_LIMIT_STATE = {
+    "export": {},
+    "import": {},
+    "backup": {},
+}
 
 DEFAULT_ROLE_NAME = "Mitarbeiter"
 PERMISSIONS = [
@@ -543,6 +608,477 @@ def get_db():
         db.row_factory = sqlite3.Row
     return db
 
+def get_runtime_config_path():
+    os.makedirs(app.instance_path, exist_ok=True)
+    return os.path.join(app.instance_path, SERVER_SETTINGS_CONFIG_NAME)
+
+def load_runtime_config():
+    path = get_runtime_config_path()
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+def write_runtime_config(settings):
+    path = get_runtime_config_path()
+    payload = {
+        "host": settings["server"]["host"],
+        "port": settings["server"]["port"],
+        "debug": settings["server"]["debug"],
+        "updatedAt": datetime.utcnow().isoformat()
+    }
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2)
+
+def get_runtime_settings():
+    runtime = app.config.get("RUNTIME_SETTINGS") or {}
+    if not runtime:
+        return DEFAULT_SERVER_SETTINGS["server"]
+    return runtime
+
+def parse_ip_whitelist(value):
+    if value is None:
+        return [], []
+    if isinstance(value, list):
+        items = value
+    else:
+        items = [item.strip() for item in str(value).split(",")]
+    entries = [item for item in items if item]
+    parsed = []
+    errors = []
+    for entry in entries:
+        try:
+            if "/" in entry:
+                ipaddress.ip_network(entry, strict=False)
+            else:
+                ipaddress.ip_address(entry)
+            parsed.append(entry)
+        except ValueError:
+            errors.append(entry)
+    return parsed, errors
+
+def normalize_email(value):
+    if not value:
+        return ""
+    return value.strip()
+
+def validate_server_settings(payload, partial=False, existing=None):
+    errors = {}
+    if not isinstance(payload, dict):
+        return None, {"settings": "Payload muss ein Objekt sein."}
+
+    if partial:
+        base = existing or DEFAULT_SERVER_SETTINGS
+        merged = deep_merge(base, payload)
+    else:
+        merged = deep_merge(DEFAULT_SERVER_SETTINGS, payload)
+
+    schema_version = merged.get("schemaVersion")
+    if schema_version != SERVER_SETTINGS_SCHEMA_VERSION:
+        errors["schemaVersion"] = "schemaVersion ist ungültig oder nicht unterstützt."
+
+    server = merged.get("server") or {}
+    host = (server.get("host") or "").strip()
+    if not host:
+        errors["server.host"] = "Host darf nicht leer sein."
+    port = server.get("port")
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        errors["server.port"] = "Port muss eine Zahl sein."
+    else:
+        if port < 1 or port > 65535:
+            errors["server.port"] = "Port muss zwischen 1 und 65535 liegen."
+    debug = bool(server.get("debug"))
+
+    backup = merged.get("backup") or {}
+    backup_enabled = bool(backup.get("enabled"))
+    backup_schedule = (backup.get("schedule") or "daily").strip().lower()
+    if backup_schedule not in {"daily", "custom"}:
+        errors["backup.schedule"] = "Backup-Rhythmus ist ungültig."
+    backup_time = (backup.get("time") or "02:00").strip()
+    if backup_time and not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", backup_time):
+        errors["backup.time"] = "Backup-Zeit muss im Format HH:MM sein."
+    try:
+        retention_days = int(backup.get("retentionDays", 14))
+    except (TypeError, ValueError):
+        errors["backup.retentionDays"] = "Retention muss eine Zahl sein."
+        retention_days = 14
+    else:
+        if retention_days < 1:
+            errors["backup.retentionDays"] = "Retention muss mindestens 1 Tag sein."
+    backup_directory = (backup.get("directory") or "backups/").strip()
+    backup_notify_email = normalize_email(backup.get("notifyEmail"))
+    if backup_notify_email:
+        if not re.match(r"^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", backup_notify_email):
+            errors["backup.notifyEmail"] = "E-Mail-Adresse ist ungültig."
+    backup_encrypt = bool(backup.get("encrypt"))
+    if backup_encrypt and not os.environ.get("BACKUP_ENCRYPTION_KEY"):
+        errors["backup.encrypt"] = "BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung nicht möglich."
+
+    import_export = merged.get("importExport") or {}
+    export_allowed = bool(import_export.get("exportAllowed"))
+    import_allowed = bool(import_export.get("importAllowed"))
+    export_format = (import_export.get("exportFormat") or "sqlite").strip().lower()
+    if export_format not in {"sqlite", "csv", "json"}:
+        errors["importExport.exportFormat"] = "Export-Format ist ungültig."
+    import_mode = (import_export.get("importMode") or "merge").strip().lower()
+    if import_mode not in {"merge", "replace", "append"}:
+        errors["importExport.importMode"] = "Import-Modus ist ungültig."
+    include_uploads = bool(import_export.get("includeUploads"))
+
+    security = merged.get("security") or {}
+    force_https = bool(security.get("forceHttps"))
+    require_mfa = bool(security.get("requireMfa"))
+    try:
+        session_timeout = int(security.get("sessionTimeoutMinutes", 60))
+    except (TypeError, ValueError):
+        errors["security.sessionTimeoutMinutes"] = "Session-Timeout muss eine Zahl sein."
+        session_timeout = 60
+    else:
+        if session_timeout < 5:
+            errors["security.sessionTimeoutMinutes"] = "Session-Timeout muss mindestens 5 Minuten sein."
+    try:
+        max_failed_attempts = int(security.get("maxFailedAttempts", 5))
+    except (TypeError, ValueError):
+        errors["security.maxFailedAttempts"] = "Max Failed Attempts muss eine Zahl sein."
+        max_failed_attempts = 5
+    else:
+        if max_failed_attempts < 1:
+            errors["security.maxFailedAttempts"] = "Max Failed Attempts muss mindestens 1 sein."
+    try:
+        lockout_minutes = int(security.get("lockoutMinutes", 15))
+    except (TypeError, ValueError):
+        errors["security.lockoutMinutes"] = "Lockout Minutes muss eine Zahl sein."
+        lockout_minutes = 15
+    else:
+        if lockout_minutes < 1:
+            errors["security.lockoutMinutes"] = "Lockout Minutes muss mindestens 1 sein."
+
+    ip_whitelist_raw = security.get("ipWhitelist", [])
+    ip_whitelist, ip_errors = parse_ip_whitelist(ip_whitelist_raw)
+    if ip_errors:
+        errors["security.ipWhitelist"] = f"Ungültige IP/CIDR: {', '.join(ip_errors)}"
+
+    try:
+        min_password_length = int(security.get("minPasswordLength", 10))
+    except (TypeError, ValueError):
+        errors["security.minPasswordLength"] = "Passwortlänge muss eine Zahl sein."
+        min_password_length = 10
+    else:
+        if min_password_length < 6:
+            errors["security.minPasswordLength"] = "Passwortlänge muss mindestens 6 sein."
+
+    if errors:
+        return None, errors
+
+    normalized = {
+        "schemaVersion": SERVER_SETTINGS_SCHEMA_VERSION,
+        "server": {"host": host, "port": port, "debug": debug},
+        "proFeaturesEnabled": bool(merged.get("proFeaturesEnabled")),
+        "backup": {
+            "enabled": backup_enabled,
+            "compress": bool(backup.get("compress")),
+            "schedule": backup_schedule,
+            "time": backup_time,
+            "retentionDays": retention_days,
+            "directory": backup_directory,
+            "notifyEmail": backup_notify_email,
+            "encrypt": backup_encrypt,
+        },
+        "importExport": {
+            "exportAllowed": export_allowed,
+            "importAllowed": import_allowed,
+            "exportFormat": export_format,
+            "importMode": import_mode,
+            "includeUploads": include_uploads,
+        },
+        "security": {
+            "forceHttps": force_https,
+            "requireMfa": require_mfa,
+            "sessionTimeoutMinutes": session_timeout,
+            "maxFailedAttempts": max_failed_attempts,
+            "lockoutMinutes": lockout_minutes,
+            "ipWhitelist": ip_whitelist,
+            "minPasswordLength": min_password_length,
+        },
+    }
+    return normalized, {}
+
+def migrate_server_settings(data):
+    if not isinstance(data, dict):
+        return clone_customization(DEFAULT_SERVER_SETTINGS)
+    version = data.get("schemaVersion", 0)
+    migrated = deep_merge(DEFAULT_SERVER_SETTINGS, data)
+    if version != SERVER_SETTINGS_SCHEMA_VERSION:
+        migrated["schemaVersion"] = SERVER_SETTINGS_SCHEMA_VERSION
+    return migrated
+
+def get_server_settings_row(db):
+    settings = db.execute('SELECT * FROM server_settings WHERE id = 1').fetchone()
+    if not settings:
+        db.execute('INSERT INTO server_settings (id) VALUES (1)')
+        db.commit()
+        settings = db.execute('SELECT * FROM server_settings WHERE id = 1').fetchone()
+    return settings
+
+def serialize_server_settings_row(row):
+    if not row:
+        return clone_customization(DEFAULT_SERVER_SETTINGS)
+    ip_whitelist = []
+    if row["allowed_ip_ranges"]:
+        ip_whitelist = [item.strip() for item in row["allowed_ip_ranges"].split(",") if item.strip()]
+    return migrate_server_settings({
+        "schemaVersion": row["schema_version"] or SERVER_SETTINGS_SCHEMA_VERSION,
+        "server": {
+            "host": row["host"] or DEFAULT_SERVER_SETTINGS["server"]["host"],
+            "port": row["port"] or DEFAULT_SERVER_SETTINGS["server"]["port"],
+            "debug": bool(row["debug_mode"]),
+        },
+        "proFeaturesEnabled": bool(row["pro_enabled"]),
+        "backup": {
+            "enabled": bool(row["backup_enabled"]),
+            "compress": bool(row["backup_compress"]),
+            "schedule": row["backup_schedule"] or DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
+            "time": row["backup_time"] or DEFAULT_SERVER_SETTINGS["backup"]["time"],
+            "retentionDays": row["backup_retention_days"] or DEFAULT_SERVER_SETTINGS["backup"]["retentionDays"],
+            "directory": row["backup_location"] or DEFAULT_SERVER_SETTINGS["backup"]["directory"],
+            "notifyEmail": row["backup_notify_email"] or "",
+            "encrypt": bool(row["backup_encrypt"]),
+        },
+        "importExport": {
+            "exportAllowed": bool(row["allow_db_export"]),
+            "importAllowed": bool(row["allow_db_import"]),
+            "exportFormat": row["export_format"] or DEFAULT_SERVER_SETTINGS["importExport"]["exportFormat"],
+            "importMode": row["import_mode"] or DEFAULT_SERVER_SETTINGS["importExport"]["importMode"],
+            "includeUploads": bool(row["include_uploads"]),
+        },
+        "security": {
+            "forceHttps": bool(row["require_https"]),
+            "requireMfa": bool(row["enforce_mfa"]),
+            "sessionTimeoutMinutes": row["session_timeout_minutes"] or DEFAULT_SERVER_SETTINGS["security"]["sessionTimeoutMinutes"],
+            "maxFailedAttempts": row["max_failed_logins"] or DEFAULT_SERVER_SETTINGS["security"]["maxFailedAttempts"],
+            "lockoutMinutes": row["lockout_minutes"] or DEFAULT_SERVER_SETTINGS["security"]["lockoutMinutes"],
+            "ipWhitelist": ip_whitelist,
+            "minPasswordLength": row["password_min_length"] or DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"],
+        },
+    })
+
+def save_server_settings(db, settings, updated_by):
+    ip_whitelist = ",".join(settings["security"]["ipWhitelist"])
+    db.execute(
+        """
+        UPDATE server_settings
+        SET host = ?,
+            port = ?,
+            debug_mode = ?,
+            pro_enabled = ?,
+            backup_enabled = ?,
+            backup_schedule = ?,
+            backup_time = ?,
+            backup_retention_days = ?,
+            backup_location = ?,
+            backup_compress = ?,
+            backup_encrypt = ?,
+            backup_notify_email = ?,
+            allow_db_import = ?,
+            allow_db_export = ?,
+            export_format = ?,
+            import_mode = ?,
+            include_uploads = ?,
+            require_https = ?,
+            session_timeout_minutes = ?,
+            max_failed_logins = ?,
+            lockout_minutes = ?,
+            allowed_ip_ranges = ?,
+            password_min_length = ?,
+            enforce_mfa = ?,
+            schema_version = ?,
+            updated_by = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1
+        """,
+        (
+            settings["server"]["host"],
+            settings["server"]["port"],
+            1 if settings["server"]["debug"] else 0,
+            1 if settings["proFeaturesEnabled"] else 0,
+            1 if settings["backup"]["enabled"] else 0,
+            settings["backup"]["schedule"],
+            settings["backup"]["time"],
+            settings["backup"]["retentionDays"],
+            settings["backup"]["directory"],
+            1 if settings["backup"]["compress"] else 0,
+            1 if settings["backup"]["encrypt"] else 0,
+            settings["backup"]["notifyEmail"],
+            1 if settings["importExport"]["importAllowed"] else 0,
+            1 if settings["importExport"]["exportAllowed"] else 0,
+            settings["importExport"]["exportFormat"],
+            settings["importExport"]["importMode"],
+            1 if settings["importExport"]["includeUploads"] else 0,
+            1 if settings["security"]["forceHttps"] else 0,
+            settings["security"]["sessionTimeoutMinutes"],
+            settings["security"]["maxFailedAttempts"],
+            settings["security"]["lockoutMinutes"],
+            ip_whitelist,
+            settings["security"]["minPasswordLength"],
+            1 if settings["security"]["requireMfa"] else 0,
+            SERVER_SETTINGS_SCHEMA_VERSION,
+            updated_by,
+        ),
+    )
+    db.execute(
+        "INSERT INTO server_settings_revisions (settings_json, created_by) VALUES (?, ?)",
+        (json.dumps(settings), updated_by),
+    )
+    db.commit()
+    write_runtime_config(settings)
+    schedule_backup(settings)
+
+def build_server_settings_response(row):
+    settings = serialize_server_settings_row(row)
+    pending = pending_restart(settings)
+    return {
+        "settings": settings,
+        "schemaVersion": settings["schemaVersion"],
+        "updatedAt": row["updated_at"] if row else None,
+        "updatedBy": row["updated_by"] if row else None,
+        "pendingRestart": pending,
+        "requiresRestartFields": list(SERVER_SETTINGS_RUNTIME_FIELDS),
+        "enforcedCapabilities": {
+            "httpsRedirect": settings["security"]["forceHttps"],
+            "mfaEnforced": settings["security"]["requireMfa"],
+            "ipWhitelist": bool(settings["security"]["ipWhitelist"]),
+            "backupScheduler": settings["backup"]["enabled"] and settings["backup"]["schedule"] == "daily",
+            "infraRequired": [item for item in [
+                "httpsTerminatedProxy" if settings["security"]["forceHttps"] else None,
+            ] if item],
+        },
+    }
+
+def flatten_server_settings(settings):
+    return {
+        "host": settings["server"]["host"],
+        "port": settings["server"]["port"],
+        "debug": settings["server"]["debug"],
+        "pro_enabled": settings["proFeaturesEnabled"],
+        "backup_enabled": settings["backup"]["enabled"],
+        "backup_schedule": settings["backup"]["schedule"],
+        "backup_time": settings["backup"]["time"],
+        "backup_retention_days": settings["backup"]["retentionDays"],
+        "backup_location": settings["backup"]["directory"],
+        "backup_compress": settings["backup"]["compress"],
+        "backup_encrypt": settings["backup"]["encrypt"],
+        "backup_notify_email": settings["backup"]["notifyEmail"],
+        "allow_db_import": settings["importExport"]["importAllowed"],
+        "allow_db_export": settings["importExport"]["exportAllowed"],
+        "export_format": settings["importExport"]["exportFormat"],
+        "import_mode": settings["importExport"]["importMode"],
+        "include_uploads": settings["importExport"]["includeUploads"],
+        "require_https": settings["security"]["forceHttps"],
+        "session_timeout_minutes": settings["security"]["sessionTimeoutMinutes"],
+        "max_failed_logins": settings["security"]["maxFailedAttempts"],
+        "lockout_minutes": settings["security"]["lockoutMinutes"],
+        "allowed_ip_ranges": ", ".join(settings["security"]["ipWhitelist"]),
+        "password_min_length": settings["security"]["minPasswordLength"],
+        "enforce_mfa": settings["security"]["requireMfa"],
+    }
+
+def legacy_payload_to_settings(payload):
+    if "server" in payload or "backup" in payload:
+        return payload
+    return {
+        "schemaVersion": SERVER_SETTINGS_SCHEMA_VERSION,
+        "server": {
+            "host": payload.get("host"),
+            "port": payload.get("port"),
+            "debug": payload.get("debug"),
+        },
+        "proFeaturesEnabled": payload.get("pro_enabled"),
+        "backup": {
+            "enabled": payload.get("backup_enabled"),
+            "compress": payload.get("backup_compress"),
+            "schedule": payload.get("backup_schedule"),
+            "time": payload.get("backup_time"),
+            "retentionDays": payload.get("backup_retention_days"),
+            "directory": payload.get("backup_location"),
+            "notifyEmail": payload.get("backup_notify_email"),
+            "encrypt": payload.get("backup_encrypt"),
+        },
+        "importExport": {
+            "exportAllowed": payload.get("allow_db_export"),
+            "importAllowed": payload.get("allow_db_import"),
+            "exportFormat": payload.get("export_format"),
+            "importMode": payload.get("import_mode"),
+            "includeUploads": payload.get("include_uploads"),
+        },
+        "security": {
+            "forceHttps": payload.get("require_https"),
+            "requireMfa": payload.get("enforce_mfa"),
+            "sessionTimeoutMinutes": payload.get("session_timeout_minutes"),
+            "maxFailedAttempts": payload.get("max_failed_logins"),
+            "lockoutMinutes": payload.get("lockout_minutes"),
+            "ipWhitelist": payload.get("allowed_ip_ranges", ""),
+            "minPasswordLength": payload.get("password_min_length"),
+        },
+    }
+
+def pending_restart(settings):
+    runtime = get_runtime_settings()
+    return any(
+        settings["server"][field] != runtime.get(field)
+        for field in SERVER_SETTINGS_RUNTIME_FIELDS
+    )
+
+def track_rate_limit(category, identifier):
+    now = datetime.utcnow()
+    state = RATE_LIMIT_STATE.get(category, {})
+    window_seconds = RATE_LIMITS[category]["window_seconds"]
+    max_requests = RATE_LIMITS[category]["max_requests"]
+    attempts = state.get(identifier, [])
+    attempts = [stamp for stamp in attempts if (now - stamp).total_seconds() < window_seconds]
+    if len(attempts) >= max_requests:
+        state[identifier] = attempts
+        return False
+    attempts.append(now)
+    state[identifier] = attempts
+    RATE_LIMIT_STATE[category] = state
+    return True
+
+def get_client_ip():
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.remote_addr or ""
+
+def is_request_secure():
+    if request.is_secure:
+        return True
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
+    return forwarded_proto.split(",")[0].strip().lower() == "https"
+
+def ip_allowed(ip, whitelist):
+    if not whitelist:
+        return True
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    for entry in whitelist:
+        try:
+            if "/" in entry:
+                if ip_obj in ipaddress.ip_network(entry, strict=False):
+                    return True
+            else:
+                if ip_obj == ipaddress.ip_address(entry):
+                    return True
+        except ValueError:
+            continue
+    return False
+
 def clone_customization(data):
     return json.loads(json.dumps(data))
 
@@ -876,7 +1412,20 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
-                otp_secret TEXT
+                otp_secret TEXT,
+                failed_login_attempts INTEGER DEFAULT 0,
+                lockout_until TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                code_hash TEXT NOT NULL,
+                used_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
             )
         ''')
 
@@ -1777,14 +2326,14 @@ def init_db():
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 host TEXT DEFAULT '0.0.0.0',
                 port INTEGER DEFAULT 5000,
-                debug_mode INTEGER DEFAULT 1,
-                pro_enabled INTEGER DEFAULT 1,
+                debug_mode INTEGER DEFAULT 0,
+                pro_enabled INTEGER DEFAULT 0,
                 backup_enabled INTEGER DEFAULT 0,
                 backup_schedule TEXT DEFAULT 'daily',
                 backup_time TEXT DEFAULT '02:00',
                 backup_retention_days INTEGER DEFAULT 14,
                 backup_location TEXT DEFAULT 'backups/',
-                backup_compress INTEGER DEFAULT 1,
+                backup_compress INTEGER DEFAULT 0,
                 backup_encrypt INTEGER DEFAULT 0,
                 backup_notify_email TEXT,
                 allow_db_import INTEGER DEFAULT 0,
@@ -1799,6 +2348,8 @@ def init_db():
                 allowed_ip_ranges TEXT,
                 password_min_length INTEGER DEFAULT 10,
                 enforce_mfa INTEGER DEFAULT 0,
+                schema_version INTEGER DEFAULT 1,
+                updated_by TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -1835,7 +2386,7 @@ def init_db():
             ("backup_time", "TEXT DEFAULT '02:00'"),
             ("backup_retention_days", "INTEGER DEFAULT 14"),
             ("backup_location", "TEXT DEFAULT 'backups/'"),
-            ("backup_compress", "INTEGER DEFAULT 1"),
+            ("backup_compress", "INTEGER DEFAULT 0"),
             ("backup_encrypt", "INTEGER DEFAULT 0"),
             ("backup_notify_email", "TEXT"),
             ("allow_db_import", "INTEGER DEFAULT 0"),
@@ -1850,11 +2401,45 @@ def init_db():
             ("allowed_ip_ranges", "TEXT"),
             ("password_min_length", "INTEGER DEFAULT 10"),
             ("enforce_mfa", "INTEGER DEFAULT 0"),
+            ("schema_version", "INTEGER DEFAULT 1"),
+            ("updated_by", "TEXT"),
         ):
             try:
                 c.execute(f'ALTER TABLE server_settings ADD COLUMN {column} {column_type}')
             except sqlite3.OperationalError:
                 pass
+
+        for column, column_type in (
+            ("failed_login_attempts", "INTEGER DEFAULT 0"),
+            ("lockout_until", "TIMESTAMP"),
+        ):
+            try:
+                c.execute(f'ALTER TABLE users ADD COLUMN {column} {column_type}')
+            except sqlite3.OperationalError:
+                pass
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS server_settings_revisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                settings_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by TEXT
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS backup_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                size_bytes INTEGER,
+                compressed INTEGER DEFAULT 0,
+                encrypted INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'success',
+                message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS device_tags (
@@ -1992,6 +2577,10 @@ def init_db():
 def create_user(username, password):
     with app.app_context():
         db = get_db()
+        min_length = serialize_server_settings_row(get_server_settings_row(db))["security"]["minPasswordLength"]
+        if len(password) < min_length:
+            print(f"[!] Passwort muss mindestens {min_length} Zeichen lang sein.")
+            return
         password_hash = generate_password_hash(password)
         try:
             cursor = db.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, password_hash))
@@ -2020,6 +2609,53 @@ def login_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
+@app.before_request
+def enforce_security_policies():
+    if request.endpoint == "static" or request.path.startswith("/static/"):
+        return None
+    if request.path.startswith("/api/health"):
+        return None
+    db = get_db()
+    settings = serialize_server_settings_row(get_server_settings_row(db))
+    security = settings["security"]
+    app.permanent_session_lifetime = timedelta(minutes=security["sessionTimeoutMinutes"])
+
+    client_ip = get_client_ip()
+    if security["ipWhitelist"]:
+        if not ip_allowed(client_ip, security["ipWhitelist"]):
+            return jsonify({"error": "IP nicht erlaubt"}), 403
+
+    if security["forceHttps"] and not is_request_secure():
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "HTTPS erforderlich"}), 403
+        https_url = request.url.replace("http://", "https://", 1)
+        return redirect(https_url, code=302)
+
+    if session.get("logged_in"):
+        last_activity = session.get(app.config["LAST_ACTIVITY_KEY"])
+        now = datetime.utcnow()
+        if last_activity:
+            try:
+                last_seen = datetime.fromisoformat(last_activity)
+                timeout = timedelta(minutes=security["sessionTimeoutMinutes"])
+                if now - last_seen > timeout:
+                    session.clear()
+                    return redirect(url_for("login"))
+            except ValueError:
+                session.pop(app.config["LAST_ACTIVITY_KEY"], None)
+        session[app.config["LAST_ACTIVITY_KEY"]] = now.isoformat()
+
+        if security["requireMfa"]:
+            access = get_user_access(db)
+            if access.get("is_superuser"):
+                if not session.get("mfa_verified"):
+                    allowed_paths = {"/verify", "/api/otp/verify", "/api/otp/setup", "/logout"}
+                    if request.path not in allowed_paths:
+                        if request.path.startswith("/api/"):
+                            return jsonify({"error": "MFA erforderlich"}), 403
+                        return redirect(url_for("verify"))
+    return None
 
 def log_activity(db, action, entity_type, entity_id=None, details=None):
     username = session.get('username', 'system')
@@ -2492,6 +3128,9 @@ def calculate_spof_nodes(db):
 def pro_required(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
+        settings = serialize_server_settings_row(get_server_settings_row(get_db()))
+        if not settings["proFeaturesEnabled"]:
+            return jsonify({"error": "Pro-Features sind deaktiviert."}), 403
         return f(*args, **kwargs)
     return wrapped
 
@@ -2503,6 +3142,12 @@ def parse_email_list(value):
     else:
         emails = value.split(',')
     return [email.strip() for email in emails if email and email.strip()]
+
+def hash_recovery_code(code):
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+def generate_recovery_codes(count=10):
+    return [secrets.token_hex(4) for _ in range(count)]
 
 def get_notification_settings(db):
     settings = db.execute('SELECT * FROM notification_settings WHERE id = 1').fetchone()
@@ -2563,6 +3208,287 @@ def send_notification_email(settings, recipients, subject, body):
         return True
     except Exception:
         return False
+
+def ensure_directory(path):
+    os.makedirs(path, exist_ok=True)
+
+def create_sqlite_backup(destination_path):
+    src_conn = sqlite3.connect(DATABASE)
+    dest_conn = sqlite3.connect(destination_path)
+    with dest_conn:
+        src_conn.backup(dest_conn)
+    src_conn.close()
+    dest_conn.close()
+
+def compress_path(source_path, archive_path):
+    with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        if os.path.isdir(source_path):
+            for root, _, files in os.walk(source_path):
+                for file in files:
+                    full_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(full_path, source_path)
+                    zf.write(full_path, rel_path)
+        else:
+            zf.write(source_path, os.path.basename(source_path))
+
+def encrypt_file(source_path, encrypted_path, key):
+    fernet = Fernet(key)
+    with open(source_path, "rb") as file:
+        encrypted = fernet.encrypt(file.read())
+    with open(encrypted_path, "wb") as file:
+        file.write(encrypted)
+
+def prune_backups(directory, retention_days):
+    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+    for name in os.listdir(directory):
+        file_path = os.path.join(directory, name)
+        if not os.path.isfile(file_path):
+            continue
+        try:
+            mtime = datetime.utcfromtimestamp(os.path.getmtime(file_path))
+        except OSError:
+            continue
+        if mtime < cutoff:
+            try:
+                os.remove(file_path)
+            except OSError:
+                continue
+
+def run_backup_job(settings, triggered_by="scheduler", force=False):
+    backup = settings["backup"]
+    if not backup["enabled"] and not force:
+        return {"status": "skipped", "message": "Backups sind deaktiviert."}
+    backup_dir = backup["directory"]
+    ensure_directory(backup_dir)
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    base_name = f"inventory_backup_{timestamp}"
+    temp_dir = tempfile.mkdtemp(prefix="inventorypro-backup-")
+    base_path = os.path.join(temp_dir, f"{base_name}.db")
+    message = ""
+    status = "success"
+    size_bytes = None
+    final_name = None
+    final_path = None
+
+    try:
+        create_sqlite_backup(base_path)
+        output_path = base_path
+        if backup["compress"]:
+            compressed_path = os.path.join(temp_dir, f"{base_name}.zip")
+            compress_path(base_path, compressed_path)
+            output_path = compressed_path
+        if backup["encrypt"]:
+            key = os.environ.get("BACKUP_ENCRYPTION_KEY")
+            if not key:
+                raise ValueError("BACKUP_ENCRYPTION_KEY fehlt.")
+            encrypted_path = os.path.join(temp_dir, f"{base_name}.enc")
+            encrypt_file(output_path, encrypted_path, key.encode("utf-8"))
+            output_path = encrypted_path
+
+        final_name = os.path.basename(output_path)
+        final_path = os.path.join(backup_dir, final_name)
+        shutil.move(output_path, final_path)
+        size_bytes = os.path.getsize(final_path)
+        prune_backups(backup_dir, backup["retentionDays"])
+    except Exception as exc:
+        status = "failed"
+        message = str(exc)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO backup_runs (file_name, file_path, size_bytes, compressed, encrypted, status, message)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            final_name or os.path.basename(base_path),
+            final_path or backup_dir,
+            size_bytes,
+            1 if backup["compress"] else 0,
+            1 if backup["encrypt"] else 0,
+            status,
+            message,
+        ),
+    )
+    log_activity(db, "backup", "server_settings", details={"status": status, "triggered_by": triggered_by})
+    db.commit()
+
+    if backup.get("notifyEmail"):
+        notification_settings = get_notification_settings(db)
+        subject = "Inventory Pro Backup Status"
+        body = f"Backup-Status: {status}\n{message}"
+        send_notification_email(notification_settings, [backup["notifyEmail"]], subject, body)
+
+    return {"status": status, "message": message, "size_bytes": size_bytes}
+
+def schedule_backup(settings):
+    try:
+        scheduler.remove_job("daily_backup")
+    except Exception:
+        pass
+    if settings["backup"]["enabled"] and settings["backup"]["schedule"] == "daily":
+        time_value = settings["backup"]["time"] or "02:00"
+        hour, minute = time_value.split(":")
+        def scheduled_job():
+            with app.app_context():
+                run_backup_job(settings, triggered_by="scheduler")
+        scheduler.add_job(
+            scheduled_job,
+            "cron",
+            id="daily_backup",
+            hour=int(hour),
+            minute=int(minute),
+            replace_existing=True,
+        )
+
+def init_scheduler(settings):
+    schedule_backup(settings)
+    if not scheduler.running:
+        scheduler.start()
+
+def get_all_tables(db):
+    tables = db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    ).fetchall()
+    return [row["name"] if isinstance(row, sqlite3.Row) else row[0] for row in tables]
+
+def export_database(settings):
+    export_format = settings["importExport"]["exportFormat"]
+    include_uploads = settings["importExport"]["includeUploads"]
+    temp_dir = tempfile.mkdtemp(prefix="inventorypro-export-")
+    base_name = f"inventory_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+
+    db = get_db()
+    if export_format == "sqlite":
+        db_path = os.path.join(temp_dir, f"{base_name}.db")
+        create_sqlite_backup(db_path)
+        output_path = db_path
+    elif export_format == "json":
+        output_path = os.path.join(temp_dir, f"{base_name}.json")
+        export_data = {}
+        for table in get_all_tables(db):
+            rows = db.execute(f"SELECT * FROM {table}").fetchall()
+            export_data[table] = [dict(row) for row in rows]
+        with open(output_path, "w", encoding="utf-8") as file:
+            json.dump(export_data, file, indent=2)
+    else:
+        output_path = os.path.join(temp_dir, base_name)
+        os.makedirs(output_path, exist_ok=True)
+        for table in get_all_tables(db):
+            rows = db.execute(f"SELECT * FROM {table}").fetchall()
+            csv_path = os.path.join(output_path, f"{table}.csv")
+            if rows:
+                with open(csv_path, "w", newline="", encoding="utf-8") as file:
+                    writer = csv.writer(file)
+                    writer.writerow(rows[0].keys())
+                    for row in rows:
+                        writer.writerow([row[col] for col in row.keys()])
+            else:
+                with open(csv_path, "w", newline="", encoding="utf-8") as file:
+                    writer = csv.writer(file)
+                    writer.writerow([])
+        output_path = output_path
+
+    if include_uploads and os.path.exists("static/uploads"):
+        uploads_target = os.path.join(temp_dir, "uploads")
+        shutil.copytree("static/uploads", uploads_target)
+
+    if os.path.isdir(output_path) or include_uploads:
+        archive_path = os.path.join(temp_dir, f"{base_name}.zip")
+        compress_path(temp_dir, archive_path)
+        return archive_path, f"{base_name}.zip", temp_dir
+
+    return output_path, os.path.basename(output_path), temp_dir
+
+def import_database(file_path, settings, import_mode, include_uploads):
+    if import_mode == "replace":
+        run_backup_job(settings, triggered_by="import", force=True)
+    if file_path.endswith(".zip"):
+        extract_dir = tempfile.mkdtemp(prefix="inventorypro-import-")
+        with zipfile.ZipFile(file_path, "r") as zf:
+            zf.extractall(extract_dir)
+        sqlite_files = [f for f in os.listdir(extract_dir) if f.endswith(".db")]
+        json_files = [f for f in os.listdir(extract_dir) if f.endswith(".json")]
+        csv_dirs = [d for d in os.listdir(extract_dir) if os.path.isdir(os.path.join(extract_dir, d))]
+        if sqlite_files:
+            file_path = os.path.join(extract_dir, sqlite_files[0])
+        elif json_files:
+            file_path = os.path.join(extract_dir, json_files[0])
+        elif csv_dirs:
+            file_path = os.path.join(extract_dir, csv_dirs[0])
+        if include_uploads:
+            uploads_src = os.path.join(extract_dir, "uploads")
+            if os.path.exists(uploads_src):
+                shutil.rmtree("static/uploads", ignore_errors=True)
+                shutil.copytree(uploads_src, "static/uploads")
+
+    if file_path.endswith(".db") or file_path.endswith(".sqlite"):
+        if import_mode == "replace":
+            shutil.copyfile(file_path, DATABASE)
+            return "imported"
+        source_conn = sqlite3.connect(file_path)
+        dest_conn = sqlite3.connect(DATABASE)
+        source_conn.row_factory = sqlite3.Row
+        dest_conn.row_factory = sqlite3.Row
+        tables = get_all_tables(source_conn)
+        for table in tables:
+            rows = source_conn.execute(f"SELECT * FROM {table}").fetchall()
+            if not rows:
+                continue
+            columns = rows[0].keys()
+            placeholders = ",".join(["?"] * len(columns))
+            insert_mode = "INSERT OR REPLACE" if import_mode == "merge" else "INSERT"
+            dest_conn.executemany(
+                f"{insert_mode} INTO {table} ({','.join(columns)}) VALUES ({placeholders})",
+                [[row[col] for col in columns] for row in rows],
+            )
+        dest_conn.commit()
+        source_conn.close()
+        dest_conn.close()
+        return "imported"
+
+    if file_path.endswith(".json"):
+        with open(file_path, "r", encoding="utf-8") as file:
+            data = json.load(file)
+        db = get_db()
+        for table, rows in data.items():
+            if not rows:
+                continue
+            columns = rows[0].keys()
+            placeholders = ",".join(["?"] * len(columns))
+            insert_mode = "INSERT OR REPLACE" if import_mode == "merge" else "INSERT"
+            db.executemany(
+                f"{insert_mode} INTO {table} ({','.join(columns)}) VALUES ({placeholders})",
+                [[row.get(col) for col in columns] for row in rows],
+            )
+        db.commit()
+        return "imported"
+
+    if os.path.isdir(file_path):
+        db = get_db()
+        for name in os.listdir(file_path):
+            if not name.endswith(".csv"):
+                continue
+            table = name.replace(".csv", "")
+            with open(os.path.join(file_path, name), "r", encoding="utf-8") as file:
+                reader = csv.reader(file)
+                rows = list(reader)
+                if not rows:
+                    continue
+                columns = rows[0]
+                data_rows = rows[1:]
+                placeholders = ",".join(["?"] * len(columns))
+                insert_mode = "INSERT OR REPLACE" if import_mode == "merge" else "INSERT"
+                db.executemany(
+                    f"{insert_mode} INTO {table} ({','.join(columns)}) VALUES ({placeholders})",
+                    data_rows,
+                )
+        db.commit()
+        return "imported"
+
+    raise ValueError("Unbekanntes Importformat.")
 
 def format_ticket_subject(ticket, prefix):
     return f"{prefix} #{ticket['id']} - {ticket['title']}"
@@ -2887,65 +3813,60 @@ def serialize_ad_settings(settings):
     }
 
 def get_server_settings(db):
-    settings = db.execute('SELECT * FROM server_settings WHERE id = 1').fetchone()
-    if not settings:
-        db.execute('INSERT INTO server_settings (id) VALUES (1)')
-        db.commit()
-        settings = db.execute('SELECT * FROM server_settings WHERE id = 1').fetchone()
-    return settings
+    return get_server_settings_row(db)
 
 def serialize_server_settings(settings):
     if not settings:
         return {
-            "host": "0.0.0.0",
-            "port": 5000,
-            "debug": True,
-            "pro_enabled": True,
-            "backup_enabled": False,
-            "backup_schedule": "daily",
-            "backup_time": "02:00",
-            "backup_retention_days": 14,
-            "backup_location": "backups/",
-            "backup_compress": True,
-            "backup_encrypt": False,
-            "backup_notify_email": "",
-            "allow_db_import": False,
-            "allow_db_export": True,
-            "export_format": "sqlite",
-            "import_mode": "merge",
-            "include_uploads": True,
-            "require_https": False,
-            "session_timeout_minutes": 60,
-            "max_failed_logins": 5,
-            "lockout_minutes": 15,
+            "host": DEFAULT_SERVER_SETTINGS["server"]["host"],
+            "port": DEFAULT_SERVER_SETTINGS["server"]["port"],
+            "debug": DEFAULT_SERVER_SETTINGS["server"]["debug"],
+            "pro_enabled": DEFAULT_SERVER_SETTINGS["proFeaturesEnabled"],
+            "backup_enabled": DEFAULT_SERVER_SETTINGS["backup"]["enabled"],
+            "backup_schedule": DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
+            "backup_time": DEFAULT_SERVER_SETTINGS["backup"]["time"],
+            "backup_retention_days": DEFAULT_SERVER_SETTINGS["backup"]["retentionDays"],
+            "backup_location": DEFAULT_SERVER_SETTINGS["backup"]["directory"],
+            "backup_compress": DEFAULT_SERVER_SETTINGS["backup"]["compress"],
+            "backup_encrypt": DEFAULT_SERVER_SETTINGS["backup"]["encrypt"],
+            "backup_notify_email": DEFAULT_SERVER_SETTINGS["backup"]["notifyEmail"],
+            "allow_db_import": DEFAULT_SERVER_SETTINGS["importExport"]["importAllowed"],
+            "allow_db_export": DEFAULT_SERVER_SETTINGS["importExport"]["exportAllowed"],
+            "export_format": DEFAULT_SERVER_SETTINGS["importExport"]["exportFormat"],
+            "import_mode": DEFAULT_SERVER_SETTINGS["importExport"]["importMode"],
+            "include_uploads": DEFAULT_SERVER_SETTINGS["importExport"]["includeUploads"],
+            "require_https": DEFAULT_SERVER_SETTINGS["security"]["forceHttps"],
+            "session_timeout_minutes": DEFAULT_SERVER_SETTINGS["security"]["sessionTimeoutMinutes"],
+            "max_failed_logins": DEFAULT_SERVER_SETTINGS["security"]["maxFailedAttempts"],
+            "lockout_minutes": DEFAULT_SERVER_SETTINGS["security"]["lockoutMinutes"],
             "allowed_ip_ranges": "",
-            "password_min_length": 10,
-            "enforce_mfa": False
+            "password_min_length": DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"],
+            "enforce_mfa": DEFAULT_SERVER_SETTINGS["security"]["requireMfa"]
         }
     return {
-        "host": settings["host"] or "0.0.0.0",
-        "port": settings["port"] or 5000,
+        "host": settings["host"] or DEFAULT_SERVER_SETTINGS["server"]["host"],
+        "port": settings["port"] or DEFAULT_SERVER_SETTINGS["server"]["port"],
         "debug": bool(settings["debug_mode"]),
-        "pro_enabled": bool(settings["pro_enabled"] if settings["pro_enabled"] is not None else 1),
+        "pro_enabled": bool(settings["pro_enabled"]),
         "backup_enabled": bool(settings["backup_enabled"]),
-        "backup_schedule": settings["backup_schedule"] or "daily",
-        "backup_time": settings["backup_time"] or "02:00",
-        "backup_retention_days": settings["backup_retention_days"] or 14,
-        "backup_location": settings["backup_location"] or "backups/",
-        "backup_compress": bool(settings["backup_compress"] if settings["backup_compress"] is not None else 1),
+        "backup_schedule": settings["backup_schedule"] or DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
+        "backup_time": settings["backup_time"] or DEFAULT_SERVER_SETTINGS["backup"]["time"],
+        "backup_retention_days": settings["backup_retention_days"] or DEFAULT_SERVER_SETTINGS["backup"]["retentionDays"],
+        "backup_location": settings["backup_location"] or DEFAULT_SERVER_SETTINGS["backup"]["directory"],
+        "backup_compress": bool(settings["backup_compress"]),
         "backup_encrypt": bool(settings["backup_encrypt"]),
         "backup_notify_email": settings["backup_notify_email"] or "",
         "allow_db_import": bool(settings["allow_db_import"]),
-        "allow_db_export": bool(settings["allow_db_export"] if settings["allow_db_export"] is not None else 1),
-        "export_format": settings["export_format"] or "sqlite",
-        "import_mode": settings["import_mode"] or "merge",
-        "include_uploads": bool(settings["include_uploads"] if settings["include_uploads"] is not None else 1),
+        "allow_db_export": bool(settings["allow_db_export"]),
+        "export_format": settings["export_format"] or DEFAULT_SERVER_SETTINGS["importExport"]["exportFormat"],
+        "import_mode": settings["import_mode"] or DEFAULT_SERVER_SETTINGS["importExport"]["importMode"],
+        "include_uploads": bool(settings["include_uploads"]),
         "require_https": bool(settings["require_https"]),
-        "session_timeout_minutes": settings["session_timeout_minutes"] or 60,
-        "max_failed_logins": settings["max_failed_logins"] or 5,
-        "lockout_minutes": settings["lockout_minutes"] or 15,
+        "session_timeout_minutes": settings["session_timeout_minutes"] or DEFAULT_SERVER_SETTINGS["security"]["sessionTimeoutMinutes"],
+        "max_failed_logins": settings["max_failed_logins"] or DEFAULT_SERVER_SETTINGS["security"]["maxFailedAttempts"],
+        "lockout_minutes": settings["lockout_minutes"] or DEFAULT_SERVER_SETTINGS["security"]["lockoutMinutes"],
         "allowed_ip_ranges": settings["allowed_ip_ranges"] or "",
-        "password_min_length": settings["password_min_length"] or 10,
+        "password_min_length": settings["password_min_length"] or DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"],
         "enforce_mfa": bool(settings["enforce_mfa"])
     }
 
@@ -3058,12 +3979,28 @@ def login():
         password = request.form.get('password')
 
         db = get_db()
+        settings = serialize_server_settings_row(get_server_settings_row(db))
+        security = settings["security"]
         user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+
+        if user and user["lockout_until"]:
+            try:
+                lockout_until = datetime.fromisoformat(user["lockout_until"])
+            except ValueError:
+                lockout_until = None
+            if lockout_until and lockout_until > datetime.utcnow():
+                return render_template('login.html', error="Konto vorübergehend gesperrt. Bitte später erneut versuchen.")
 
         if user and check_password_hash(user['password_hash'], password):
             session['logged_in'] = True
             session['username'] = username
+            session['mfa_verified'] = not security["requireMfa"]
+            session.permanent = True
             access = get_user_access(db)
+            db.execute(
+                "UPDATE users SET failed_login_attempts = 0, lockout_until = NULL WHERE id = ?",
+                (user["id"],),
+            )
             log_activity(db, "login", "user", user['id'], {"username": username})
             db.commit()
             return redirect(get_post_login_redirect(access))
@@ -3078,11 +4015,28 @@ def login():
                 existing_user = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
             session['logged_in'] = True
             session['username'] = username
+            session['mfa_verified'] = not security["requireMfa"]
+            session.permanent = True
             access = get_user_access(db)
+            db.execute(
+                "UPDATE users SET failed_login_attempts = 0, lockout_until = NULL WHERE id = ?",
+                (existing_user["id"],),
+            )
             log_activity(db, "login", "user", existing_user['id'], {"username": username, "source": "ad"})
             db.commit()
             return redirect(get_post_login_redirect(access))
 
+        if user:
+            failed_attempts = (user["failed_login_attempts"] or 0) + 1
+            lockout_until = None
+            if failed_attempts >= security["maxFailedAttempts"]:
+                lockout_until = datetime.utcnow() + timedelta(minutes=security["lockoutMinutes"])
+                failed_attempts = 0
+            db.execute(
+                "UPDATE users SET failed_login_attempts = ?, lockout_until = ? WHERE id = ?",
+                (failed_attempts, lockout_until.isoformat() if lockout_until else None, user["id"]),
+            )
+            db.commit()
         log_activity(db, "login_failed", "user", details={"username": username})
         db.commit()
         return render_template('login.html', error="Ungültige Anmeldedaten")
@@ -5089,9 +6043,9 @@ def notification_test():
 @app.route('/api/features', methods=['GET'])
 @login_required
 def feature_flags():
-    settings = get_server_settings(get_db())
+    settings = serialize_server_settings_row(get_server_settings_row(get_db()))
     return jsonify({
-        "pro_enabled": bool(settings["pro_enabled"]) if settings else PRO_ENABLED,
+        "pro_enabled": settings["proFeaturesEnabled"] if settings else PRO_ENABLED,
         "pro_features": PRO_FEATURES,
         "free_features": FREE_FEATURES
     })
@@ -5395,6 +6349,9 @@ def manage_users():
             return jsonify({"error": "Benutzername und Passwort sind erforderlich"}), 400
         if role_ids and not user_can('roles.assign'):
             return jsonify({"error": "Keine Berechtigung für Rollen"}), 403
+        min_length = serialize_server_settings_row(get_server_settings_row(db))["security"]["minPasswordLength"]
+        if len(password) < min_length:
+            return jsonify({"error": f"Passwort muss mindestens {min_length} Zeichen lang sein."}), 400
         password_hash = generate_password_hash(password)
         try:
             cursor = db.execute('''
@@ -5457,6 +6414,9 @@ def reset_user_password(user_id):
     password = data.get('password') or ''
     if not password:
         return jsonify({"error": "Passwort ist erforderlich"}), 400
+    min_length = serialize_server_settings_row(get_server_settings_row(db))["security"]["minPasswordLength"]
+    if len(password) < min_length:
+        return jsonify({"error": f"Passwort muss mindestens {min_length} Zeichen lang sein."}), 400
     password_hash = generate_password_hash(password)
     result = db.execute('''
         UPDATE users
@@ -5480,6 +6440,27 @@ def list_permissions():
         ORDER BY group_name, label
     ''').fetchall()
     return jsonify([dict(row) for row in rows])
+
+@app.before_request
+def bootstrap_runtime_settings():
+    if app.config.get("BOOTSTRAPPED"):
+        return
+    app.config["BOOTSTRAPPED"] = True
+    if app.config.get("TESTING"):
+        return
+    db = get_db()
+    row = get_server_settings_row(db)
+    settings = serialize_server_settings_row(row)
+    runtime_config = load_runtime_config()
+    if runtime_config:
+        app.config["RUNTIME_SETTINGS"] = {
+            "host": runtime_config.get("host", settings["server"]["host"]),
+            "port": runtime_config.get("port", settings["server"]["port"]),
+            "debug": runtime_config.get("debug", settings["server"]["debug"]),
+        }
+    else:
+        app.config["RUNTIME_SETTINGS"] = settings["server"]
+    init_scheduler(settings)
 
 @app.route('/api/roles', methods=['GET', 'POST'])
 @login_required
@@ -5611,159 +6592,180 @@ def update_user_roles(user_id):
     ''', (user_id,)).fetchall()
     return jsonify({"status": "updated", "roles": [dict(role) for role in roles]}), 200
 
+@app.route('/api/settings/server', methods=['GET', 'PUT', 'PATCH'])
+@login_required
+@require_permission('server_settings.manage')
+def server_settings_v2():
+    db = get_db()
+    row = get_server_settings_row(db)
+    if request.method == 'GET':
+        return jsonify(build_server_settings_response(row))
+
+    payload = request.get_json() or {}
+    existing = serialize_server_settings_row(row)
+    normalized, errors = validate_server_settings(
+        payload,
+        partial=request.method == "PATCH",
+        existing=existing
+    )
+    if errors:
+        return jsonify({"error": "Ungültige Einstellungen.", "details": errors}), 400
+    save_server_settings(db, normalized, session.get("username", "system"))
+    row = get_server_settings_row(db)
+    return jsonify(build_server_settings_response(row))
+
+@app.route('/api/settings/server/reload', methods=['POST'])
+@login_required
+@require_permission('server_settings.manage')
+def reload_server_settings():
+    db = get_db()
+    row = get_server_settings_row(db)
+    settings = serialize_server_settings_row(row)
+    schedule_backup(settings)
+    return jsonify({
+        "status": "reloaded",
+        "pendingRestart": pending_restart(settings)
+    })
+
+@app.route('/api/settings/server/health', methods=['GET'])
+@login_required
+@require_permission('server_settings.manage')
+def server_settings_health():
+    db = get_db()
+    row = get_server_settings_row(db)
+    settings = serialize_server_settings_row(row)
+    runtime = get_runtime_settings()
+    return jsonify({
+        "runtime": runtime,
+        "stored": settings,
+        "pendingRestart": pending_restart(settings)
+    })
+
+@app.route('/api/settings/server/history', methods=['GET'])
+@login_required
+@require_permission('server_settings.manage')
+def server_settings_history():
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT id, created_at, created_by
+        FROM server_settings_revisions
+        ORDER BY id DESC
+        LIMIT 20
+        """
+    ).fetchall()
+    revisions = [
+        {"id": row["id"], "createdAt": row["created_at"], "createdBy": row["created_by"]}
+        for row in rows
+    ]
+    return jsonify({"revisions": revisions})
+
 @app.route('/api/server-settings', methods=['GET', 'POST'])
 @login_required
 @require_permission('server_settings.manage')
-def server_settings():
+def server_settings_legacy():
     db = get_db()
     if request.method == 'POST':
-        data = request.get_json() or {}
-        def parse_int_field(name, default, minimum=None, maximum=None):
-            raw_value = data.get(name, default)
-            if raw_value is None or raw_value == '':
-                raw_value = default
-            try:
-                parsed = int(raw_value)
-            except (TypeError, ValueError):
-                return None, f"{name.replace('_', ' ').capitalize()} muss eine Zahl sein"
-            if minimum is not None and parsed < minimum:
-                return None, f"{name.replace('_', ' ').capitalize()} muss mindestens {minimum} sein"
-            if maximum is not None and parsed > maximum:
-                return None, f"{name.replace('_', ' ').capitalize()} darf höchstens {maximum} sein"
-            return parsed, None
+        payload = legacy_payload_to_settings(request.get_json() or {})
+        existing = serialize_server_settings_row(get_server_settings_row(db))
+        normalized, errors = validate_server_settings(payload, partial=False, existing=existing)
+        if errors:
+            return jsonify({"error": "Ungültige Einstellungen.", "details": errors}), 400
+        save_server_settings(db, normalized, session.get("username", "system"))
+    row = get_server_settings_row(db)
+    settings = serialize_server_settings_row(row)
+    return jsonify(flatten_server_settings(settings))
 
-        host = (data.get('host') or '0.0.0.0').strip()
-        try:
-            port = int(data.get('port') or 5000)
-        except (TypeError, ValueError):
-            return jsonify({"error": "Port muss eine Zahl sein"}), 400
-        if port < 1 or port > 65535:
-            return jsonify({"error": "Port muss zwischen 1 und 65535 liegen"}), 400
-        debug_mode = 1 if data.get('debug') else 0
-        pro_enabled = 1 if data.get('pro_enabled') else 0
-        backup_enabled = 1 if data.get('backup_enabled') else 0
-        backup_schedule = (data.get('backup_schedule') or 'daily').strip().lower()
-        backup_time = (data.get('backup_time') or '02:00').strip()
-        backup_retention_days, error = parse_int_field('backup_retention_days', 14, 1, 3650)
-        if error:
-            return jsonify({"error": error}), 400
-        backup_location = (data.get('backup_location') or 'backups/').strip()
-        backup_compress = 1 if data.get('backup_compress') else 0
-        backup_encrypt = 1 if data.get('backup_encrypt') else 0
-        backup_notify_email = (data.get('backup_notify_email') or '').strip()
-        allow_db_import = 1 if data.get('allow_db_import') else 0
-        allow_db_export = 1 if data.get('allow_db_export') else 0
-        export_format = (data.get('export_format') or 'sqlite').strip().lower()
-        import_mode = (data.get('import_mode') or 'merge').strip().lower()
-        include_uploads = 1 if data.get('include_uploads') else 0
-        require_https = 1 if data.get('require_https') else 0
-        session_timeout_minutes, error = parse_int_field('session_timeout_minutes', 60, 5, 1440)
-        if error:
-            return jsonify({"error": error}), 400
-        max_failed_logins, error = parse_int_field('max_failed_logins', 5, 1, 20)
-        if error:
-            return jsonify({"error": error}), 400
-        lockout_minutes, error = parse_int_field('lockout_minutes', 15, 1, 240)
-        if error:
-            return jsonify({"error": error}), 400
-        allowed_ip_ranges = (data.get('allowed_ip_ranges') or '').strip()
-        password_min_length, error = parse_int_field('password_min_length', 10, 6, 64)
-        if error:
-            return jsonify({"error": error}), 400
-        enforce_mfa = 1 if data.get('enforce_mfa') else 0
-        if not host:
-            return jsonify({"error": "Host darf nicht leer sein"}), 400
-        if backup_schedule not in {'hourly', 'daily', 'weekly', 'monthly', 'custom'}:
-            return jsonify({"error": "Backup-Rhythmus ist ungültig"}), 400
-        if backup_time and not re.match(r'^([01]\\d|2[0-3]):[0-5]\\d$', backup_time):
-            return jsonify({"error": "Backup-Zeit muss im Format HH:MM sein"}), 400
-        if export_format not in {'sqlite', 'csv', 'json'}:
-            return jsonify({"error": "Export-Format ist ungültig"}), 400
-        if import_mode not in {'merge', 'replace'}:
-            return jsonify({"error": "Import-Modus ist ungültig"}), 400
-        db.execute('''
-            UPDATE server_settings
-            SET host = ?,
-                port = ?,
-                debug_mode = ?,
-                pro_enabled = ?,
-                backup_enabled = ?,
-                backup_schedule = ?,
-                backup_time = ?,
-                backup_retention_days = ?,
-                backup_location = ?,
-                backup_compress = ?,
-                backup_encrypt = ?,
-                backup_notify_email = ?,
-                allow_db_import = ?,
-                allow_db_export = ?,
-                export_format = ?,
-                import_mode = ?,
-                include_uploads = ?,
-                require_https = ?,
-                session_timeout_minutes = ?,
-                max_failed_logins = ?,
-                lockout_minutes = ?,
-                allowed_ip_ranges = ?,
-                password_min_length = ?,
-                enforce_mfa = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = 1
-        ''', (
-            host,
-            port,
-            debug_mode,
-            pro_enabled,
-            backup_enabled,
-            backup_schedule,
-            backup_time,
-            backup_retention_days,
-            backup_location,
-            backup_compress,
-            backup_encrypt,
-            backup_notify_email,
-            allow_db_import,
-            allow_db_export,
-            export_format,
-            import_mode,
-            include_uploads,
-            require_https,
-            session_timeout_minutes,
-            max_failed_logins,
-            lockout_minutes,
-            allowed_ip_ranges,
-            password_min_length,
-            enforce_mfa
-        ))
-        log_activity(db, "update", "server_settings", details={
-            "host": host,
-            "port": port,
-            "debug_mode": bool(debug_mode),
-            "pro_enabled": bool(pro_enabled),
-            "backup_enabled": bool(backup_enabled),
-            "backup_schedule": backup_schedule,
-            "backup_time": backup_time,
-            "backup_retention_days": backup_retention_days,
-            "backup_location": backup_location,
-            "backup_compress": bool(backup_compress),
-            "backup_encrypt": bool(backup_encrypt),
-            "backup_notify_email": backup_notify_email,
-            "allow_db_import": bool(allow_db_import),
-            "allow_db_export": bool(allow_db_export),
-            "export_format": export_format,
-            "import_mode": import_mode,
-            "include_uploads": bool(include_uploads),
-            "require_https": bool(require_https),
-            "session_timeout_minutes": session_timeout_minutes,
-            "max_failed_logins": max_failed_logins,
-            "lockout_minutes": lockout_minutes,
-            "allowed_ip_ranges": allowed_ip_ranges,
-            "password_min_length": password_min_length,
-            "enforce_mfa": bool(enforce_mfa)
-        })
-        db.commit()
-    settings = get_server_settings(db)
-    return jsonify(serialize_server_settings(settings))
+@app.route('/api/backups/run', methods=['POST'])
+@login_required
+@require_permission('server_settings.manage')
+def run_backup():
+    db = get_db()
+    settings = serialize_server_settings_row(get_server_settings_row(db))
+    client_ip = get_client_ip()
+    if not track_rate_limit("backup", client_ip):
+        return jsonify({"error": "Zu viele Backup-Anfragen"}), 429
+    data = request.get_json() or {}
+    force = bool(data.get("force"))
+    result = run_backup_job(settings, triggered_by=session.get("username", "manual"), force=force)
+    return jsonify(result)
+
+@app.route('/api/backups/list', methods=['GET'])
+@login_required
+@require_permission('server_settings.manage')
+def list_backups():
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT id, file_name, file_path, size_bytes, compressed, encrypted, status, message, created_at
+        FROM backup_runs
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/export', methods=['GET'])
+@login_required
+@require_permission('server_settings.manage')
+def export_data():
+    db = get_db()
+    settings = serialize_server_settings_row(get_server_settings_row(db))
+    if not settings["importExport"]["exportAllowed"]:
+        return jsonify({"error": "Export ist deaktiviert."}), 403
+    client_ip = get_client_ip()
+    if not track_rate_limit("export", client_ip):
+        return jsonify({"error": "Zu viele Export-Anfragen"}), 429
+    export_path, filename, temp_dir = export_database(settings)
+
+    @after_this_request
+    def cleanup(response):
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return response
+
+    return send_file(export_path, as_attachment=True, download_name=filename)
+
+@app.route('/api/import', methods=['POST'])
+@login_required
+@require_permission('server_settings.manage')
+def import_data():
+    db = get_db()
+    settings = serialize_server_settings_row(get_server_settings_row(db))
+    if not settings["importExport"]["importAllowed"]:
+        return jsonify({"error": "Import ist deaktiviert."}), 403
+    client_ip = get_client_ip()
+    if not track_rate_limit("import", client_ip):
+        return jsonify({"error": "Zu viele Import-Anfragen"}), 429
+
+    if request.content_length and request.content_length > app.config["MAX_IMPORT_SIZE_MB"] * 1024 * 1024:
+        return jsonify({"error": "Import-Datei ist zu groß."}), 413
+    upload = request.files.get("file")
+    if not upload:
+        return jsonify({"error": "Datei fehlt."}), 400
+
+    filename = upload.filename or ""
+    if not re.search(r"\.(zip|db|sqlite|json|csv)$", filename, re.IGNORECASE):
+        return jsonify({"error": "Dateityp nicht erlaubt."}), 400
+
+    temp_dir = tempfile.mkdtemp(prefix="inventorypro-import-")
+    file_path = os.path.join(temp_dir, filename)
+    upload.save(file_path)
+
+    antivirus_cmd = os.environ.get("ANTIVIRUS_COMMAND")
+    if antivirus_cmd:
+        result = subprocess.run([antivirus_cmd, file_path], capture_output=True)
+        if result.returncode != 0:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return jsonify({"error": "Antivirus-Scan fehlgeschlagen."}), 400
+
+    import_mode = settings["importExport"]["importMode"]
+    include_uploads = settings["importExport"]["includeUploads"]
+    try:
+        import_database(file_path, settings, import_mode, include_uploads)
+    except Exception as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return jsonify({"error": f"Import fehlgeschlagen: {exc}"}), 400
+    shutil.rmtree(temp_dir, ignore_errors=True)
+    return jsonify({"status": "imported"})
 
 @app.route('/api/customize', methods=['GET', 'PUT', 'PATCH'])
 @login_required
@@ -6640,6 +7642,14 @@ def setup_otp():
     # 2. Wenn nicht vorhanden, neues Secret generieren und speichern
     secret = pyotp.random_base32()
     db.execute("UPDATE users SET otp_secret = ? WHERE username = ?", (secret, username))
+    user_id = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()["id"]
+    db.execute("DELETE FROM mfa_recovery_codes WHERE user_id = ?", (user_id,))
+    recovery_codes = generate_recovery_codes()
+    for code in recovery_codes:
+        db.execute(
+            "INSERT INTO mfa_recovery_codes (user_id, code_hash) VALUES (?, ?)",
+            (user_id, hash_recovery_code(code)),
+        )
     log_activity(db, "otp_setup", "user", details={"username": username})
     db.commit()
 
@@ -6661,7 +7671,8 @@ def setup_otp():
     return jsonify({
         'enabled': False,
         'secret': secret,
-        'qr_code': img_str
+        'qr_code': img_str,
+        'recovery_codes': recovery_codes
     })
 
 
@@ -6678,15 +7689,35 @@ def verify_otp():
 
     db = get_db()
     user = db.execute('SELECT otp_secret FROM users WHERE username = ?', (username,)).fetchone()
+    verified = False
+    if user and user["otp_secret"] and code and pyotp.TOTP(user['otp_secret']).verify(code):
+        verified = True
+    if not verified and code:
+        user_row = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+        if user_row:
+            code_hash = hash_recovery_code(code)
+            recovery = db.execute(
+                """
+                SELECT id FROM mfa_recovery_codes
+                WHERE user_id = ? AND code_hash = ? AND used_at IS NULL
+                """,
+                (user_row["id"], code_hash),
+            ).fetchone()
+            if recovery:
+                db.execute(
+                    "UPDATE mfa_recovery_codes SET used_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (recovery["id"],),
+                )
+                verified = True
 
-    if user and pyotp.TOTP(user['otp_secret']).verify(code):
+    if verified:
+        session["mfa_verified"] = True
         log_activity(db, "otp_verify", "user", details={"username": username})
         db.commit()
         return jsonify({"verified": True}), 200
-    else:
-        log_activity(db, "otp_failed", "user", details={"username": username})
-        db.commit()
-        return jsonify({"verified": False}), 401
+    log_activity(db, "otp_failed", "user", details={"username": username})
+    db.commit()
+    return jsonify({"verified": False}), 401
 
 @app.route('/reset', methods=['GET'])
 def reset_page():
@@ -6712,6 +7743,10 @@ def reset_password():
 
     if not pyotp.TOTP(user['otp_secret']).verify(otp_code):
         return render_template('reset_password.html', error="OTP ungültig.")
+
+    min_length = serialize_server_settings_row(get_server_settings_row(db))["security"]["minPasswordLength"]
+    if len(new_password) < min_length:
+        return render_template('reset_password.html', error=f"Passwort muss mindestens {min_length} Zeichen lang sein.")
 
     # Neues Passwort setzen
     new_hash = generate_password_hash(new_password)
@@ -6745,8 +7780,16 @@ def otp_status():
 if __name__ == '__main__':
     init_db()
     with app.app_context():
-        settings = get_server_settings(get_db())
-        runtime_host = settings["host"] if settings else '0.0.0.0'
-        runtime_port = settings["port"] if settings else 5000
-        runtime_debug = bool(settings["debug_mode"]) if settings else True
+        settings_row = get_server_settings_row(get_db())
+        settings = serialize_server_settings_row(settings_row)
+        runtime_config = load_runtime_config() or {}
+        runtime_host = runtime_config.get("host", settings["server"]["host"])
+        runtime_port = runtime_config.get("port", settings["server"]["port"])
+        runtime_debug = runtime_config.get("debug", settings["server"]["debug"])
+        app.config["RUNTIME_SETTINGS"] = {
+            "host": runtime_host,
+            "port": runtime_port,
+            "debug": runtime_debug,
+        }
+        init_scheduler(settings)
     app.run(host=runtime_host, port=runtime_port, debug=runtime_debug)
