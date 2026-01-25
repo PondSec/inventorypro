@@ -1016,7 +1016,7 @@
         </div>
     </div>
 
-    <div x-show="assignmentModalOpen" @click.away="closeAssetAssignmentModal()" class="modal fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" x-transition>
+    <div x-show="assignmentModalOpen" @click.self="closeAssetAssignmentModal()" class="modal fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" x-transition>
         <div class="modal-panel bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
