@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "branding": {
+    "name": "Inventarisierungswerk",
+    "tagline": "Klar. Flexibel. Sicher.",
+    "logoDataUrl": ""
+  },
+  "baseTokens": {
+    "colors": {
+      "primary": "#0f766e",
+      "secondary": "#0ea5e9",
+      "accent": "#f59e0b",
+      "neutral": "#64748b",
+      "background": "#f8fafc",
+      "surface": "#ffffff",
+      "text": "#0f172a",
+      "textMuted": "#64748b",
+      "border": "#e2e8f0",
+      "shadow": "rgba(15, 23, 42, 0.12)",
+      "focus": "rgba(15, 118, 110, 0.35)",
+      "success": "#16a34a",
+      "warning": "#f59e0b",
+      "danger": "#dc2626",
+      "info": "#0284c7"
+    },
+    "typography": {
+      "fontFamily": "'Inter', system-ui, sans-serif",
+      "fontSizes": { "xs": "12px", "sm": "14px", "base": "15px", "lg": "18px", "xl": "22px" },
+      "fontWeights": { "normal": 400, "medium": 500, "semibold": 600, "bold": 700 },
+      "lineHeights": { "tight": 1.2, "normal": 1.6, "relaxed": 1.75 },
+      "letterSpacing": { "tight": "-0.01em", "normal": "0", "wide": "0.05em" }
+    },
+    "spacing": {
+      "radius": { "sm": 8, "md": 12, "lg": 18, "pill": 999 },
+      "paddingScale": [4, 8, 12, 16, 20, 24, 32, 40, 48, 64],
+      "gapScale": [4, 8, 12, 16, 20, 24, 32, 40]
+    },
+    "layout": { "containerWidth": 1240, "sidebarWidth": 280, "tableDensity": "normal" },
+    "states": { "hover": 0.92, "active": 0.86, "disabled": 0.6 }
+  },
+  "componentOverrides": {
+    "button": {
+      "primary": {
+        "radius": 14,
+        "background": "#0f766e",
+        "text": "#ffffff",
+        "border": "transparent",
+        "shadow": "0 6px 16px rgba(15, 23, 42, 0.08)",
+        "hoverBg": "#115e59",
+        "activeBg": "#134e4a",
+        "disabledBg": "#e2e8f0",
+        "disabledText": "#94a3b8"
+      },
+      "secondary": {
+        "radius": 14,
+        "background": "#ffffff",
+        "text": "#0f172a",
+        "border": "#e2e8f0",
+        "shadow": "none",
+        "hoverBg": "#f8fafc",
+        "activeBg": "#e2e8f0",
+        "disabledBg": "#f1f5f9",
+        "disabledText": "#94a3b8"
+      }
+    },
+    "input": {
+      "radius": 12,
+      "background": "#ffffff",
+      "text": "#0f172a",
+      "border": "#cbd5f5",
+      "focusRing": "rgba(14, 165, 233, 0.4)",
+      "shadow": "0 1px 2px rgba(15, 23, 42, 0.06)",
+      "placeholder": "#94a3b8"
+    },
+    "card": {
+      "radius": 20,
+      "background": "#ffffff",
+      "border": "#e2e8f0",
+      "shadow": "0 12px 30px rgba(15, 23, 42, 0.12)"
+    },
+    "table": {
+      "radius": 16,
+      "headerBg": "#f1f5f9",
+      "rowBg": "#ffffff",
+      "zebraBg": "#f8fafc",
+      "border": "#e2e8f0"
+    },
+    "modal": { "radius": 20, "background": "#ffffff", "shadow": "0 20px 50px rgba(15, 23, 42, 0.16)" },
+    "toast": { "radius": 16, "background": "#0f172a", "text": "#ffffff", "shadow": "0 12px 30px rgba(15, 23, 42, 0.2)" },
+    "badge": { "radius": 999, "background": "#ecfdf5", "text": "#047857" },
+    "navbar": { "background": "#ffffff", "border": "#e2e8f0", "text": "#0f172a" },
+    "sidebar": { "background": "#ffffff", "border": "#e2e8f0", "text": "#0f172a" }
+  },
+  "layoutPrefs": {
+    "density": 1,
+    "containerWidth": 1240,
+    "sidebarWidth": 280,
+    "tableDensity": "normal",
+    "rowHeight": 44,
+    "zebraStriping": true,
+    "formSpacing": 16
+  },
+  "featurePrefs": {
+    "iconSet": "feather",
+    "tableDefaults": {
+      "defaultSort": "updated_at:desc",
+      "defaultColumns": ["name", "status", "owner", "updated_at"]
+    },
+    "compactSidebar": false
+  }
+}
