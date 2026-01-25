@@ -32,3 +32,8 @@
 - Toolbar oben, Controls gruppiert.
 - Detailpanel für Node/State Informationen.
 - Compare-Ansicht: Nebeneinander mit klaren Differenz-Highlights.
+
+## Tabs + Detail-Drawer
+- Haupt-Views über Tabs strukturieren (Overview | Services | Checks | Incidents | History).
+- Detailansichten rechts als Drawer (`panel`) öffnen, damit Listen übersichtlich bleiben.
+- Drawer mit Fokus-Management und klaren Aktionen.
