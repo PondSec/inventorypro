@@ -15,6 +15,11 @@ import zipfile
 import shutil
 import time
 import subprocess
+import socket
+import urllib.request
+import urllib.error
+import ssl
+import threading
 from pathlib import Path
 from apscheduler.schedulers.background import BackgroundScheduler
 from cryptography.fernet import Fernet
@@ -56,7 +61,22 @@ FREE_FEATURES = [
 
 RUNTIME_SETTINGS_CACHE = None
 BACKUP_SCHEDULER = BackgroundScheduler()
+HEALTH_SCHEDULER = BackgroundScheduler()
 RATE_LIMIT_CACHE = {}
+
+HEALTH_STATUS_ORDER = {
+    "OK": 0,
+    "WARN": 1,
+    "CRIT": 2,
+    "UNKNOWN": 3
+}
+HEALTH_DEFAULT_RETENTION_DAYS = 14
+HEALTH_INCIDENT_OPEN_MINUTES = 5
+HEALTH_INCIDENT_CLOSE_MINUTES = 5
+HEALTH_REDACT_KEYS = {
+    "password", "secret", "token", "api_key", "apikey", "key", "authorization", "bearer", "dsn"
+}
+HEALTH_CHECK_REGISTRY = {}
 
 DEFAULT_ROLE_NAME = "Mitarbeiter"
 DEFAULT_SERVER_SETTINGS = {
@@ -324,6 +344,30 @@ PERMISSIONS = [
         "group": "Zeitmaschine"
     },
     {
+        "key": "health.view",
+        "label": "Health Dashboard anzeigen",
+        "description": "Server- und Service-Health überwachen.",
+        "group": "Health"
+    },
+    {
+        "key": "health.manage",
+        "label": "Health Checks verwalten",
+        "description": "Health-Checks konfigurieren und verwalten.",
+        "group": "Health"
+    },
+    {
+        "key": "health.run",
+        "label": "Health Checks ausführen",
+        "description": "Checks manuell starten und Aktionen ausführen.",
+        "group": "Health"
+    },
+    {
+        "key": "health.export",
+        "label": "Health Daten exportieren",
+        "description": "Health-Reports und Exporte erstellen.",
+        "group": "Health"
+    },
+    {
         "key": "software.view",
         "label": "Software-Inventar anzeigen",
         "description": "Software-Inventar und Installationen einsehen.",
@@ -569,6 +613,8 @@ DEFAULT_ROLES = [
             "dependencies.view",
             "dependencies.manage",
             "timemachine.view",
+            "health.view",
+            "health.run",
             "software.view",
             "software.manage",
             "teams.view",
@@ -1290,6 +1336,116 @@ def seed_roles(db):
                 VALUES (?, ?)
             ''', (role_id, permission_id))
 
+def seed_health_checks(db):
+    default_checks = [
+        {
+            "name": "CPU Load",
+            "slug": "cpu-load",
+            "category": "System",
+            "check_type": "cpu_load",
+            "interval_seconds": 60,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"warn_load": 4, "crit_load": 8, "per_core": True}
+        },
+        {
+            "name": "Memory Usage",
+            "slug": "memory-usage",
+            "category": "System",
+            "check_type": "memory",
+            "interval_seconds": 60,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"warn_percent": 80, "crit_percent": 90}
+        },
+        {
+            "name": "Disk Root",
+            "slug": "disk-root",
+            "category": "System",
+            "check_type": "disk",
+            "interval_seconds": 300,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"path": "/", "warn_percent": 80, "crit_percent": 90}
+        },
+        {
+            "name": "DB Ping",
+            "slug": "db-ping",
+            "category": "Infra",
+            "check_type": "db_ping",
+            "interval_seconds": 120,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"db_path": DATABASE, "warn_ms": 150, "crit_ms": 300}
+        },
+        {
+            "name": "DNS Resolve",
+            "slug": "dns-resolve",
+            "category": "Network",
+            "check_type": "dns",
+            "interval_seconds": 120,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"hostname": "example.com"}
+        },
+        {
+            "name": "Internet Reachability",
+            "slug": "internet-reach",
+            "category": "Network",
+            "check_type": "internet",
+            "interval_seconds": 300,
+            "timeout_seconds": 10,
+            "enabled": 1,
+            "config": {"url": "https://example.com"}
+        },
+        {
+            "name": "Time Sync",
+            "slug": "time-sync",
+            "category": "System",
+            "check_type": "time_sync",
+            "interval_seconds": 600,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"max_offset_ms": 100}
+        },
+        {
+            "name": "Service Unit (example)",
+            "slug": "service-unit-example",
+            "category": "Services",
+            "check_type": "service_unit",
+            "interval_seconds": 60,
+            "timeout_seconds": 5,
+            "enabled": 0,
+            "config": {"unit": "nginx.service"}
+        }
+    ]
+    for entry in default_checks:
+        existing = db.execute(
+            "SELECT id FROM health_check_definitions WHERE slug = ?",
+            (entry["slug"],)
+        ).fetchone()
+        if existing:
+            continue
+        db.execute(
+            '''
+            INSERT INTO health_check_definitions (
+                name, slug, category, check_type, config_json,
+                interval_seconds, timeout_seconds, enabled
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                entry["name"],
+                entry["slug"],
+                entry["category"],
+                entry["check_type"],
+                json.dumps(entry["config"]),
+                entry["interval_seconds"],
+                entry["timeout_seconds"],
+                entry["enabled"]
+            )
+        )
+
 def assign_user_role(db, user_id, role_name):
     role = db.execute('SELECT id FROM roles WHERE name = ?', (role_name,)).fetchone()
     if not role:
@@ -1418,6 +1574,7 @@ def get_post_login_redirect(access):
         (("knowledge.view", "knowledge.manage"), "knowledge_page"),
         (("stats.view",), "stats"),
         (("timemachine.view",), "time_machine_page"),
+        (("health.view", "health.manage", "health.run"), "health_page"),
         (("users.manage",), "users_page"),
         (("locations.view", "locations.manage"), "locations_page")
     ]
@@ -2402,6 +2559,84 @@ def init_db():
             )
         ''')
         c.execute('''
+            CREATE TABLE IF NOT EXISTS health_check_definitions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                slug TEXT UNIQUE,
+                category TEXT,
+                check_type TEXT NOT NULL,
+                config_json TEXT,
+                interval_seconds INTEGER DEFAULT 60,
+                timeout_seconds INTEGER DEFAULT 10,
+                enabled INTEGER DEFAULT 1,
+                last_run_at TEXT,
+                last_status TEXT,
+                last_duration_ms INTEGER,
+                last_summary_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS health_check_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT DEFAULT 'running',
+                triggered_by TEXT,
+                initiated_by TEXT,
+                summary_json TEXT,
+                error_message TEXT
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS health_check_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                check_id INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                severity TEXT,
+                reason TEXT,
+                observed_at TEXT NOT NULL,
+                duration_ms INTEGER,
+                metrics_json TEXT,
+                details_json TEXT,
+                FOREIGN KEY (run_id) REFERENCES health_check_runs(id),
+                FOREIGN KEY (check_id) REFERENCES health_check_definitions(id)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS health_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                check_id INTEGER NOT NULL,
+                previous_status TEXT,
+                current_status TEXT,
+                severity TEXT,
+                reason TEXT,
+                observed_at TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (check_id) REFERENCES health_check_definitions(id)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS health_incidents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                check_id INTEGER NOT NULL,
+                status TEXT DEFAULT 'open',
+                summary TEXT,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                acknowledged_at TEXT,
+                muted_until TEXT,
+                last_status TEXT,
+                last_observed_at TEXT,
+                ticket_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (check_id) REFERENCES health_check_definitions(id),
+                FOREIGN KEY (ticket_id) REFERENCES tickets(id)
+            )
+        ''')
+        c.execute('''
             CREATE TABLE IF NOT EXISTS login_attempts (
                 username TEXT PRIMARY KEY,
                 failed_count INTEGER DEFAULT 0,
@@ -2602,6 +2837,7 @@ def init_db():
         seed_roles(db)
         ensure_default_roles(db)
         ensure_admin_user(db)
+        seed_health_checks(db)
 
         db.commit()
 
@@ -2617,6 +2853,1004 @@ def create_user(username, password):
             print(f"[+] Benutzer '{username}' erstellt.")
         except sqlite3.IntegrityError:
             print(f"[!] Benutzer '{username}' existiert bereits.")
+
+def redact_payload(payload):
+    if isinstance(payload, dict):
+        redacted = {}
+        for key, value in payload.items():
+            key_lower = str(key).lower()
+            if any(token in key_lower for token in HEALTH_REDACT_KEYS):
+                redacted[key] = "***"
+            else:
+                redacted[key] = redact_payload(value)
+        return redacted
+    if isinstance(payload, list):
+        return [redact_payload(item) for item in payload]
+    return payload
+
+def normalize_health_status(status):
+    return status if status in HEALTH_STATUS_ORDER else "UNKNOWN"
+
+def worst_health_status(statuses):
+    worst = "OK"
+    for status in statuses:
+        candidate = normalize_health_status(status)
+        if HEALTH_STATUS_ORDER[candidate] > HEALTH_STATUS_ORDER[worst]:
+            worst = candidate
+    return worst
+
+def safe_json_load(value, default=None):
+    if not value:
+        return default if default is not None else {}
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return default if default is not None else {}
+
+def safe_sql_identifier(identifier):
+    if not identifier:
+        return None
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", identifier):
+        return identifier
+    return None
+
+def health_now():
+    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+def register_health_check(name):
+    def decorator(fn):
+        HEALTH_CHECK_REGISTRY[name] = fn
+        return fn
+    return decorator
+
+def serialize_health_definition(row):
+    config = safe_json_load(row["config_json"])
+    redacted_config = redact_payload(config)
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "slug": row["slug"],
+        "category": row["category"],
+        "check_type": row["check_type"],
+        "interval_seconds": row["interval_seconds"],
+        "timeout_seconds": row["timeout_seconds"],
+        "enabled": bool(row["enabled"]),
+        "last_run_at": row["last_run_at"],
+        "last_status": row["last_status"],
+        "last_duration_ms": row["last_duration_ms"],
+        "last_summary": safe_json_load(row["last_summary_json"], default={}),
+        "config": redacted_config
+    }
+
+def store_health_event(db, check_id, previous_status, current_status, severity, reason, observed_at):
+    db.execute(
+        '''
+        INSERT INTO health_events (
+            check_id, previous_status, current_status, severity, reason, observed_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        ''',
+        (check_id, previous_status, current_status, severity, reason, observed_at)
+    )
+
+def record_health_incident(db, check_id, summary, observed_at, status):
+    db.execute(
+        '''
+        INSERT INTO health_incidents (
+            check_id, status, summary, opened_at, last_status, last_observed_at
+        )
+        VALUES (?, 'open', ?, ?, ?, ?)
+        ''',
+        (check_id, summary, observed_at, status, observed_at)
+    )
+
+def close_health_incident(db, incident_id, observed_at):
+    db.execute(
+        '''
+        UPDATE health_incidents
+        SET status = 'closed',
+            closed_at = ?,
+            last_status = 'OK',
+            last_observed_at = ?
+        WHERE id = ?
+        ''',
+        (observed_at, observed_at, incident_id)
+    )
+
+def update_health_incident_state(db, check_id, status, observed_at, config):
+    status = normalize_health_status(status)
+    incident_open_after_value = config.get("incident_open_after_minutes")
+    incident_close_after_value = config.get("incident_close_after_minutes")
+    incident_open_after = int(incident_open_after_value) if incident_open_after_value is not None else HEALTH_INCIDENT_OPEN_MINUTES
+    incident_close_after = int(incident_close_after_value) if incident_close_after_value is not None else HEALTH_INCIDENT_CLOSE_MINUTES
+
+    active_incident = db.execute(
+        '''
+        SELECT id, status, opened_at, acknowledged_at, muted_until
+        FROM health_incidents
+        WHERE check_id = ? AND status = 'open'
+        ORDER BY opened_at DESC
+        LIMIT 1
+        ''',
+        (check_id,)
+    ).fetchone()
+
+    if status == "CRIT":
+        last_non_crit = db.execute(
+            '''
+            SELECT observed_at
+            FROM health_check_results
+            WHERE check_id = ? AND status != 'CRIT'
+            ORDER BY observed_at DESC
+            LIMIT 1
+            ''',
+            (check_id,)
+        ).fetchone()
+        if last_non_crit:
+            last_non_crit_at = datetime.strptime(last_non_crit["observed_at"], "%Y-%m-%d %H:%M:%S")
+            current_time = datetime.strptime(observed_at, "%Y-%m-%d %H:%M:%S")
+            duration_minutes = (current_time - last_non_crit_at).total_seconds() / 60
+        else:
+            duration_minutes = incident_open_after + 1
+        if duration_minutes >= incident_open_after and not active_incident:
+            record_health_incident(
+                db,
+                check_id,
+                f"CRIT länger als {incident_open_after} Minuten",
+                observed_at,
+                status
+            )
+        if active_incident:
+            db.execute(
+                '''
+                UPDATE health_incidents
+                SET last_status = ?, last_observed_at = ?
+                WHERE id = ?
+                ''',
+                (status, observed_at, active_incident["id"])
+            )
+        return
+
+    if active_incident and status == "OK":
+        last_non_ok = db.execute(
+            '''
+            SELECT observed_at
+            FROM health_check_results
+            WHERE check_id = ? AND status != 'OK'
+            ORDER BY observed_at DESC
+            LIMIT 1
+            ''',
+            (check_id,)
+        ).fetchone()
+        if last_non_ok:
+            last_non_ok_at = datetime.strptime(last_non_ok["observed_at"], "%Y-%m-%d %H:%M:%S")
+            current_time = datetime.strptime(observed_at, "%Y-%m-%d %H:%M:%S")
+            duration_minutes = (current_time - last_non_ok_at).total_seconds() / 60
+        else:
+            duration_minutes = incident_close_after + 1
+        if duration_minutes >= incident_close_after:
+            close_health_incident(db, active_incident["id"], observed_at)
+        else:
+            db.execute(
+                '''
+                UPDATE health_incidents
+                SET last_status = ?, last_observed_at = ?
+                WHERE id = ?
+                ''',
+                (status, observed_at, active_incident["id"])
+            )
+        return
+
+    if active_incident:
+        db.execute(
+            '''
+            UPDATE health_incidents
+            SET last_status = ?, last_observed_at = ?
+            WHERE id = ?
+            ''',
+            (status, observed_at, active_incident["id"])
+        )
+
+def record_health_result(db, run_id, check_def, result):
+    check_data = dict(check_def)
+    observed_at = result.get("observed_at") or health_now()
+    status = normalize_health_status(result.get("status"))
+    severity = result.get("severity") or status
+    reason = result.get("reason") or ""
+    metrics = redact_payload(result.get("metrics") or {})
+    details = redact_payload(result.get("details") or {})
+    duration_ms = int(result.get("duration_ms") or 0)
+    db.execute(
+        '''
+        INSERT INTO health_check_results (
+            run_id, check_id, status, severity, reason, observed_at,
+            duration_ms, metrics_json, details_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        (
+            run_id,
+            check_def["id"],
+            status,
+            severity,
+            reason,
+            observed_at,
+            duration_ms,
+            json.dumps(metrics),
+            json.dumps(details)
+            )
+        )
+
+    previous_status = check_data.get("last_status") or "UNKNOWN"
+    if previous_status != status:
+        store_health_event(
+            db,
+            check_data["id"],
+            previous_status,
+            status,
+            severity,
+            reason,
+            observed_at
+        )
+
+    db.execute(
+        '''
+        UPDATE health_check_definitions
+        SET last_run_at = ?,
+            last_status = ?,
+            last_duration_ms = ?,
+            last_summary_json = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        ''',
+        (
+            observed_at,
+            status,
+            duration_ms,
+            json.dumps({
+                "reason": reason,
+                "metrics": metrics
+            }),
+            check_data["id"]
+        )
+    )
+    update_health_incident_state(db, check_data["id"], status, observed_at, safe_json_load(check_data["config_json"]))
+
+def run_health_check_definition(db, check_def):
+    check_type = check_def["check_type"]
+    config = safe_json_load(check_def["config_json"])
+    timeout_seconds = int(check_def["timeout_seconds"] or 10)
+    retries = int(config.get("retries") or 0)
+    retry_delay = float(config.get("retry_delay_seconds") or 0)
+    result = None
+    attempts = 0
+    while attempts <= retries:
+        attempts += 1
+        start_time = time.time()
+        try:
+            handler = HEALTH_CHECK_REGISTRY.get(check_type)
+            if not handler:
+                result = {
+                    "status": "UNKNOWN",
+                    "severity": "UNKNOWN",
+                    "reason": f"Check-Typ {check_type} ist nicht registriert",
+                    "metrics": {},
+                    "details": {}
+                }
+            else:
+                result = handler(config, db, timeout_seconds)
+        except Exception as exc:
+            result = {
+                "status": "UNKNOWN",
+                "severity": "UNKNOWN",
+                "reason": f"Fehler beim Check: {exc}",
+                "metrics": {},
+                "details": {}
+            }
+        duration_ms = int((time.time() - start_time) * 1000)
+        result["duration_ms"] = duration_ms
+        result["observed_at"] = health_now()
+        if result.get("status") != "UNKNOWN" or attempts > retries:
+            break
+        if retry_delay > 0:
+            time.sleep(retry_delay)
+    return result
+
+def run_health_checks(db, check_ids=None, triggered_by="scheduler", initiated_by=None, run_id=None):
+    started_at = health_now()
+    if run_id is None:
+        cursor = db.execute(
+            '''
+            INSERT INTO health_check_runs (started_at, status, triggered_by, initiated_by)
+            VALUES (?, 'running', ?, ?)
+            ''',
+            (started_at, triggered_by, initiated_by)
+        )
+        run_id = cursor.lastrowid
+    else:
+        db.execute(
+            '''
+            UPDATE health_check_runs
+            SET status = 'running', started_at = ?, triggered_by = ?, initiated_by = ?
+            WHERE id = ?
+            ''',
+            (started_at, triggered_by, initiated_by, run_id)
+        )
+
+    if check_ids:
+        placeholders = ",".join(["?"] * len(check_ids))
+        check_rows = db.execute(
+            f'''
+            SELECT *
+            FROM health_check_definitions
+            WHERE id IN ({placeholders})
+            ''',
+            check_ids
+        ).fetchall()
+    else:
+        check_rows = db.execute(
+            '''
+            SELECT *
+            FROM health_check_definitions
+            WHERE enabled = 1
+            '''
+        ).fetchall()
+
+    statuses = []
+    for row in check_rows:
+        result = run_health_check_definition(db, row)
+        record_health_result(db, run_id, row, result)
+        statuses.append(result.get("status") or "UNKNOWN")
+
+    finished_at = health_now()
+    overall_status = worst_health_status(statuses)
+    db.execute(
+        '''
+        UPDATE health_check_runs
+        SET finished_at = ?, status = ?, summary_json = ?
+        WHERE id = ?
+        ''',
+        (
+            finished_at,
+            overall_status,
+            json.dumps({"status": overall_status, "count": len(statuses)}),
+            run_id
+        )
+    )
+    db.commit()
+    return run_id, overall_status
+
+def run_health_checks_async(check_ids, initiated_by, run_id):
+    with app.app_context():
+        db = get_db()
+        run_health_checks(db, check_ids=check_ids, triggered_by="manual", initiated_by=initiated_by, run_id=run_id)
+
+def fetch_due_health_checks(db):
+    now = datetime.utcnow()
+    rows = db.execute(
+        '''
+        SELECT *
+        FROM health_check_definitions
+        WHERE enabled = 1
+        '''
+    ).fetchall()
+    due = []
+    for row in rows:
+        last_run = row["last_run_at"]
+        interval = int(row["interval_seconds"] or 60)
+        if not last_run:
+            due.append(row)
+            continue
+        try:
+            last_run_time = datetime.strptime(last_run, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            due.append(row)
+            continue
+        if (now - last_run_time).total_seconds() >= interval:
+            due.append(row)
+    return due
+
+def cleanup_health_retention(db):
+    cutoff = datetime.utcnow() - timedelta(days=HEALTH_DEFAULT_RETENTION_DAYS)
+    cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    db.execute('DELETE FROM health_check_results WHERE observed_at < ?', (cutoff_str,))
+    db.execute('DELETE FROM health_check_runs WHERE started_at < ?', (cutoff_str,))
+    db.execute('DELETE FROM health_events WHERE observed_at < ?', (cutoff_str,))
+
+def scheduled_health_run():
+    with app.app_context():
+        db = get_db()
+        due = fetch_due_health_checks(db)
+        if not due:
+            return
+        check_ids = [row["id"] for row in due]
+        run_health_checks(db, check_ids=check_ids, triggered_by="scheduler", initiated_by="system")
+        cleanup_health_retention(db)
+        db.commit()
+
+def schedule_health_jobs():
+    if not HEALTH_SCHEDULER.running:
+        HEALTH_SCHEDULER.start()
+    HEALTH_SCHEDULER.remove_all_jobs()
+    HEALTH_SCHEDULER.add_job(scheduled_health_run, "interval", seconds=60, id="health_checks")
+
+def fetch_latest_health_results(db):
+    return db.execute(
+        '''
+        SELECT r.*, d.name, d.slug, d.category, d.check_type, d.enabled
+        FROM health_check_results r
+        JOIN health_check_definitions d ON d.id = r.check_id
+        JOIN (
+            SELECT check_id, MAX(observed_at) AS max_observed
+            FROM health_check_results
+            GROUP BY check_id
+        ) latest
+        ON latest.check_id = r.check_id AND latest.max_observed = r.observed_at
+        WHERE d.enabled = 1
+        '''
+    ).fetchall()
+
+def serialize_health_result(row):
+    data = dict(row)
+    return {
+        "id": data["id"],
+        "check_id": data["check_id"],
+        "status": data["status"],
+        "severity": data["severity"],
+        "reason": data["reason"],
+        "observed_at": data["observed_at"],
+        "duration_ms": data["duration_ms"],
+        "metrics": safe_json_load(data["metrics_json"], default={}),
+        "details": safe_json_load(data["details_json"], default={}),
+        "check": {
+            "name": data.get("name"),
+            "slug": data.get("slug"),
+            "category": data.get("category"),
+            "check_type": data.get("check_type")
+        }
+    }
+
+@register_health_check("service_unit")
+def health_check_service_unit(config, db, timeout_seconds):
+    unit = (config.get("unit") or "").strip()
+    if not unit:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "systemd Unit fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    if not shutil.which("systemctl"):
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "systemctl nicht verfügbar",
+            "metrics": {},
+            "details": {}
+        }
+    try:
+        output = subprocess.check_output(
+            ["systemctl", "show", unit, "--no-page", "--property=ActiveState,SubState,ExecMainStatus,ExecMainExitTimestamp,ActiveEnterTimestamp"],
+            text=True,
+            timeout=timeout_seconds
+        )
+    except Exception as exc:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": f"systemctl Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    info = {}
+    for line in output.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            info[key] = value
+    active_state = info.get("ActiveState", "unknown")
+    status = "OK" if active_state == "active" else "CRIT"
+    reason = f"Unit {unit} ist {active_state}"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": reason,
+        "metrics": {
+            "active_state": active_state,
+            "sub_state": info.get("SubState"),
+            "exec_status": info.get("ExecMainStatus")
+        },
+        "details": {
+            "last_exit": info.get("ExecMainExitTimestamp"),
+            "active_since": info.get("ActiveEnterTimestamp")
+        }
+    }
+
+@register_health_check("process")
+def health_check_process(config, db, timeout_seconds):
+    process_name = (config.get("process_name") or "").strip()
+    min_count = int(config.get("min_count") or 1)
+    if not process_name:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Prozessname fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", process_name],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds
+        )
+        pids = [line for line in result.stdout.splitlines() if line.strip()]
+    except Exception as exc:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": f"pgrep Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    count = len(pids)
+    status = "OK" if count >= min_count else "CRIT"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"{count} Prozesse gefunden",
+        "metrics": {"process_count": count, "min_count": min_count},
+        "details": {"pids": pids[:10]}
+    }
+
+@register_health_check("tcp_port")
+def health_check_tcp_port(config, db, timeout_seconds):
+    host = (config.get("host") or "127.0.0.1").strip()
+    port = int(config.get("port") or 0)
+    if not port:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Port fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    start_time = time.time()
+    try:
+        with socket.create_connection((host, port), timeout=timeout_seconds):
+            latency_ms = int((time.time() - start_time) * 1000)
+            return {
+                "status": "OK",
+                "severity": "OK",
+                "reason": f"TCP {host}:{port} erreichbar",
+                "metrics": {"latency_ms": latency_ms},
+                "details": {}
+            }
+    except Exception as exc:
+        return {
+            "status": "CRIT",
+            "severity": "CRIT",
+            "reason": f"TCP {host}:{port} nicht erreichbar: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+
+@register_health_check("http")
+def health_check_http(config, db, timeout_seconds):
+    url = (config.get("url") or "").strip()
+    if not url:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "URL fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    method = (config.get("method") or "GET").upper()
+    expect_status = int(config.get("expect_status") or 200)
+    contains = config.get("contains")
+    start_time = time.time()
+    request_obj = urllib.request.Request(url, method=method)
+    try:
+        context = ssl.create_default_context()
+        with urllib.request.urlopen(request_obj, timeout=timeout_seconds, context=context) as response:
+            body = response.read(4096).decode(errors="ignore")
+            latency_ms = int((time.time() - start_time) * 1000)
+            status_code = response.getcode()
+    except urllib.error.HTTPError as exc:
+        latency_ms = int((time.time() - start_time) * 1000)
+        status_code = exc.code
+        body = exc.read(1024).decode(errors="ignore") if exc.fp else ""
+    except Exception as exc:
+        return {
+            "status": "CRIT",
+            "severity": "CRIT",
+            "reason": f"HTTP Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+
+    status = "OK" if status_code == expect_status else "WARN"
+    if contains and contains not in body:
+        status = "WARN"
+    reason = f"HTTP {status_code} in {latency_ms} ms"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": reason,
+        "metrics": {"status_code": status_code, "latency_ms": latency_ms},
+        "details": {"contains_match": bool(contains and contains in body)}
+    }
+
+@register_health_check("dns")
+def health_check_dns(config, db, timeout_seconds):
+    hostname = (config.get("hostname") or "").strip()
+    if not hostname:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Hostname fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    try:
+        start_time = time.time()
+        records = socket.getaddrinfo(hostname, None)
+        latency_ms = int((time.time() - start_time) * 1000)
+        return {
+            "status": "OK",
+            "severity": "OK",
+            "reason": f"DNS ok ({len(records)} Records)",
+            "metrics": {"records": len(records), "latency_ms": latency_ms},
+            "details": {}
+        }
+    except Exception as exc:
+        return {
+            "status": "CRIT",
+            "severity": "CRIT",
+            "reason": f"DNS Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+
+@register_health_check("internet")
+def health_check_internet(config, db, timeout_seconds):
+    url = (config.get("url") or "https://example.com").strip()
+    return health_check_http({"url": url, "method": "HEAD", "expect_status": 200}, db, timeout_seconds)
+
+@register_health_check("cpu_load")
+def health_check_cpu_load(config, db, timeout_seconds):
+    load1, load5, load15 = os.getloadavg()
+    per_core = bool(config.get("per_core", True))
+    cpu_count = os.cpu_count() or 1
+    multiplier = cpu_count if per_core else 1
+    warn = float(config.get("warn_load") or 1.0 * multiplier)
+    crit = float(config.get("crit_load") or 2.0 * multiplier)
+    status = "OK"
+    if load1 >= crit:
+        status = "CRIT"
+    elif load1 >= warn:
+        status = "WARN"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"Load {load1:.2f} (1m)",
+        "metrics": {"load1": load1, "load5": load5, "load15": load15, "cpu_count": cpu_count},
+        "details": {}
+    }
+
+@register_health_check("memory")
+def health_check_memory(config, db, timeout_seconds):
+    meminfo = {}
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as handle:
+            for line in handle:
+                parts = line.split(":")
+                if len(parts) < 2:
+                    continue
+                key = parts[0].strip()
+                value = parts[1].strip().split()[0]
+                meminfo[key] = int(value)
+    except FileNotFoundError:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "/proc/meminfo nicht verfügbar",
+            "metrics": {},
+            "details": {}
+        }
+    total = meminfo.get("MemTotal", 0)
+    available = meminfo.get("MemAvailable", meminfo.get("MemFree", 0))
+    used_percent = 0 if total == 0 else (1 - available / total) * 100
+    swap_total = meminfo.get("SwapTotal", 0)
+    swap_free = meminfo.get("SwapFree", 0)
+    swap_used_percent = 0 if swap_total == 0 else (1 - swap_free / swap_total) * 100
+    warn = float(config.get("warn_percent") or 80)
+    crit = float(config.get("crit_percent") or 90)
+    status = "OK"
+    if used_percent >= crit:
+        status = "CRIT"
+    elif used_percent >= warn:
+        status = "WARN"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"RAM {used_percent:.1f}% genutzt",
+        "metrics": {
+            "mem_total_kb": total,
+            "mem_available_kb": available,
+            "mem_used_percent": round(used_percent, 1),
+            "swap_used_percent": round(swap_used_percent, 1)
+        },
+        "details": {}
+    }
+
+@register_health_check("disk")
+def health_check_disk(config, db, timeout_seconds):
+    path = (config.get("path") or "/").strip()
+    warn = float(config.get("warn_percent") or 80)
+    crit = float(config.get("crit_percent") or 90)
+    warn_inodes = float(config.get("warn_inodes_percent") or 80)
+    crit_inodes = float(config.get("crit_inodes_percent") or 90)
+    try:
+        usage = shutil.disk_usage(path)
+        stat = os.statvfs(path)
+    except Exception as exc:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": f"Disk Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    used_percent = 0 if usage.total == 0 else (usage.used / usage.total) * 100
+    inode_total = stat.f_files
+    inode_free = stat.f_ffree
+    inode_used_percent = 0 if inode_total == 0 else (1 - inode_free / inode_total) * 100
+    status = "OK"
+    if used_percent >= crit or inode_used_percent >= crit_inodes:
+        status = "CRIT"
+    elif used_percent >= warn or inode_used_percent >= warn_inodes:
+        status = "WARN"
+    read_only = bool(stat.f_flag & getattr(os, "ST_RDONLY", 1))
+    if read_only:
+        status = "CRIT"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"Disk {used_percent:.1f}% genutzt",
+        "metrics": {
+            "total_bytes": usage.total,
+            "used_bytes": usage.used,
+            "used_percent": round(used_percent, 1),
+            "inode_used_percent": round(inode_used_percent, 1)
+        },
+        "details": {"read_only": read_only}
+    }
+
+@register_health_check("time_sync")
+def health_check_time_sync(config, db, timeout_seconds):
+    max_drift_ms = float(config.get("max_offset_ms") or 100)
+    if shutil.which("timedatectl"):
+        try:
+            output = subprocess.check_output(
+                ["timedatectl", "show", "-p", "NTPSynchronized", "-p", "NTPSync", "--value"],
+                text=True,
+                timeout=timeout_seconds
+            )
+            values = [value.strip() for value in output.splitlines() if value.strip()]
+            is_synced = any(value == "yes" for value in values)
+            status = "OK" if is_synced else "WARN"
+            return {
+                "status": status,
+                "severity": status,
+                "reason": "NTP synchronisiert" if is_synced else "NTP nicht synchronisiert",
+                "metrics": {},
+                "details": {}
+            }
+        except Exception:
+            pass
+    if shutil.which("chronyc"):
+        try:
+            output = subprocess.check_output(
+                ["chronyc", "tracking"],
+                text=True,
+                timeout=timeout_seconds
+            )
+            offset_line = next((line for line in output.splitlines() if "Last offset" in line), "")
+            parts = offset_line.split()
+            offset_seconds = float(parts[2]) if len(parts) >= 3 else 0
+            drift_ms = abs(offset_seconds * 1000)
+            status = "OK" if drift_ms <= max_drift_ms else "WARN"
+            return {
+                "status": status,
+                "severity": status,
+                "reason": f"NTP Drift {drift_ms:.1f} ms",
+                "metrics": {"drift_ms": drift_ms},
+                "details": {}
+            }
+        except Exception:
+            pass
+    return {
+        "status": "UNKNOWN",
+        "severity": "UNKNOWN",
+        "reason": "Keine NTP-Quelle gefunden",
+        "metrics": {},
+        "details": {}
+    }
+
+@register_health_check("db_ping")
+def health_check_db_ping(config, db, timeout_seconds):
+    db_path = (config.get("db_path") or DATABASE).strip()
+    warn_ms = float(config.get("warn_ms") or 100)
+    crit_ms = float(config.get("crit_ms") or 250)
+    start_time = time.time()
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute("SELECT 1")
+        conn.close()
+    except Exception as exc:
+        return {
+            "status": "CRIT",
+            "severity": "CRIT",
+            "reason": f"DB Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    latency_ms = int((time.time() - start_time) * 1000)
+    status = "OK"
+    if latency_ms >= crit_ms:
+        status = "CRIT"
+    elif latency_ms >= warn_ms:
+        status = "WARN"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"DB Ping {latency_ms} ms",
+        "metrics": {"latency_ms": latency_ms},
+        "details": {}
+    }
+
+@register_health_check("queue_depth")
+def health_check_queue_depth(config, db, timeout_seconds):
+    table = safe_sql_identifier(config.get("queue_table"))
+    status_column = safe_sql_identifier(config.get("status_column") or "status")
+    pending_values = config.get("pending_values") or []
+    heartbeat_table = safe_sql_identifier(config.get("heartbeat_table"))
+    heartbeat_column = safe_sql_identifier(config.get("heartbeat_column") or "updated_at")
+    max_age_seconds = int(config.get("max_heartbeat_age_seconds") or 300)
+    if not table or not status_column:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Queue-Konfiguration fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    placeholders = ",".join(["?"] * len(pending_values)) if pending_values else None
+    if pending_values:
+        count_row = db.execute(
+            f"SELECT COUNT(*) as total FROM {table} WHERE {status_column} IN ({placeholders})",
+            pending_values
+        ).fetchone()
+    else:
+        count_row = db.execute(
+            f"SELECT COUNT(*) as total FROM {table}"
+        ).fetchone()
+    depth = count_row["total"] if count_row else 0
+    status = "OK"
+    warn_threshold = int(config.get("warn_depth") or 50)
+    crit_threshold = int(config.get("crit_depth") or 100)
+    if depth >= crit_threshold:
+        status = "CRIT"
+    elif depth >= warn_threshold:
+        status = "WARN"
+    heartbeat_age = None
+    if heartbeat_table and heartbeat_column:
+        heartbeat_row = db.execute(
+            f"SELECT {heartbeat_column} as heartbeat FROM {heartbeat_table} ORDER BY {heartbeat_column} DESC LIMIT 1"
+        ).fetchone()
+        if heartbeat_row and heartbeat_row["heartbeat"]:
+            try:
+                last_heartbeat = datetime.strptime(heartbeat_row["heartbeat"], "%Y-%m-%d %H:%M:%S")
+                heartbeat_age = (datetime.utcnow() - last_heartbeat).total_seconds()
+            except ValueError:
+                heartbeat_age = None
+    if heartbeat_age is not None and heartbeat_age > max_age_seconds:
+        status = "CRIT"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"Queue Depth {depth}",
+        "metrics": {"depth": depth, "heartbeat_age_seconds": heartbeat_age},
+        "details": {}
+    }
+
+@register_health_check("cache_ping")
+def health_check_cache_ping(config, db, timeout_seconds):
+    host = (config.get("host") or "127.0.0.1").strip()
+    port = int(config.get("port") or 0)
+    cache_type = (config.get("type") or "redis").lower()
+    if not port:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Cache-Port fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    try:
+        with socket.create_connection((host, port), timeout=timeout_seconds) as sock:
+            sock.settimeout(timeout_seconds)
+            if cache_type == "redis":
+                sock.sendall(b"PING\r\n")
+                response = sock.recv(64)
+                if b"PONG" not in response:
+                    raise RuntimeError("PING fehlgeschlagen")
+            elif cache_type == "memcached":
+                sock.sendall(b"version\r\n")
+                response = sock.recv(64)
+                if b"VERSION" not in response:
+                    raise RuntimeError("Version fehlgeschlagen")
+    except Exception as exc:
+        return {
+            "status": "CRIT",
+            "severity": "CRIT",
+            "reason": f"Cache Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    return {
+        "status": "OK",
+        "severity": "OK",
+        "reason": "Cache erreichbar",
+        "metrics": {},
+        "details": {}
+    }
+
+@register_health_check("log_pattern")
+def health_check_log_pattern(config, db, timeout_seconds):
+    path = (config.get("path") or "").strip()
+    pattern = config.get("pattern")
+    if not path or not pattern:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Log-Pattern nicht konfiguriert",
+            "metrics": {},
+            "details": {}
+        }
+    max_bytes = int(config.get("max_bytes") or 8192)
+    must_match = bool(config.get("must_match"))
+    try:
+        file_size = os.path.getsize(path)
+        with open(path, "rb") as handle:
+            if file_size > max_bytes:
+                handle.seek(-max_bytes, os.SEEK_END)
+            data = handle.read().decode(errors="ignore")
+        matches = re.findall(pattern, data, re.MULTILINE)
+    except Exception as exc:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": f"Log-Check Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    has_match = len(matches) > 0
+    status = "OK"
+    if must_match and not has_match:
+        status = "WARN"
+    if not must_match and has_match:
+        status = "WARN"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"{len(matches)} Treffer",
+        "metrics": {"matches": len(matches), "must_match": must_match},
+        "details": {}
+    }
 
 def delete_user(username):
     with app.app_context():
@@ -3914,6 +5148,13 @@ def time_machine_page():
     access = get_user_access(get_db())
     return render_template('time_machine.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
+@app.route('/health')
+@login_required
+@require_permissions('health.view', 'health.manage', 'health.run')
+def health_page():
+    access = get_user_access(get_db())
+    return render_template('health.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
 @app.route('/api/categories/<int:category_id>', methods=['PUT', 'DELETE'])
 @login_required
 def handle_category(category_id):
@@ -5137,6 +6378,393 @@ def single_points():
     if not (user_can('dependencies.view') or user_can('dependencies.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
     return jsonify(calculate_spof_nodes(db))
+
+@app.route('/api/health/summary', methods=['GET'])
+@login_required
+@require_permissions('health.view', 'health.manage', 'health.run')
+def health_summary():
+    db = get_db()
+    latest_results = fetch_latest_health_results(db)
+    statuses = [row["status"] for row in latest_results]
+    overall_status = worst_health_status(statuses)
+    last_updated = None
+    if latest_results:
+        last_updated = max(row["observed_at"] for row in latest_results)
+    status_counts = {status: 0 for status in HEALTH_STATUS_ORDER.keys()}
+    for row in latest_results:
+        status_counts[normalize_health_status(row["status"])] += 1
+
+    services_results = [row for row in latest_results if row["check_type"] in ("service_unit", "process")]
+    services_status = worst_health_status([row["status"] for row in services_results]) if services_results else "UNKNOWN"
+
+    summary_cards = [
+        {
+            "key": "services",
+            "label": "Services",
+            "status": services_status
+        }
+    ]
+
+    def card_for(check_type, label, metric_key=None):
+        match = next((row for row in latest_results if row["check_type"] == check_type), None)
+        if not match:
+            return {"key": check_type, "label": label, "status": "UNKNOWN"}
+        metrics = safe_json_load(match["metrics_json"], default={})
+        return {
+            "key": check_type,
+            "label": label,
+            "status": match["status"],
+            "metric": metrics.get(metric_key) if metric_key else None
+        }
+
+    summary_cards.extend([
+        card_for("cpu_load", "CPU/Load", "load1"),
+        card_for("memory", "Memory", "mem_used_percent"),
+        card_for("disk", "Disk", "used_percent"),
+        card_for("db_ping", "DB", "latency_ms"),
+        card_for("internet", "Network", "latency_ms")
+    ])
+
+    events = db.execute(
+        '''
+        SELECT e.*, d.name
+        FROM health_events e
+        JOIN health_check_definitions d ON d.id = e.check_id
+        ORDER BY e.observed_at DESC
+        LIMIT 8
+        '''
+    ).fetchall()
+    incidents = db.execute(
+        '''
+        SELECT i.*, d.name
+        FROM health_incidents i
+        JOIN health_check_definitions d ON d.id = i.check_id
+        WHERE i.status = 'open'
+        ORDER BY i.opened_at DESC
+        '''
+    ).fetchall()
+
+    return jsonify({
+        "overall_status": overall_status,
+        "last_updated": last_updated,
+        "counts": status_counts,
+        "summary_cards": summary_cards,
+        "events": [dict(row) for row in events],
+        "incidents": [dict(row) for row in incidents]
+    })
+
+@app.route('/api/health/services', methods=['GET'])
+@login_required
+@require_permissions('health.view', 'health.manage', 'health.run')
+def health_services():
+    db = get_db()
+    latest_results = fetch_latest_health_results(db)
+    services = []
+    for row in latest_results:
+        if row["check_type"] not in ("service_unit", "process"):
+            continue
+        details = safe_json_load(row["details_json"], default={})
+        metrics = safe_json_load(row["metrics_json"], default={})
+        services.append({
+            "check_id": row["check_id"],
+            "name": row["name"],
+            "status": row["status"],
+            "uptime": details.get("active_since"),
+            "last_restart": details.get("active_since"),
+            "last_exit": details.get("last_exit"),
+            "metrics": metrics
+        })
+    return jsonify({"services": services})
+
+@app.route('/api/health/checks', methods=['GET', 'POST'])
+@login_required
+def health_checks():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('health.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get("name") or "").strip()
+        check_type = (data.get("check_type") or "").strip()
+        category = (data.get("category") or "Custom").strip()
+        interval_seconds = int(data.get("interval_seconds") or 60)
+        timeout_seconds = int(data.get("timeout_seconds") or 10)
+        enabled = 1 if data.get("enabled", True) else 0
+        config = data.get("config") or {}
+        if not name or not check_type:
+            return jsonify({"error": "Name und Check-Typ sind erforderlich"}), 400
+        slug_base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or f"check-{secrets.token_hex(2)}"
+        slug = slug_base
+        while db.execute("SELECT 1 FROM health_check_definitions WHERE slug = ?", (slug,)).fetchone():
+            slug = f"{slug_base}-{secrets.token_hex(2)}"
+        cursor = db.execute(
+            '''
+            INSERT INTO health_check_definitions (
+                name, slug, category, check_type, config_json,
+                interval_seconds, timeout_seconds, enabled
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                name,
+                slug,
+                category,
+                check_type,
+                json.dumps(config),
+                interval_seconds,
+                timeout_seconds,
+                enabled
+            )
+        )
+        db.commit()
+        new_row = db.execute(
+            "SELECT * FROM health_check_definitions WHERE id = ?",
+            (cursor.lastrowid,)
+        ).fetchone()
+        return jsonify({"check": serialize_health_definition(new_row)}), 201
+
+    if not (user_can('health.view') or user_can('health.manage') or user_can('health.run')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('SELECT * FROM health_check_definitions ORDER BY category, name').fetchall()
+    return jsonify({"checks": [serialize_health_definition(row) for row in rows]})
+
+@app.route('/api/health/checks/<int:check_id>', methods=['GET', 'PATCH'])
+@login_required
+def health_check_detail(check_id):
+    db = get_db()
+    row = db.execute('SELECT * FROM health_check_definitions WHERE id = ?', (check_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Check nicht gefunden"}), 404
+    if request.method == 'PATCH':
+        if not user_can('health.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        updates = {
+            "name": data.get("name", row["name"]),
+            "category": data.get("category", row["category"]),
+            "check_type": data.get("check_type", row["check_type"]),
+            "interval_seconds": int(data.get("interval_seconds") or row["interval_seconds"] or 60),
+            "timeout_seconds": int(data.get("timeout_seconds") or row["timeout_seconds"] or 10),
+            "enabled": 1 if data.get("enabled", row["enabled"]) else 0,
+            "config_json": json.dumps(data.get("config") or safe_json_load(row["config_json"]))
+        }
+        db.execute(
+            '''
+            UPDATE health_check_definitions
+            SET name = ?, category = ?, check_type = ?, interval_seconds = ?,
+                timeout_seconds = ?, enabled = ?, config_json = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            ''',
+            (
+                updates["name"],
+                updates["category"],
+                updates["check_type"],
+                updates["interval_seconds"],
+                updates["timeout_seconds"],
+                updates["enabled"],
+                updates["config_json"],
+                check_id
+            )
+        )
+        db.commit()
+        row = db.execute('SELECT * FROM health_check_definitions WHERE id = ?', (check_id,)).fetchone()
+        return jsonify({"check": serialize_health_definition(row)})
+
+    if not (user_can('health.view') or user_can('health.manage') or user_can('health.run')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    results = db.execute(
+        '''
+        SELECT r.*, d.name, d.slug, d.category, d.check_type
+        FROM health_check_results r
+        JOIN health_check_definitions d ON d.id = r.check_id
+        WHERE r.check_id = ?
+        ORDER BY r.observed_at DESC
+        LIMIT 20
+        ''',
+        (check_id,)
+    ).fetchall()
+    events = db.execute(
+        '''
+        SELECT *
+        FROM health_events
+        WHERE check_id = ?
+        ORDER BY observed_at DESC
+        LIMIT 20
+        ''',
+        (check_id,)
+    ).fetchall()
+    return jsonify({
+        "check": serialize_health_definition(row),
+        "results": [serialize_health_result(result) for result in results],
+        "events": [dict(event) for event in events]
+    })
+
+@app.route('/api/health/run', methods=['POST'])
+@login_required
+@require_permission('health.run')
+def health_run_now():
+    db = get_db()
+    data = request.get_json() or {}
+    check_ids = data.get("check_ids")
+    if check_ids:
+        check_ids = [int(item) for item in check_ids]
+    cursor = db.execute(
+        '''
+        INSERT INTO health_check_runs (started_at, status, triggered_by, initiated_by)
+        VALUES (?, 'queued', 'manual', ?)
+        ''',
+        (health_now(), session.get("username"))
+    )
+    run_id = cursor.lastrowid
+    db.commit()
+    thread = threading.Thread(
+        target=run_health_checks_async,
+        args=(check_ids, session.get("username"), run_id),
+        daemon=True
+    )
+    thread.start()
+    return jsonify({"run_id": run_id, "status": "queued"})
+
+@app.route('/api/health/history', methods=['GET'])
+@login_required
+@require_permissions('health.view', 'health.manage', 'health.run')
+def health_history():
+    db = get_db()
+    days = int(request.args.get("days") or 1)
+    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    events = db.execute(
+        '''
+        SELECT observed_at, current_status
+        FROM health_events
+        WHERE observed_at >= ?
+        ORDER BY observed_at ASC
+        ''',
+        (cutoff,)
+    ).fetchall()
+    metrics_rows = db.execute(
+        '''
+        SELECT r.observed_at, r.metrics_json, d.check_type
+        FROM health_check_results r
+        JOIN health_check_definitions d ON d.id = r.check_id
+        WHERE r.observed_at >= ?
+          AND d.check_type IN ('cpu_load', 'memory', 'disk')
+        ORDER BY r.observed_at ASC
+        ''',
+        (cutoff,)
+    ).fetchall()
+    metrics = {"cpu_load": [], "memory": [], "disk": []}
+    for row in metrics_rows:
+        metrics_data = safe_json_load(row["metrics_json"], default={})
+        metrics[row["check_type"]].append({
+            "observed_at": row["observed_at"],
+            "value": metrics_data.get("load1") if row["check_type"] == "cpu_load" else
+                     metrics_data.get("mem_used_percent") if row["check_type"] == "memory" else
+                     metrics_data.get("used_percent")
+        })
+    return jsonify({
+        "events": [dict(row) for row in events],
+        "metrics": metrics,
+        "window_days": days
+    })
+
+@app.route('/api/health/incidents', methods=['GET'])
+@login_required
+@require_permissions('health.view', 'health.manage', 'health.run')
+def health_incidents():
+    db = get_db()
+    rows = db.execute(
+        '''
+        SELECT i.*, d.name, d.slug
+        FROM health_incidents i
+        JOIN health_check_definitions d ON d.id = i.check_id
+        ORDER BY i.opened_at DESC
+        '''
+    ).fetchall()
+    return jsonify({"incidents": [dict(row) for row in rows]})
+
+@app.route('/api/health/incidents/<int:incident_id>/ack', methods=['POST'])
+@login_required
+@require_permission('health.manage')
+def health_incident_ack(incident_id):
+    db = get_db()
+    db.execute(
+        '''
+        UPDATE health_incidents
+        SET acknowledged_at = ?
+        WHERE id = ?
+        ''',
+        (health_now(), incident_id)
+    )
+    db.commit()
+    return jsonify({"status": "acknowledged"})
+
+@app.route('/api/health/incidents/<int:incident_id>/mute', methods=['POST'])
+@login_required
+@require_permission('health.manage')
+def health_incident_mute(incident_id):
+    db = get_db()
+    data = request.get_json() or {}
+    minutes = int(data.get("minutes") or 30)
+    muted_until = (datetime.utcnow() + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    db.execute(
+        '''
+        UPDATE health_incidents
+        SET muted_until = ?
+        WHERE id = ?
+        ''',
+        (muted_until, incident_id)
+    )
+    db.commit()
+    return jsonify({"status": "muted", "muted_until": muted_until})
+
+@app.route('/api/health/incidents/<int:incident_id>/ticket', methods=['POST'])
+@login_required
+@require_permission('health.manage')
+def health_incident_ticket(incident_id):
+    db = get_db()
+    incident = db.execute(
+        '''
+        SELECT i.*, d.name
+        FROM health_incidents i
+        JOIN health_check_definitions d ON d.id = i.check_id
+        WHERE i.id = ?
+        ''',
+        (incident_id,)
+    ).fetchone()
+    if not incident:
+        return jsonify({"error": "Incident nicht gefunden"}), 404
+    title = f"Health Incident: {incident['name']}"
+    description = (
+        f"Incident für Check {incident['name']}.\n"
+        f"Status: {incident['status']}\n"
+        f"Seit: {incident['opened_at']}\n"
+        f"Aktuell: {incident['last_status']}"
+    )
+    cursor = db.execute(
+        '''
+        INSERT INTO tickets (title, description, priority, status, requester_name, created_by, tags)
+        VALUES (?, ?, ?, 'open', ?, ?, ?)
+        ''',
+        (
+            title,
+            description,
+            "high",
+            session.get("username"),
+            session.get("username"),
+            json.dumps(["health", "incident"])
+        )
+    )
+    ticket_id = cursor.lastrowid
+    db.execute(
+        '''
+        UPDATE health_incidents
+        SET ticket_id = ?
+        WHERE id = ?
+        ''',
+        (ticket_id, incident_id)
+    )
+    db.commit()
+    return jsonify({"status": "ticket_created", "ticket_id": ticket_id})
 
 @app.route('/api/tickets', methods=['GET', 'POST'])
 @login_required
@@ -7693,4 +9321,5 @@ if __name__ == '__main__':
             store_runtime_settings(runtime)
         RUNTIME_SETTINGS_CACHE = runtime
         schedule_backup_jobs(settings)
+        schedule_health_jobs()
     app.run(host=runtime["host"], port=runtime["port"], debug=runtime["debug"])

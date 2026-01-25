@@ -73,7 +73,7 @@
                     </div>
                 </div>
 
-                {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions %}
+                {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
                 <div class="sidebar-panel">
                     <p class="sidebar-panel-title">Auswertung</p>
                     <div class="mt-3 space-y-1">
@@ -98,6 +98,14 @@
                             <span>
                                 <span class="sidebar-link-icon"><i data-feather="clock" class="w-4 h-4"></i></span>
                                 Zeitmaschine
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
+                        <a href="/health" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="activity" class="w-4 h-4"></i></span>
+                                Health
                             </span>
                         </a>
                         {% endif %}
