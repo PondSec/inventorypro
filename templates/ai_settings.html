@@ -145,7 +145,7 @@
                             <p class="text-sm font-semibold text-slate-800">{{ settings.updated_at or 'n/a' }}</p>
                         </div>
                     </div>
-                    <div class="mt-6 grid gap-6 lg:grid-cols-3">
+                    <div class="mt-6 grid gap-6 lg:grid-cols-4">
                         <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                             <label class="flex items-center gap-3 text-sm font-semibold text-slate-700">
                                 <input id="pondsec-enabled" type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" {% if settings.enabled %}checked{% endif %}>
@@ -169,6 +169,11 @@
                                 <label class="text-xs font-semibold text-slate-500">Max Writes/Tag</label>
                                 <input id="pondsec-budget-writes" type="number" min="0" class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" value="{{ settings.budgets.max_write_actions_per_day or 0 }}">
                             </div>
+                        </div>
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2">
+                            <p class="text-xs font-semibold text-slate-500">Local LLM</p>
+                            <p class="text-sm font-semibold text-slate-800">{{ llm_status }}</p>
+                            <p class="text-xs text-slate-500">Model wird lokal geladen, keine Cloud-Keys.</p>
                         </div>
                     </div>
                 </section>
