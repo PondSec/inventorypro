@@ -7,6 +7,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from .local_llm import LocalLLM
+from .ollama_client import OllamaError, call_ollama
 from .registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -206,11 +207,24 @@ class LocalLLMPlanner(Planner):
         return data
 
     def plan(self, user_message: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        if not LocalLLM.is_available():
-            logger.info("pondsec_ai.planner.fallback reason=llm_unavailable")
+        provider = LocalLLM._provider_name()
+        if provider != "ollama":
+            logger.info("pondsec_ai.planner.fallback reason=provider_disabled provider=%s", provider)
             return DeterministicFallbackPlanner().plan(user_message, context)
         prompt = self._build_prompt(user_message, context)
-        raw = LocalLLM.generate(prompt, max_tokens=self.max_tokens)
+        try:
+            raw = call_ollama(
+                prompt,
+                max_tokens=self.max_tokens,
+                timeout=int(LocalLLM._timeout_seconds()),
+            )
+        except OllamaError as exc:
+            logger.warning("pondsec_ai.planner.fallback reason=ollama_error kind=%s", exc.kind)
+            plan = DeterministicFallbackPlanner().plan(user_message, context)
+            if exc.kind in {"connection", "timeout"}:
+                note = "Hinweis: Ollama unreachable, Fallback aktiviert."
+                plan["insights"] = f"{note}\n\n{plan.get('insights', '')}".strip()
+            return plan
         if not raw:
             logger.warning("pondsec_ai.planner.fallback reason=llm_empty")
             return DeterministicFallbackPlanner().plan(user_message, context)
