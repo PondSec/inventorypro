@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional, Tuple
+from urllib import request as urllib_request
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,13 @@ def _max_tokens() -> int:
         return int(os.environ.get("PONDSEC_AI_LLM_MAX_TOKENS", "128"))
     except ValueError:
         return 128
+
+
+def _timeout_seconds() -> float:
+    try:
+        return float(os.environ.get("PONDSEC_AI_LLM_TIMEOUT_SECONDS", "120"))
+    except ValueError:
+        return 120.0
 
 
 def _resolve_model_path() -> Tuple[Optional[str], Optional[str]]:
@@ -47,8 +55,28 @@ def _resolve_model_path() -> Tuple[Optional[str], Optional[str]]:
     return None, None
 
 
-def _load_model():
-    provider = _provider_name()
+def _ollama_base_url() -> str:
+    return os.environ.get("PONDSEC_AI_OLLAMA_URL", "http://localhost:11434/api/generate")
+
+
+def _ollama_model_name() -> str:
+    return os.environ.get("PONDSEC_AI_OLLAMA_MODEL") or os.environ.get("PONDSEC_AI_LLM_MODEL_NAME") or "llama3.1"
+
+
+def _http_post_json(url: str, payload: dict, headers: Optional[dict] = None) -> dict:
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib_request.Request(url, data=data, method="POST")
+    request.add_header("Content-Type", "application/json")
+    if headers:
+        for key, value in headers.items():
+            request.add_header(key, value)
+    timeout = _timeout_seconds()
+    with urllib_request.urlopen(request, timeout=timeout) as response:
+        response_data = response.read().decode("utf-8")
+    return json.loads(response_data)
+
+
+def _load_local_model(provider: str):
     model_name, model_dir = _resolve_model_path()
     if not model_name or not model_dir:
         raise RuntimeError("Local LLM model not configured")
@@ -56,13 +84,27 @@ def _load_model():
     if provider == "gpt4all":
         from gpt4all import GPT4All
 
-        model = GPT4All(model_name, model_path=model_dir)
-    elif provider in {"llamacpp", "llama-cpp"}:
+        return GPT4All(model_name, model_path=model_dir)
+    if provider in {"llamacpp", "llama-cpp"}:
         from llama_cpp import Llama
 
-        model = Llama(model_path=str(Path(model_dir) / model_name))
-    else:
-        raise RuntimeError(f"Unknown LLM provider: {provider}")
+        return Llama(model_path=str(Path(model_dir) / model_name))
+    raise RuntimeError(f"Unknown LLM provider: {provider}")
+
+
+def _load_model():
+    provider = _provider_name()
+    if provider == "ollama":
+        return None, provider
+    if provider == "auto":
+        for local_provider in ("gpt4all", "llamacpp", "llama-cpp"):
+            try:
+                model = _load_local_model(local_provider)
+                return model, local_provider
+            except Exception as exc:
+                logger.warning("LLM auto provider failed local=%s error=%s", local_provider, exc)
+        return None, "ollama"
+    model = _load_local_model(provider)
     return model, provider
 
 
@@ -79,6 +121,15 @@ def _coerce_max_tokens(value: object) -> int:
 
 
 def _generate(model, provider: str, prompt: str, max_tokens: int) -> str:
+    if provider == "ollama":
+        payload = {
+            "model": _ollama_model_name(),
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0.2, "num_predict": max_tokens},
+        }
+        response = _http_post_json(_ollama_base_url(), payload)
+        return response.get("response", "") or ""
     if provider == "gpt4all":
         return model.generate(prompt, max_tokens=max_tokens) or ""
     if provider in {"llamacpp", "llama-cpp"}:
