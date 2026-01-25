@@ -36,7 +36,7 @@
         <form method="POST" class="stack">
             <div class="field">
                 <label class="label" for="otp">6-stelliger Code</label>
-                <input type="text" id="otp" name="otp" autocomplete="one-time-code" required class="input" placeholder="123456">
+                <input type="text" id="otp" name="otp" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" required class="input" placeholder="123456">
                 <span class="help-text">Geben Sie den Code aus Ihrer Authenticator-App ein.</span>
             </div>
             <button type="submit" class="btn btn-primary">Verifizieren</button>
