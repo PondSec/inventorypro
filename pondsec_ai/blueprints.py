@@ -1,4 +1,6 @@
 """Flask blueprint routes for PondSec AI."""
+import logging
+
 from flask import Blueprint, jsonify, render_template, request, session
 from functools import wraps
 import json
@@ -11,6 +13,7 @@ from .registry import TOOL_REGISTRY
 from .runtime import AgentRuntime
 
 ai_bp = Blueprint("pondsec_ai", __name__)
+logger = logging.getLogger(__name__)
 
 
 def login_required_proxy(func):
@@ -39,12 +42,21 @@ def ai_chat():
     message = (payload.get("message") or "").strip()
     ui_context = payload.get("ui_context") or {}
     context_payload = payload.get("context") or {}
+    logger.info("pondsec_ai.chat.received user_id=%s", access.get("user", {}).get("id"))
     runtime = AgentRuntime(db)
-    response = runtime.handle_user_prompt(
-        {"access": access, "user": access.get("user"), "roles": access.get("roles")},
-        {"ui_context": ui_context, "context": context_payload},
-        message,
-    )
+    try:
+        response = runtime.handle_user_prompt(
+            {"access": access, "user": access.get("user"), "roles": access.get("roles")},
+            {"ui_context": ui_context, "context": context_payload},
+            message,
+        )
+    except Exception as exc:
+        logger.exception("pondsec_ai.chat.error %s", exc)
+        response = {
+            "insights": "LLM crashed; using fallback. Bitte erneut versuchen.",
+            "proposed_actions": [],
+            "references": [],
+        }
     return jsonify(response)
 
 

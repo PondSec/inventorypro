@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
-import os
+import logging
 import re
 from typing import Any, Dict, List, Optional
 
 from .local_llm import LocalLLM
 from .registry import TOOL_REGISTRY
+
+logger = logging.getLogger(__name__)
 
 
 class Planner:
@@ -205,17 +207,20 @@ class LocalLLMPlanner(Planner):
 
     def plan(self, user_message: str, context: Dict[str, Any]) -> Dict[str, Any]:
         if not LocalLLM.is_available():
+            logger.info("pondsec_ai.planner.fallback reason=llm_unavailable")
             return DeterministicFallbackPlanner().plan(user_message, context)
         prompt = self._build_prompt(user_message, context)
-        try:
-            raw = LocalLLM.generate(prompt, max_tokens=self.max_tokens)
-        except Exception:
+        raw = LocalLLM.generate(prompt, max_tokens=self.max_tokens)
+        if not raw:
+            logger.warning("pondsec_ai.planner.fallback reason=llm_empty")
             return DeterministicFallbackPlanner().plan(user_message, context)
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
+            logger.warning("pondsec_ai.planner.fallback reason=invalid_json")
             return DeterministicFallbackPlanner().plan(user_message, context)
         validated = self._validate_plan(data)
         if not validated or not validated.get("insights"):
+            logger.warning("pondsec_ai.planner.fallback reason=invalid_schema")
             return DeterministicFallbackPlanner().plan(user_message, context)
         return validated

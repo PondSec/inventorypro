@@ -1,9 +1,15 @@
 """Local LLM adapter for PondSec AI."""
 from __future__ import annotations
 
+import json
+import logging
 import os
 from pathlib import Path
+import subprocess
+import sys
 from typing import Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 class LocalLLM:
@@ -101,17 +107,34 @@ class LocalLLM:
 
     @classmethod
     def generate(cls, prompt: str, max_tokens: int = 512) -> str:
-        model = cls._load_model()
-        provider = cls._provider_name()
         max_tokens = max_tokens or cls._max_tokens()
-        if provider == "gpt4all":
-            return model.generate(prompt, max_tokens=max_tokens) or ""
-        if provider in {"llamacpp", "llama-cpp"}:
-            output = model(
-                prompt,
-                max_tokens=max_tokens,
-                temperature=0.2,
-                stop=["\n\n"],
+        if not prompt:
+            return ""
+        env = os.environ.copy()
+        env["PONDSEC_AI_LLM_MAX_TOKENS"] = str(max_tokens)
+        cmd = [sys.executable, "-m", "pondsec_ai.llm_worker"]
+        logger.info("pondsec_ai.local_llm.worker_start provider=%s", cls._provider_name())
+        try:
+            result = subprocess.run(
+                cmd,
+                input=prompt,
+                text=True,
+                capture_output=True,
+                timeout=20,
+                env=env,
             )
-            return output.get("choices", [{}])[0].get("text", "")
-        raise RuntimeError(f"Unknown LLM provider: {provider}")
+        except subprocess.TimeoutExpired:
+            logger.warning("pondsec_ai.local_llm.worker_timeout")
+            return ""
+        if result.stderr:
+            logger.warning("pondsec_ai.local_llm.worker_stderr=%s", result.stderr.strip())
+        if result.returncode != 0:
+            logger.warning("pondsec_ai.local_llm.worker_failed code=%s", result.returncode)
+            return ""
+        try:
+            payload = json.loads(result.stdout.strip() or "{}")
+        except json.JSONDecodeError:
+            logger.warning("pondsec_ai.local_llm.worker_invalid_json")
+            return ""
+        text = payload.get("text") or ""
+        return text
