@@ -170,6 +170,7 @@ document.addEventListener('alpine:init', () => {
             const response = await fetch(`/api/tickets/${ticket.id}`);
             if (response.ok) {
                 this.selectedTicket = await response.json();
+                window.PONDSEC_AI_CONTEXT = { type: 'ticket', id: this.selectedTicket.id };
                 if (!this.selectedTicket.asset_ids) {
                     this.selectedTicket.asset_ids = (this.selectedTicket.assets || []).map((asset) => asset.id);
                 }
@@ -188,6 +189,7 @@ document.addEventListener('alpine:init', () => {
 
         closeTicket() {
             this.selectedTicket = null;
+            window.PONDSEC_AI_CONTEXT = { type: 'tickets' };
             this.knowledgeSuggestions = [];
             this.ticketAttachments = [];
             this.ticketAttachmentError = '';
