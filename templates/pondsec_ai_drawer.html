@@ -1,7 +1,7 @@
 <script>
     window.pondsecUiContext = {{ pondsec_ai_ui_context | tojson }};
     if (!window.PONDSEC_AI_CONTEXT) {
-        window.PONDSEC_AI_CONTEXT = { type: window.pondsecUiContext?.page || 'global' };
+        window.PONDSEC_AI_CONTEXT = { type: 'unknown' };
     }
 </script>
 <div id="pondsec-ai-overlay" class="fixed inset-0 bg-slate-900/40 hidden z-40"></div>
@@ -18,6 +18,14 @@
     <div class="p-6 space-y-4 h-[calc(100%-4rem)] overflow-y-auto">
         <div class="flex flex-wrap gap-2 text-xs text-slate-500" id="pondsec-ai-context">
             <span class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1">Kontext: <span id="pondsec-ai-context-text"></span></span>
+        </div>
+        <div id="pondsec-ai-selection" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2 hidden">
+            <p class="text-xs font-semibold text-slate-600">Ticket auswählen</p>
+            <div class="flex items-center gap-2">
+                <input id="pondsec-ai-select-ticket" type="number" min="1" class="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" placeholder="#ID">
+                <button type="button" id="pondsec-ai-select-ticket-btn" class="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Auswählen</button>
+            </div>
+            <p class="text-xs text-slate-500">Tipp: Alternativ kannst du im Text „ticket #123“ angeben.</p>
         </div>
         <div>
             <label class="text-xs font-semibold text-slate-500">Nachricht</label>
@@ -47,6 +55,9 @@
     const insightsEl = document.getElementById('pondsec-ai-insights');
     const actionsEl = document.getElementById('pondsec-ai-actions');
     const contextText = document.getElementById('pondsec-ai-context-text');
+    const selectionPanel = document.getElementById('pondsec-ai-selection');
+    const selectTicketInput = document.getElementById('pondsec-ai-select-ticket');
+    const selectTicketBtn = document.getElementById('pondsec-ai-select-ticket-btn');
     const openButtons = document.querySelectorAll('[data-pondsec-ai-open]');
     const closeButtons = document.querySelectorAll('[data-pondsec-ai-close]');
 
@@ -54,8 +65,16 @@
     const isApprover = (window.inventoryIsSuperuser || false) || permissions.includes('ai.approve');
 
     function setContext() {
-        const ctx = window.pondsecUiContext || {};
-        contextText.textContent = ctx.page || ctx.path || 'global';
+        const ctx = window.PONDSEC_AI_CONTEXT || { type: 'unknown' };
+        if (ctx.type === 'ticket' && ctx.id) {
+            contextText.textContent = `ticket #${ctx.id}`;
+        } else {
+            contextText.textContent = ctx.type || 'unknown';
+        }
+        if (selectionPanel) {
+            const showSelection = ctx.type === 'tickets' && !ctx.id;
+            selectionPanel.classList.toggle('hidden', !showSelection);
+        }
     }
 
     function openDrawer() {
@@ -88,8 +107,7 @@
                 credentials: 'same-origin',
                 body: JSON.stringify({
                     message,
-                    ui_context: window.pondsecUiContext || {},
-                    context: window.PONDSEC_AI_CONTEXT || {}
+                    context: window.PONDSEC_AI_CONTEXT || { type: 'unknown' }
                 })
             });
             const data = await response.json();
@@ -175,6 +193,16 @@
 
     if (sendBtn) {
         sendBtn.addEventListener('click', sendMessage);
+    }
+    if (selectTicketBtn) {
+        selectTicketBtn.addEventListener('click', () => {
+            const value = Number(selectTicketInput?.value || 0);
+            if (!value) {
+                return;
+            }
+            window.PONDSEC_AI_CONTEXT = { type: 'ticket', id: value };
+            setContext();
+        });
     }
 })();
 </script>

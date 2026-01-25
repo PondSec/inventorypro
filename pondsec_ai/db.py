@@ -139,6 +139,10 @@ def seed_default_tool_permissions(db):
     roles = db.execute('SELECT id, is_superuser FROM roles').fetchall()
     superuser_roles = [row["id"] for row in roles if row["is_superuser"]]
     read_tools = [name for name, tool in TOOL_REGISTRY.items() if not tool.is_write]
+    default_write_tools = {
+        "ticket.add_comment",
+        "alert.create",
+    }
     now = datetime.utcnow().isoformat()
     for tool_name in read_tools:
         tool = TOOL_REGISTRY[tool_name]
@@ -151,6 +155,20 @@ def seed_default_tool_permissions(db):
                 VALUES (?, ?, 1, ?, 0)
                 ''',
                 (role_id, tool_name, tool.risk)
+            )
+    for tool_name in default_write_tools:
+        tool = TOOL_REGISTRY.get(tool_name)
+        if not tool:
+            continue
+        target_roles = superuser_roles or [None]
+        for role_id in target_roles:
+            db.execute(
+                '''
+                INSERT OR IGNORE INTO agent_tool_permissions
+                    (role_id, tool_name, allowed, risk_level, require_approval)
+                VALUES (?, ?, 1, ?, 0)
+                ''',
+                (role_id, tool_name, tool.risk),
             )
     db.execute('UPDATE agent_settings SET updated_at = ? WHERE id = 1', (now,))
     db.commit()

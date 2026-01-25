@@ -6,6 +6,7 @@ import json
 from . import context
 from .db import get_agent_settings, update_agent_settings
 from .policy import approve_action, reject_action
+from .registry import TOOL_REGISTRY
 from .runtime import AgentRuntime
 
 ai_bp = Blueprint("pondsec_ai", __name__)
@@ -86,6 +87,18 @@ def ai_settings():
     settings = get_agent_settings(db)
     roles = db.execute('SELECT id, name, is_superuser FROM roles ORDER BY name').fetchall()
     tools = db.execute('SELECT * FROM agent_tool_permissions ORDER BY tool_name').fetchall()
+    tool_rows = [dict(row) for row in tools]
+    existing_keys = {(row["role_id"], row["tool_name"]) for row in tool_rows}
+    for tool_name, tool_def in TOOL_REGISTRY.items():
+        key = (None, tool_name)
+        if key not in existing_keys:
+            tool_rows.append({
+                "role_id": None,
+                "tool_name": tool_name,
+                "allowed": 0,
+                "risk_level": tool_def.risk,
+                "require_approval": 0,
+            })
     return render_template(
         "ai_settings.html",
         username=session.get("username"),
@@ -93,7 +106,7 @@ def ai_settings():
         is_superuser=access["is_superuser"],
         settings=settings,
         roles=[dict(row) for row in roles],
-        tool_permissions=[dict(row) for row in tools],
+        tool_permissions=sorted(tool_rows, key=lambda row: row["tool_name"]),
     )
 
 
