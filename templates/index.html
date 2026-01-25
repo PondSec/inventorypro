@@ -416,8 +416,8 @@
                                                 <th class="py-3 px-4 sm:px-6 font-semibold">Kategorie</th>
                                                 <th class="py-3 px-4 sm:px-6 font-semibold">Standort</th>
                                                 <th class="hidden md:table-cell py-3 px-4 sm:px-6 font-semibold">Owner</th>
-                                                <th class="hidden lg:table-cell py-3 px-4 sm:px-6 font-semibold">Specs</th>
-                                                <th class="py-3 px-4 sm:px-6 font-semibold text-right">Aktionen</th>
+                                                <th class="hidden lg:table-cell py-3 px-4 sm:px-6 font-semibold w-64">Specs</th>
+                                                <th class="py-3 px-4 sm:px-6 font-semibold text-right w-40">Aktionen</th>
                                             </tr>
                                         </thead>
                                         <tbody class="divide-y divide-slate-100">
@@ -434,7 +434,7 @@
                                                     </td>
                                                     <td class="py-4 px-4 sm:px-6 text-slate-700 truncate max-w-0" x-text="device.location_name || '-' "></td>
                                                     <td class="hidden md:table-cell py-4 px-4 sm:px-6 text-slate-700 truncate max-w-0" x-text="device.serial_number || '-' "></td>
-                                                    <td class="hidden lg:table-cell py-4 px-4 sm:px-6">
+                                                    <td class="hidden lg:table-cell py-4 px-4 sm:px-6 w-64">
                                                         <div class="flex flex-wrap gap-2">
                                                             <template x-for="(value, key) in Object.entries(JSON.parse(device.specs || '{}')).slice(0, 2)" :key="key">
                                                                 <span class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
@@ -444,7 +444,7 @@
                                                             <span x-show="Object.keys(JSON.parse(device.specs || '{}')).length === 0" class="text-xs text-slate-400">Keine Specs</span>
                                                         </div>
                                                     </td>
-                                                    <td class="py-4 px-4 sm:px-6 text-right">
+                                                    <td class="py-4 px-4 sm:px-6 text-right w-40 whitespace-nowrap">
                                                         <div class="flex items-center justify-end gap-2" x-data="{ open: false }">
                                                             <button @click="openDeviceDetail(device)" class="rounded-full border border-blue-100 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50">Öffnen</button>
                                                             <button @click="open = !open" class="inline-flex items-center justify-center rounded-full border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-100" aria-label="Weitere Aktionen">
