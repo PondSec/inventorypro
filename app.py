@@ -20,6 +20,7 @@ import urllib.request
 import urllib.error
 import ssl
 import threading
+import html
 from pathlib import Path
 from apscheduler.schedulers.background import BackgroundScheduler
 from cryptography.fernet import Fernet
@@ -2077,7 +2078,7 @@ def get_user_access(db):
             "is_superuser": False
         }
         return g.user_access
-    user = db.execute('SELECT id, username FROM users WHERE username = ?', (username,)).fetchone()
+    user = db.execute('SELECT id, username, email FROM users WHERE username = ?', (username,)).fetchone()
     if not user:
         g.user_access = {
             "user": None,
@@ -2152,15 +2153,24 @@ def get_post_login_redirect(access):
             return url_for(endpoint)
     return url_for('index')
 
+def is_ticket_owner(ticket, access):
+    if not ticket or not access.get("user"):
+        return False
+    user_id = access["user"]["id"]
+    username = access["user"]["username"]
+    if ticket.get("created_by_user_id"):
+        return ticket.get("created_by_user_id") == user_id
+    return ticket.get("created_by") == username
+
 def ensure_ticket_access(ticket, access, require_owner_permission=False):
     if access["is_superuser"]:
         return True
     if "tickets.view_all" in access["permissions"]:
         return True
     if "tickets.view_own" in access["permissions"]:
-        return ticket and ticket.get("created_by") == session.get('username')
+        return is_ticket_owner(ticket, access)
     if require_owner_permission:
-        return ticket and ticket.get("created_by") == session.get('username')
+        return is_ticket_owner(ticket, access)
     return False
 
 @app.teardown_appcontext
@@ -2179,10 +2189,16 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
+                email TEXT,
                 password_hash TEXT NOT NULL,
                 otp_secret TEXT
             )
         ''')
+        try:
+            c.execute('ALTER TABLE users ADD COLUMN email TEXT')
+        except sqlite3.OperationalError:
+            pass
+        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE email IS NOT NULL')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS roles (
@@ -2413,6 +2429,7 @@ def init_db():
                 escalation_level INTEGER DEFAULT 0,
                 requester_name TEXT,
                 requester_email TEXT,
+                created_by_user_id INTEGER,
                 created_by TEXT,
                 assignee TEXT,
                 assignee_email TEXT,
@@ -2425,7 +2442,8 @@ def init_db():
                 custom_fields TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (category_id) REFERENCES ticket_categories(id)
+                FOREIGN KEY (category_id) REFERENCES ticket_categories(id),
+                FOREIGN KEY (created_by_user_id) REFERENCES users(id)
             )
         ''')
 
@@ -2435,11 +2453,22 @@ def init_db():
             ("resolution_action", "TEXT"),
             ("resolution_outcome", "TEXT"),
             ("resolution_notes", "TEXT"),
+            ("created_by_user_id", "INTEGER REFERENCES users(id)"),
         ):
             try:
                 c.execute(f'ALTER TABLE tickets ADD COLUMN {column} {column_type}')
             except sqlite3.OperationalError:
                 pass
+        try:
+            c.execute('''
+                UPDATE tickets
+                SET created_by_user_id = (
+                    SELECT id FROM users WHERE users.username = tickets.created_by
+                )
+                WHERE created_by_user_id IS NULL AND created_by IS NOT NULL
+            ''')
+        except sqlite3.OperationalError:
+            pass
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS ticket_comments (
@@ -5095,6 +5124,16 @@ def parse_email_list(value):
         emails = value.split(',')
     return [email.strip() for email in emails if email and email.strip()]
 
+def normalize_email(value):
+    if not value:
+        return ""
+    return value.strip().lower()
+
+def is_valid_email(value):
+    if not value:
+        return False
+    return bool(re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', value))
+
 def get_notification_settings(db):
     settings = db.execute('SELECT * FROM notification_settings WHERE id = 1').fetchone()
     if not settings:
@@ -5126,7 +5165,7 @@ def serialize_notification_settings(settings):
         "has_password": bool(settings["smtp_password"])
     }
 
-def send_notification_email(settings, recipients, subject, body):
+def send_notification_email(settings, recipients, subject, body, html_body=None):
     if not settings or not settings["enabled"]:
         return False
     recipients = parse_email_list(recipients)
@@ -5143,6 +5182,8 @@ def send_notification_email(settings, recipients, subject, body):
     message["From"] = smtp_from
     message["To"] = ", ".join(recipients)
     message.set_content(body)
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
 
     try:
         with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
@@ -5155,72 +5196,244 @@ def send_notification_email(settings, recipients, subject, body):
     except Exception:
         return False
 
-def format_ticket_subject(ticket, prefix):
-    return f"{prefix} #{ticket['id']} - {ticket['title']}"
+def truncate_text(value, limit=240):
+    if not value:
+        return ""
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "…"
 
-def build_ticket_email_body(ticket, header, comment=None):
-    lines = [
-        header,
+def format_change_value(value, placeholder="Nicht gesetzt", limit=240):
+    if value is None or value == "":
+        return placeholder
+    if isinstance(value, str):
+        return truncate_text(value, limit=limit)
+    return value
+
+def build_ticket_changes(ticket, updates):
+    changes = []
+    field_map = [
+        ("status", "Status"),
+        ("priority", "Priorität"),
+        ("category_name", "Kategorie"),
+        ("assignee", "Zuständig"),
+        ("assignee_email", "Zuständig (E-Mail)"),
+        ("due_date", "Fällig"),
+        ("requester_name", "Anfragender"),
+        ("requester_email", "Anfragender (E-Mail)"),
+        ("title", "Titel"),
+        ("description", "Beschreibung"),
+    ]
+    for key, label in field_map:
+        before = ticket.get(key)
+        after = updates.get(key)
+        if key == "category_name":
+            before = before or "Keine Kategorie"
+            after = after or "Keine Kategorie"
+        if before != after:
+            limit = 400 if key == "description" else 240
+            changes.append({
+                "key": key,
+                "label": label,
+                "before": format_change_value(before, limit=limit),
+                "after": format_change_value(after, limit=limit),
+            })
+    return changes
+
+def resolve_ticket_event_type(changes):
+    keys = {change["key"] for change in changes}
+    if len(changes) == 1:
+        if "status" in keys:
+            return "status_changed"
+        if "priority" in keys:
+            return "priority_changed"
+        if "assignee" in keys or "assignee_email" in keys:
+            return "assignee_changed"
+    return "updated"
+
+def determine_ticket_reason(event_type, changes):
+    if event_type == "created":
+        return "Ticket erstellt"
+    if event_type == "commented":
+        return "Neuer Kommentar"
+    if event_type == "status_changed":
+        return "Status geändert"
+    if event_type == "priority_changed":
+        return "Priorität geändert"
+    if event_type == "assignee_changed":
+        return "Zuweisung geändert"
+    if changes:
+        if any(change["key"] == "status" for change in changes):
+            return "Status geändert"
+        if any(change["key"] == "priority" for change in changes):
+            return "Priorität geändert"
+        if any(change["key"] in {"assignee", "assignee_email"} for change in changes):
+            return "Zuweisung geändert"
+    return "Aktualisiert"
+
+def build_ticket_url(ticket_id):
+    try:
+        base_url = url_for("tickets_page", _external=True)
+    except RuntimeError:
+        base_url = "/tickets"
+    separator = "&" if "?" in base_url else "?"
+    return f"{base_url}{separator}ticket_id={ticket_id}"
+
+def render_ticket_email(event_type, ticket, changes=None, actor=None, comment=None):
+    changes = changes or []
+    actor = actor or "System"
+    reason = determine_ticket_reason(event_type, changes)
+    subject = f"[InventoryPro] Ticket #{ticket['id']} – {reason}"
+    ticket_url = build_ticket_url(ticket["id"])
+    change_lines = [
+        f"- {change['label']}: {change['before']} → {change['after']}"
+        for change in changes
+    ]
+    if not change_lines:
+        if event_type == "created":
+            change_lines = ["- Ticket wurde erstellt."]
+        else:
+            change_lines = ["- Ticket wurde aktualisiert."]
+    timestamp = datetime.utcnow().strftime("%d.%m.%Y %H:%M UTC")
+    text_lines = [
+        f"Ticket #{ticket['id']} – {ticket['title']}",
+        f"Link: {ticket_url}",
         "",
-        f"Ticket: #{ticket['id']} - {ticket['title']}",
-        f"Status: {ticket.get('status')}",
-        f"Priorität: {ticket.get('priority')}",
-        f"Kategorie: {ticket.get('category_name') or 'Unbekannt'}",
-        f"Zuständig: {ticket.get('assignee') or '-'}",
+        f"Aktueller Status: {ticket.get('status') or 'Unbekannt'}",
+        f"Priorität: {ticket.get('priority') or 'Unbekannt'}",
+        f"Kategorie: {ticket.get('category_name') or 'Keine Kategorie'}",
+        f"Zuständig: {ticket.get('assignee') or 'Nicht zugewiesen'}",
         f"Fällig: {ticket.get('due_date') or '-'}",
+        f"Von: {ticket.get('created_by') or 'Unbekannt'}",
+        f"Geändert von: {actor}",
+        f"Zeitpunkt: {timestamp}",
+        "",
+        "Was hat sich geändert?",
+        *change_lines,
+    ]
+    if comment:
+        text_lines.extend([
+            "",
+            "Kommentar:",
+            truncate_text(comment, limit=800)
+        ])
+    text_lines.extend([
         "",
         "Beschreibung:",
         ticket.get('description') or "-"
-    ]
-    if comment:
-        lines.extend(["", "Neuer Kommentar:", comment])
-    return "\n".join(lines)
+    ])
+    text_body = "\n".join(text_lines)
 
-def trigger_ticket_notifications(db, event_type, ticket, comment=None):
+    escaped_title = html.escape(ticket.get("title") or "")
+    escaped_reason = html.escape(reason)
+    escaped_actor = html.escape(actor)
+    escaped_status = html.escape(ticket.get("status") or "Unbekannt")
+    escaped_priority = html.escape(ticket.get("priority") or "Unbekannt")
+    escaped_category = html.escape(ticket.get("category_name") or "Keine Kategorie")
+    escaped_assignee = html.escape(ticket.get("assignee") or "Nicht zugewiesen")
+    escaped_due = html.escape(ticket.get("due_date") or "-")
+    escaped_creator = html.escape(ticket.get("created_by") or "Unbekannt")
+    change_rows = "".join(
+        f"<tr>"
+        f"<td style='padding:6px 8px;border-bottom:1px solid #e2e8f0;'>{html.escape(change['label'])}</td>"
+        f"<td style='padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#64748b;'>{html.escape(str(change['before']))}</td>"
+        f"<td style='padding:6px 8px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#0f172a;'>{html.escape(str(change['after']))}</td>"
+        f"</tr>"
+        for change in changes
+    )
+    if not change_rows:
+        if event_type == "created":
+            empty_message = "Ticket wurde erstellt."
+        elif event_type == "commented":
+            empty_message = "Neuer Kommentar hinzugefügt."
+        else:
+            empty_message = "Ticket wurde aktualisiert."
+        change_rows = (
+            "<tr><td colspan='3' style='padding:8px;color:#64748b;'>"
+            f"{empty_message}"
+            "</td></tr>"
+        )
+    comment_html = ""
+    if comment:
+        comment_html = (
+            "<div style='margin-top:16px;padding:12px;border-radius:12px;"
+            "background:#f8fafc;border:1px solid #e2e8f0;'>"
+            f"<p style='margin:0 0 6px;font-weight:600;color:#0f172a;'>Kommentar</p>"
+            f"<p style='margin:0;color:#334155;white-space:pre-wrap;'>{html.escape(truncate_text(comment, limit=800))}</p>"
+            "</div>"
+        )
+    html_body = f"""
+    <div style="font-family:Arial, sans-serif;background:#f1f5f9;padding:24px;">
+      <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:16px;padding:24px;border:1px solid #e2e8f0;">
+        <p style="margin:0;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.2em;">InventoryPro</p>
+        <h1 style="margin:8px 0 4px;font-size:20px;color:#0f172a;">Ticket #{ticket['id']} – {escaped_reason}</h1>
+        <p style="margin:0 0 16px;color:#64748b;font-size:14px;">{escaped_title}</p>
+        <a href="{ticket_url}" style="display:inline-block;margin-bottom:16px;padding:10px 16px;background:#2563eb;color:white;text-decoration:none;border-radius:12px;font-size:14px;">Ticket öffnen</a>
+        <div style="margin-bottom:16px;border:1px solid #e2e8f0;border-radius:12px;padding:12px;background:#f8fafc;">
+          <p style="margin:0 0 8px;font-weight:600;color:#0f172a;">Aktueller Status</p>
+          <p style="margin:0;color:#334155;">Status: <strong>{escaped_status}</strong></p>
+          <p style="margin:4px 0;color:#334155;">Priorität: <strong>{escaped_priority}</strong></p>
+          <p style="margin:4px 0;color:#334155;">Kategorie: {escaped_category}</p>
+          <p style="margin:4px 0;color:#334155;">Zuständig: {escaped_assignee}</p>
+          <p style="margin:4px 0;color:#334155;">Fällig: {escaped_due}</p>
+          <p style="margin:4px 0;color:#334155;">Von: {escaped_creator}</p>
+          <p style="margin:8px 0 0;color:#94a3b8;font-size:12px;">Geändert von {escaped_actor} • {timestamp}</p>
+        </div>
+        <h2 style="margin:16px 0 8px;font-size:16px;color:#0f172a;">Was hat sich geändert?</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Feld</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Vorher</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Nachher</th>
+            </tr>
+          </thead>
+          <tbody>
+            {change_rows}
+          </tbody>
+        </table>
+        {comment_html}
+        <div style="margin-top:16px;">
+          <p style="margin:0 0 4px;font-weight:600;color:#0f172a;">Beschreibung</p>
+          <p style="margin:0;color:#334155;white-space:pre-wrap;">{html.escape(ticket.get('description') or '-')}</p>
+        </div>
+      </div>
+    </div>
+    """
+    return subject, text_body, html_body
+
+def get_ticket_creator_email(db, ticket):
+    creator_email = None
+    if ticket.get("created_by_user_id"):
+        row = db.execute(
+            'SELECT email FROM users WHERE id = ?',
+            (ticket["created_by_user_id"],)
+        ).fetchone()
+        creator_email = row["email"] if row and row["email"] else None
+    if not creator_email and ticket.get("created_by"):
+        row = db.execute(
+            'SELECT email FROM users WHERE username = ?',
+            (ticket["created_by"],)
+        ).fetchone()
+        creator_email = row["email"] if row and row["email"] else None
+    return creator_email
+
+def trigger_ticket_notifications(db, event_type, ticket, changes=None, actor=None, comment=None):
     settings = get_notification_settings(db)
     if not settings or not settings["enabled"]:
         return
-
-    recipients = []
-    recipients.extend(parse_email_list(settings["default_recipients"]))
-    recipients.extend(parse_email_list(ticket.get("requester_email")))
-    recipients.extend(parse_email_list(ticket.get("assignee_email")))
-
-    watcher_rows = db.execute('SELECT email FROM ticket_watchers WHERE ticket_id = ?', (ticket["id"],)).fetchall()
-    recipients.extend([row["email"] for row in watcher_rows])
-
-    alerts = db.execute('''
-        SELECT * FROM ticket_alerts
-        WHERE is_enabled = 1 AND event_type = ?
-    ''', (event_type,)).fetchall()
-
-    for alert in alerts:
-        if alert["status_match"] and alert["status_match"] != ticket.get("status"):
-            continue
-        if alert["priority_match"] and alert["priority_match"] != ticket.get("priority"):
-            continue
-        if alert["category_id"] and alert["category_id"] != ticket.get("category_id"):
-            continue
-        recipients.extend(parse_email_list(alert["recipient_emails"]))
-
-    unique_recipients = list(dict.fromkeys([email for email in recipients if email]))
-    if not unique_recipients:
+    creator_email = get_ticket_creator_email(db, ticket)
+    if not creator_email:
+        app.logger.info("Ticket %s: Keine Ersteller-E-Mail hinterlegt, Mailversand übersprungen.", ticket["id"])
         return
-
-    subject = format_ticket_subject(ticket, "Ticket Update")
-    header = f"Es gibt ein Update zum Ticket {ticket['id']}."
-    if event_type == "created":
-        header = f"Ein neues Ticket wurde erstellt."
-        subject = format_ticket_subject(ticket, "Neues Ticket")
-    elif event_type == "commented":
-        header = "Es gibt einen neuen Kommentar."
-        subject = format_ticket_subject(ticket, "Kommentar erhalten")
-    elif event_type == "status_changed":
-        header = f"Der Status wurde auf '{ticket.get('status')}' geändert."
-        subject = format_ticket_subject(ticket, "Status geändert")
-
-    body = build_ticket_email_body(ticket, header, comment=comment)
-    send_notification_email(settings, unique_recipients, subject, body)
+    subject, text_body, html_body = render_ticket_email(
+        event_type,
+        ticket,
+        changes=changes,
+        actor=actor,
+        comment=comment,
+    )
+    send_notification_email(settings, [creator_email], subject, text_body, html_body=html_body)
 
 def fetch_ticket(db, ticket_id):
     ticket = db.execute('''
@@ -7896,16 +8109,18 @@ def health_incident_ticket(incident_id):
         f"Seit: {incident['opened_at']}\n"
         f"Aktuell: {incident['last_status']}"
     )
+    creator_id = get_current_user_id(db)
     cursor = db.execute(
         '''
-        INSERT INTO tickets (title, description, priority, status, requester_name, created_by, tags)
-        VALUES (?, ?, ?, 'open', ?, ?, ?)
+        INSERT INTO tickets (title, description, priority, status, requester_name, created_by_user_id, created_by, tags)
+        VALUES (?, ?, ?, 'open', ?, ?, ?, ?)
         ''',
         (
             title,
             description,
             "high",
             session.get("username"),
+            creator_id,
             session.get("username"),
             json.dumps(["health", "incident"])
         )
@@ -7960,6 +8175,7 @@ def tickets():
         resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
         if not title or not description:
             return jsonify({"error": "Titel und Beschreibung sind erforderlich"}), 400
+        creator_id = access["user"]["id"] if access.get("user") else get_current_user_id(db)
         category_name = None
         if category_id:
             category_row = db.execute('SELECT name FROM ticket_categories WHERE id = ?', (category_id,)).fetchone()
@@ -7967,13 +8183,13 @@ def tickets():
         cursor = db.execute('''
             INSERT INTO tickets (
                 title, description, category_id, priority, status, requester_name,
-                requester_email, created_by, assignee, assignee_email, due_date, escalation_level,
+                requester_email, created_by_user_id, created_by, assignee, assignee_email, due_date, escalation_level,
                 resolved_at, resolution_action, resolution_outcome, resolution_notes, tags, custom_fields
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             title, description, category_id, priority, status, requester_name, requester_email,
-            session.get('username'), assignee, assignee_email, due_date, escalation_level,
+            creator_id, session.get('username'), assignee, assignee_email, due_date, escalation_level,
             resolved_at, resolution_action, resolution_outcome, resolution_notes, tags, custom_fields
         ))
         ticket_id = cursor.lastrowid
@@ -7991,6 +8207,7 @@ def tickets():
             "status": status,
             "requester_name": requester_name,
             "requester_email": requester_email,
+            "created_by_user_id": creator_id,
             "created_by": session.get('username'),
             "assignee": assignee,
             "assignee_email": assignee_email,
@@ -8005,7 +8222,7 @@ def tickets():
         ticket = fetch_ticket(db, ticket_id)
         if ticket:
             ticket = normalize_ticket_row(ticket)
-            trigger_ticket_notifications(db, "created", ticket)
+            trigger_ticket_notifications(db, "created", ticket, actor=session.get('username'))
         return jsonify({"status": "created", "id": ticket_id}), 201
 
     if not (user_can('tickets.view_all') or user_can('tickets.view_own')):
@@ -8032,11 +8249,13 @@ def tickets():
         filters.append('t.assignee = ?')
         params.append(assignee)
     if mine:
-        filters.append('t.created_by = ?')
-        params.append(session.get('username'))
+        owner_filter = '(t.created_by_user_id = ? OR (t.created_by_user_id IS NULL AND t.created_by = ?))'
+        filters.append(owner_filter)
+        params.extend([access["user"]["id"], access["user"]["username"]])
     if not access["is_superuser"] and 'tickets.view_all' not in access["permissions"]:
-        filters.append('t.created_by = ?')
-        params.append(session.get('username'))
+        owner_filter = '(t.created_by_user_id = ? OR (t.created_by_user_id IS NULL AND t.created_by = ?))'
+        filters.append(owner_filter)
+        params.extend([access["user"]["id"], access["user"]["username"]])
     if search:
         filters.append('(t.title LIKE ? OR t.description LIKE ? OR t.requester_name LIKE ?)')
         params.extend([f'%{search}%', f'%{search}%', f'%{search}%'])
@@ -8093,9 +8312,11 @@ def ticket_detail(ticket_id):
     if request.method == 'PUT':
         can_update = user_can('tickets.update')
         can_update_own = user_can('tickets.update_own')
-        if not can_update and not (can_update_own and ticket.get('created_by') == session.get('username')):
+        if not can_update and not (can_update_own and is_ticket_owner(ticket, access)):
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
+        if "created_by" in data or "created_by_user_id" in data:
+            return jsonify({"error": "Ticket-Ersteller kann nicht geändert werden"}), 400
         title = (data.get('title') or ticket['title']).strip()
         description = (data.get('description') or ticket['description']).strip()
         category_id = data.get('category_id')
@@ -8124,6 +8345,18 @@ def ticket_detail(ticket_id):
         if category_id:
             category_row = db.execute('SELECT name FROM ticket_categories WHERE id = ?', (category_id,)).fetchone()
             category_name = category_row["name"] if category_row else None
+        changes = build_ticket_changes(ticket, {
+            "title": title,
+            "description": description,
+            "category_name": category_name,
+            "priority": priority,
+            "status": status,
+            "assignee": assignee,
+            "assignee_email": assignee_email,
+            "due_date": due_date,
+            "requester_name": requester_name,
+            "requester_email": requester_email,
+        })
 
         db.execute('''
             UPDATE tickets
@@ -8166,14 +8399,13 @@ def ticket_detail(ticket_id):
         updated_ticket = fetch_ticket(db, ticket_id)
         if updated_ticket:
             normalized = normalize_ticket_row(updated_ticket)
-            trigger_ticket_notifications(db, "updated", normalized)
-            if status_changed:
-                trigger_ticket_notifications(db, "status_changed", normalized)
+            event_type = resolve_ticket_event_type(changes)
+            trigger_ticket_notifications(db, event_type, normalized, changes=changes, actor=session.get('username'))
         return jsonify({"status": "updated"}), 200
 
     can_delete = user_can('tickets.delete')
     can_delete_own = user_can('tickets.delete_own')
-    if not can_delete and not (can_delete_own and ticket.get('created_by') == session.get('username')):
+    if not can_delete and not (can_delete_own and is_ticket_owner(ticket, access)):
         return jsonify({"error": "Keine Berechtigung"}), 403
     db.execute('DELETE FROM ticket_comments WHERE ticket_id = ?', (ticket_id,))
     db.execute('DELETE FROM ticket_watchers WHERE ticket_id = ?', (ticket_id,))
@@ -8196,7 +8428,7 @@ def ticket_comments(ticket_id):
     if request.method == 'POST':
         can_comment = user_can('tickets.comment')
         can_comment_own = user_can('tickets.comment_own')
-        if not can_comment and not (can_comment_own and ticket.get('created_by') == session.get('username')):
+        if not can_comment and not (can_comment_own and is_ticket_owner(ticket, access)):
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         body = (data.get('body') or '').strip()
@@ -8214,7 +8446,7 @@ def ticket_comments(ticket_id):
         ticket = fetch_ticket(db, ticket_id)
         if ticket:
             ticket = normalize_ticket_row(ticket)
-            trigger_ticket_notifications(db, "commented", ticket, comment=body)
+            trigger_ticket_notifications(db, "commented", ticket, comment=body, actor=session.get('username'))
         return jsonify({"status": "created"}), 201
 
     comments = db.execute('''
@@ -8238,7 +8470,7 @@ def ticket_watchers(ticket_id):
     if request.method == 'POST':
         can_watch = user_can('tickets.watch')
         can_watch_own = user_can('tickets.watch_own')
-        if not can_watch and not (can_watch_own and ticket.get('created_by') == session.get('username')):
+        if not can_watch and not (can_watch_own and is_ticket_owner(ticket, access)):
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         email = (data.get('email') or '').strip()
@@ -8272,7 +8504,7 @@ def delete_ticket_watcher(ticket_id, watcher_id):
         return jsonify({"error": "Keine Berechtigung"}), 403
     can_watch = user_can('tickets.watch')
     can_watch_own = user_can('tickets.watch_own')
-    if not can_watch and not (can_watch_own and ticket.get('created_by') == session.get('username')):
+    if not can_watch and not (can_watch_own and is_ticket_owner(ticket, access)):
         return jsonify({"error": "Keine Berechtigung"}), 403
     result = db.execute('''
         DELETE FROM ticket_watchers
@@ -8913,9 +9145,16 @@ def manage_users():
         data = request.get_json()
         username = (data.get('username') or '').strip()
         password = data.get('password') or ''
+        email = normalize_email(data.get('email') or '')
         role_ids = data.get('role_ids') or []
         if not username or not password:
             return jsonify({"error": "Benutzername und Passwort sind erforderlich"}), 400
+        if email and not is_valid_email(email):
+            return jsonify({"error": "Ungültige E-Mail-Adresse"}), 400
+        if email:
+            existing_email = db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
+            if existing_email:
+                return jsonify({"error": "E-Mail bereits vergeben"}), 400
         min_length = get_password_min_length(db)
         if len(password) < min_length:
             return jsonify({"error": f"Passwort muss mindestens {min_length} Zeichen lang sein"}), 400
@@ -8924,9 +9163,9 @@ def manage_users():
         password_hash = generate_password_hash(password)
         try:
             cursor = db.execute('''
-                INSERT INTO users (username, password_hash)
-                VALUES (?, ?)
-            ''', (username, password_hash))
+                INSERT INTO users (username, email, password_hash)
+                VALUES (?, ?, ?)
+            ''', (username, email or None, password_hash))
             user_id = cursor.lastrowid
             if role_ids:
                 db.execute('DELETE FROM user_roles WHERE user_id = ?', (user_id,))
@@ -8943,7 +9182,7 @@ def manage_users():
         except sqlite3.IntegrityError:
             return jsonify({"error": "Benutzername existiert bereits"}), 400
 
-    users = db.execute('SELECT id, username, otp_secret FROM users ORDER BY username').fetchall()
+    users = db.execute('SELECT id, username, email, otp_secret FROM users ORDER BY username').fetchall()
     result = []
     for user in users:
         entry = dict(user)
@@ -8959,11 +9198,36 @@ def manage_users():
         result.append(entry)
     return jsonify(result)
 
-@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@app.route('/api/users/<int:user_id>', methods=['PUT', 'DELETE'])
 @login_required
 @require_permission('users.manage')
 def remove_user(user_id):
     db = get_db()
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        email = normalize_email(data.get('email') or '')
+        if email and not is_valid_email(email):
+            return jsonify({"error": "Ungültige E-Mail-Adresse"}), 400
+        if email:
+            existing_email = db.execute(
+                'SELECT id FROM users WHERE email = ? AND id != ?',
+                (email, user_id)
+            ).fetchone()
+            if existing_email:
+                return jsonify({"error": "E-Mail bereits vergeben"}), 400
+        result = db.execute(
+            '''
+            UPDATE users
+            SET email = ?
+            WHERE id = ?
+            ''',
+            (email or None, user_id)
+        )
+        if result.rowcount == 0:
+            return jsonify({"error": "Benutzer nicht gefunden"}), 404
+        log_activity(db, "update", "user_email", user_id, {"email": email or None})
+        db.commit()
+        return jsonify({"status": "updated", "email": email or None}), 200
     current = db.execute('SELECT id FROM users WHERE username = ?', (session.get('username'),)).fetchone()
     if current and current['id'] == user_id:
         return jsonify({"error": "Eigenes Konto kann nicht gelöscht werden"}), 400
@@ -9106,6 +9370,7 @@ def current_user_info():
     return jsonify({
         "id": access["user"]["id"],
         "username": access["user"]["username"],
+        "email": access["user"].get("email"),
         "roles": access["roles"],
         "permissions": sorted(access["permissions"]),
         "is_superuser": access["is_superuser"]
