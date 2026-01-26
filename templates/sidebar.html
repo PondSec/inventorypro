@@ -1,0 +1,198 @@
+{% set permissions = permissions | default([]) %}
+{% set show_inventory_explorer = show_inventory_explorer or false %}
+{% set nav_groups = [
+    {
+        'title': 'Arbeitsbereiche',
+        'meta': 'Primär',
+        'open': true,
+        'items': [
+            {'id': 'dashboard', 'label': 'Dashboard', 'href': '/', 'icon': 'home'},
+            {'id': 'locations', 'label': 'Standorte', 'href': '/locations', 'icon': 'map-pin', 'permissions': ['locations.view', 'locations.manage']},
+            {'id': 'tickets', 'label': 'Ticketsystem', 'href': '/tickets', 'icon': 'life-buoy', 'permissions': ['tickets.view_all', 'tickets.view_own', 'tickets.create']},
+            {'id': 'knowledge', 'label': 'Wissensbasis', 'href': '/knowledge', 'icon': 'book-open', 'permissions': ['knowledge.view', 'knowledge.manage']},
+            {'id': 'roadmap', 'label': 'Roadmap', 'href': '/roadmap', 'icon': 'git-merge', 'permissions': ['roadmap.view', 'roadmap.manage']},
+            {'id': 'ai-activity', 'label': 'PondSec AI', 'href': '/ai/activity', 'icon': 'message-circle', 'prefix': '/ai', 'permissions': ['ai.use', 'ai.manage']}
+        ]
+    },
+    {
+        'title': 'Insights',
+        'meta': 'Reporting',
+        'open': true,
+        'items': [
+            {'id': 'stats', 'label': 'Statistiken', 'href': '/stats', 'icon': 'bar-chart-2', 'permissions': ['stats.view']},
+            {'id': 'dependencies', 'label': 'Dependency-Graph', 'href': '/dependencies', 'icon': 'share-2', 'permissions': ['dependencies.view', 'dependencies.manage']},
+            {'id': 'time-machine', 'label': 'Zeitmaschine', 'href': '/time-machine', 'icon': 'clock', 'permissions': ['timemachine.view']},
+            {'id': 'health', 'label': 'Health', 'href': '/health', 'icon': 'activity', 'permissions': ['health.view', 'health.manage', 'health.run']}
+        ]
+    },
+    {
+        'title': 'Administration',
+        'meta': 'Sekundär',
+        'open': false,
+        'items': [
+            {'id': 'users', 'label': 'Benutzer', 'href': '/users', 'icon': 'users', 'permissions': ['users.manage']},
+            {'id': 'settings', 'label': 'Einstellungen', 'href': '/settings', 'icon': 'settings', 'permissions': ['server_settings.manage']}
+        ]
+    }
+] %}
+
+{% macro render_item(item) %}
+<div class="sidebar-item" data-sidebar-item data-label="{{ item.label }}" data-nav-id="{{ item.id }}" data-nav-path="{{ item.href }}" data-nav-icon="{{ item.icon }}"{% if item.prefix %} data-nav-prefix="{{ item.prefix }}"{% endif %}>
+    <a href="{{ item.href }}" class="sidebar-item-link" data-nav-link>
+        <span class="sidebar-item-icon"><i data-feather="{{ item.icon }}" class="w-4 h-4"></i></span>
+        <span class="sidebar-item-label sidebar-text">{{ item.label }}</span>
+    </a>
+    <button type="button" class="sidebar-favorite-button" data-favorite-toggle aria-pressed="false" aria-label="{{ item.label }} als Favorit markieren">
+        <i data-feather="star" class="w-4 h-4"></i>
+    </button>
+    <span class="sidebar-tooltip">{{ item.label }}</span>
+</div>
+{% endmacro %}
+
+<aside class="app-sidebar sidebar bg-white/95 backdrop-blur-xl border-r border-slate-200 shadow-lg" aria-label="Seitenleiste">
+    <div class="sidebar-header">
+        <a href="/" class="sidebar-brand">
+            <span class="sidebar-logo" data-brand-logo>
+                <i data-feather="cpu" data-brand-logo-icon class="w-5 h-5"></i>
+            </span>
+            <div class="sidebar-meta">
+                <p class="sidebar-title sidebar-text" data-brand-name>Inventory Pro</p>
+                <p class="sidebar-subtitle sidebar-text" data-brand-tagline>Smart Asset Hub</p>
+            </div>
+        </a>
+    </div>
+
+    <div class="sidebar-search">
+        <label class="sr-only" for="sidebar-search">Navigation durchsuchen</label>
+        <div class="sidebar-search-field">
+            <i data-feather="search" class="w-4 h-4 text-slate-400" aria-hidden="true"></i>
+            <input id="sidebar-search" type="text" placeholder="Bereiche, Seiten, Aktionen..." data-sidebar-search>
+        </div>
+    </div>
+
+    <nav class="sidebar-nav sidebar-scroll" data-sidebar-nav aria-label="Hauptnavigation">
+        <section class="sidebar-section">
+            <h2 class="sidebar-section-title sidebar-text">Favoriten</h2>
+            <div class="sidebar-section-body" data-sidebar-favorites>
+                <p class="sidebar-empty sidebar-text">Noch keine Favoriten gepinnt.</p>
+            </div>
+        </section>
+
+        <section class="sidebar-section">
+            <h2 class="sidebar-section-title sidebar-text">Zuletzt genutzt</h2>
+            <div class="sidebar-section-body" data-sidebar-recents>
+                <p class="sidebar-empty sidebar-text">Noch keine letzten Ziele.</p>
+            </div>
+        </section>
+
+        {% for group in nav_groups %}
+            {% set visible = namespace(items=[]) %}
+            {% for item in group.items %}
+                {% if not item.permissions %}
+                    {% set _ = visible.items.append(item) %}
+                {% elif item.permissions | select('in', permissions) | list %}
+                    {% set _ = visible.items.append(item) %}
+                {% endif %}
+            {% endfor %}
+            {% if visible.items %}
+            <details class="sidebar-group" data-sidebar-group{% if group.open %} open{% endif %}>
+                <summary class="sidebar-group-summary">
+                    <span class="sidebar-group-title sidebar-text">{{ group.title }}</span>
+                    <span class="sidebar-group-meta sidebar-text">{{ group.meta }}</span>
+                </summary>
+                <div class="sidebar-group-items">
+                    {% for item in visible.items %}
+                        {{ render_item(item) }}
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
+        {% endfor %}
+
+        {% if show_inventory_explorer %}
+        <details class="sidebar-group sidebar-group--explorer" data-sidebar-group open>
+            <summary class="sidebar-group-summary">
+                <span class="sidebar-group-title sidebar-text">Inventar-Explorer</span>
+                <span class="sidebar-group-meta sidebar-text">Filter & Pflege</span>
+            </summary>
+            <div class="sidebar-group-items">
+                <button @click="categoriesOpen = !categoriesOpen" class="sidebar-toggle" type="button" aria-expanded="false" :aria-expanded="categoriesOpen.toString()">
+                    <span class="flex items-center gap-2">
+                        <span class="sidebar-item-icon"><i data-feather="layers" class="w-4 h-4"></i></span>
+                        <span class="sidebar-item-label sidebar-text">Kategorien</span>
+                    </span>
+                    <svg :class="{ 'rotate-180': categoriesOpen }" class="w-4 h-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div x-show="categoriesOpen" x-transition class="sidebar-explorer-panel">
+                    <div class="sidebar-explorer-search">
+                        <input type="text" x-model="categorySearchQuery" placeholder="Kategorien filtern..." class="sidebar-explorer-input">
+                        <span class="sidebar-explorer-icon">
+                            <i data-feather="search" class="w-3 h-3"></i>
+                        </span>
+                    </div>
+                    <template x-for="category in visibleCategories()" :key="category.id">
+                        <div class="sidebar-explorer-item">
+                            <button type="button" @click="loadDevices(category.id)" class="sidebar-explorer-link">
+                                <div x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-slate-500' })"></div>
+                                <span class="sidebar-item-label sidebar-text" x-text="category.name"></span>
+                            </button>
+                            <div class="sidebar-explorer-actions">
+                                <button @click="editCategoryModal(category)" class="icon-button text-slate-500 hover:text-slate-900" aria-label="Kategorie bearbeiten">
+                                    <i data-feather="edit" class="w-4 h-4"></i>
+                                </button>
+                                <button @click="deleteCategory(category.id)" class="icon-button text-rose-500 hover:text-rose-700" aria-label="Kategorie löschen">
+                                    <i data-feather="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                    <button type="button" x-show="hasMoreCategories()" @click="showAllCategories = !showAllCategories" class="sidebar-explorer-more">
+                        <span x-text="showAllCategories ? 'Weniger anzeigen' : 'Mehr anzeigen'"></span>
+                    </button>
+                    <button type="button" @click="openAddCategoryModal()" class="sidebar-explorer-add">
+                        <i data-feather="plus-circle" class="w-4 h-4"></i>
+                        Kategorie hinzufügen
+                    </button>
+                </div>
+
+                <button @click="assetsOpen = !assetsOpen" class="sidebar-toggle" type="button" aria-expanded="false" :aria-expanded="assetsOpen.toString()">
+                    <span class="flex items-center gap-2">
+                        <span class="sidebar-item-icon"><i data-feather="package" class="w-4 h-4"></i></span>
+                        <span class="sidebar-item-label sidebar-text">Assets</span>
+                    </span>
+                    <svg :class="{ 'rotate-180': assetsOpen }" class="w-4 h-4 text-slate-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div x-show="assetsOpen" x-transition class="sidebar-explorer-panel">
+                    <template x-for="asset in visibleAssets()" :key="asset.id">
+                        <div class="sidebar-explorer-item">
+                            <button type="button" @click="openAssetDetail(asset)" class="sidebar-explorer-link">
+                                <span class="sidebar-explorer-count" x-text="asset.device_count || 0"></span>
+                                <span class="sidebar-item-label sidebar-text" x-text="asset.name"></span>
+                            </button>
+                            <div class="sidebar-explorer-actions">
+                                <button @click="openEditAssetModal(asset)" class="icon-button text-slate-500 hover:text-slate-900" aria-label="Asset bearbeiten">
+                                    <i data-feather="edit" class="w-4 h-4"></i>
+                                </button>
+                                <button @click="deleteAsset(asset.id)" class="icon-button text-rose-500 hover:text-rose-700" aria-label="Asset löschen">
+                                    <i data-feather="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                    <button type="button" x-show="hasMoreAssets()" @click="showAllAssets = !showAllAssets" class="sidebar-explorer-more">
+                        <span x-text="showAllAssets ? 'Weniger anzeigen' : 'Mehr anzeigen'"></span>
+                    </button>
+                    <button type="button" @click="openAddAssetModal()" class="sidebar-explorer-add">
+                        <i data-feather="plus-circle" class="w-4 h-4"></i>
+                        Asset hinzufügen
+                    </button>
+                </div>
+            </div>
+        </details>
+        {% endif %}
+    </nav>
+</aside>
