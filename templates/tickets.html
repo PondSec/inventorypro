@@ -673,10 +673,6 @@
                         <span x-text="currentUsername || 'Unbekannt'"></span>
                     </span>
                 </div>
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <input type="text" x-model="newTicket.requester_name" placeholder="Anfragender" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                    <input type="email" x-model="newTicket.requester_email" placeholder="Anfragender E-Mail" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2" x-show="can('tickets.update')">
                     <input type="text" x-model="newTicket.assignee" placeholder="Zuständig" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                     <input type="email" x-model="newTicket.assignee_email" placeholder="Assignee E-Mail" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
