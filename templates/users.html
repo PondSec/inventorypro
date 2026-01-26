@@ -237,6 +237,8 @@
                     <form class="mt-4 space-y-3" @submit.prevent="createUser()">
                         <input type="text" x-model="newUser.username" placeholder="Benutzername"
                                class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
+                        <input type="email" x-model="newUser.email" placeholder="E-Mail (optional)"
+                               class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
                         <input type="password" x-model="newUser.password" placeholder="Startpasswort"
                                class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
                         <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4" x-show="can('roles.assign')">
@@ -275,6 +277,7 @@
                             <thead class="text-left text-slate-500">
                                 <tr class="border-b border-slate-200">
                                     <th class="py-3 font-semibold">Benutzername</th>
+                                    <th class="py-3 font-semibold">E-Mail</th>
                                     <th class="py-3 font-semibold">2FA</th>
                                     <th class="py-3 font-semibold">Rollen</th>
                                     <th class="py-3 font-semibold text-right">Aktionen</th>
@@ -284,6 +287,9 @@
                                 <template x-for="user in filteredUsers()" :key="user.id">
                                     <tr class="hover:bg-slate-50">
                                         <td class="py-3 font-semibold text-slate-900" x-text="user.username"></td>
+                                        <td class="py-3 text-slate-600">
+                                            <span x-text="user.email || 'Nicht gesetzt'"></span>
+                                        </td>
                                         <td class="py-3">
                                             <span class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold"
                                                   :class="user.otp_enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">
@@ -309,6 +315,7 @@
                                                     <i data-feather="more-vertical" class="h-4 w-4"></i>
                                                 </button>
                                                 <div x-show="open" data-testid="user-action-menu" @click.away="open = false" class="absolute right-4 z-20 mt-20 w-40 rounded-2xl border border-slate-200 bg-white shadow-xl" x-transition>
+                                                    <button @click="openEmailModal(user); open=false" class="block w-full px-4 py-2 text-left text-sm hover:bg-slate-50">E-Mail bearbeiten</button>
                                                     <button @click="openResetModal(user); open=false" class="block w-full px-4 py-2 text-left text-sm hover:bg-slate-50">Passwort reset</button>
                                                     <button @click="deleteUser(user); open=false" class="block w-full px-4 py-2 text-left text-sm text-rose-600 hover:bg-rose-50">Löschen</button>
                                                 </div>
@@ -509,6 +516,27 @@
         </div>
     </div>
 
+    <div x-show="emailModalOpen" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
+        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 scrollbar-hide">
+            <div class="flex items-center justify-between mb-4">
+                <h4 class="text-lg font-semibold text-slate-900">E-Mail bearbeiten</h4>
+                <button @click="emailModalOpen = false" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="E-Mail-Modal schließen">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <p class="text-sm text-slate-500 mb-4" x-text="emailUser ? `E-Mail für ${emailUser.username}` : ''"></p>
+            <label class="text-xs uppercase tracking-wide text-slate-400">E-Mail</label>
+            <input type="email" x-model="emailValue" placeholder="name@firma.de"
+                   class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+            <p class="mt-2 text-xs text-rose-500" x-text="emailError" x-show="emailError"></p>
+            <p class="mt-2 text-xs text-emerald-600" x-text="emailSuccess" x-show="emailSuccess"></p>
+            <div class="mt-4 flex justify-end gap-2">
+                <button @click="emailModalOpen = false" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
+                <button @click="saveUserEmail()" class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Speichern</button>
+            </div>
+        </div>
+    </div>
+
     <div x-show="roleModalOpen" data-testid="role-modal-container" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
         <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 scrollbar-hide" data-testid="role-modal">
             <div class="flex items-center justify-between mb-4">
@@ -579,12 +607,17 @@
                 users: [],
                 userSearch: '',
                 activeAdminTab: 'users',
-                newUser: { username: '', password: '', role_ids: [] },
+                newUser: { username: '', email: '', password: '', role_ids: [] },
                 resetModalOpen: false,
                 resetUser: null,
                 resetPassword: '',
                 errorMessage: '',
                 successMessage: '',
+                emailModalOpen: false,
+                emailUser: null,
+                emailValue: '',
+                emailError: '',
+                emailSuccess: '',
                 roles: [],
                 permissions: [],
                 permissionGroups: {},
@@ -644,7 +677,7 @@
                     if (!query) return this.users;
                     return this.users.filter((user) => {
                         const roles = (user.roles || []).map((role) => role.name).join(' ').toLowerCase();
-                        return `${user.username} ${roles}`.toLowerCase().includes(query);
+                        return `${user.username} ${user.email || ''} ${roles}`.toLowerCase().includes(query);
                     });
                 },
 
@@ -678,9 +711,20 @@
                     }
                 },
 
+                isValidEmail(value) {
+                    if (!value) {
+                        return true;
+                    }
+                    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
+                },
+
                 async createUser() {
                     this.errorMessage = '';
                     this.successMessage = '';
+                    if (this.newUser.email && !this.isValidEmail(this.newUser.email)) {
+                        this.errorMessage = 'Ungültige E-Mail-Adresse';
+                        return;
+                    }
                     const response = await fetch('/api/users', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -688,7 +732,7 @@
                     });
                     if (response.ok) {
                         this.successMessage = 'Benutzer erstellt.';
-                        this.newUser = { username: '', password: '', role_ids: [] };
+                        this.newUser = { username: '', email: '', password: '', role_ids: [] };
                         await this.loadUsers();
                     } else {
                         const error = await response.json();
@@ -790,6 +834,37 @@
                     this.resetUser = user;
                     this.resetPassword = '';
                     this.resetModalOpen = true;
+                },
+
+                openEmailModal(user) {
+                    this.emailUser = user;
+                    this.emailValue = user.email || '';
+                    this.emailError = '';
+                    this.emailSuccess = '';
+                    this.emailModalOpen = true;
+                },
+
+                async saveUserEmail() {
+                    if (!this.emailUser) return;
+                    this.emailError = '';
+                    this.emailSuccess = '';
+                    if (this.emailValue && !this.isValidEmail(this.emailValue)) {
+                        this.emailError = 'Ungültige E-Mail-Adresse';
+                        return;
+                    }
+                    const response = await fetch(`/api/users/${this.emailUser.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: this.emailValue })
+                    });
+                    if (response.ok) {
+                        this.emailSuccess = 'E-Mail gespeichert.';
+                        await this.loadUsers();
+                        this.emailModalOpen = false;
+                    } else {
+                        const error = await response.json();
+                        this.emailError = error.error || 'Fehler beim Speichern';
+                    }
                 },
 
                 async resetPasswordForUser() {
