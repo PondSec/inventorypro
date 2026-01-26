@@ -113,6 +113,9 @@ document.addEventListener('alpine:init', () => {
         openNewTicket() {
             this.ticketError = '';
             this.ticketModalOpen = true;
+            if (!this.newTicket.requester_name && this.currentUsername) {
+                this.newTicket.requester_name = this.currentUsername;
+            }
         },
 
         addCustomField() {
