@@ -14,6 +14,10 @@ document.addEventListener('alpine:init', () => {
         assetsOpen: false,
         searchQuery: '',
         categorySearchQuery: '',
+        showAllCategories: false,
+        categoryLimit: 6,
+        showAllAssets: false,
+        assetLimit: 6,
         ownerQuery: '',
         locationFilter: '',
         categoryFilter: '',
@@ -368,6 +372,29 @@ document.addEventListener('alpine:init', () => {
             return this.categories.filter(category =>
                 (category.name || '').toLowerCase().includes(query)
             );
+        },
+
+        visibleCategories() {
+            const list = this.filteredCategories();
+            if (this.showAllCategories || list.length <= this.categoryLimit) {
+                return list;
+            }
+            return list.slice(0, this.categoryLimit);
+        },
+
+        hasMoreCategories() {
+            return this.filteredCategories().length > this.categoryLimit;
+        },
+
+        visibleAssets() {
+            if (this.showAllAssets || this.assets.length <= this.assetLimit) {
+                return this.assets;
+            }
+            return this.assets.slice(0, this.assetLimit);
+        },
+
+        hasMoreAssets() {
+            return this.assets.length > this.assetLimit;
         },
 
         resetDeviceFilters() {
