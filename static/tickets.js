@@ -11,6 +11,7 @@ document.addEventListener('alpine:init', () => {
         knowledgeLoading: false,
         userPermissions: window.inventoryPermissions || [],
         isSuperuser: window.inventoryIsSuperuser || false,
+        currentUsername: window.inventoryUsername || '',
         filters: {
             status: '',
             priority: '',
@@ -114,6 +115,9 @@ document.addEventListener('alpine:init', () => {
         openNewTicket() {
             this.ticketError = '';
             this.ticketModalOpen = true;
+            if (!this.newTicket.requester_name && this.currentUsername) {
+                this.newTicket.requester_name = this.currentUsername;
+            }
         },
 
         addCustomField() {
