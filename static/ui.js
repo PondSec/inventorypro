@@ -130,67 +130,6 @@ const scheduleResponsiveTableUpdate = () => {
   });
 };
 
-const setupSidebarSearch = () => {
-  const searchInputs = document.querySelectorAll('[data-sidebar-search]');
-  if (!searchInputs.length) {
-    return;
-  }
-
-  const matchesQuery = (label, query) => {
-    if (!query) {
-      return true;
-    }
-    return label.toLowerCase().includes(query);
-  };
-
-  const applyFilter = (query) => {
-    const normalized = query.trim().toLowerCase();
-    const items = Array.from(document.querySelectorAll('[data-sidebar-item]'));
-    const subgroups = Array.from(document.querySelectorAll('.sidebar-subgroup'));
-    const groups = Array.from(document.querySelectorAll('[data-sidebar-group]'));
-
-    items.forEach((item) => {
-      const label = (item.getAttribute('data-sidebar-label') || '').trim().toLowerCase();
-      const shouldShow = matchesQuery(label, normalized);
-      if (item.matches('.sidebar-nav-link, .sidebar-favorite-link, .sidebar-subgroup-toggle')) {
-        item.style.display = shouldShow ? '' : 'none';
-      }
-      item.dataset.sidebarMatch = shouldShow ? 'true' : 'false';
-    });
-
-    subgroups.forEach((subgroup) => {
-      const toggle = subgroup.querySelector('.sidebar-subgroup-toggle');
-      const links = Array.from(subgroup.querySelectorAll('.sidebar-nav-link'));
-      const childVisible = links.some((link) => link.style.display !== 'none');
-      const toggleMatches = toggle
-        ? matchesQuery((toggle.getAttribute('data-sidebar-label') || '').toLowerCase(), normalized)
-        : false;
-      const shouldShow = !normalized || toggleMatches || childVisible;
-      if (toggle) {
-        toggle.style.display = shouldShow ? '' : 'none';
-      }
-      subgroup.style.display = shouldShow ? '' : 'none';
-      if (normalized && childVisible) {
-        subgroup.open = true;
-      } else if (!normalized) {
-        subgroup.open = subgroup.hasAttribute('data-default-open') || subgroup.open;
-      }
-    });
-
-    groups.forEach((group) => {
-      const visibleChild = Array.from(group.querySelectorAll('.sidebar-nav-link, .sidebar-subgroup'))
-        .some((item) => item.style.display !== 'none');
-      group.style.display = !normalized || visibleChild ? '' : 'none';
-    });
-  };
-
-  searchInputs.forEach((input) => {
-    input.addEventListener('input', (event) => {
-      applyFilter(event.target.value || '');
-    });
-  });
-};
-
 const applyResponsiveSidebarState = () => {
   if (mobileQuery.matches) {
     setSidebarCollapsed(true);
@@ -207,10 +146,7 @@ const applyResponsiveSidebarState = () => {
 
 applyResponsiveSidebarState();
 mobileQuery.addEventListener('change', applyResponsiveSidebarState);
-document.addEventListener('DOMContentLoaded', () => {
-  scheduleResponsiveTableUpdate();
-  setupSidebarSearch();
-});
+document.addEventListener('DOMContentLoaded', scheduleResponsiveTableUpdate);
 
 const tableObserver = new MutationObserver(scheduleResponsiveTableUpdate);
 tableObserver.observe(document.body, { childList: true, subtree: true });
