@@ -13,6 +13,7 @@
     <script>
         window.inventoryPermissions = {{ permissions | tojson }};
         window.inventoryIsSuperuser = {{ is_superuser | tojson }};
+        window.inventoryUsername = {{ username | tojson }};
     </script>
     <script>
         window.PONDSEC_AI_CONTEXT = { type: "tickets" };
@@ -301,6 +302,13 @@
                                     </div>
 
                                     <div class="mt-4 grid gap-3 text-sm text-slate-600">
+                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                            <span>Von</span>
+                                            <span class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-sm text-slate-700">
+                                                <i data-feather="lock" class="w-3 h-3 text-slate-400"></i>
+                                                <span x-text="selectedTicket.created_by || 'Unbekannt'"></span>
+                                            </span>
+                                        </div>
                                         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                             <span>Status</span>
                                             <select x-model="selectedTicket.status" @change="updateTicket" :disabled="!(can('tickets.update') || can('tickets.update_own'))" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm sm:w-auto">
@@ -657,6 +665,13 @@
                             <option :value="priority" x-text="priority"></option>
                         </template>
                     </select>
+                </div>
+                <div class="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Von</span>
+                    <span class="inline-flex items-center gap-2 font-semibold">
+                        <i data-feather="lock" class="w-3 h-3 text-slate-400"></i>
+                        <span x-text="currentUsername || 'Unbekannt'"></span>
+                    </span>
                 </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <input type="text" x-model="newTicket.requester_name" placeholder="Anfragender" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
