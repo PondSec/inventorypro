@@ -73,6 +73,10 @@ document.addEventListener('alpine:init', () => {
             this.$nextTick(() => feather.replace());
         },
 
+        clearSelectedEntry() {
+            this.selectedEntry = null;
+        },
+
         setCategoryFilter(categoryId) {
             this.selectedCategoryId = categoryId;
             this.loadEntries();
