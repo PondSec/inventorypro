@@ -1,7 +1,11 @@
 flask
 flask-cors
 werkzeug
+requests
 pyotp
 qrcode
 pillow
 ldap3
+apscheduler==3.10.4
+cryptography
+playwright

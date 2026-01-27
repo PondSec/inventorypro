@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InventoryProCustomization",
+  "type": "object",
+  "required": ["schemaVersion", "branding", "baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "branding": {
+      "type": "object",
+      "required": ["name", "tagline", "logoDataUrl"],
+      "properties": {
+        "name": { "type": "string" },
+        "tagline": { "type": "string" },
+        "logoDataUrl": { "type": "string" }
+      }
+    },
+    "baseTokens": {
+      "type": "object",
+      "required": ["colors", "typography", "spacing", "layout", "states"],
+      "properties": {
+        "colors": { "type": "object" },
+        "typography": { "type": "object" },
+        "spacing": { "type": "object" },
+        "layout": { "type": "object" },
+        "states": { "type": "object" }
+      }
+    },
+    "componentOverrides": { "type": "object" },
+    "layoutPrefs": { "type": "object" },
+    "featurePrefs": { "type": "object" }
+  }
+}
