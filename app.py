@@ -5196,6 +5196,25 @@ def send_notification_email(settings, recipients, subject, body, html_body=None)
     except Exception:
         return False
 
+def send_notification_email_async(settings, recipients, subject, body, html_body=None):
+    if not settings or not settings["enabled"]:
+        return False
+    settings_payload = dict(settings)
+
+    def dispatch():
+        success = send_notification_email(
+            settings_payload,
+            recipients,
+            subject,
+            body,
+            html_body=html_body,
+        )
+        if not success:
+            app.logger.warning("Benachrichtigungs-E-Mail konnte nicht asynchron gesendet werden.")
+
+    threading.Thread(target=dispatch, daemon=True).start()
+    return True
+
 def truncate_text(value, limit=240):
     if not value:
         return ""
@@ -5433,7 +5452,7 @@ def trigger_ticket_notifications(db, event_type, ticket, changes=None, actor=Non
         actor=actor,
         comment=comment,
     )
-    send_notification_email(settings, [creator_email], subject, text_body, html_body=html_body)
+    send_notification_email_async(settings, [creator_email], subject, text_body, html_body=html_body)
 
 def fetch_ticket(db, ticket_id):
     ticket = db.execute('''
