@@ -128,12 +128,12 @@
                                 </div>
                             </div>
                             <template x-for="category in filteredCategories()" :key="category.id">
-                                <div class="group flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white transition-colors">
-                                    <button @click="loadDevices(category.id)" class="flex items-center gap-2 flex-1 min-w-0 text-left">
-                                        <div x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-slate-500' })"></div>
-                                        <span class="sidebar-text truncate" x-text="category.name"></span>
+                                <div class="group flex flex-col gap-2 px-3 py-2 rounded-xl hover:bg-white transition-colors">
+                                    <button @click="loadDevices(category.id)" class="flex items-start gap-2 text-left">
+                                        <div class="mt-0.5" x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-slate-500' })"></div>
+                                        <span class="sidebar-text whitespace-normal break-words leading-snug" x-text="category.name"></span>
                                     </button>
-                                    <div class="flex items-center gap-2">
+                                    <div class="flex items-center justify-end gap-2">
                                         <button @click="editCategoryModal(category)" class="icon-button text-slate-500 hover:text-slate-900" aria-label="Kategorie bearbeiten">
                                             <i data-feather="edit" class="w-4 h-4"></i>
                                         </button>
