@@ -22,7 +22,7 @@ document.addEventListener('alpine:init', () => {
         createdTo: '',
         specQuery: '',
         sortDropdownOpen: false,
-        filtersOpen: true,
+        filtersOpen: false,
         featureFlags: {
             pro_enabled: false,
             pro_features: [],
@@ -253,6 +253,9 @@ document.addEventListener('alpine:init', () => {
 
         async loadDevices(categoryId = null) {
             this.activeCategory = categoryId;
+            if (categoryId) {
+                this.filtersOpen = false;
+            }
             const url = categoryId 
                 ? `/api/devices?category_id=${categoryId}`
                 : '/api/devices';
@@ -261,6 +264,11 @@ document.addEventListener('alpine:init', () => {
             if (response.ok) {
                 this.devices = await response.json();
                 this.searchDevices();
+                this.$nextTick(() => {
+                    if (window.feather) {
+                        feather.replace();
+                    }
+                });
             }
             if (this.selectedDevice) {
                 const updated = this.devices.find(device => device.id === this.selectedDevice.id);
