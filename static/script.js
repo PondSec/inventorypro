@@ -14,6 +14,7 @@ document.addEventListener('alpine:init', () => {
         assetsOpen: false,
         searchQuery: '',
         categorySearchQuery: '',
+        assetSearchQuery: '',
         ownerQuery: '',
         locationFilter: '',
         categoryFilter: '',
@@ -129,6 +130,7 @@ document.addEventListener('alpine:init', () => {
             this.loadIconCatalog();
             this.$watch('searchQuery', () => this.searchDevices());
             this.$watch('categorySearchQuery', () => this.filterCategories());
+            this.$watch('assetSearchQuery', () => this.filterAssets());
             this.$watch('ownerQuery', () => this.searchDevices());
             this.$watch('locationFilter', () => this.searchDevices());
             this.$watch('categoryFilter', () => this.searchDevices());
@@ -367,6 +369,20 @@ document.addEventListener('alpine:init', () => {
             }
             return this.categories.filter(category =>
                 (category.name || '').toLowerCase().includes(query)
+            );
+        },
+
+        filterAssets() {
+            return this.filteredAssets();
+        },
+
+        filteredAssets() {
+            const query = (this.assetSearchQuery || '').toLowerCase().trim();
+            if (!query) {
+                return this.assets;
+            }
+            return this.assets.filter(asset =>
+                (asset.name || '').toLowerCase().includes(query)
             );
         },
 
