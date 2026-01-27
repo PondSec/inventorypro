@@ -70,7 +70,7 @@
       },
       layout: {
         containerWidth: 1200,
-        sidebarWidth: 320,
+        sidebarWidth: 280,
         tableDensity: 'normal',
       },
       states: {
