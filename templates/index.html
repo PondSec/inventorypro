@@ -269,7 +269,13 @@
                         <div class="flex flex-wrap items-center justify-between gap-4">
                             <div>
                                 <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Inventory</p>
-                                <h2 class="text-2xl font-semibold text-slate-900" x-text="activeCategory ? getCategoryName(activeCategory) : 'Alle Geräte'"></h2>
+                                <div class="flex flex-wrap items-center gap-3">
+                                    <h2 class="text-2xl font-semibold text-slate-900" x-text="activeCategory ? getCategoryName(activeCategory) : 'Alle Geräte'"></h2>
+                                    <button x-show="activeCategory" @click="loadDevices()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                                        <i data-feather="x-circle" class="h-3 w-3"></i>
+                                        Alle Geräte anzeigen
+                                    </button>
+                                </div>
                                 <p class="mt-1 text-sm text-slate-500">Geräte, Assets und Kategorien zentral verwalten.</p>
                             </div>
                             <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -455,7 +461,7 @@
                             </div>
                         </div>
                     </section>
-                    <section class="grid gap-6 lg:grid-cols-2">
+                    <section class="grid gap-6 lg:grid-cols-2" x-show="!activeCategory">
                         <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                             <div class="flex items-center justify-between">
                                 <div>
@@ -482,7 +488,7 @@
                         </div>
                     </section>
 
-                    <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+                    <section class="grid gap-6" :class="activeCategory ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(0,1fr)_320px]'">
                         <div class="space-y-4">
                             <div class="flex flex-wrap items-center justify-between gap-3">
                                 <div class="inline-flex rounded-full border border-slate-200 bg-white p-1 text-xs font-semibold">
@@ -614,7 +620,7 @@
                             </div>
                         </div>
 
-                        <aside class="space-y-4">
+                        <aside class="space-y-4" x-show="!activeCategory">
                             <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                                 <div class="flex items-center justify-between">
                                     <div>
