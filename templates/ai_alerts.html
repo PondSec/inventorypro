@@ -17,8 +17,59 @@
 </head>
 <body class="app-body">
     <div class="app-shell">
-        {% set active_page = 'ai_alerts' %}
-{% include 'sidebar.html' %}
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
+                <a href="/" class="flex items-center gap-3">
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg">
+                        <i data-feather="cpu" class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <p class="text-lg font-semibold text-slate-900">Inventory Pro</p>
+                        <p class="text-xs text-slate-500">Smart Asset Hub</p>
+                    </div>
+                </a>
+            </div>
+            <nav class="p-4 space-y-4 sidebar-scroll">
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Hauptbereiche</p>
+                    <div class="mt-3 space-y-1">
+                        <a href="/" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="home" class="w-4 h-4"></i></span>
+                                Dashboard
+                            </span>
+                        </a>
+                        {% if 'ai.use' in permissions or 'ai.manage' in permissions %}
+                        <a href="/ai/activity" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="message-circle" class="w-4 h-4"></i></span>
+                                PondSec AI
+                            </span>
+                        </a>
+                        <a href="/ai/alerts" class="sidebar-link active">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="alert-triangle" class="w-4 h-4"></i></span>
+                                Alerts
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if 'ai.manage' in permissions or is_superuser %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Administration</p>
+                    <div class="mt-3 space-y-1">
+                        <a href="/ai/settings" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="settings" class="w-4 h-4"></i></span>
+                                AI Settings
+                            </span>
+                        </a>
+                    </div>
+                </div>
+                {% endif %}
+            </nav>
+        </aside>
 
         <div class="app-main app-main--fixed">
             <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
