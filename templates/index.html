@@ -535,11 +535,11 @@
                                                     </td>
                                                     <td class="py-4 px-4 sm:px-6 text-slate-700 truncate max-w-0" x-text="device.location_name || '-' "></td>
                                                     <td class="hidden md:table-cell py-4 px-4 sm:px-6 text-slate-700 truncate max-w-0" x-text="device.serial_number || '-' "></td>
-                                                    <td class="hidden lg:table-cell py-4 px-4 sm:px-6">
-                                                        <div class="flex flex-wrap gap-2">
+                                                    <td class="hidden lg:table-cell py-4 px-4 sm:px-6 max-w-[16rem]">
+                                                        <div class="flex flex-wrap gap-2 max-w-full">
                                                             <template x-for="(value, key) in Object.entries(JSON.parse(device.specs || '{}')).slice(0, 2)" :key="key">
-                                                                <span class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                                                                    <span x-text="key"></span>: <span class="ml-1 text-slate-800" x-text="value"></span>
+                                                                <span class="inline-flex max-w-full items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                                                                    <span class="truncate" x-text="key"></span>: <span class="ml-1 truncate text-slate-800" x-text="value"></span>
                                                                 </span>
                                                             </template>
                                                             <span x-show="Object.keys(JSON.parse(device.specs || '{}')).length === 0" class="text-xs text-slate-400">Keine Specs</span>
