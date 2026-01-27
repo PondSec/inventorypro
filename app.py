@@ -1,12 +1,29 @@
-from flask import Flask, render_template, jsonify, request, g, redirect, url_for, session, Response
+from flask import Flask, render_template, jsonify, request, g, redirect, url_for, session, Response, send_file
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 import os
 import csv
+import re
+import ipaddress
+import tempfile
+import zipfile
+import shutil
+import time
+import subprocess
+import socket
+import urllib.request
+import urllib.error
+import ssl
+import threading
+import html
+from pathlib import Path
+from apscheduler.schedulers.background import BackgroundScheduler
+from cryptography.fernet import Fernet
 import pyotp
 import qrcode
 import qrcode.image.svg
@@ -24,7 +41,29 @@ CORS(app)
 app.secret_key = os.urandom(24).hex()
 
 DATABASE = 'inventory.db'
+SETTINGS_SCHEMA_VERSION = 1
+APP_INSTANCE_PATH = Path(app.instance_path)
+RUNTIME_CONFIG_PATH = APP_INSTANCE_PATH / "runtime_config.json"
+UPLOADS_DIR = Path(os.environ.get("INVENTORY_UPLOADS_DIR", "uploads"))
+MAX_IMPORT_BYTES = int(os.environ.get("INVENTORY_MAX_IMPORT_BYTES", 50 * 1024 * 1024))
+MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_BYTES))
+ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
+BLOCKED_ATTACHMENT_EXTENSIONS = {".exe", ".js", ".html", ".htm", ".bat", ".sh", ".ps1"}
+RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMIT_MAX_REQUESTS = 10
 PRO_ENABLED = True
+APP_START_TIME = time.time()
+TERMINAL_RATE_LIMIT_WINDOW_SECONDS = 60
+TERMINAL_RATE_LIMIT_MAX_REQUESTS = 12
+TERMINAL_MAX_OUTPUT_BYTES = 200 * 1024
+TERMINAL_SESSION_TTL_SECONDS = 15 * 60
+TERMINAL_DEFAULT_TIMEOUT_SECONDS = 8
+TERMINAL_LOG_MAX_LINES = 200
+TERMINAL_LOG_MAX_BYTES = 150 * 1024
+TERMINAL_DB_MAX_ROWS = 100
+TERMINAL_DB_MAX_BYTES = 150 * 1024
+TERMINAL_REAUTH_WINDOW_SECONDS = 10 * 60
+TERMINAL_RATE_LIMIT_CACHE = {}
 PRO_FEATURES = [
     "maintenance_schedule",
     "csv_export",
@@ -36,7 +75,69 @@ FREE_FEATURES = [
     "activity_feed"
 ]
 
+RUNTIME_SETTINGS_CACHE = None
+BACKUP_SCHEDULER = BackgroundScheduler()
+HEALTH_SCHEDULER = BackgroundScheduler()
+RATE_LIMIT_CACHE = {}
+
+HEALTH_STATUS_ORDER = {
+    "OK": 0,
+    "WARN": 1,
+    "CRIT": 2,
+    "UNKNOWN": 3
+}
+HEALTH_DEFAULT_RETENTION_DAYS = 14
+HEALTH_INCIDENT_OPEN_MINUTES = 5
+HEALTH_INCIDENT_CLOSE_MINUTES = 5
+HEALTH_REDACT_KEYS = {
+    "password", "secret", "token", "api_key", "apikey", "key", "authorization", "bearer", "dsn"
+}
+HEALTH_CHECK_REGISTRY = {}
+
 DEFAULT_ROLE_NAME = "Mitarbeiter"
+DEFAULT_SERVER_SETTINGS = {
+    "schemaVersion": SETTINGS_SCHEMA_VERSION,
+    "server": {
+        "host": "0.0.0.0",
+        "port": 5000,
+        "debug": False
+    },
+    "proFeaturesEnabled": False,
+    "backup": {
+        "enabled": False,
+        "compress": False,
+        "schedule": "daily",
+        "time": "02:00",
+        "retentionDays": 14,
+        "directory": "backups/",
+        "notifyEmail": "",
+        "encrypt": False
+    },
+    "importExport": {
+        "exportAllowed": True,
+        "importAllowed": False,
+        "exportFormat": "sqlite",
+        "importMode": "merge",
+        "includeUploads": True
+    },
+    "security": {
+        "forceHttps": False,
+        "requireMfa": False,
+        "sessionTimeoutMinutes": 60,
+        "maxFailedAttempts": 5,
+        "lockoutMinutes": 15,
+        "ipWhitelist": [],
+        "minPasswordLength": 10
+    },
+    "terminal": {
+        "enabled": False,
+        "requireReauth": True,
+        "ipAllowlist": [],
+        "allowDbWrite": False,
+        "allowServiceRestart": False,
+        "breakGlassMode": False
+    }
+}
 PERMISSIONS = [
     {
         "key": "categories.view",
@@ -75,6 +176,30 @@ PERMISSIONS = [
         "group": "Inventar"
     },
     {
+        "key": "asset.assign",
+        "label": "Assets zuweisen",
+        "description": "Assets Personen oder Teams zuweisen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "asset.checkout",
+        "label": "Assets ausgeben",
+        "description": "Assets ausgeben und Rückgabedaten pflegen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "asset.checkin",
+        "label": "Assets einchecken",
+        "description": "Assets zurücknehmen und Status aktualisieren.",
+        "group": "Inventar"
+    },
+    {
+        "key": "asset.view_history",
+        "label": "Asset-Historie anzeigen",
+        "description": "Zuweisungsverlauf und Check-out/Check-in Historie einsehen.",
+        "group": "Inventar"
+    },
+    {
         "key": "locations.view",
         "label": "Standorte anzeigen",
         "description": "Standorte und Details einsehen.",
@@ -97,6 +222,24 @@ PERMISSIONS = [
         "label": "Wartungen verwalten",
         "description": "Wartungsaufgaben erstellen und aktualisieren.",
         "group": "Inventar"
+    },
+    {
+        "key": "attachment.upload",
+        "label": "Anhänge hochladen",
+        "description": "Dateien an Assets, Tickets und Wartungen anhängen.",
+        "group": "Dokumente"
+    },
+    {
+        "key": "attachment.download",
+        "label": "Anhänge herunterladen",
+        "description": "Anhänge aus Assets, Tickets und Wartungen herunterladen.",
+        "group": "Dokumente"
+    },
+    {
+        "key": "attachment.delete",
+        "label": "Anhänge löschen",
+        "description": "Anhänge aus Assets, Tickets und Wartungen löschen.",
+        "group": "Dokumente"
     },
     {
         "key": "tickets.view_all",
@@ -201,6 +344,24 @@ PERMISSIONS = [
         "group": "Tickets"
     },
     {
+        "key": "ai.use",
+        "label": "PondSec AI nutzen",
+        "description": "PondSec AI chatten und Vorschläge erhalten.",
+        "group": "PondSec AI"
+    },
+    {
+        "key": "ai.manage",
+        "label": "PondSec AI verwalten",
+        "description": "PondSec AI Einstellungen und Regeln verwalten.",
+        "group": "PondSec AI"
+    },
+    {
+        "key": "ai.approve",
+        "label": "PondSec AI freigeben",
+        "description": "PondSec AI Aktionen genehmigen oder ablehnen.",
+        "group": "PondSec AI"
+    },
+    {
         "key": "users.manage",
         "label": "Benutzer verwalten",
         "description": "Benutzer anlegen, löschen und Passwörter zurücksetzen.",
@@ -216,6 +377,30 @@ PERMISSIONS = [
         "key": "roles.assign",
         "label": "Rollen zuweisen",
         "description": "Rollen Benutzern zuweisen.",
+        "group": "Administration"
+    },
+    {
+        "key": "server_settings.manage",
+        "label": "Einstellungen verwalten",
+        "description": "Serverkonfigurationen und UI-Anpassungen verwalten.",
+        "group": "Administration"
+    },
+    {
+        "key": "terminal.view",
+        "label": "Terminal anzeigen",
+        "description": "Maintenance Console in den Einstellungen öffnen.",
+        "group": "Administration"
+    },
+    {
+        "key": "terminal.use",
+        "label": "Terminal nutzen",
+        "description": "Diagnose- und Service-Recipes ausführen.",
+        "group": "Administration"
+    },
+    {
+        "key": "terminal.db_write",
+        "label": "DB-Console Write-Modus",
+        "description": "Schreibende Datenbankaktionen in der Terminal-Console ausführen.",
         "group": "Administration"
     },
     {
@@ -261,6 +446,30 @@ PERMISSIONS = [
         "group": "Zeitmaschine"
     },
     {
+        "key": "health.view",
+        "label": "Health Dashboard anzeigen",
+        "description": "Server- und Service-Health überwachen.",
+        "group": "Health"
+    },
+    {
+        "key": "health.manage",
+        "label": "Health Checks verwalten",
+        "description": "Health-Checks konfigurieren und verwalten.",
+        "group": "Health"
+    },
+    {
+        "key": "health.run",
+        "label": "Health Checks ausführen",
+        "description": "Checks manuell starten und Aktionen ausführen.",
+        "group": "Health"
+    },
+    {
+        "key": "health.export",
+        "label": "Health Daten exportieren",
+        "description": "Health-Reports und Exporte erstellen.",
+        "group": "Health"
+    },
+    {
         "key": "software.view",
         "label": "Software-Inventar anzeigen",
         "description": "Software-Inventar und Installationen einsehen.",
@@ -298,6 +507,171 @@ PERMISSIONS = [
     }
 ]
 
+DEFAULT_CUSTOMIZATION = {
+    "schemaVersion": 1,
+    "branding": {
+        "name": "Inventory Pro",
+        "tagline": "Smart Asset Hub",
+        "logoDataUrl": "",
+    },
+    "baseTokens": {
+        "colors": {
+            "primary": "#2563eb",
+            "secondary": "#6366f1",
+            "accent": "#14b8a6",
+            "neutral": "#64748b",
+            "background": "#f6f7fb",
+            "surface": "#ffffff",
+            "text": "#0f172a",
+            "textMuted": "#6b7280",
+            "border": "#e5e7eb",
+            "shadow": "rgba(15, 23, 42, 0.12)",
+            "focus": "rgba(37, 99, 235, 0.35)",
+            "success": "#16a34a",
+            "warning": "#f59e0b",
+            "danger": "#dc2626",
+            "info": "#0ea5e9",
+        },
+        "typography": {
+            "fontFamily": "\"Inter\", \"Segoe UI\", system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+            "fontSizes": {
+                "xs": "12px",
+                "sm": "14px",
+                "base": "15px",
+                "lg": "18px",
+                "xl": "22px",
+            },
+            "fontWeights": {
+                "normal": 400,
+                "medium": 500,
+                "semibold": 600,
+                "bold": 700,
+            },
+            "lineHeights": {
+                "tight": 1.2,
+                "normal": 1.6,
+                "relaxed": 1.75,
+            },
+            "letterSpacing": {
+                "tight": "-0.01em",
+                "normal": "0",
+                "wide": "0.05em",
+            },
+        },
+        "spacing": {
+            "radius": {
+                "sm": 8,
+                "md": 12,
+                "lg": 18,
+                "pill": 999,
+            },
+            "paddingScale": [4, 8, 12, 16, 20, 24, 32, 40, 48, 64],
+            "gapScale": [4, 8, 12, 16, 20, 24, 32, 40],
+        },
+        "layout": {
+            "containerWidth": 1200,
+            "sidebarWidth": 280,
+            "tableDensity": "normal",
+        },
+        "states": {
+            "hover": 0.92,
+            "active": 0.86,
+            "disabled": 0.6,
+        },
+    },
+    "componentOverrides": {
+        "button": {
+            "primary": {
+                "radius": 12,
+                "background": "#2563eb",
+                "text": "#ffffff",
+                "border": "transparent",
+                "shadow": "0 6px 16px rgba(15, 23, 42, 0.08)",
+                "hoverBg": "#1d4ed8",
+                "activeBg": "#1e40af",
+                "disabledBg": "#e5e7eb",
+                "disabledText": "#94a3b8",
+            },
+            "secondary": {
+                "radius": 12,
+                "background": "#ffffff",
+                "text": "#1f2937",
+                "border": "#e2e8f0",
+                "shadow": "none",
+                "hoverBg": "#f8fafc",
+                "activeBg": "#e2e8f0",
+                "disabledBg": "#f1f5f9",
+                "disabledText": "#94a3b8",
+            },
+        },
+        "input": {
+            "radius": 12,
+            "background": "#ffffff",
+            "text": "#0f172a",
+            "border": "#e2e8f0",
+            "focusRing": "rgba(37, 99, 235, 0.35)",
+            "shadow": "0 1px 2px rgba(15, 23, 42, 0.06)",
+            "placeholder": "#94a3b8",
+        },
+        "card": {
+            "radius": 18,
+            "background": "#ffffff",
+            "border": "#e5e7eb",
+            "shadow": "0 12px 30px rgba(15, 23, 42, 0.12)",
+        },
+        "table": {
+            "radius": 16,
+            "headerBg": "#f8fafc",
+            "rowBg": "#ffffff",
+            "zebraBg": "#f8fafc",
+            "border": "#e2e8f0",
+        },
+        "modal": {
+            "radius": 20,
+            "background": "#ffffff",
+            "shadow": "0 20px 50px rgba(15, 23, 42, 0.16)",
+        },
+        "toast": {
+            "radius": 16,
+            "background": "#0f172a",
+            "text": "#ffffff",
+            "shadow": "0 12px 30px rgba(15, 23, 42, 0.2)",
+        },
+        "badge": {
+            "radius": 999,
+            "background": "#eef2ff",
+            "text": "#4338ca",
+        },
+        "navbar": {
+            "background": "#ffffff",
+            "border": "#e5e7eb",
+            "text": "#0f172a",
+        },
+        "sidebar": {
+            "background": "#ffffff",
+            "border": "#e5e7eb",
+            "text": "#0f172a",
+        },
+    },
+    "layoutPrefs": {
+        "density": 1,
+        "containerWidth": 1200,
+        "sidebarWidth": 280,
+        "tableDensity": "normal",
+        "rowHeight": 44,
+        "zebraStriping": True,
+        "formSpacing": 16,
+    },
+    "featurePrefs": {
+        "iconSet": "feather",
+        "tableDefaults": {
+            "defaultSort": "updated_at:desc",
+            "defaultColumns": ["name", "status", "owner", "updated_at"],
+        },
+        "compactSidebar": False,
+    },
+}
+
 DEFAULT_ROLES = [
     {
         "name": "Admin",
@@ -318,10 +692,17 @@ DEFAULT_ROLES = [
             "devices.manage",
             "assets.view",
             "assets.manage",
+            "asset.assign",
+            "asset.checkout",
+            "asset.checkin",
+            "asset.view_history",
             "locations.view",
             "locations.manage",
             "maintenance.view",
             "maintenance.manage",
+            "attachment.upload",
+            "attachment.download",
+            "attachment.delete",
             "tickets.view_all",
             "tickets.create",
             "tickets.update",
@@ -334,6 +715,7 @@ DEFAULT_ROLES = [
             "ticket_categories.manage",
             "ticket_alerts.manage",
             "notifications.manage",
+            "ai.use",
             "stats.view",
             "activity.view",
             "roadmap.view",
@@ -341,6 +723,8 @@ DEFAULT_ROLES = [
             "dependencies.view",
             "dependencies.manage",
             "timemachine.view",
+            "health.view",
+            "health.run",
             "software.view",
             "software.manage",
             "teams.view",
@@ -370,6 +754,1113 @@ def get_db():
         db = g._database = sqlite3.connect(DATABASE)
         db.row_factory = sqlite3.Row
     return db
+
+def ensure_instance_path():
+    APP_INSTANCE_PATH.mkdir(parents=True, exist_ok=True)
+
+def load_runtime_settings():
+    global RUNTIME_SETTINGS_CACHE
+    if RUNTIME_SETTINGS_CACHE is not None:
+        return RUNTIME_SETTINGS_CACHE
+    runtime = None
+    if RUNTIME_CONFIG_PATH.exists():
+        try:
+            runtime = json.loads(RUNTIME_CONFIG_PATH.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            runtime = None
+    if not runtime:
+        runtime = {
+            "host": DEFAULT_SERVER_SETTINGS["server"]["host"],
+            "port": DEFAULT_SERVER_SETTINGS["server"]["port"],
+            "debug": DEFAULT_SERVER_SETTINGS["server"]["debug"]
+        }
+    RUNTIME_SETTINGS_CACHE = runtime
+    return runtime
+
+def store_runtime_settings(runtime_settings):
+    ensure_instance_path()
+    payload = {
+        "host": runtime_settings["host"],
+        "port": runtime_settings["port"],
+        "debug": runtime_settings["debug"]
+    }
+    RUNTIME_CONFIG_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+def parse_ip_whitelist(value):
+    if value is None:
+        return [], []
+    if isinstance(value, list):
+        candidates = value
+    else:
+        candidates = [entry.strip() for entry in str(value).split(',')]
+    entries = []
+    errors = []
+    for entry in candidates:
+        if not entry:
+            continue
+        try:
+            if '/' in entry:
+                ipaddress.ip_network(entry, strict=False)
+            else:
+                ipaddress.ip_address(entry)
+            entries.append(entry)
+        except ValueError:
+            errors.append(entry)
+    return entries, errors
+
+def merge_settings(base, updates):
+    merged = json.loads(json.dumps(base))
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = merge_settings(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+def compute_pending_restart(settings):
+    runtime = load_runtime_settings()
+    server = settings["server"]
+    return any([
+        server["host"] != runtime.get("host"),
+        server["port"] != runtime.get("port"),
+        bool(server["debug"]) != bool(runtime.get("debug"))
+    ])
+
+def serialize_server_settings(settings_row):
+    if not settings_row:
+        settings = json.loads(json.dumps(DEFAULT_SERVER_SETTINGS))
+    else:
+        ip_whitelist, _ = parse_ip_whitelist(settings_row["allowed_ip_ranges"] or "")
+        terminal_allowlist, _ = parse_ip_whitelist(settings_row["terminal_ip_allowlist"] or "")
+        settings = {
+            "schemaVersion": settings_row["schema_version"] or SETTINGS_SCHEMA_VERSION,
+            "server": {
+                "host": settings_row["host"] or DEFAULT_SERVER_SETTINGS["server"]["host"],
+                "port": settings_row["port"] or DEFAULT_SERVER_SETTINGS["server"]["port"],
+                "debug": bool(settings_row["debug_mode"])
+            },
+            "proFeaturesEnabled": bool(settings_row["pro_enabled"]),
+            "backup": {
+                "enabled": bool(settings_row["backup_enabled"]),
+                "compress": bool(settings_row["backup_compress"]),
+                "schedule": settings_row["backup_schedule"] or DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
+                "time": settings_row["backup_time"] or DEFAULT_SERVER_SETTINGS["backup"]["time"],
+                "retentionDays": settings_row["backup_retention_days"] or DEFAULT_SERVER_SETTINGS["backup"]["retentionDays"],
+                "directory": settings_row["backup_location"] or DEFAULT_SERVER_SETTINGS["backup"]["directory"],
+                "notifyEmail": settings_row["backup_notify_email"] or "",
+                "encrypt": bool(settings_row["backup_encrypt"])
+            },
+            "importExport": {
+                "exportAllowed": bool(settings_row["allow_db_export"] if settings_row["allow_db_export"] is not None else DEFAULT_SERVER_SETTINGS["importExport"]["exportAllowed"]),
+                "importAllowed": bool(settings_row["allow_db_import"]),
+                "exportFormat": settings_row["export_format"] or DEFAULT_SERVER_SETTINGS["importExport"]["exportFormat"],
+                "importMode": settings_row["import_mode"] or DEFAULT_SERVER_SETTINGS["importExport"]["importMode"],
+                "includeUploads": bool(settings_row["include_uploads"] if settings_row["include_uploads"] is not None else DEFAULT_SERVER_SETTINGS["importExport"]["includeUploads"])
+            },
+            "security": {
+                "forceHttps": bool(settings_row["require_https"]),
+                "requireMfa": bool(settings_row["enforce_mfa"]),
+                "sessionTimeoutMinutes": settings_row["session_timeout_minutes"] or DEFAULT_SERVER_SETTINGS["security"]["sessionTimeoutMinutes"],
+                "maxFailedAttempts": settings_row["max_failed_logins"] or DEFAULT_SERVER_SETTINGS["security"]["maxFailedAttempts"],
+                "lockoutMinutes": settings_row["lockout_minutes"] or DEFAULT_SERVER_SETTINGS["security"]["lockoutMinutes"],
+                "ipWhitelist": ip_whitelist,
+                "minPasswordLength": settings_row["password_min_length"] or DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"]
+            },
+            "terminal": {
+                "enabled": bool(settings_row["terminal_enabled"]),
+                "requireReauth": bool(settings_row["terminal_require_reauth"]),
+                "ipAllowlist": terminal_allowlist,
+                "allowDbWrite": bool(settings_row["terminal_allow_db_write"]),
+                "allowServiceRestart": bool(settings_row["terminal_allow_service_restart"]),
+                "breakGlassMode": bool(settings_row["terminal_break_glass"])
+            }
+        }
+    settings["schemaVersion"] = SETTINGS_SCHEMA_VERSION
+    pending_restart = compute_pending_restart(settings)
+    meta = {
+        "schemaVersion": SETTINGS_SCHEMA_VERSION,
+        "pendingRestart": pending_restart,
+        "requiresRestartFields": ["server.host", "server.port", "server.debug"],
+        "updatedAt": settings_row["updated_at"] if settings_row else None,
+        "updatedBy": settings_row["updated_by"] if settings_row else None,
+        "enforcedCapabilities": {
+            "forceHttps": {"enforced": bool(settings["security"]["forceHttps"]), "infraRequired": True},
+            "requireMfa": {"enforced": bool(settings["security"]["requireMfa"]), "infraRequired": False},
+            "backupScheduler": {"enforced": bool(settings["backup"]["enabled"]), "infraRequired": False},
+            "ipWhitelist": {"enforced": bool(settings["security"]["ipWhitelist"]), "infraRequired": False}
+        },
+        "warnings": []
+    }
+    if settings["backup"]["encrypt"] and not os.environ.get("BACKUP_ENCRYPTION_KEY"):
+        meta["warnings"].append("BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung ist nicht verfügbar.")
+    if settings["terminal"]["enabled"]:
+        meta["warnings"].append("Terminal ist aktiviert. Zugriff nur für Admins und freigegebene IPs erlauben.")
+    return settings, meta
+
+def validate_settings_payload(payload, partial=False):
+    errors = {}
+    if not isinstance(payload, dict):
+        return None, {"settings": "Payload muss ein Objekt sein."}
+    merged = merge_settings(DEFAULT_SERVER_SETTINGS, payload) if not partial else merge_settings(DEFAULT_SERVER_SETTINGS, payload)
+    server = merged.get("server", {})
+    host = (server.get("host") or "").strip()
+    if not host:
+        errors["server.host"] = "Host darf nicht leer sein."
+    try:
+        port = int(server.get("port"))
+    except (TypeError, ValueError):
+        errors["server.port"] = "Port muss eine Zahl sein."
+        port = None
+    if port is not None and (port < 1 or port > 65535):
+        errors["server.port"] = "Port muss zwischen 1 und 65535 liegen."
+    debug = bool(server.get("debug"))
+
+    backup = merged.get("backup", {})
+    schedule = (backup.get("schedule") or "").lower()
+    if schedule not in {"daily", "custom"}:
+        errors["backup.schedule"] = "Backup-Rhythmus muss daily oder custom sein."
+    time_value = (backup.get("time") or "").strip()
+    if time_value and not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', time_value):
+        errors["backup.time"] = "Backup-Zeit muss im Format HH:MM sein."
+    retention = backup.get("retentionDays")
+    try:
+        retention = int(retention)
+    except (TypeError, ValueError):
+        errors["backup.retentionDays"] = "Retention muss eine Zahl sein."
+    else:
+        if retention < 1:
+            errors["backup.retentionDays"] = "Retention muss mindestens 1 sein."
+    notify_email = (backup.get("notifyEmail") or "").strip()
+    if notify_email and not re.match(r'^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$', notify_email):
+        errors["backup.notifyEmail"] = "E-Mail-Adresse ist ungültig."
+    if backup.get("encrypt") and not os.environ.get("BACKUP_ENCRYPTION_KEY"):
+        errors["backup.encrypt"] = "BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung kann nicht aktiviert werden."
+
+    import_export = merged.get("importExport", {})
+    export_format = (import_export.get("exportFormat") or "").lower()
+    if export_format not in {"sqlite", "csv", "json"}:
+        errors["importExport.exportFormat"] = "Export-Format ist ungültig."
+    import_mode = (import_export.get("importMode") or "").lower()
+    if import_mode not in {"merge", "replace", "append"}:
+        errors["importExport.importMode"] = "Import-Modus ist ungültig."
+
+    security = merged.get("security", {})
+    session_timeout = security.get("sessionTimeoutMinutes")
+    try:
+        session_timeout = int(session_timeout)
+    except (TypeError, ValueError):
+        errors["security.sessionTimeoutMinutes"] = "Session-Timeout muss eine Zahl sein."
+    else:
+        if session_timeout < 5 or session_timeout > 1440:
+            errors["security.sessionTimeoutMinutes"] = "Session-Timeout muss zwischen 5 und 1440 liegen."
+    max_failed = security.get("maxFailedAttempts")
+    try:
+        max_failed = int(max_failed)
+    except (TypeError, ValueError):
+        errors["security.maxFailedAttempts"] = "Max. Fehlversuche muss eine Zahl sein."
+    else:
+        if max_failed < 1 or max_failed > 20:
+            errors["security.maxFailedAttempts"] = "Max. Fehlversuche muss zwischen 1 und 20 liegen."
+    lockout = security.get("lockoutMinutes")
+    try:
+        lockout = int(lockout)
+    except (TypeError, ValueError):
+        errors["security.lockoutMinutes"] = "Sperrdauer muss eine Zahl sein."
+    else:
+        if lockout < 1 or lockout > 240:
+            errors["security.lockoutMinutes"] = "Sperrdauer muss zwischen 1 und 240 liegen."
+    min_password = security.get("minPasswordLength")
+    try:
+        min_password = int(min_password)
+    except (TypeError, ValueError):
+        errors["security.minPasswordLength"] = "Passwortlänge muss eine Zahl sein."
+    else:
+        if min_password < 6 or min_password > 64:
+            errors["security.minPasswordLength"] = "Passwortlänge muss zwischen 6 und 64 liegen."
+    ip_whitelist, ip_errors = parse_ip_whitelist(security.get("ipWhitelist", []))
+    if ip_errors:
+        errors["security.ipWhitelist"] = f"Ungültige IP/CIDR: {', '.join(ip_errors)}"
+
+    terminal = merged.get("terminal", {})
+    terminal_allowlist, terminal_errors = parse_ip_whitelist(terminal.get("ipAllowlist", []))
+    if terminal_errors:
+        errors["terminal.ipAllowlist"] = f"Ungültige IP/CIDR: {', '.join(terminal_errors)}"
+
+    if errors:
+        return None, errors
+
+    merged["server"]["host"] = host
+    merged["server"]["port"] = port
+    merged["server"]["debug"] = debug
+    merged["backup"]["schedule"] = schedule
+    merged["backup"]["time"] = time_value
+    merged["backup"]["retentionDays"] = retention
+    merged["backup"]["notifyEmail"] = notify_email
+    merged["importExport"]["exportFormat"] = export_format
+    merged["importExport"]["importMode"] = import_mode
+    merged["security"]["sessionTimeoutMinutes"] = session_timeout
+    merged["security"]["maxFailedAttempts"] = max_failed
+    merged["security"]["lockoutMinutes"] = lockout
+    merged["security"]["minPasswordLength"] = min_password
+    merged["security"]["ipWhitelist"] = ip_whitelist
+    merged["terminal"]["enabled"] = bool(terminal.get("enabled"))
+    merged["terminal"]["requireReauth"] = bool(terminal.get("requireReauth"))
+    merged["terminal"]["ipAllowlist"] = terminal_allowlist
+    merged["terminal"]["allowDbWrite"] = bool(terminal.get("allowDbWrite"))
+    merged["terminal"]["allowServiceRestart"] = bool(terminal.get("allowServiceRestart"))
+    merged["terminal"]["breakGlassMode"] = bool(terminal.get("breakGlassMode"))
+    merged["schemaVersion"] = SETTINGS_SCHEMA_VERSION
+    return merged, None
+
+def persist_server_settings(db, settings, updated_by):
+    db.execute(
+        '''
+        UPDATE server_settings
+        SET host = ?,
+            port = ?,
+            debug_mode = ?,
+            pro_enabled = ?,
+            backup_enabled = ?,
+            backup_schedule = ?,
+            backup_time = ?,
+            backup_retention_days = ?,
+            backup_location = ?,
+            backup_compress = ?,
+            backup_encrypt = ?,
+            backup_notify_email = ?,
+            allow_db_import = ?,
+            allow_db_export = ?,
+            export_format = ?,
+            import_mode = ?,
+            include_uploads = ?,
+            require_https = ?,
+            session_timeout_minutes = ?,
+            max_failed_logins = ?,
+            lockout_minutes = ?,
+            allowed_ip_ranges = ?,
+            password_min_length = ?,
+            enforce_mfa = ?,
+            terminal_enabled = ?,
+            terminal_require_reauth = ?,
+            terminal_ip_allowlist = ?,
+            terminal_allow_db_write = ?,
+            terminal_allow_service_restart = ?,
+            terminal_break_glass = ?,
+            schema_version = ?,
+            updated_by = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1
+        ''',
+        (
+            settings["server"]["host"],
+            settings["server"]["port"],
+            1 if settings["server"]["debug"] else 0,
+            1 if settings["proFeaturesEnabled"] else 0,
+            1 if settings["backup"]["enabled"] else 0,
+            settings["backup"]["schedule"],
+            settings["backup"]["time"],
+            settings["backup"]["retentionDays"],
+            settings["backup"]["directory"],
+            1 if settings["backup"]["compress"] else 0,
+            1 if settings["backup"]["encrypt"] else 0,
+            settings["backup"]["notifyEmail"],
+            1 if settings["importExport"]["importAllowed"] else 0,
+            1 if settings["importExport"]["exportAllowed"] else 0,
+            settings["importExport"]["exportFormat"],
+            settings["importExport"]["importMode"],
+            1 if settings["importExport"]["includeUploads"] else 0,
+            1 if settings["security"]["forceHttps"] else 0,
+            settings["security"]["sessionTimeoutMinutes"],
+            settings["security"]["maxFailedAttempts"],
+            settings["security"]["lockoutMinutes"],
+            ",".join(settings["security"]["ipWhitelist"]),
+            settings["security"]["minPasswordLength"],
+            1 if settings["security"]["requireMfa"] else 0,
+            1 if settings["terminal"]["enabled"] else 0,
+            1 if settings["terminal"]["requireReauth"] else 0,
+            ",".join(settings["terminal"]["ipAllowlist"]),
+            1 if settings["terminal"]["allowDbWrite"] else 0,
+            1 if settings["terminal"]["allowServiceRestart"] else 0,
+            1 if settings["terminal"]["breakGlassMode"] else 0,
+            SETTINGS_SCHEMA_VERSION,
+            updated_by
+        )
+    )
+    db.execute(
+        '''
+        INSERT INTO server_settings_revisions (settings_json, created_by)
+        VALUES (?, ?)
+        ''',
+        (json.dumps(settings), updated_by)
+    )
+    store_runtime_settings(settings["server"])
+
+def get_password_min_length(db):
+    settings_row = get_server_settings(db)
+    if not settings_row:
+        return DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"]
+    return settings_row["password_min_length"] or DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"]
+
+def should_rate_limit(key):
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW_SECONDS
+    entries = RATE_LIMIT_CACHE.get(key, [])
+    entries = [timestamp for timestamp in entries if timestamp >= window_start]
+    if len(entries) >= RATE_LIMIT_MAX_REQUESTS:
+        RATE_LIMIT_CACHE[key] = entries
+        return True
+    entries.append(now)
+    RATE_LIMIT_CACHE[key] = entries
+    return False
+
+def should_rate_limit_terminal(user_id):
+    now = time.time()
+    window_start = now - TERMINAL_RATE_LIMIT_WINDOW_SECONDS
+    key = f"terminal:{user_id}"
+    entries = TERMINAL_RATE_LIMIT_CACHE.get(key, [])
+    entries = [timestamp for timestamp in entries if timestamp >= window_start]
+    if len(entries) >= TERMINAL_RATE_LIMIT_MAX_REQUESTS:
+        TERMINAL_RATE_LIMIT_CACHE[key] = entries
+        return True
+    entries.append(now)
+    TERMINAL_RATE_LIMIT_CACHE[key] = entries
+    return False
+
+def get_remote_ip():
+    remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+    return (remote_ip or "").split(",")[0].strip()
+
+def is_ip_allowed(remote_ip, allowlist):
+    if not allowlist:
+        return True
+    for entry in allowlist:
+        try:
+            if "/" in entry:
+                if ipaddress.ip_address(remote_ip) in ipaddress.ip_network(entry, strict=False):
+                    return True
+            else:
+                if remote_ip == entry:
+                    return True
+        except ValueError:
+            continue
+    return False
+
+REDACT_PATTERNS = [
+    re.compile(r"(?i)(password|passphrase|token|secret|api_key|apikey|authorization|bearer|private_key|dsn|connection string)\\s*[:=]\\s*([^\\s,;]+)"),
+    re.compile(r"(?i)(aws_access_key_id|aws_secret_access_key|client_secret)\\s*[:=]\\s*([^\\s,;]+)"),
+    re.compile(r"(?i)(jdbc:[^\\s]+)"),
+]
+
+def redact_text(value):
+    if value is None:
+        return ""
+    text = str(value)
+    for pattern in REDACT_PATTERNS:
+        text = pattern.sub(lambda match: f"{match.group(1)}=[REDACTED]", text)
+    return text
+
+def redact_data(value):
+    if isinstance(value, dict):
+        redacted = {}
+        for key, val in value.items():
+            if str(key).lower() in HEALTH_REDACT_KEYS:
+                redacted[key] = "[REDACTED]"
+            else:
+                redacted[key] = redact_data(val)
+        return redacted
+    if isinstance(value, list):
+        return [redact_data(item) for item in value]
+    if isinstance(value, str):
+        return redact_text(value)
+    return value
+
+def truncate_output(text, max_bytes=TERMINAL_MAX_OUTPUT_BYTES):
+    if text is None:
+        return ""
+    encoded = text.encode("utf-8", errors="ignore")
+    if len(encoded) <= max_bytes:
+        return text
+    truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
+    return f"{truncated}\n...output truncated..."
+
+def log_terminal_audit(db, user_id, session_id, action_type, params, status, duration_ms, output_preview=""):
+    sanitized_params = redact_data(params or {})
+    preview = truncate_output(redact_text(output_preview), max_bytes=2000)
+    db.execute(
+        '''
+        INSERT INTO terminal_audit_logs (user_id, session_id, action_type, params_json, status, duration_ms, output_preview)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''',
+        (
+            user_id,
+            session_id,
+            action_type,
+            json.dumps(sanitized_params),
+            status,
+            duration_ms,
+            preview
+        )
+    )
+    db.commit()
+
+def validate_hostname(value):
+    candidate = (value or "").strip()
+    if not candidate or len(candidate) > 255:
+        return None
+    if re.match(r"^[a-zA-Z0-9.-]+$", candidate) is None:
+        return None
+    if ".." in candidate:
+        return None
+    return candidate
+
+def validate_port(value):
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return None
+    if port < 1 or port > 65535:
+        return None
+    return port
+
+def safe_subprocess(command, timeout=TERMINAL_DEFAULT_TIMEOUT_SECONDS):
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "timeout", "output": "Zeitüberschreitung."}
+    output = (result.stdout or "") + (("\n" + result.stderr) if result.stderr else "")
+    return {"status": "ok" if result.returncode == 0 else "error", "output": output.strip()}
+
+TERMINAL_SERVICE_ALLOWLIST = [
+    "inventorypro",
+    "nginx",
+    "postgresql",
+    "redis",
+    "celery"
+]
+
+TERMINAL_LOG_SOURCES = {
+    "app": str(APP_INSTANCE_PATH / "inventorypro.log"),
+    "nginx_access": "/var/log/nginx/access.log",
+    "nginx_error": "/var/log/nginx/error.log",
+    "system": "/var/log/syslog"
+}
+
+def tail_file_lines(path, max_lines=TERMINAL_LOG_MAX_LINES, max_bytes=TERMINAL_LOG_MAX_BYTES):
+    if not Path(path).exists():
+        return {"status": "error", "output": "Logdatei nicht gefunden."}
+    data = []
+    with open(path, "rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        position = handle.tell()
+        buffer = b""
+        while position > 0 and len(data) < max_lines and len(buffer) < max_bytes:
+            read_size = min(1024, position)
+            position -= read_size
+            handle.seek(position)
+            buffer = handle.read(read_size) + buffer
+            lines = buffer.splitlines()
+            if len(lines) > max_lines:
+                lines = lines[-max_lines:]
+            data = lines
+    output = b"\n".join(data).decode("utf-8", errors="ignore")
+    return {"status": "ok", "output": output}
+
+def filter_log_lines(lines_text, keyword):
+    if not keyword:
+        return lines_text
+    try:
+        regex = re.compile(keyword, re.IGNORECASE)
+        filtered = [line for line in lines_text.splitlines() if regex.search(line)]
+    except re.error:
+        filtered = [line for line in lines_text.splitlines() if keyword.lower() in line.lower()]
+    return "\n".join(filtered)
+
+def db_is_postgres():
+    database_url = os.environ.get("DATABASE_URL") or ""
+    return database_url.startswith("postgres")
+
+def normalize_sql_query(query):
+    cleaned = (query or "").strip()
+    cleaned = cleaned.rstrip(";")
+    statements = [stmt.strip() for stmt in cleaned.split(";") if stmt.strip()]
+    if len(statements) != 1:
+        return None
+    return statements[0]
+
+def is_safe_readonly_query(query):
+    if not query:
+        return False
+    normalized = normalize_sql_query(query)
+    if not normalized:
+        return False
+    token = normalized.split()[0].lower()
+    if token not in {"select", "with", "explain"}:
+        return False
+    if re.search(r"\\b(drop|truncate|alter|grant|revoke|create|attach|detach|pragma)\\b", normalized, re.IGNORECASE):
+        return False
+    return True
+
+def is_dangerous_query(query):
+    if not query:
+        return True
+    normalized = normalize_sql_query(query)
+    if not normalized:
+        return True
+    return bool(re.search(r"\\b(drop|truncate|alter|grant|revoke|create|attach|detach|pragma|vacuum)\\b", normalized, re.IGNORECASE))
+
+def run_ping(params):
+    host = validate_hostname(params.get("host"))
+    try:
+        count = int(params.get("count", 4))
+    except (TypeError, ValueError):
+        count = 4
+    count = min(max(count, 1), 4)
+    if not host:
+        return {"status": "error", "output": "Ungültiger Host."}
+    if not shutil.which("ping"):
+        return {"status": "error", "output": "ping ist nicht verfügbar."}
+    return safe_subprocess(["ping", "-c", str(count), "-W", "2", host], timeout=TERMINAL_DEFAULT_TIMEOUT_SECONDS)
+
+def run_dns_lookup(params):
+    domain = validate_hostname(params.get("domain"))
+    if not domain:
+        return {"status": "error", "output": "Ungültige Domain."}
+    try:
+        infos = socket.getaddrinfo(domain, None)
+    except socket.gaierror:
+        return {"status": "error", "output": "DNS-Auflösung fehlgeschlagen."}
+    addresses = sorted({info[4][0] for info in infos})
+    return {"status": "ok", "output": "\n".join(addresses) if addresses else "Keine Einträge gefunden."}
+
+def run_tcp_check(params):
+    host = validate_hostname(params.get("host"))
+    port = validate_port(params.get("port"))
+    if not host or not port:
+        return {"status": "error", "output": "Host oder Port ist ungültig."}
+    start = time.time()
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            latency = (time.time() - start) * 1000
+            return {"status": "ok", "output": f"Port offen. Latenz: {latency:.0f} ms"}
+    except (socket.timeout, ConnectionError, OSError) as exc:
+        return {"status": "error", "output": f"Verbindung fehlgeschlagen: {exc}"}
+
+def run_http_check(params):
+    url = (params.get("url") or "").strip()
+    method = (params.get("method") or "GET").upper()
+    if method not in {"GET", "HEAD"}:
+        return {"status": "error", "output": "Nur GET oder HEAD erlaubt."}
+    if not url.startswith(("http://", "https://")):
+        return {"status": "error", "output": "URL muss mit http:// oder https:// beginnen."}
+    start = time.time()
+    try:
+        req = urllib.request.Request(url, method=method)
+        with urllib.request.urlopen(req, timeout=TERMINAL_DEFAULT_TIMEOUT_SECONDS) as response:
+            latency = (time.time() - start) * 1000
+            return {
+                "status": "ok",
+                "output": f"HTTP {response.status} in {latency:.0f} ms"
+            }
+    except urllib.error.URLError as exc:
+        return {"status": "error", "output": f"HTTP-Check fehlgeschlagen: {exc}"}
+
+def run_service_list(_params):
+    return {"status": "ok", "output": "\n".join(TERMINAL_SERVICE_ALLOWLIST)}
+
+def run_service_status(params):
+    service = (params.get("service") or "").strip()
+    if service not in TERMINAL_SERVICE_ALLOWLIST:
+        return {"status": "error", "output": "Service nicht erlaubt."}
+    if not shutil.which("systemctl"):
+        return {"status": "error", "output": "systemctl nicht verfügbar."}
+    return safe_subprocess(["systemctl", "is-active", service], timeout=5)
+
+def run_service_restart(params, settings):
+    service = (params.get("service") or "").strip()
+    confirm = bool(params.get("confirm"))
+    if not settings["terminal"]["allowServiceRestart"]:
+        return {"status": "error", "output": "Service-Restarts sind deaktiviert."}
+    if not confirm:
+        return {"status": "error", "output": "Bestätigung erforderlich."}
+    if service not in TERMINAL_SERVICE_ALLOWLIST:
+        return {"status": "error", "output": "Service nicht erlaubt."}
+    if not shutil.which("systemctl"):
+        return {"status": "error", "output": "systemctl nicht verfügbar."}
+    return safe_subprocess(["systemctl", "restart", service], timeout=TERMINAL_DEFAULT_TIMEOUT_SECONDS)
+
+def run_logs_tail(params):
+    source = (params.get("source") or "").strip()
+    lines = min(max(int(params.get("lines", 50)), 1), TERMINAL_LOG_MAX_LINES)
+    path = TERMINAL_LOG_SOURCES.get(source)
+    if not path:
+        return {"status": "error", "output": "Logquelle nicht erlaubt."}
+    return tail_file_lines(path, max_lines=lines)
+
+def run_logs_search(params):
+    source = (params.get("source") or "").strip()
+    keyword = (params.get("keyword") or "").strip()
+    lines = min(max(int(params.get("lines", 100)), 1), TERMINAL_LOG_MAX_LINES)
+    path = TERMINAL_LOG_SOURCES.get(source)
+    if not path:
+        return {"status": "error", "output": "Logquelle nicht erlaubt."}
+    result = tail_file_lines(path, max_lines=lines)
+    if result["status"] != "ok":
+        return result
+    filtered = filter_log_lines(result["output"], keyword)
+    return {"status": "ok", "output": filtered or "Keine Treffer."}
+
+def run_environment_snapshot(_params):
+    db = get_db()
+    start = time.time()
+    db_status = "OK"
+    latency_ms = None
+    try:
+        db.execute("SELECT 1").fetchone()
+        latency_ms = int((time.time() - start) * 1000)
+    except Exception:
+        db_status = "ERROR"
+    disk = shutil.disk_usage(str(APP_INSTANCE_PATH if APP_INSTANCE_PATH.exists() else Path(".")))
+    uptime_seconds = int(time.time() - APP_START_TIME)
+    payload = {
+        "app_version": os.environ.get("APP_VERSION", "unbekannt"),
+        "environment": os.environ.get("FLASK_ENV", "production"),
+        "uptime_seconds": uptime_seconds,
+        "db_status": db_status,
+        "db_latency_ms": latency_ms,
+        "disk_free_gb": round(disk.free / (1024 ** 3), 2),
+        "disk_total_gb": round(disk.total / (1024 ** 3), 2)
+    }
+    formatted = "\n".join(f"{key}: {value}" for key, value in payload.items())
+    return {"status": "ok", "output": formatted, "meta": payload}
+
+TERMINAL_RECIPES = {
+    "ping": {
+        "name": "Ping Host",
+        "category": "diagnostics",
+        "handler": run_ping
+    },
+    "dns_lookup": {
+        "name": "DNS Resolve",
+        "category": "diagnostics",
+        "handler": run_dns_lookup
+    },
+    "tcp_check": {
+        "name": "TCP Port Check",
+        "category": "diagnostics",
+        "handler": run_tcp_check
+    },
+    "http_check": {
+        "name": "HTTP Check",
+        "category": "diagnostics",
+        "handler": run_http_check
+    },
+    "services_list": {
+        "name": "Services",
+        "category": "services",
+        "handler": run_service_list
+    },
+    "service_status": {
+        "name": "Service Status",
+        "category": "services",
+        "handler": run_service_status
+    },
+    "service_restart": {
+        "name": "Service Restart",
+        "category": "services",
+        "handler": run_service_restart
+    },
+    "logs_tail": {
+        "name": "Tail Logs",
+        "category": "logs",
+        "handler": run_logs_tail
+    },
+    "logs_search": {
+        "name": "Search Logs",
+        "category": "logs",
+        "handler": run_logs_search
+    },
+    "environment_snapshot": {
+        "name": "Environment Snapshot",
+        "category": "environment",
+        "handler": run_environment_snapshot
+    }
+}
+
+def get_terminal_session(db, session_id, user_id):
+    if not session_id:
+        return None
+    row = db.execute(
+        '''
+        SELECT * FROM terminal_sessions
+        WHERE id = ? AND user_id = ? AND active = 1
+        ''',
+        (session_id, user_id)
+    ).fetchone()
+    if not row:
+        return None
+    expires_at = row["expires_at"]
+    if expires_at and datetime.fromisoformat(expires_at) < datetime.utcnow():
+        db.execute('UPDATE terminal_sessions SET active = 0 WHERE id = ?', (session_id,))
+        db.commit()
+        return None
+    return row
+
+def create_terminal_session(db, user_id, mode, ip, user_agent):
+    expires_at = datetime.utcnow() + timedelta(seconds=TERMINAL_SESSION_TTL_SECONDS)
+    db.execute(
+        '''
+        INSERT INTO terminal_sessions (user_id, expires_at, mode, ip, user_agent)
+        VALUES (?, ?, ?, ?, ?)
+        ''',
+        (user_id, expires_at.isoformat(), mode, ip, user_agent)
+    )
+    session_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    db.commit()
+    return session_id, expires_at
+
+def touch_terminal_session(db, session_id):
+    db.execute(
+        '''
+        UPDATE terminal_sessions
+        SET last_activity = CURRENT_TIMESTAMP
+        WHERE id = ?
+        ''',
+        (session_id,)
+    )
+    db.commit()
+
+def terminate_terminal_session(db, session_id):
+    db.execute('UPDATE terminal_sessions SET active = 0 WHERE id = ?', (session_id,))
+    db.commit()
+
+def ensure_backup_directory(path_value):
+    backup_dir = Path(path_value or DEFAULT_SERVER_SETTINGS["backup"]["directory"])
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    return backup_dir
+
+def get_backup_encryption():
+    key = os.environ.get("BACKUP_ENCRYPTION_KEY")
+    if not key:
+        return None
+    try:
+        return Fernet(key)
+    except (ValueError, TypeError):
+        return None
+
+def run_sqlite_backup(target_path):
+    with sqlite3.connect(DATABASE) as source:
+        with sqlite3.connect(target_path) as dest:
+            source.backup(dest)
+
+def run_postgres_backup(target_path):
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL fehlt.")
+    result = subprocess.run(
+        ["pg_dump", database_url, "-f", str(target_path)],
+        capture_output=True,
+        text=True,
+        check=False
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "pg_dump fehlgeschlagen.")
+
+def cleanup_old_backups(backup_dir, retention_days):
+    cutoff = time.time() - retention_days * 86400
+    for path in backup_dir.glob("*"):
+        if not path.is_file():
+            continue
+        if path.stat().st_mtime < cutoff:
+            path.unlink(missing_ok=True)
+
+def record_backup_run(db, status, backup_path=None, message=None):
+    backup_size = None
+    if backup_path and Path(backup_path).exists():
+        backup_size = Path(backup_path).stat().st_size
+    db.execute(
+        '''
+        INSERT INTO backup_runs (status, backup_path, backup_size_bytes, message)
+        VALUES (?, ?, ?, ?)
+        ''',
+        (status, backup_path, backup_size, message)
+    )
+    db.commit()
+
+def send_backup_notification(db, settings, subject, body):
+    recipients = parse_email_list(settings["backup"]["notifyEmail"])
+    if not recipients:
+        return False
+    notification_settings = get_notification_settings(db)
+    success = send_notification_email(notification_settings, recipients, subject, body)
+    return success
+
+def run_backup_job(db, settings, force=False):
+    if not settings["backup"]["enabled"] and not force:
+        return {"status": "skipped", "message": "Backups sind deaktiviert."}
+    backup_dir = ensure_backup_directory(settings["backup"]["directory"])
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    backup_base = backup_dir / f"inventory_backup_{timestamp}"
+    db_type = os.environ.get("DATABASE_URL")
+    backup_path = None
+    try:
+        if db_type and db_type.startswith("postgres"):
+            backup_path = f"{backup_base}.sql"
+            run_postgres_backup(backup_path)
+        else:
+            backup_path = f"{backup_base}.db"
+            run_sqlite_backup(backup_path)
+
+        final_path = Path(backup_path)
+        if settings["backup"]["compress"]:
+            compressed_path = f"{backup_path}.zip"
+            with zipfile.ZipFile(compressed_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.write(backup_path, arcname=Path(backup_path).name)
+            final_path = Path(compressed_path)
+            Path(backup_path).unlink(missing_ok=True)
+
+        if settings["backup"]["encrypt"]:
+            fernet = get_backup_encryption()
+            if not fernet:
+                raise RuntimeError("BACKUP_ENCRYPTION_KEY fehlt oder ist ungültig.")
+            encrypted_path = f"{final_path}.enc"
+            data = final_path.read_bytes()
+            encrypted = fernet.encrypt(data)
+            Path(encrypted_path).write_bytes(encrypted)
+            final_path.unlink(missing_ok=True)
+            final_path = Path(encrypted_path)
+
+        cleanup_old_backups(backup_dir, settings["backup"]["retentionDays"])
+        record_backup_run(db, "success", str(final_path))
+        send_backup_notification(db, settings, "Backup erfolgreich", f"Backup erstellt: {final_path.name}")
+        return {"status": "success", "path": str(final_path)}
+    except Exception as exc:
+        record_backup_run(db, "failed", backup_path, str(exc))
+        send_backup_notification(db, settings, "Backup fehlgeschlagen", f"Backup fehlgeschlagen: {exc}")
+        return {"status": "failed", "message": str(exc)}
+
+def schedule_backup_jobs(settings):
+    if not BACKUP_SCHEDULER.running:
+        BACKUP_SCHEDULER.start()
+    BACKUP_SCHEDULER.remove_all_jobs()
+    if not settings["backup"]["enabled"]:
+        return
+    if settings["backup"]["schedule"] != "daily":
+        return
+    time_value = settings["backup"]["time"] or "02:00"
+    hour, minute = [int(part) for part in time_value.split(":")]
+    def scheduled_backup():
+        with app.app_context():
+            db = get_db()
+            current_settings, _ = serialize_server_settings(get_server_settings(db))
+            run_backup_job(db, current_settings)
+    BACKUP_SCHEDULER.add_job(
+        scheduled_backup,
+        "cron",
+        hour=hour,
+        minute=minute,
+        id="daily_backup"
+    )
+
+def load_import_file(file_storage):
+    if not file_storage:
+        return None, "Keine Datei hochgeladen."
+    if request.content_length and request.content_length > MAX_IMPORT_BYTES:
+        return None, "Datei ist zu groß."
+    filename = secure_filename(file_storage.filename or "")
+    if not filename:
+        return None, "Ungültiger Dateiname."
+    temp_dir = Path(tempfile.mkdtemp(prefix="inventory_import_"))
+    file_path = temp_dir / filename
+    file_storage.save(file_path)
+    return file_path, None
+
+def validate_import_file(file_path):
+    antivirus_cmd = os.environ.get("INVENTORY_ANTIVIRUS_COMMAND")
+    if not antivirus_cmd:
+        return None
+    result = subprocess.run(
+        [antivirus_cmd, str(file_path)],
+        capture_output=True,
+        text=True,
+        check=False
+    )
+    if result.returncode != 0:
+        return result.stderr.strip() or "Datei konnte nicht geprüft werden."
+    return None
+
+def export_tables(db, tables):
+    export_data = {}
+    for table in tables:
+        rows = db.execute(f"SELECT * FROM {table}").fetchall()
+        export_data[table] = [dict(row) for row in rows]
+    return export_data
+
+def import_table_rows(db, table, rows, mode):
+    if not rows:
+        return
+    columns = [column["name"] for column in db.execute(f"PRAGMA table_info({table})").fetchall()]
+    if not columns:
+        return
+    placeholders = ", ".join(["?"] * len(columns))
+    column_list = ", ".join(columns)
+    if mode == "merge":
+        statement = f"INSERT OR REPLACE INTO {table} ({column_list}) VALUES ({placeholders})"
+    elif mode == "append":
+        statement = f"INSERT OR IGNORE INTO {table} ({column_list}) VALUES ({placeholders})"
+    else:
+        statement = f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})"
+    for row in rows:
+        values = [row.get(column) for column in columns]
+        db.execute(statement, values)
+
+def import_data_payload(db, payload, mode, tables):
+    if mode == "replace":
+        for table in tables:
+            db.execute(f"DELETE FROM {table}")
+    for table in tables:
+        rows = payload.get(table, [])
+        import_table_rows(db, table, rows, mode if mode != "replace" else "append")
+
+def import_from_sqlite(db, source_path, mode, tables):
+    with sqlite3.connect(source_path) as source:
+        source.row_factory = sqlite3.Row
+        if mode == "replace":
+            for table in tables:
+                db.execute(f"DELETE FROM {table}")
+        for table in tables:
+            rows = source.execute(f"SELECT * FROM {table}").fetchall()
+            import_table_rows(db, table, [dict(row) for row in rows], mode if mode != "replace" else "append")
+
+def clone_customization(data):
+    return json.loads(json.dumps(data))
+
+def deep_merge(base, override):
+    if not isinstance(base, dict) or not isinstance(override, dict):
+        return override if override is not None else base
+    merged = {**base}
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            merged[key] = deep_merge(base[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+def migrate_customization(data):
+    if not isinstance(data, dict):
+        return clone_customization(DEFAULT_CUSTOMIZATION)
+
+    if ("branding" in data or "formStyle" in data) and "baseTokens" not in data:
+        migrated = clone_customization(DEFAULT_CUSTOMIZATION)
+        branding = data.get("branding", {})
+        form_style = data.get("formStyle", {})
+        migrated["branding"]["name"] = branding.get("name", migrated["branding"]["name"])
+        migrated["branding"]["tagline"] = branding.get("tagline", migrated["branding"]["tagline"])
+        migrated["branding"]["logoDataUrl"] = branding.get("logoDataUrl", migrated["branding"]["logoDataUrl"])
+        migrated["baseTokens"]["colors"]["primary"] = branding.get("primary", migrated["baseTokens"]["colors"]["primary"])
+        migrated["baseTokens"]["colors"]["accent"] = branding.get("accent", migrated["baseTokens"]["colors"]["accent"])
+        migrated["baseTokens"]["colors"]["background"] = branding.get("background", migrated["baseTokens"]["colors"]["background"])
+        migrated["baseTokens"]["spacing"]["radius"]["md"] = branding.get("radius", migrated["baseTokens"]["spacing"]["radius"]["md"])
+        migrated["layoutPrefs"]["density"] = branding.get("density", migrated["layoutPrefs"]["density"])
+        migrated["componentOverrides"]["button"]["primary"]["background"] = form_style.get(
+            "buttonColor", migrated["componentOverrides"]["button"]["primary"]["background"]
+        )
+        migrated["componentOverrides"]["button"]["primary"]["text"] = form_style.get(
+            "buttonText", migrated["componentOverrides"]["button"]["primary"]["text"]
+        )
+        migrated["componentOverrides"]["input"]["background"] = form_style.get(
+            "inputBackground", migrated["componentOverrides"]["input"]["background"]
+        )
+        migrated["componentOverrides"]["input"]["border"] = form_style.get(
+            "inputBorder", migrated["componentOverrides"]["input"]["border"]
+        )
+        migrated["layoutPrefs"]["formSpacing"] = form_style.get("spacing", migrated["layoutPrefs"]["formSpacing"])
+        return migrated
+
+    merged = deep_merge(clone_customization(DEFAULT_CUSTOMIZATION), data)
+    merged["schemaVersion"] = 1
+    return merged
+
+def validate_customization(data):
+    errors = []
+    if not isinstance(data, dict):
+        return False, ["Customization muss ein Objekt sein."]
+    if not isinstance(data.get("schemaVersion"), int):
+        errors.append("schemaVersion fehlt oder ist ungültig.")
+    for key in ("baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs", "branding"):
+        if key not in data:
+            errors.append(f"{key} fehlt.")
+    return len(errors) == 0, errors
+
+def compute_customization_diff(old, new, path=""):
+    changes = []
+    if isinstance(old, dict) and isinstance(new, dict):
+        all_keys = set(old.keys()) | set(new.keys())
+        for key in sorted(all_keys):
+            next_path = f"{path}.{key}" if path else key
+            changes.extend(compute_customization_diff(old.get(key), new.get(key), next_path))
+    elif old != new:
+        changes.append({"path": path, "from": old, "to": new})
+    return changes
+
+def get_current_user_id(db):
+    username = session.get("username")
+    if not username:
+        return None
+    row = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+    return row["id"] if row else None
+
+def get_customization_record(db, user_id, workspace_id=None):
+    if workspace_id is None:
+        return db.execute(
+            "SELECT * FROM ui_customization WHERE user_id = ? AND workspace_id IS NULL",
+            (user_id,),
+        ).fetchone()
+    return db.execute(
+        "SELECT * FROM ui_customization WHERE user_id = ? AND workspace_id = ?",
+        (user_id, workspace_id),
+    ).fetchone()
+
+def save_customization(db, user_id, customization, updated_by, workspace_id=None):
+    existing = get_customization_record(db, user_id, workspace_id)
+    serialized = json.dumps(customization)
+    if existing:
+        db.execute(
+            """
+            UPDATE ui_customization
+            SET customization_json = ?, schema_version = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
+            WHERE id = ?
+            """,
+            (serialized, customization["schemaVersion"], updated_by, existing["id"]),
+        )
+        customization_id = existing["id"]
+    else:
+        db.execute(
+            """
+            INSERT INTO ui_customization (user_id, workspace_id, schema_version, customization_json, updated_by)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (user_id, workspace_id, customization["schemaVersion"], serialized, updated_by),
+        )
+        customization_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    diff = []
+    if existing:
+        diff = compute_customization_diff(json.loads(existing["customization_json"]), customization)
+    db.execute(
+        """
+        INSERT INTO ui_customization_revisions (customization_id, revision_json, diff_json, created_by)
+        VALUES (?, ?, ?, ?)
+        """,
+        (customization_id, serialized, json.dumps(diff), updated_by),
+    )
+    db.commit()
+    return customization_id
 
 def seed_permissions(db):
     for perm in PERMISSIONS:
@@ -414,6 +1905,116 @@ def seed_roles(db):
                 INSERT OR IGNORE INTO role_permissions (role_id, permission_id)
                 VALUES (?, ?)
             ''', (role_id, permission_id))
+
+def seed_health_checks(db):
+    default_checks = [
+        {
+            "name": "CPU Load",
+            "slug": "cpu-load",
+            "category": "System",
+            "check_type": "cpu_load",
+            "interval_seconds": 60,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"warn_load": 4, "crit_load": 8, "per_core": True}
+        },
+        {
+            "name": "Memory Usage",
+            "slug": "memory-usage",
+            "category": "System",
+            "check_type": "memory",
+            "interval_seconds": 60,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"warn_percent": 80, "crit_percent": 90}
+        },
+        {
+            "name": "Disk Root",
+            "slug": "disk-root",
+            "category": "System",
+            "check_type": "disk",
+            "interval_seconds": 300,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"path": "/", "warn_percent": 80, "crit_percent": 90}
+        },
+        {
+            "name": "DB Ping",
+            "slug": "db-ping",
+            "category": "Infra",
+            "check_type": "db_ping",
+            "interval_seconds": 120,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"db_path": DATABASE, "warn_ms": 150, "crit_ms": 300}
+        },
+        {
+            "name": "DNS Resolve",
+            "slug": "dns-resolve",
+            "category": "Network",
+            "check_type": "dns",
+            "interval_seconds": 120,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"hostname": "example.com"}
+        },
+        {
+            "name": "Internet Reachability",
+            "slug": "internet-reach",
+            "category": "Network",
+            "check_type": "internet",
+            "interval_seconds": 300,
+            "timeout_seconds": 10,
+            "enabled": 1,
+            "config": {"url": "https://example.com"}
+        },
+        {
+            "name": "Time Sync",
+            "slug": "time-sync",
+            "category": "System",
+            "check_type": "time_sync",
+            "interval_seconds": 600,
+            "timeout_seconds": 5,
+            "enabled": 1,
+            "config": {"max_offset_ms": 100}
+        },
+        {
+            "name": "Service Unit (example)",
+            "slug": "service-unit-example",
+            "category": "Services",
+            "check_type": "service_unit",
+            "interval_seconds": 60,
+            "timeout_seconds": 5,
+            "enabled": 0,
+            "config": {"unit": "nginx.service"}
+        }
+    ]
+    for entry in default_checks:
+        existing = db.execute(
+            "SELECT id FROM health_check_definitions WHERE slug = ?",
+            (entry["slug"],)
+        ).fetchone()
+        if existing:
+            continue
+        db.execute(
+            '''
+            INSERT INTO health_check_definitions (
+                name, slug, category, check_type, config_json,
+                interval_seconds, timeout_seconds, enabled
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                entry["name"],
+                entry["slug"],
+                entry["category"],
+                entry["check_type"],
+                json.dumps(entry["config"]),
+                entry["interval_seconds"],
+                entry["timeout_seconds"],
+                entry["enabled"]
+            )
+        )
 
 def assign_user_role(db, user_id, role_name):
     role = db.execute('SELECT id FROM roles WHERE name = ?', (role_name,)).fetchone()
@@ -477,7 +2078,7 @@ def get_user_access(db):
             "is_superuser": False
         }
         return g.user_access
-    user = db.execute('SELECT id, username FROM users WHERE username = ?', (username,)).fetchone()
+    user = db.execute('SELECT id, username, email FROM users WHERE username = ?', (username,)).fetchone()
     if not user:
         g.user_access = {
             "user": None,
@@ -543,6 +2144,7 @@ def get_post_login_redirect(access):
         (("knowledge.view", "knowledge.manage"), "knowledge_page"),
         (("stats.view",), "stats"),
         (("timemachine.view",), "time_machine_page"),
+        (("health.view", "health.manage", "health.run"), "health_page"),
         (("users.manage",), "users_page"),
         (("locations.view", "locations.manage"), "locations_page")
     ]
@@ -551,15 +2153,24 @@ def get_post_login_redirect(access):
             return url_for(endpoint)
     return url_for('index')
 
+def is_ticket_owner(ticket, access):
+    if not ticket or not access.get("user"):
+        return False
+    user_id = access["user"]["id"]
+    username = access["user"]["username"]
+    if ticket.get("created_by_user_id"):
+        return ticket.get("created_by_user_id") == user_id
+    return ticket.get("created_by") == username
+
 def ensure_ticket_access(ticket, access, require_owner_permission=False):
     if access["is_superuser"]:
         return True
     if "tickets.view_all" in access["permissions"]:
         return True
     if "tickets.view_own" in access["permissions"]:
-        return ticket and ticket.get("created_by") == session.get('username')
+        return is_ticket_owner(ticket, access)
     if require_owner_permission:
-        return ticket and ticket.get("created_by") == session.get('username')
+        return is_ticket_owner(ticket, access)
     return False
 
 @app.teardown_appcontext
@@ -578,10 +2189,16 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
+                email TEXT,
                 password_hash TEXT NOT NULL,
                 otp_secret TEXT
             )
         ''')
+        try:
+            c.execute('ALTER TABLE users ADD COLUMN email TEXT')
+        except sqlite3.OperationalError:
+            pass
+        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE email IS NOT NULL')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS roles (
@@ -812,6 +2429,7 @@ def init_db():
                 escalation_level INTEGER DEFAULT 0,
                 requester_name TEXT,
                 requester_email TEXT,
+                created_by_user_id INTEGER,
                 created_by TEXT,
                 assignee TEXT,
                 assignee_email TEXT,
@@ -824,7 +2442,8 @@ def init_db():
                 custom_fields TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (category_id) REFERENCES ticket_categories(id)
+                FOREIGN KEY (category_id) REFERENCES ticket_categories(id),
+                FOREIGN KEY (created_by_user_id) REFERENCES users(id)
             )
         ''')
 
@@ -834,11 +2453,22 @@ def init_db():
             ("resolution_action", "TEXT"),
             ("resolution_outcome", "TEXT"),
             ("resolution_notes", "TEXT"),
+            ("created_by_user_id", "INTEGER REFERENCES users(id)"),
         ):
             try:
                 c.execute(f'ALTER TABLE tickets ADD COLUMN {column} {column_type}')
             except sqlite3.OperationalError:
                 pass
+        try:
+            c.execute('''
+                UPDATE tickets
+                SET created_by_user_id = (
+                    SELECT id FROM users WHERE users.username = tickets.created_by
+                )
+                WHERE created_by_user_id IS NULL AND created_by IS NOT NULL
+            ''')
+        except sqlite3.OperationalError:
+            pass
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS ticket_comments (
@@ -895,8 +2525,380 @@ def init_db():
             VALUES
                 ('Problemlösungen', 'Dokumentierte Lösungen und Troubleshooting-Schritte.'),
                 ('Workflow', 'Abteilungs- und Prozessbeschreibungen.'),
-                ('Themen', 'Wissen zu wiederkehrenden Themen und Best Practices.')
+                ('Themen', 'Wissen zu wiederkehrenden Themen und Best Practices.'),
+                ('Produktguide', 'Funktionsübersicht und Bedienung der Inventory-Pro-Anwendung.')
         ''')
+
+        c.execute('SELECT COUNT(*) FROM knowledge_entries')
+        if c.fetchone()[0] == 0:
+            category_rows = c.execute('SELECT id, name FROM knowledge_categories').fetchall()
+            category_map = {row["name"]: row["id"] for row in category_rows}
+            entries = [
+                {
+                    "title": "Überblick: Inventory Pro im Alltag",
+                    "summary": "Kurzüberblick über die wichtigsten Module und das Zusammenspiel von Inventar, Tickets und Wissen.",
+                    "content": (
+                        "Inventory Pro kombiniert Inventarisierung, Helpdesk und Wissensmanagement in einer Oberfläche.\n"
+                        "Die Startnavigation führt zu Assets, Geräten, Standorten, Tickets, Roadmap, Abhängigkeiten und Statistik.\n"
+                        "Alle Aktionen werden im Aktivitätslog dokumentiert, sodass Änderungen jederzeit nachvollziehbar bleiben."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Navigation & Schnellzugriffe",
+                    "summary": "So findest du die Hauptbereiche schnell in der linken Navigation.",
+                    "content": (
+                        "Die linke Seitenleiste zeigt alle Module, die durch deine Rolle freigeschaltet sind.\n"
+                        "Nutze die Wissensbasis, um Anleitungen zu öffnen, und die Tickets, um Supportfälle zu bearbeiten.\n"
+                        "Die Statistik- und Roadmap-Seiten geben dir einen schnellen Überblick über Status und Planung."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Dashboard-Übersicht",
+                    "summary": "Was auf der Startseite sichtbar ist und wie du Kennzahlen interpretierst.",
+                    "content": (
+                        "Das Dashboard fasst offene Tickets, Geräte- und Assetzahlen sowie aktuelle Aktivitäten zusammen.\n"
+                        "Filter helfen dir, die wichtigsten Kennzahlen für dein Team im Blick zu behalten.\n"
+                        "Nutze die Zusammenfassung, um schnell offene Aufgaben zu priorisieren."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Inventar: Assets anlegen",
+                    "summary": "Schritt-für-Schritt-Anleitung zum Erstellen von Assets.",
+                    "content": (
+                        "Öffne den Bereich Assets und lege ein neues Asset mit Name, Notizen und Spezifikationen an.\n"
+                        "Ergänze Anschaffungs-, Inbetriebnahme- und Garantie-Daten, um den Lebenszyklus zu verfolgen.\n"
+                        "Retirement-Daten helfen später beim Ausmustern und Reporting."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Inventar: Geräte verwalten",
+                    "summary": "Geräte erfassen, Kategorien zuordnen und Standortinformationen pflegen.",
+                    "content": (
+                        "Geräte werden einer Kategorie zugeordnet und erhalten optional Seriennummern und Specs.\n"
+                        "Der Standort bestimmt, wo das Gerät aktuell eingesetzt wird.\n"
+                        "Nutze Tags und Notizen für zusätzliche Kontextinformationen."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Kategorien & dynamische Felder",
+                    "summary": "So funktionieren die flexiblen Felder pro Kategorie.",
+                    "content": (
+                        "Kategorien definieren, welche Felder im Formular angezeigt werden.\n"
+                        "Die Felddefinitionen werden als JSON gespeichert und automatisch in Eingabefelder übersetzt.\n"
+                        "Füge hier Status-, Hersteller- oder Modellfelder hinzu, ohne den Code anzupassen."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Standorte verwalten",
+                    "summary": "Standortdaten strukturiert erfassen und zu Geräten/Assets zuweisen.",
+                    "content": (
+                        "Standorte helfen, Geräte und Assets geographisch oder organisatorisch zuordnen zu können.\n"
+                        "Du kannst jeden Standort mit einer kurzen Beschreibung ergänzen.\n"
+                        "In Listen lässt sich jederzeit nachvollziehen, welche Objekte dort hinterlegt sind."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Tags & Notizen bei Geräten",
+                    "summary": "Zusätzliche Metadaten zur schnellen Suche und Dokumentation.",
+                    "content": (
+                        "Tags dienen als schnelle Filterkriterien für Gerätetypen, Projekte oder Besonderheiten.\n"
+                        "Notizen ermöglichen Freitext, z. B. für Wartungshinweise oder individuelle Konfigurationen.\n"
+                        "Beides ist direkt in der Geräteansicht pflegbar."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Wartungsaufgaben planen",
+                    "summary": "Regelmäßige Wartungen erfassen und verfolgen.",
+                    "content": (
+                        "Wartungsaufgaben hängen an einem Gerät und beinhalten Titel, Fälligkeitsdatum und Status.\n"
+                        "Der Status zeigt, ob eine Aufgabe offen oder erledigt ist.\n"
+                        "Nutze diese Funktion für wiederkehrende Prüfungen und Sicherheitsupdates."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Asset-Zuweisungen",
+                    "summary": "Assets Personen, Standorten oder Services zuordnen.",
+                    "content": (
+                        "Asset-Zuweisungen dokumentieren, wer oder was ein Asset aktuell nutzt.\n"
+                        "Optional lassen sich Standort und Service referenzieren.\n"
+                        "Historische Zuweisungen bleiben erhalten, um Nutzung nachzuvollziehen."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Services & SLA",
+                    "summary": "Servicekatalog aufbauen und SLA-Werte definieren.",
+                    "content": (
+                        "Services beschreiben betriebliche Leistungen, z. B. E-Mail oder VPN.\n"
+                        "SLA-Stunden definieren Zielzeiten für Tickets und Reports.\n"
+                        "Assets können Services zugeordnet werden, damit Abhängigkeiten sichtbar bleiben."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Tickets: Überblick",
+                    "summary": "Das Helpdesk-Modul und seine grundlegenden Elemente.",
+                    "content": (
+                        "Tickets bündeln Supportanfragen mit Titel, Kategorie, Status und Priorität.\n"
+                        "Zusätzlich werden SLA-Informationen, Fälligkeiten und verantwortliche Teams gepflegt.\n"
+                        "Tickets können mit Assets, Geräten und Wissenseinträgen verknüpft werden."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Tickets erstellen",
+                    "summary": "Anleitung zum Erstellen neuer Supportfälle.",
+                    "content": (
+                        "Nutze die Ticketansicht und erstelle ein neues Ticket mit Titel und Beschreibung.\n"
+                        "Wähle Kategorie, Priorität und optional einen Standort oder Service aus.\n"
+                        "Damit werden die richtigen Teams automatisch informiert."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Ticket-Status & Priorität",
+                    "summary": "So steuerst du den Lebenszyklus von Supportfällen.",
+                    "content": (
+                        "Statuswerte zeigen, ob ein Ticket offen, in Bearbeitung oder gelöst ist.\n"
+                        "Prioritäten helfen bei der Reihenfolge der Bearbeitung.\n"
+                        "Änderungen werden im Aktivitätslog aufgezeichnet."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Kommentare & interne Notizen",
+                    "summary": "Kommunikation innerhalb und außerhalb des Teams.",
+                    "content": (
+                        "Kommentare dokumentieren die Kommunikation mit Antragstellern.\n"
+                        "Interne Notizen bleiben nur für dein Team sichtbar.\n"
+                        "Jeder Kommentar ergänzt die Ticket-Historie."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Watcher & Benachrichtigungen",
+                    "summary": "Wie Abonnenten über Ticketänderungen informiert werden.",
+                    "content": (
+                        "Watcher erhalten Benachrichtigungen, wenn ein Ticket aktualisiert wird.\n"
+                        "Lege Watcher-Adressen je Ticket fest oder pflege sie zentral in den Einstellungen.\n"
+                        "So bleiben Stakeholder immer informiert."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Eskalationsstufen",
+                    "summary": "Eskalationen strukturieren und dokumentieren.",
+                    "content": (
+                        "Eskalationslevel helfen dabei, dringende Tickets sichtbar zu machen.\n"
+                        "Im Ticketformular lassen sich Level setzen und aktualisieren.\n"
+                        "Reports können damit zeigen, welche Fälle kritisch sind."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "SLA & Fälligkeitsdaten",
+                    "summary": "So nutzt du SLA-Zeiten für die Ticketplanung.",
+                    "content": (
+                        "Tickets enthalten SLA-Daten, die aus Service- oder Ticketkategorien abgeleitet werden können.\n"
+                        "Fälligkeitsdaten helfen bei der Planung und Priorisierung.\n"
+                        "Die Statistik-Seite zeigt dir, ob SLAs eingehalten werden."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Wissensbasis: Nutzung",
+                    "summary": "Artikel finden, lesen und als Lösung referenzieren.",
+                    "content": (
+                        "Die Wissensbasis bietet strukturierte Artikel, die Lösungen und Prozesse beschreiben.\n"
+                        "Nutze die Filter nach Kategorie und die Suche, um schnell passende Inhalte zu finden.\n"
+                        "Tickets können auf relevante Artikel verweisen, um Wiederholungen zu vermeiden."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Wissenskategorien pflegen",
+                    "summary": "Themenbereiche für die Wissensbasis anlegen.",
+                    "content": (
+                        "Wissenskategorien gruppieren Artikel nach Themen oder Workflows.\n"
+                        "Neue Kategorien unterstützen Teams dabei, Inhalte konsistent zu organisieren.\n"
+                        "Bestehende Kategorien können jederzeit aktualisiert oder erweitert werden."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Roadmap-Planung",
+                    "summary": "Maßnahmen planen und Meilensteine verfolgen.",
+                    "content": (
+                        "Die Roadmap hält geplante Vorhaben inklusive Ticketbezug fest.\n"
+                        "Einzelne Schritte lassen sich mit Titeln und Zieldaten hinterlegen.\n"
+                        "So bleibt die Planung für langfristige Themen transparent."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Abhängigkeiten & Services",
+                    "summary": "Systembeziehungen nachvollziehen.",
+                    "content": (
+                        "Die Abhängigkeiten-Seite dokumentiert, welche Services oder Software voneinander abhängen.\n"
+                        "Verknüpfungen helfen, Auswirkungen von Ausfällen oder Updates zu analysieren.\n"
+                        "So lassen sich Change- und Incident-Prozesse besser steuern."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Statistik & Reports",
+                    "summary": "Kennzahlen zu Tickets und Inventar interpretieren.",
+                    "content": (
+                        "Die Statistik-Seite liefert Trends zu Ticket-Volumen, Status und SLA-Verhalten.\n"
+                        "Inventarstatistiken zeigen die Verteilung von Geräten und Assets.\n"
+                        "Nutze diese Daten für Management-Reports und Kapazitätsplanung."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Time Machine",
+                    "summary": "Historische Veränderungen im Blick behalten.",
+                    "content": (
+                        "Die Time-Machine-Ansicht zeigt Änderungen über die Zeit hinweg.\n"
+                        "So kannst du nachvollziehen, wann Assets, Tickets oder Benutzer angepasst wurden.\n"
+                        "Diese Historie unterstützt Audit- und Compliance-Anforderungen."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Aktivitätslog",
+                    "summary": "Alle Aktionen transparent nachvollziehen.",
+                    "content": (
+                        "Das Aktivitätslog protokolliert wichtige Änderungen in der Anwendung.\n"
+                        "Einträge enthalten Nutzer, Aktion und betroffene Entität.\n"
+                        "Damit kannst du jederzeit rekonstruieren, was passiert ist."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Benutzerverwaltung",
+                    "summary": "User anlegen, verwalten und deaktivieren.",
+                    "content": (
+                        "In der Benutzerverwaltung legst du neue Konten an und verwaltest bestehende Nutzer.\n"
+                        "Passwörter werden sicher gehasht gespeichert.\n"
+                        "Rollen bestimmen, welche Module und Aktionen sichtbar sind."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Rollen & Berechtigungen",
+                    "summary": "Feingranulare Zugriffssteuerung.",
+                    "content": (
+                        "Rollen bündeln Berechtigungen und können Nutzern zugewiesen werden.\n"
+                        "Berechtigungen steuern den Zugriff auf Module wie Tickets, Wissensbasis oder Admin-Funktionen.\n"
+                        "Superuser-Rollen haben erweiterten Zugriff auf alle Bereiche."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Zwei-Faktor-Authentifizierung",
+                    "summary": "Zusätzliche Sicherheit per TOTP.",
+                    "content": (
+                        "Aktiviere 2FA für Benutzerkonten, um Logins abzusichern.\n"
+                        "TOTP-Apps wie Google Authenticator oder Authy können verwendet werden.\n"
+                        "Einmal aktiviert, ist bei jedem Login ein zusätzlicher Code erforderlich."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Passwort-Reset",
+                    "summary": "Passwort zurücksetzen, wenn der Zugriff verloren geht.",
+                    "content": (
+                        "Nutzer können ihr Passwort über den Reset-Workflow wiederherstellen.\n"
+                        "Der Prozess unterstützt TOTP-basierte Verifizierung.\n"
+                        "Admins können Passwörter auch manuell zurücksetzen."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Ticket-Alerts & Automationen",
+                    "summary": "Automatische Benachrichtigungen für kritische Ereignisse.",
+                    "content": (
+                        "Ticket-Alerts reagieren auf Ereignisse wie Statuswechsel oder Prioritätsänderungen.\n"
+                        "Regeln können im Admin-Bereich gepflegt werden.\n"
+                        "So bleiben Teams bei kritischen Tickets informiert."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Benachrichtigungseinstellungen",
+                    "summary": "SMTP und Versandregeln konfigurieren.",
+                    "content": (
+                        "Im Admin-Bereich kannst du SMTP-Serverdaten hinterlegen.\n"
+                        "Aktiviere oder deaktiviere den Versand von Systemmails.\n"
+                        "Teste die Konfiguration, bevor produktive Alerts versendet werden."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Software-Inventar",
+                    "summary": "Software erfassen und Installationen dokumentieren.",
+                    "content": (
+                        "Das Software-Modul listet Anwendungen und deren Versionen.\n"
+                        "Installationen können einem Asset oder Gerät zugewiesen werden.\n"
+                        "So behältst du Lizenzen und Abhängigkeiten im Blick."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Teams & Abteilungen",
+                    "summary": "Organisationseinheiten für Tickets und Zuständigkeiten.",
+                    "content": (
+                        "Abteilungen strukturieren die Organisation und bilden Zuständigkeiten ab.\n"
+                        "Teams helfen bei der Zuweisung von Tickets und Aufgaben.\n"
+                        "Damit ist klar, wer welche Themen bearbeitet."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Dark Mode & UI-Einstellungen",
+                    "summary": "Oberfläche an persönliche Präferenzen anpassen.",
+                    "content": (
+                        "Die Oberfläche unterstützt helle und dunkle Darstellung.\n"
+                        "Das responsive Layout funktioniert auf Desktop und Mobile.\n"
+                        "So bleibt die Bedienung auch unterwegs komfortabel."
+                    ),
+                    "category": "Produktguide",
+                },
+                {
+                    "title": "Best Practices für die Wissensbasis",
+                    "summary": "Tipps für strukturierte Dokumentation.",
+                    "content": (
+                        "Schreibe kurze Zusammenfassungen und detaillierte Inhalte pro Artikel.\n"
+                        "Nutze Kategorien und klare Titel, damit Teams Inhalte schnell finden.\n"
+                        "Verlinke Tickets mit finalen Lösungen, um Wissen wiederzuverwenden."
+                    ),
+                    "category": "Themen",
+                },
+            ]
+            for entry in entries:
+                c.execute(
+                    '''
+                    INSERT INTO knowledge_entries (title, summary, content, category_id, created_by)
+                    VALUES (?, ?, ?, ?, ?)
+                    ''',
+                    (
+                        entry["title"],
+                        entry["summary"],
+                        entry["content"],
+                        category_map.get(entry["category"]),
+                        "System",
+                    ),
+                )
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS services (
@@ -939,6 +2941,26 @@ def init_db():
         ''')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_assignment_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                assigned_to_user_id INTEGER,
+                assigned_to_team_id INTEGER,
+                status TEXT NOT NULL,
+                checked_out_at TEXT,
+                due_at TEXT,
+                checked_in_at TEXT,
+                note TEXT,
+                created_by_user_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (asset_id) REFERENCES assets(id),
+                FOREIGN KEY (assigned_to_user_id) REFERENCES users(id),
+                FOREIGN KEY (assigned_to_team_id) REFERENCES teams(id),
+                FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+            )
+        ''')
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS asset_lifecycle_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 asset_id INTEGER NOT NULL,
@@ -947,6 +2969,22 @@ def init_db():
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (asset_id) REFERENCES assets(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS attachments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER NOT NULL,
+                original_filename TEXT NOT NULL,
+                stored_filename TEXT NOT NULL,
+                mime_type TEXT,
+                size_bytes INTEGER,
+                uploaded_by_user_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                deleted_at TEXT,
+                FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id)
             )
         ''')
 
@@ -1104,6 +3142,248 @@ def init_db():
         c.execute('INSERT OR IGNORE INTO ad_settings (id) VALUES (1)')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS server_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                host TEXT DEFAULT '0.0.0.0',
+                port INTEGER DEFAULT 5000,
+                debug_mode INTEGER DEFAULT 0,
+                pro_enabled INTEGER DEFAULT 0,
+                backup_enabled INTEGER DEFAULT 0,
+                backup_schedule TEXT DEFAULT 'daily',
+                backup_time TEXT DEFAULT '02:00',
+                backup_retention_days INTEGER DEFAULT 14,
+                backup_location TEXT DEFAULT 'backups/',
+                backup_compress INTEGER DEFAULT 0,
+                backup_encrypt INTEGER DEFAULT 0,
+                backup_notify_email TEXT,
+                allow_db_import INTEGER DEFAULT 0,
+                allow_db_export INTEGER DEFAULT 1,
+                export_format TEXT DEFAULT 'sqlite',
+                import_mode TEXT DEFAULT 'merge',
+                include_uploads INTEGER DEFAULT 1,
+                require_https INTEGER DEFAULT 0,
+                session_timeout_minutes INTEGER DEFAULT 60,
+                max_failed_logins INTEGER DEFAULT 5,
+                lockout_minutes INTEGER DEFAULT 15,
+                allowed_ip_ranges TEXT,
+                password_min_length INTEGER DEFAULT 10,
+                enforce_mfa INTEGER DEFAULT 0,
+                terminal_enabled INTEGER DEFAULT 0,
+                terminal_require_reauth INTEGER DEFAULT 1,
+                terminal_ip_allowlist TEXT,
+                terminal_allow_db_write INTEGER DEFAULT 0,
+                terminal_allow_service_restart INTEGER DEFAULT 0,
+                terminal_break_glass INTEGER DEFAULT 0,
+                schema_version INTEGER DEFAULT 1,
+                updated_by TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        c.execute('INSERT OR IGNORE INTO server_settings (id) VALUES (1)')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS server_settings_revisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                settings_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by TEXT
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS backup_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                status TEXT NOT NULL,
+                backup_path TEXT,
+                backup_size_bytes INTEGER,
+                message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS terminal_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL,
+                mode TEXT DEFAULT 'maintenance',
+                ip TEXT,
+                user_agent TEXT,
+                last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                active INTEGER DEFAULT 1,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS terminal_audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                session_id INTEGER,
+                action_type TEXT NOT NULL,
+                params_json TEXT,
+                status TEXT NOT NULL,
+                duration_ms INTEGER DEFAULT 0,
+                output_preview TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (session_id) REFERENCES terminal_sessions(id)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS health_check_definitions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                slug TEXT UNIQUE,
+                category TEXT,
+                check_type TEXT NOT NULL,
+                config_json TEXT,
+                interval_seconds INTEGER DEFAULT 60,
+                timeout_seconds INTEGER DEFAULT 10,
+                enabled INTEGER DEFAULT 1,
+                last_run_at TEXT,
+                last_status TEXT,
+                last_duration_ms INTEGER,
+                last_summary_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS health_check_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT DEFAULT 'running',
+                triggered_by TEXT,
+                initiated_by TEXT,
+                summary_json TEXT,
+                error_message TEXT
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS health_check_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                check_id INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                severity TEXT,
+                reason TEXT,
+                observed_at TEXT NOT NULL,
+                duration_ms INTEGER,
+                metrics_json TEXT,
+                details_json TEXT,
+                FOREIGN KEY (run_id) REFERENCES health_check_runs(id),
+                FOREIGN KEY (check_id) REFERENCES health_check_definitions(id)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS health_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                check_id INTEGER NOT NULL,
+                previous_status TEXT,
+                current_status TEXT,
+                severity TEXT,
+                reason TEXT,
+                observed_at TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (check_id) REFERENCES health_check_definitions(id)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS health_incidents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                check_id INTEGER NOT NULL,
+                status TEXT DEFAULT 'open',
+                summary TEXT,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                acknowledged_at TEXT,
+                muted_until TEXT,
+                last_status TEXT,
+                last_observed_at TEXT,
+                ticket_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (check_id) REFERENCES health_check_definitions(id),
+                FOREIGN KEY (ticket_id) REFERENCES tickets(id)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS login_attempts (
+                username TEXT PRIMARY KEY,
+                failed_count INTEGER DEFAULT 0,
+                locked_until TIMESTAMP
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                code_hash TEXT NOT NULL,
+                used_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS ui_customization (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                workspace_id INTEGER,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                customization_json TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_by TEXT,
+                UNIQUE(user_id, workspace_id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS ui_customization_revisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customization_id INTEGER NOT NULL,
+                revision_json TEXT NOT NULL,
+                diff_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by TEXT,
+                FOREIGN KEY (customization_id) REFERENCES ui_customization(id)
+            )
+        ''')
+        for column, column_type in (
+            ("backup_enabled", "INTEGER DEFAULT 0"),
+            ("backup_schedule", "TEXT DEFAULT 'daily'"),
+            ("backup_time", "TEXT DEFAULT '02:00'"),
+            ("backup_retention_days", "INTEGER DEFAULT 14"),
+            ("backup_location", "TEXT DEFAULT 'backups/'"),
+            ("backup_compress", "INTEGER DEFAULT 0"),
+            ("backup_encrypt", "INTEGER DEFAULT 0"),
+            ("backup_notify_email", "TEXT"),
+            ("allow_db_import", "INTEGER DEFAULT 0"),
+            ("allow_db_export", "INTEGER DEFAULT 1"),
+            ("export_format", "TEXT DEFAULT 'sqlite'"),
+            ("import_mode", "TEXT DEFAULT 'merge'"),
+            ("include_uploads", "INTEGER DEFAULT 1"),
+            ("require_https", "INTEGER DEFAULT 0"),
+            ("session_timeout_minutes", "INTEGER DEFAULT 60"),
+            ("max_failed_logins", "INTEGER DEFAULT 5"),
+            ("lockout_minutes", "INTEGER DEFAULT 15"),
+            ("allowed_ip_ranges", "TEXT"),
+            ("password_min_length", "INTEGER DEFAULT 10"),
+            ("enforce_mfa", "INTEGER DEFAULT 0"),
+            ("terminal_enabled", "INTEGER DEFAULT 0"),
+            ("terminal_require_reauth", "INTEGER DEFAULT 1"),
+            ("terminal_ip_allowlist", "TEXT"),
+            ("terminal_allow_db_write", "INTEGER DEFAULT 0"),
+            ("terminal_allow_service_restart", "INTEGER DEFAULT 0"),
+            ("terminal_break_glass", "INTEGER DEFAULT 0"),
+            ("schema_version", "INTEGER DEFAULT 1"),
+            ("updated_by", "TEXT"),
+        ):
+            try:
+                c.execute(f'ALTER TABLE server_settings ADD COLUMN {column} {column_type}')
+            except sqlite3.OperationalError:
+                pass
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS device_tags (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 device_id INTEGER NOT NULL,
@@ -1232,6 +3512,7 @@ def init_db():
         seed_roles(db)
         ensure_default_roles(db)
         ensure_admin_user(db)
+        seed_health_checks(db)
 
         db.commit()
 
@@ -1247,6 +3528,1004 @@ def create_user(username, password):
             print(f"[+] Benutzer '{username}' erstellt.")
         except sqlite3.IntegrityError:
             print(f"[!] Benutzer '{username}' existiert bereits.")
+
+def redact_payload(payload):
+    if isinstance(payload, dict):
+        redacted = {}
+        for key, value in payload.items():
+            key_lower = str(key).lower()
+            if any(token in key_lower for token in HEALTH_REDACT_KEYS):
+                redacted[key] = "***"
+            else:
+                redacted[key] = redact_payload(value)
+        return redacted
+    if isinstance(payload, list):
+        return [redact_payload(item) for item in payload]
+    return payload
+
+def normalize_health_status(status):
+    return status if status in HEALTH_STATUS_ORDER else "UNKNOWN"
+
+def worst_health_status(statuses):
+    worst = "OK"
+    for status in statuses:
+        candidate = normalize_health_status(status)
+        if HEALTH_STATUS_ORDER[candidate] > HEALTH_STATUS_ORDER[worst]:
+            worst = candidate
+    return worst
+
+def safe_json_load(value, default=None):
+    if not value:
+        return default if default is not None else {}
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return default if default is not None else {}
+
+def safe_sql_identifier(identifier):
+    if not identifier:
+        return None
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", identifier):
+        return identifier
+    return None
+
+def health_now():
+    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+def register_health_check(name):
+    def decorator(fn):
+        HEALTH_CHECK_REGISTRY[name] = fn
+        return fn
+    return decorator
+
+def serialize_health_definition(row):
+    config = safe_json_load(row["config_json"])
+    redacted_config = redact_payload(config)
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "slug": row["slug"],
+        "category": row["category"],
+        "check_type": row["check_type"],
+        "interval_seconds": row["interval_seconds"],
+        "timeout_seconds": row["timeout_seconds"],
+        "enabled": bool(row["enabled"]),
+        "last_run_at": row["last_run_at"],
+        "last_status": row["last_status"],
+        "last_duration_ms": row["last_duration_ms"],
+        "last_summary": safe_json_load(row["last_summary_json"], default={}),
+        "config": redacted_config
+    }
+
+def store_health_event(db, check_id, previous_status, current_status, severity, reason, observed_at):
+    db.execute(
+        '''
+        INSERT INTO health_events (
+            check_id, previous_status, current_status, severity, reason, observed_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        ''',
+        (check_id, previous_status, current_status, severity, reason, observed_at)
+    )
+
+def record_health_incident(db, check_id, summary, observed_at, status):
+    db.execute(
+        '''
+        INSERT INTO health_incidents (
+            check_id, status, summary, opened_at, last_status, last_observed_at
+        )
+        VALUES (?, 'open', ?, ?, ?, ?)
+        ''',
+        (check_id, summary, observed_at, status, observed_at)
+    )
+
+def close_health_incident(db, incident_id, observed_at):
+    db.execute(
+        '''
+        UPDATE health_incidents
+        SET status = 'closed',
+            closed_at = ?,
+            last_status = 'OK',
+            last_observed_at = ?
+        WHERE id = ?
+        ''',
+        (observed_at, observed_at, incident_id)
+    )
+
+def update_health_incident_state(db, check_id, status, observed_at, config):
+    status = normalize_health_status(status)
+    incident_open_after_value = config.get("incident_open_after_minutes")
+    incident_close_after_value = config.get("incident_close_after_minutes")
+    incident_open_after = int(incident_open_after_value) if incident_open_after_value is not None else HEALTH_INCIDENT_OPEN_MINUTES
+    incident_close_after = int(incident_close_after_value) if incident_close_after_value is not None else HEALTH_INCIDENT_CLOSE_MINUTES
+
+    active_incident = db.execute(
+        '''
+        SELECT id, status, opened_at, acknowledged_at, muted_until
+        FROM health_incidents
+        WHERE check_id = ? AND status = 'open'
+        ORDER BY opened_at DESC
+        LIMIT 1
+        ''',
+        (check_id,)
+    ).fetchone()
+
+    if status == "CRIT":
+        last_non_crit = db.execute(
+            '''
+            SELECT observed_at
+            FROM health_check_results
+            WHERE check_id = ? AND status != 'CRIT'
+            ORDER BY observed_at DESC
+            LIMIT 1
+            ''',
+            (check_id,)
+        ).fetchone()
+        if last_non_crit:
+            last_non_crit_at = datetime.strptime(last_non_crit["observed_at"], "%Y-%m-%d %H:%M:%S")
+            current_time = datetime.strptime(observed_at, "%Y-%m-%d %H:%M:%S")
+            duration_minutes = (current_time - last_non_crit_at).total_seconds() / 60
+        else:
+            duration_minutes = incident_open_after + 1
+        if duration_minutes >= incident_open_after and not active_incident:
+            record_health_incident(
+                db,
+                check_id,
+                f"CRIT länger als {incident_open_after} Minuten",
+                observed_at,
+                status
+            )
+        if active_incident:
+            db.execute(
+                '''
+                UPDATE health_incidents
+                SET last_status = ?, last_observed_at = ?
+                WHERE id = ?
+                ''',
+                (status, observed_at, active_incident["id"])
+            )
+        return
+
+    if active_incident and status == "OK":
+        last_non_ok = db.execute(
+            '''
+            SELECT observed_at
+            FROM health_check_results
+            WHERE check_id = ? AND status != 'OK'
+            ORDER BY observed_at DESC
+            LIMIT 1
+            ''',
+            (check_id,)
+        ).fetchone()
+        if last_non_ok:
+            last_non_ok_at = datetime.strptime(last_non_ok["observed_at"], "%Y-%m-%d %H:%M:%S")
+            current_time = datetime.strptime(observed_at, "%Y-%m-%d %H:%M:%S")
+            duration_minutes = (current_time - last_non_ok_at).total_seconds() / 60
+        else:
+            duration_minutes = incident_close_after + 1
+        if duration_minutes >= incident_close_after:
+            close_health_incident(db, active_incident["id"], observed_at)
+        else:
+            db.execute(
+                '''
+                UPDATE health_incidents
+                SET last_status = ?, last_observed_at = ?
+                WHERE id = ?
+                ''',
+                (status, observed_at, active_incident["id"])
+            )
+        return
+
+    if active_incident:
+        db.execute(
+            '''
+            UPDATE health_incidents
+            SET last_status = ?, last_observed_at = ?
+            WHERE id = ?
+            ''',
+            (status, observed_at, active_incident["id"])
+        )
+
+def record_health_result(db, run_id, check_def, result):
+    check_data = dict(check_def)
+    observed_at = result.get("observed_at") or health_now()
+    status = normalize_health_status(result.get("status"))
+    severity = result.get("severity") or status
+    reason = result.get("reason") or ""
+    metrics = redact_payload(result.get("metrics") or {})
+    details = redact_payload(result.get("details") or {})
+    duration_ms = int(result.get("duration_ms") or 0)
+    db.execute(
+        '''
+        INSERT INTO health_check_results (
+            run_id, check_id, status, severity, reason, observed_at,
+            duration_ms, metrics_json, details_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        (
+            run_id,
+            check_def["id"],
+            status,
+            severity,
+            reason,
+            observed_at,
+            duration_ms,
+            json.dumps(metrics),
+            json.dumps(details)
+            )
+        )
+
+    previous_status = check_data.get("last_status") or "UNKNOWN"
+    if previous_status != status:
+        store_health_event(
+            db,
+            check_data["id"],
+            previous_status,
+            status,
+            severity,
+            reason,
+            observed_at
+        )
+
+    db.execute(
+        '''
+        UPDATE health_check_definitions
+        SET last_run_at = ?,
+            last_status = ?,
+            last_duration_ms = ?,
+            last_summary_json = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        ''',
+        (
+            observed_at,
+            status,
+            duration_ms,
+            json.dumps({
+                "reason": reason,
+                "metrics": metrics
+            }),
+            check_data["id"]
+        )
+    )
+    update_health_incident_state(db, check_data["id"], status, observed_at, safe_json_load(check_data["config_json"]))
+
+def run_health_check_definition(db, check_def):
+    check_type = check_def["check_type"]
+    config = safe_json_load(check_def["config_json"])
+    timeout_seconds = int(check_def["timeout_seconds"] or 10)
+    retries = int(config.get("retries") or 0)
+    retry_delay = float(config.get("retry_delay_seconds") or 0)
+    result = None
+    attempts = 0
+    while attempts <= retries:
+        attempts += 1
+        start_time = time.time()
+        try:
+            handler = HEALTH_CHECK_REGISTRY.get(check_type)
+            if not handler:
+                result = {
+                    "status": "UNKNOWN",
+                    "severity": "UNKNOWN",
+                    "reason": f"Check-Typ {check_type} ist nicht registriert",
+                    "metrics": {},
+                    "details": {}
+                }
+            else:
+                result = handler(config, db, timeout_seconds)
+        except Exception as exc:
+            result = {
+                "status": "UNKNOWN",
+                "severity": "UNKNOWN",
+                "reason": f"Fehler beim Check: {exc}",
+                "metrics": {},
+                "details": {}
+            }
+        duration_ms = int((time.time() - start_time) * 1000)
+        result["duration_ms"] = duration_ms
+        result["observed_at"] = health_now()
+        if result.get("status") != "UNKNOWN" or attempts > retries:
+            break
+        if retry_delay > 0:
+            time.sleep(retry_delay)
+    return result
+
+def run_health_checks(db, check_ids=None, triggered_by="scheduler", initiated_by=None, run_id=None):
+    started_at = health_now()
+    if run_id is None:
+        cursor = db.execute(
+            '''
+            INSERT INTO health_check_runs (started_at, status, triggered_by, initiated_by)
+            VALUES (?, 'running', ?, ?)
+            ''',
+            (started_at, triggered_by, initiated_by)
+        )
+        run_id = cursor.lastrowid
+    else:
+        db.execute(
+            '''
+            UPDATE health_check_runs
+            SET status = 'running', started_at = ?, triggered_by = ?, initiated_by = ?
+            WHERE id = ?
+            ''',
+            (started_at, triggered_by, initiated_by, run_id)
+        )
+
+    if check_ids:
+        placeholders = ",".join(["?"] * len(check_ids))
+        check_rows = db.execute(
+            f'''
+            SELECT *
+            FROM health_check_definitions
+            WHERE id IN ({placeholders})
+            ''',
+            check_ids
+        ).fetchall()
+    else:
+        check_rows = db.execute(
+            '''
+            SELECT *
+            FROM health_check_definitions
+            WHERE enabled = 1
+            '''
+        ).fetchall()
+
+    statuses = []
+    for row in check_rows:
+        result = run_health_check_definition(db, row)
+        record_health_result(db, run_id, row, result)
+        statuses.append(result.get("status") or "UNKNOWN")
+
+    finished_at = health_now()
+    overall_status = worst_health_status(statuses)
+    db.execute(
+        '''
+        UPDATE health_check_runs
+        SET finished_at = ?, status = ?, summary_json = ?
+        WHERE id = ?
+        ''',
+        (
+            finished_at,
+            overall_status,
+            json.dumps({"status": overall_status, "count": len(statuses)}),
+            run_id
+        )
+    )
+    db.commit()
+    return run_id, overall_status
+
+def run_health_checks_async(check_ids, initiated_by, run_id):
+    with app.app_context():
+        db = get_db()
+        run_health_checks(db, check_ids=check_ids, triggered_by="manual", initiated_by=initiated_by, run_id=run_id)
+
+def fetch_due_health_checks(db):
+    now = datetime.utcnow()
+    rows = db.execute(
+        '''
+        SELECT *
+        FROM health_check_definitions
+        WHERE enabled = 1
+        '''
+    ).fetchall()
+    due = []
+    for row in rows:
+        last_run = row["last_run_at"]
+        interval = int(row["interval_seconds"] or 60)
+        if not last_run:
+            due.append(row)
+            continue
+        try:
+            last_run_time = datetime.strptime(last_run, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            due.append(row)
+            continue
+        if (now - last_run_time).total_seconds() >= interval:
+            due.append(row)
+    return due
+
+def cleanup_health_retention(db):
+    cutoff = datetime.utcnow() - timedelta(days=HEALTH_DEFAULT_RETENTION_DAYS)
+    cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    db.execute('DELETE FROM health_check_results WHERE observed_at < ?', (cutoff_str,))
+    db.execute('DELETE FROM health_check_runs WHERE started_at < ?', (cutoff_str,))
+    db.execute('DELETE FROM health_events WHERE observed_at < ?', (cutoff_str,))
+
+def scheduled_health_run():
+    with app.app_context():
+        db = get_db()
+        due = fetch_due_health_checks(db)
+        if not due:
+            return
+        check_ids = [row["id"] for row in due]
+        run_health_checks(db, check_ids=check_ids, triggered_by="scheduler", initiated_by="system")
+        cleanup_health_retention(db)
+        db.commit()
+
+def schedule_health_jobs():
+    if not HEALTH_SCHEDULER.running:
+        HEALTH_SCHEDULER.start()
+    HEALTH_SCHEDULER.remove_all_jobs()
+    HEALTH_SCHEDULER.add_job(scheduled_health_run, "interval", seconds=60, id="health_checks")
+
+def fetch_latest_health_results(db):
+    return db.execute(
+        '''
+        SELECT r.*, d.name, d.slug, d.category, d.check_type, d.enabled
+        FROM health_check_results r
+        JOIN health_check_definitions d ON d.id = r.check_id
+        JOIN (
+            SELECT check_id, MAX(observed_at) AS max_observed
+            FROM health_check_results
+            GROUP BY check_id
+        ) latest
+        ON latest.check_id = r.check_id AND latest.max_observed = r.observed_at
+        WHERE d.enabled = 1
+        '''
+    ).fetchall()
+
+def serialize_health_result(row):
+    data = dict(row)
+    return {
+        "id": data["id"],
+        "check_id": data["check_id"],
+        "status": data["status"],
+        "severity": data["severity"],
+        "reason": data["reason"],
+        "observed_at": data["observed_at"],
+        "duration_ms": data["duration_ms"],
+        "metrics": safe_json_load(data["metrics_json"], default={}),
+        "details": safe_json_load(data["details_json"], default={}),
+        "check": {
+            "name": data.get("name"),
+            "slug": data.get("slug"),
+            "category": data.get("category"),
+            "check_type": data.get("check_type")
+        }
+    }
+
+@register_health_check("service_unit")
+def health_check_service_unit(config, db, timeout_seconds):
+    unit = (config.get("unit") or "").strip()
+    if not unit:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "systemd Unit fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    if not shutil.which("systemctl"):
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "systemctl nicht verfügbar",
+            "metrics": {},
+            "details": {}
+        }
+    try:
+        output = subprocess.check_output(
+            ["systemctl", "show", unit, "--no-page", "--property=ActiveState,SubState,ExecMainStatus,ExecMainExitTimestamp,ActiveEnterTimestamp"],
+            text=True,
+            timeout=timeout_seconds
+        )
+    except Exception as exc:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": f"systemctl Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    info = {}
+    for line in output.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            info[key] = value
+    active_state = info.get("ActiveState", "unknown")
+    status = "OK" if active_state == "active" else "CRIT"
+    reason = f"Unit {unit} ist {active_state}"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": reason,
+        "metrics": {
+            "active_state": active_state,
+            "sub_state": info.get("SubState"),
+            "exec_status": info.get("ExecMainStatus")
+        },
+        "details": {
+            "last_exit": info.get("ExecMainExitTimestamp"),
+            "active_since": info.get("ActiveEnterTimestamp")
+        }
+    }
+
+@register_health_check("process")
+def health_check_process(config, db, timeout_seconds):
+    process_name = (config.get("process_name") or "").strip()
+    min_count = int(config.get("min_count") or 1)
+    if not process_name:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Prozessname fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", process_name],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds
+        )
+        pids = [line for line in result.stdout.splitlines() if line.strip()]
+    except Exception as exc:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": f"pgrep Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    count = len(pids)
+    status = "OK" if count >= min_count else "CRIT"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"{count} Prozesse gefunden",
+        "metrics": {"process_count": count, "min_count": min_count},
+        "details": {"pids": pids[:10]}
+    }
+
+@register_health_check("tcp_port")
+def health_check_tcp_port(config, db, timeout_seconds):
+    host = (config.get("host") or "127.0.0.1").strip()
+    port = int(config.get("port") or 0)
+    if not port:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Port fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    start_time = time.time()
+    try:
+        with socket.create_connection((host, port), timeout=timeout_seconds):
+            latency_ms = int((time.time() - start_time) * 1000)
+            return {
+                "status": "OK",
+                "severity": "OK",
+                "reason": f"TCP {host}:{port} erreichbar",
+                "metrics": {"latency_ms": latency_ms},
+                "details": {}
+            }
+    except Exception as exc:
+        return {
+            "status": "CRIT",
+            "severity": "CRIT",
+            "reason": f"TCP {host}:{port} nicht erreichbar: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+
+@register_health_check("http")
+def health_check_http(config, db, timeout_seconds):
+    url = (config.get("url") or "").strip()
+    if not url:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "URL fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    method = (config.get("method") or "GET").upper()
+    expect_status = int(config.get("expect_status") or 200)
+    contains = config.get("contains")
+    start_time = time.time()
+    request_obj = urllib.request.Request(url, method=method)
+    try:
+        context = ssl.create_default_context()
+        with urllib.request.urlopen(request_obj, timeout=timeout_seconds, context=context) as response:
+            body = response.read(4096).decode(errors="ignore")
+            latency_ms = int((time.time() - start_time) * 1000)
+            status_code = response.getcode()
+    except urllib.error.HTTPError as exc:
+        latency_ms = int((time.time() - start_time) * 1000)
+        status_code = exc.code
+        body = exc.read(1024).decode(errors="ignore") if exc.fp else ""
+    except Exception as exc:
+        return {
+            "status": "CRIT",
+            "severity": "CRIT",
+            "reason": f"HTTP Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+
+    status = "OK" if status_code == expect_status else "WARN"
+    if contains and contains not in body:
+        status = "WARN"
+    reason = f"HTTP {status_code} in {latency_ms} ms"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": reason,
+        "metrics": {"status_code": status_code, "latency_ms": latency_ms},
+        "details": {"contains_match": bool(contains and contains in body)}
+    }
+
+@register_health_check("dns")
+def health_check_dns(config, db, timeout_seconds):
+    hostname = (config.get("hostname") or "").strip()
+    if not hostname:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Hostname fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    try:
+        start_time = time.time()
+        records = socket.getaddrinfo(hostname, None)
+        latency_ms = int((time.time() - start_time) * 1000)
+        return {
+            "status": "OK",
+            "severity": "OK",
+            "reason": f"DNS ok ({len(records)} Records)",
+            "metrics": {"records": len(records), "latency_ms": latency_ms},
+            "details": {}
+        }
+    except Exception as exc:
+        return {
+            "status": "CRIT",
+            "severity": "CRIT",
+            "reason": f"DNS Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+
+@register_health_check("internet")
+def health_check_internet(config, db, timeout_seconds):
+    url = (config.get("url") or "https://example.com").strip()
+    return health_check_http({"url": url, "method": "HEAD", "expect_status": 200}, db, timeout_seconds)
+
+@register_health_check("cpu_load")
+def health_check_cpu_load(config, db, timeout_seconds):
+    load1, load5, load15 = os.getloadavg()
+    per_core = bool(config.get("per_core", True))
+    cpu_count = os.cpu_count() or 1
+    multiplier = cpu_count if per_core else 1
+    warn = float(config.get("warn_load") or 1.0 * multiplier)
+    crit = float(config.get("crit_load") or 2.0 * multiplier)
+    status = "OK"
+    if load1 >= crit:
+        status = "CRIT"
+    elif load1 >= warn:
+        status = "WARN"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"Load {load1:.2f} (1m)",
+        "metrics": {"load1": load1, "load5": load5, "load15": load15, "cpu_count": cpu_count},
+        "details": {}
+    }
+
+@register_health_check("memory")
+def health_check_memory(config, db, timeout_seconds):
+    meminfo = {}
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as handle:
+            for line in handle:
+                parts = line.split(":")
+                if len(parts) < 2:
+                    continue
+                key = parts[0].strip()
+                value = parts[1].strip().split()[0]
+                meminfo[key] = int(value)
+    except FileNotFoundError:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "/proc/meminfo nicht verfügbar",
+            "metrics": {},
+            "details": {}
+        }
+    total = meminfo.get("MemTotal", 0)
+    available = meminfo.get("MemAvailable", meminfo.get("MemFree", 0))
+    used_percent = 0 if total == 0 else (1 - available / total) * 100
+    swap_total = meminfo.get("SwapTotal", 0)
+    swap_free = meminfo.get("SwapFree", 0)
+    swap_used_percent = 0 if swap_total == 0 else (1 - swap_free / swap_total) * 100
+    warn = float(config.get("warn_percent") or 80)
+    crit = float(config.get("crit_percent") or 90)
+    status = "OK"
+    if used_percent >= crit:
+        status = "CRIT"
+    elif used_percent >= warn:
+        status = "WARN"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"RAM {used_percent:.1f}% genutzt",
+        "metrics": {
+            "mem_total_kb": total,
+            "mem_available_kb": available,
+            "mem_used_percent": round(used_percent, 1),
+            "swap_used_percent": round(swap_used_percent, 1)
+        },
+        "details": {}
+    }
+
+@register_health_check("disk")
+def health_check_disk(config, db, timeout_seconds):
+    path = (config.get("path") or "/").strip()
+    warn = float(config.get("warn_percent") or 80)
+    crit = float(config.get("crit_percent") or 90)
+    warn_inodes = float(config.get("warn_inodes_percent") or 80)
+    crit_inodes = float(config.get("crit_inodes_percent") or 90)
+    try:
+        usage = shutil.disk_usage(path)
+        stat = os.statvfs(path)
+    except Exception as exc:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": f"Disk Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    used_percent = 0 if usage.total == 0 else (usage.used / usage.total) * 100
+    inode_total = stat.f_files
+    inode_free = stat.f_ffree
+    inode_used_percent = 0 if inode_total == 0 else (1 - inode_free / inode_total) * 100
+    status = "OK"
+    if used_percent >= crit or inode_used_percent >= crit_inodes:
+        status = "CRIT"
+    elif used_percent >= warn or inode_used_percent >= warn_inodes:
+        status = "WARN"
+    read_only = bool(stat.f_flag & getattr(os, "ST_RDONLY", 1))
+    if read_only:
+        status = "CRIT"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"Disk {used_percent:.1f}% genutzt",
+        "metrics": {
+            "total_bytes": usage.total,
+            "used_bytes": usage.used,
+            "used_percent": round(used_percent, 1),
+            "inode_used_percent": round(inode_used_percent, 1)
+        },
+        "details": {"read_only": read_only}
+    }
+
+@register_health_check("time_sync")
+def health_check_time_sync(config, db, timeout_seconds):
+    max_drift_ms = float(config.get("max_offset_ms") or 100)
+    if shutil.which("timedatectl"):
+        try:
+            output = subprocess.check_output(
+                ["timedatectl", "show", "-p", "NTPSynchronized", "-p", "NTPSync", "--value"],
+                text=True,
+                timeout=timeout_seconds
+            )
+            values = [value.strip() for value in output.splitlines() if value.strip()]
+            is_synced = any(value == "yes" for value in values)
+            status = "OK" if is_synced else "WARN"
+            return {
+                "status": status,
+                "severity": status,
+                "reason": "NTP synchronisiert" if is_synced else "NTP nicht synchronisiert",
+                "metrics": {},
+                "details": {}
+            }
+        except Exception:
+            pass
+    if shutil.which("chronyc"):
+        try:
+            output = subprocess.check_output(
+                ["chronyc", "tracking"],
+                text=True,
+                timeout=timeout_seconds
+            )
+            offset_line = next((line for line in output.splitlines() if "Last offset" in line), "")
+            parts = offset_line.split()
+            offset_seconds = float(parts[2]) if len(parts) >= 3 else 0
+            drift_ms = abs(offset_seconds * 1000)
+            status = "OK" if drift_ms <= max_drift_ms else "WARN"
+            return {
+                "status": status,
+                "severity": status,
+                "reason": f"NTP Drift {drift_ms:.1f} ms",
+                "metrics": {"drift_ms": drift_ms},
+                "details": {}
+            }
+        except Exception:
+            pass
+    return {
+        "status": "UNKNOWN",
+        "severity": "UNKNOWN",
+        "reason": "Keine NTP-Quelle gefunden",
+        "metrics": {},
+        "details": {}
+    }
+
+@register_health_check("db_ping")
+def health_check_db_ping(config, db, timeout_seconds):
+    db_path = (config.get("db_path") or DATABASE).strip()
+    warn_ms = float(config.get("warn_ms") or 100)
+    crit_ms = float(config.get("crit_ms") or 250)
+    start_time = time.time()
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute("SELECT 1")
+        conn.close()
+    except Exception as exc:
+        return {
+            "status": "CRIT",
+            "severity": "CRIT",
+            "reason": f"DB Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    latency_ms = int((time.time() - start_time) * 1000)
+    status = "OK"
+    if latency_ms >= crit_ms:
+        status = "CRIT"
+    elif latency_ms >= warn_ms:
+        status = "WARN"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"DB Ping {latency_ms} ms",
+        "metrics": {"latency_ms": latency_ms},
+        "details": {}
+    }
+
+@register_health_check("queue_depth")
+def health_check_queue_depth(config, db, timeout_seconds):
+    table = safe_sql_identifier(config.get("queue_table"))
+    status_column = safe_sql_identifier(config.get("status_column") or "status")
+    pending_values = config.get("pending_values") or []
+    heartbeat_table = safe_sql_identifier(config.get("heartbeat_table"))
+    heartbeat_column = safe_sql_identifier(config.get("heartbeat_column") or "updated_at")
+    max_age_seconds = int(config.get("max_heartbeat_age_seconds") or 300)
+    if not table or not status_column:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Queue-Konfiguration fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    placeholders = ",".join(["?"] * len(pending_values)) if pending_values else None
+    if pending_values:
+        count_row = db.execute(
+            f"SELECT COUNT(*) as total FROM {table} WHERE {status_column} IN ({placeholders})",
+            pending_values
+        ).fetchone()
+    else:
+        count_row = db.execute(
+            f"SELECT COUNT(*) as total FROM {table}"
+        ).fetchone()
+    depth = count_row["total"] if count_row else 0
+    status = "OK"
+    warn_threshold = int(config.get("warn_depth") or 50)
+    crit_threshold = int(config.get("crit_depth") or 100)
+    if depth >= crit_threshold:
+        status = "CRIT"
+    elif depth >= warn_threshold:
+        status = "WARN"
+    heartbeat_age = None
+    if heartbeat_table and heartbeat_column:
+        heartbeat_row = db.execute(
+            f"SELECT {heartbeat_column} as heartbeat FROM {heartbeat_table} ORDER BY {heartbeat_column} DESC LIMIT 1"
+        ).fetchone()
+        if heartbeat_row and heartbeat_row["heartbeat"]:
+            try:
+                last_heartbeat = datetime.strptime(heartbeat_row["heartbeat"], "%Y-%m-%d %H:%M:%S")
+                heartbeat_age = (datetime.utcnow() - last_heartbeat).total_seconds()
+            except ValueError:
+                heartbeat_age = None
+    if heartbeat_age is not None and heartbeat_age > max_age_seconds:
+        status = "CRIT"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"Queue Depth {depth}",
+        "metrics": {"depth": depth, "heartbeat_age_seconds": heartbeat_age},
+        "details": {}
+    }
+
+@register_health_check("cache_ping")
+def health_check_cache_ping(config, db, timeout_seconds):
+    host = (config.get("host") or "127.0.0.1").strip()
+    port = int(config.get("port") or 0)
+    cache_type = (config.get("type") or "redis").lower()
+    if not port:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Cache-Port fehlt",
+            "metrics": {},
+            "details": {}
+        }
+    try:
+        with socket.create_connection((host, port), timeout=timeout_seconds) as sock:
+            sock.settimeout(timeout_seconds)
+            if cache_type == "redis":
+                sock.sendall(b"PING\r\n")
+                response = sock.recv(64)
+                if b"PONG" not in response:
+                    raise RuntimeError("PING fehlgeschlagen")
+            elif cache_type == "memcached":
+                sock.sendall(b"version\r\n")
+                response = sock.recv(64)
+                if b"VERSION" not in response:
+                    raise RuntimeError("Version fehlgeschlagen")
+    except Exception as exc:
+        return {
+            "status": "CRIT",
+            "severity": "CRIT",
+            "reason": f"Cache Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    return {
+        "status": "OK",
+        "severity": "OK",
+        "reason": "Cache erreichbar",
+        "metrics": {},
+        "details": {}
+    }
+
+@register_health_check("log_pattern")
+def health_check_log_pattern(config, db, timeout_seconds):
+    path = (config.get("path") or "").strip()
+    pattern = config.get("pattern")
+    if not path or not pattern:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": "Log-Pattern nicht konfiguriert",
+            "metrics": {},
+            "details": {}
+        }
+    max_bytes = int(config.get("max_bytes") or 8192)
+    must_match = bool(config.get("must_match"))
+    try:
+        file_size = os.path.getsize(path)
+        with open(path, "rb") as handle:
+            if file_size > max_bytes:
+                handle.seek(-max_bytes, os.SEEK_END)
+            data = handle.read().decode(errors="ignore")
+        matches = re.findall(pattern, data, re.MULTILINE)
+    except Exception as exc:
+        return {
+            "status": "UNKNOWN",
+            "severity": "UNKNOWN",
+            "reason": f"Log-Check Fehler: {exc}",
+            "metrics": {},
+            "details": {}
+        }
+    has_match = len(matches) > 0
+    status = "OK"
+    if must_match and not has_match:
+        status = "WARN"
+    if not must_match and has_match:
+        status = "WARN"
+    return {
+        "status": status,
+        "severity": status,
+        "reason": f"{len(matches)} Treffer",
+        "metrics": {"matches": len(matches), "must_match": must_match},
+        "details": {}
+    }
 
 def delete_user(username):
     with app.app_context():
@@ -1267,6 +4546,97 @@ def login_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
+def get_login_attempt(db, username):
+    return db.execute('SELECT * FROM login_attempts WHERE username = ?', (username,)).fetchone()
+
+def is_user_locked(db, username):
+    attempt = get_login_attempt(db, username)
+    if not attempt or not attempt["locked_until"]:
+        return False
+    try:
+        locked_until = datetime.fromisoformat(attempt["locked_until"])
+    except ValueError:
+        return False
+    return locked_until > datetime.utcnow()
+
+def record_login_failure(db, username, max_failed, lockout_minutes):
+    attempt = get_login_attempt(db, username)
+    failed_count = attempt["failed_count"] if attempt else 0
+    failed_count += 1
+    locked_until = None
+    if failed_count >= max_failed:
+        locked_until = (datetime.utcnow() + timedelta(minutes=lockout_minutes)).isoformat()
+        failed_count = 0
+    if attempt:
+        db.execute(
+            'UPDATE login_attempts SET failed_count = ?, locked_until = ? WHERE username = ?',
+            (failed_count, locked_until, username)
+        )
+    else:
+        db.execute(
+            'INSERT INTO login_attempts (username, failed_count, locked_until) VALUES (?, ?, ?)',
+            (username, failed_count, locked_until)
+        )
+
+def clear_login_failures(db, username):
+    db.execute('DELETE FROM login_attempts WHERE username = ?', (username,))
+
+@app.before_request
+def enforce_security_policies():
+    if request.endpoint == 'static':
+        return None
+    db = get_db()
+    settings_row = get_server_settings(db)
+    settings, _ = serialize_server_settings(settings_row)
+
+    if settings["security"]["forceHttps"]:
+        forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
+        if not request.is_secure and forwarded_proto != "https":
+            if request.path.startswith("/api"):
+                return jsonify({"error": "HTTPS erforderlich."}), 403
+            return redirect(request.url.replace("http://", "https://", 1), code=302)
+
+    ip_whitelist = settings["security"]["ipWhitelist"]
+    if ip_whitelist:
+        remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+        remote_ip = (remote_ip or "").split(",")[0].strip()
+        allowed = False
+        for entry in ip_whitelist:
+            try:
+                if "/" in entry:
+                    if ipaddress.ip_address(remote_ip) in ipaddress.ip_network(entry, strict=False):
+                        allowed = True
+                        break
+                else:
+                    if remote_ip == entry:
+                        allowed = True
+                        break
+            except ValueError:
+                continue
+        if not allowed:
+            if request.path.startswith("/api"):
+                return jsonify({"error": "IP nicht erlaubt."}), 403
+            return ("", 403)
+
+    if session.get("logged_in"):
+        now_ts = time.time()
+        last_activity = session.get("last_activity")
+        timeout_minutes = settings["security"]["sessionTimeoutMinutes"]
+        if last_activity and now_ts - last_activity > timeout_minutes * 60:
+            session.clear()
+            if request.path.startswith("/api"):
+                return jsonify({"error": "Session abgelaufen."}), 401
+            return redirect(url_for("login"))
+        session["last_activity"] = now_ts
+        session.permanent = True
+        if settings["security"]["requireMfa"]:
+            allowed_paths = {"/verify", "/api/otp/verify", "/api/otp/status", "/api/otp/setup", "/logout"}
+            if not session.get("mfa_verified") and request.path not in allowed_paths and not request.path.startswith("/static"):
+                if request.path.startswith("/api"):
+                    return jsonify({"error": "MFA erforderlich."}), 403
+                return redirect(url_for("verify"))
+    return None
 
 def log_activity(db, action, entity_type, entity_id=None, details=None):
     username = session.get('username', 'system')
@@ -1739,6 +5109,9 @@ def calculate_spof_nodes(db):
 def pro_required(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
+        settings_row = get_server_settings(get_db())
+        if not settings_row or not settings_row["pro_enabled"]:
+            return jsonify({"error": "Pro-Feature ist deaktiviert."}), 403
         return f(*args, **kwargs)
     return wrapped
 
@@ -1750,6 +5123,16 @@ def parse_email_list(value):
     else:
         emails = value.split(',')
     return [email.strip() for email in emails if email and email.strip()]
+
+def normalize_email(value):
+    if not value:
+        return ""
+    return value.strip().lower()
+
+def is_valid_email(value):
+    if not value:
+        return False
+    return bool(re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', value))
 
 def get_notification_settings(db):
     settings = db.execute('SELECT * FROM notification_settings WHERE id = 1').fetchone()
@@ -1782,7 +5165,7 @@ def serialize_notification_settings(settings):
         "has_password": bool(settings["smtp_password"])
     }
 
-def send_notification_email(settings, recipients, subject, body):
+def send_notification_email(settings, recipients, subject, body, html_body=None):
     if not settings or not settings["enabled"]:
         return False
     recipients = parse_email_list(recipients)
@@ -1799,6 +5182,8 @@ def send_notification_email(settings, recipients, subject, body):
     message["From"] = smtp_from
     message["To"] = ", ".join(recipients)
     message.set_content(body)
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
 
     try:
         with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
@@ -1811,72 +5196,244 @@ def send_notification_email(settings, recipients, subject, body):
     except Exception:
         return False
 
-def format_ticket_subject(ticket, prefix):
-    return f"{prefix} #{ticket['id']} - {ticket['title']}"
+def truncate_text(value, limit=240):
+    if not value:
+        return ""
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "…"
 
-def build_ticket_email_body(ticket, header, comment=None):
-    lines = [
-        header,
+def format_change_value(value, placeholder="Nicht gesetzt", limit=240):
+    if value is None or value == "":
+        return placeholder
+    if isinstance(value, str):
+        return truncate_text(value, limit=limit)
+    return value
+
+def build_ticket_changes(ticket, updates):
+    changes = []
+    field_map = [
+        ("status", "Status"),
+        ("priority", "Priorität"),
+        ("category_name", "Kategorie"),
+        ("assignee", "Zuständig"),
+        ("assignee_email", "Zuständig (E-Mail)"),
+        ("due_date", "Fällig"),
+        ("requester_name", "Anfragender"),
+        ("requester_email", "Anfragender (E-Mail)"),
+        ("title", "Titel"),
+        ("description", "Beschreibung"),
+    ]
+    for key, label in field_map:
+        before = ticket.get(key)
+        after = updates.get(key)
+        if key == "category_name":
+            before = before or "Keine Kategorie"
+            after = after or "Keine Kategorie"
+        if before != after:
+            limit = 400 if key == "description" else 240
+            changes.append({
+                "key": key,
+                "label": label,
+                "before": format_change_value(before, limit=limit),
+                "after": format_change_value(after, limit=limit),
+            })
+    return changes
+
+def resolve_ticket_event_type(changes):
+    keys = {change["key"] for change in changes}
+    if len(changes) == 1:
+        if "status" in keys:
+            return "status_changed"
+        if "priority" in keys:
+            return "priority_changed"
+        if "assignee" in keys or "assignee_email" in keys:
+            return "assignee_changed"
+    return "updated"
+
+def determine_ticket_reason(event_type, changes):
+    if event_type == "created":
+        return "Ticket erstellt"
+    if event_type == "commented":
+        return "Neuer Kommentar"
+    if event_type == "status_changed":
+        return "Status geändert"
+    if event_type == "priority_changed":
+        return "Priorität geändert"
+    if event_type == "assignee_changed":
+        return "Zuweisung geändert"
+    if changes:
+        if any(change["key"] == "status" for change in changes):
+            return "Status geändert"
+        if any(change["key"] == "priority" for change in changes):
+            return "Priorität geändert"
+        if any(change["key"] in {"assignee", "assignee_email"} for change in changes):
+            return "Zuweisung geändert"
+    return "Aktualisiert"
+
+def build_ticket_url(ticket_id):
+    try:
+        base_url = url_for("tickets_page", _external=True)
+    except RuntimeError:
+        base_url = "/tickets"
+    separator = "&" if "?" in base_url else "?"
+    return f"{base_url}{separator}ticket_id={ticket_id}"
+
+def render_ticket_email(event_type, ticket, changes=None, actor=None, comment=None):
+    changes = changes or []
+    actor = actor or "System"
+    reason = determine_ticket_reason(event_type, changes)
+    subject = f"[InventoryPro] Ticket #{ticket['id']} – {reason}"
+    ticket_url = build_ticket_url(ticket["id"])
+    change_lines = [
+        f"- {change['label']}: {change['before']} → {change['after']}"
+        for change in changes
+    ]
+    if not change_lines:
+        if event_type == "created":
+            change_lines = ["- Ticket wurde erstellt."]
+        else:
+            change_lines = ["- Ticket wurde aktualisiert."]
+    timestamp = datetime.utcnow().strftime("%d.%m.%Y %H:%M UTC")
+    text_lines = [
+        f"Ticket #{ticket['id']} – {ticket['title']}",
+        f"Link: {ticket_url}",
         "",
-        f"Ticket: #{ticket['id']} - {ticket['title']}",
-        f"Status: {ticket.get('status')}",
-        f"Priorität: {ticket.get('priority')}",
-        f"Kategorie: {ticket.get('category_name') or 'Unbekannt'}",
-        f"Zuständig: {ticket.get('assignee') or '-'}",
+        f"Aktueller Status: {ticket.get('status') or 'Unbekannt'}",
+        f"Priorität: {ticket.get('priority') or 'Unbekannt'}",
+        f"Kategorie: {ticket.get('category_name') or 'Keine Kategorie'}",
+        f"Zuständig: {ticket.get('assignee') or 'Nicht zugewiesen'}",
         f"Fällig: {ticket.get('due_date') or '-'}",
+        f"Von: {ticket.get('created_by') or 'Unbekannt'}",
+        f"Geändert von: {actor}",
+        f"Zeitpunkt: {timestamp}",
+        "",
+        "Was hat sich geändert?",
+        *change_lines,
+    ]
+    if comment:
+        text_lines.extend([
+            "",
+            "Kommentar:",
+            truncate_text(comment, limit=800)
+        ])
+    text_lines.extend([
         "",
         "Beschreibung:",
         ticket.get('description') or "-"
-    ]
-    if comment:
-        lines.extend(["", "Neuer Kommentar:", comment])
-    return "\n".join(lines)
+    ])
+    text_body = "\n".join(text_lines)
 
-def trigger_ticket_notifications(db, event_type, ticket, comment=None):
+    escaped_title = html.escape(ticket.get("title") or "")
+    escaped_reason = html.escape(reason)
+    escaped_actor = html.escape(actor)
+    escaped_status = html.escape(ticket.get("status") or "Unbekannt")
+    escaped_priority = html.escape(ticket.get("priority") or "Unbekannt")
+    escaped_category = html.escape(ticket.get("category_name") or "Keine Kategorie")
+    escaped_assignee = html.escape(ticket.get("assignee") or "Nicht zugewiesen")
+    escaped_due = html.escape(ticket.get("due_date") or "-")
+    escaped_creator = html.escape(ticket.get("created_by") or "Unbekannt")
+    change_rows = "".join(
+        f"<tr>"
+        f"<td style='padding:6px 8px;border-bottom:1px solid #e2e8f0;'>{html.escape(change['label'])}</td>"
+        f"<td style='padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#64748b;'>{html.escape(str(change['before']))}</td>"
+        f"<td style='padding:6px 8px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#0f172a;'>{html.escape(str(change['after']))}</td>"
+        f"</tr>"
+        for change in changes
+    )
+    if not change_rows:
+        if event_type == "created":
+            empty_message = "Ticket wurde erstellt."
+        elif event_type == "commented":
+            empty_message = "Neuer Kommentar hinzugefügt."
+        else:
+            empty_message = "Ticket wurde aktualisiert."
+        change_rows = (
+            "<tr><td colspan='3' style='padding:8px;color:#64748b;'>"
+            f"{empty_message}"
+            "</td></tr>"
+        )
+    comment_html = ""
+    if comment:
+        comment_html = (
+            "<div style='margin-top:16px;padding:12px;border-radius:12px;"
+            "background:#f8fafc;border:1px solid #e2e8f0;'>"
+            f"<p style='margin:0 0 6px;font-weight:600;color:#0f172a;'>Kommentar</p>"
+            f"<p style='margin:0;color:#334155;white-space:pre-wrap;'>{html.escape(truncate_text(comment, limit=800))}</p>"
+            "</div>"
+        )
+    html_body = f"""
+    <div style="font-family:Arial, sans-serif;background:#f1f5f9;padding:24px;">
+      <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:16px;padding:24px;border:1px solid #e2e8f0;">
+        <p style="margin:0;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.2em;">InventoryPro</p>
+        <h1 style="margin:8px 0 4px;font-size:20px;color:#0f172a;">Ticket #{ticket['id']} – {escaped_reason}</h1>
+        <p style="margin:0 0 16px;color:#64748b;font-size:14px;">{escaped_title}</p>
+        <a href="{ticket_url}" style="display:inline-block;margin-bottom:16px;padding:10px 16px;background:#2563eb;color:white;text-decoration:none;border-radius:12px;font-size:14px;">Ticket öffnen</a>
+        <div style="margin-bottom:16px;border:1px solid #e2e8f0;border-radius:12px;padding:12px;background:#f8fafc;">
+          <p style="margin:0 0 8px;font-weight:600;color:#0f172a;">Aktueller Status</p>
+          <p style="margin:0;color:#334155;">Status: <strong>{escaped_status}</strong></p>
+          <p style="margin:4px 0;color:#334155;">Priorität: <strong>{escaped_priority}</strong></p>
+          <p style="margin:4px 0;color:#334155;">Kategorie: {escaped_category}</p>
+          <p style="margin:4px 0;color:#334155;">Zuständig: {escaped_assignee}</p>
+          <p style="margin:4px 0;color:#334155;">Fällig: {escaped_due}</p>
+          <p style="margin:4px 0;color:#334155;">Von: {escaped_creator}</p>
+          <p style="margin:8px 0 0;color:#94a3b8;font-size:12px;">Geändert von {escaped_actor} • {timestamp}</p>
+        </div>
+        <h2 style="margin:16px 0 8px;font-size:16px;color:#0f172a;">Was hat sich geändert?</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Feld</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Vorher</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Nachher</th>
+            </tr>
+          </thead>
+          <tbody>
+            {change_rows}
+          </tbody>
+        </table>
+        {comment_html}
+        <div style="margin-top:16px;">
+          <p style="margin:0 0 4px;font-weight:600;color:#0f172a;">Beschreibung</p>
+          <p style="margin:0;color:#334155;white-space:pre-wrap;">{html.escape(ticket.get('description') or '-')}</p>
+        </div>
+      </div>
+    </div>
+    """
+    return subject, text_body, html_body
+
+def get_ticket_creator_email(db, ticket):
+    creator_email = None
+    if ticket.get("created_by_user_id"):
+        row = db.execute(
+            'SELECT email FROM users WHERE id = ?',
+            (ticket["created_by_user_id"],)
+        ).fetchone()
+        creator_email = row["email"] if row and row["email"] else None
+    if not creator_email and ticket.get("created_by"):
+        row = db.execute(
+            'SELECT email FROM users WHERE username = ?',
+            (ticket["created_by"],)
+        ).fetchone()
+        creator_email = row["email"] if row and row["email"] else None
+    return creator_email
+
+def trigger_ticket_notifications(db, event_type, ticket, changes=None, actor=None, comment=None):
     settings = get_notification_settings(db)
     if not settings or not settings["enabled"]:
         return
-
-    recipients = []
-    recipients.extend(parse_email_list(settings["default_recipients"]))
-    recipients.extend(parse_email_list(ticket.get("requester_email")))
-    recipients.extend(parse_email_list(ticket.get("assignee_email")))
-
-    watcher_rows = db.execute('SELECT email FROM ticket_watchers WHERE ticket_id = ?', (ticket["id"],)).fetchall()
-    recipients.extend([row["email"] for row in watcher_rows])
-
-    alerts = db.execute('''
-        SELECT * FROM ticket_alerts
-        WHERE is_enabled = 1 AND event_type = ?
-    ''', (event_type,)).fetchall()
-
-    for alert in alerts:
-        if alert["status_match"] and alert["status_match"] != ticket.get("status"):
-            continue
-        if alert["priority_match"] and alert["priority_match"] != ticket.get("priority"):
-            continue
-        if alert["category_id"] and alert["category_id"] != ticket.get("category_id"):
-            continue
-        recipients.extend(parse_email_list(alert["recipient_emails"]))
-
-    unique_recipients = list(dict.fromkeys([email for email in recipients if email]))
-    if not unique_recipients:
+    creator_email = get_ticket_creator_email(db, ticket)
+    if not creator_email:
+        app.logger.info("Ticket %s: Keine Ersteller-E-Mail hinterlegt, Mailversand übersprungen.", ticket["id"])
         return
-
-    subject = format_ticket_subject(ticket, "Ticket Update")
-    header = f"Es gibt ein Update zum Ticket {ticket['id']}."
-    if event_type == "created":
-        header = f"Ein neues Ticket wurde erstellt."
-        subject = format_ticket_subject(ticket, "Neues Ticket")
-    elif event_type == "commented":
-        header = "Es gibt einen neuen Kommentar."
-        subject = format_ticket_subject(ticket, "Kommentar erhalten")
-    elif event_type == "status_changed":
-        header = f"Der Status wurde auf '{ticket.get('status')}' geändert."
-        subject = format_ticket_subject(ticket, "Status geändert")
-
-    body = build_ticket_email_body(ticket, header, comment=comment)
-    send_notification_email(settings, unique_recipients, subject, body)
+    subject, text_body, html_body = render_ticket_email(
+        event_type,
+        ticket,
+        changes=changes,
+        actor=actor,
+        comment=comment,
+    )
+    send_notification_email(settings, [creator_email], subject, text_body, html_body=html_body)
 
 def fetch_ticket(db, ticket_id):
     ticket = db.execute('''
@@ -2092,6 +5649,133 @@ def build_asset_summary(db, asset_row, device_rows=None):
     asset['warranty_status'] = warranty_status(asset.get("warranty_end"))
     return asset
 
+def fetch_asset_assignment_history(db, asset_id, limit=20):
+    query = '''
+        SELECT ah.*, u.username as assigned_user, t.name as assigned_team, cu.username as created_by
+        FROM asset_assignment_history ah
+        LEFT JOIN users u ON u.id = ah.assigned_to_user_id
+        LEFT JOIN teams t ON t.id = ah.assigned_to_team_id
+        LEFT JOIN users cu ON cu.id = ah.created_by_user_id
+        WHERE ah.asset_id = ?
+        ORDER BY ah.created_at DESC, ah.id DESC
+    '''
+    params = [asset_id]
+    if limit:
+        query += ' LIMIT ?'
+        params.append(limit)
+    rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+def fetch_current_asset_assignment(db, asset_id):
+    row = db.execute('''
+        SELECT ah.*, u.username as assigned_user, t.name as assigned_team
+        FROM asset_assignment_history ah
+        LEFT JOIN users u ON u.id = ah.assigned_to_user_id
+        LEFT JOIN teams t ON t.id = ah.assigned_to_team_id
+        WHERE ah.asset_id = ?
+        ORDER BY ah.created_at DESC, ah.id DESC
+        LIMIT 1
+    ''', (asset_id,)).fetchone()
+    return dict(row) if row else None
+
+def normalize_attachment_filename(filename):
+    safe_name = secure_filename(filename or "")
+    return safe_name or "attachment"
+
+def is_attachment_extension_allowed(filename):
+    extension = Path(filename).suffix.lower()
+    if extension in BLOCKED_ATTACHMENT_EXTENSIONS:
+        return False
+    return extension in ALLOWED_ATTACHMENT_EXTENSIONS
+
+def build_attachment_storage_path(entity_type, entity_id):
+    target_dir = UPLOADS_DIR / "attachments" / entity_type / str(entity_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    return target_dir
+
+def store_attachment_file(file_storage, entity_type, entity_id):
+    if not file_storage:
+        return None, "Keine Datei hochgeladen."
+    if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
+        return None, "Datei ist zu groß."
+    original_filename = normalize_attachment_filename(file_storage.filename)
+    if not is_attachment_extension_allowed(original_filename):
+        return None, "Dateityp ist nicht erlaubt."
+    extension = Path(original_filename).suffix.lower()
+    stored_filename = f"{secrets.token_hex(16)}{extension}"
+    target_dir = build_attachment_storage_path(entity_type, entity_id)
+    file_path = target_dir / stored_filename
+    file_storage.save(file_path)
+    size_bytes = file_path.stat().st_size
+    if size_bytes > MAX_UPLOAD_BYTES:
+        file_path.unlink(missing_ok=True)
+        return None, "Datei ist zu groß."
+    antivirus_error = validate_import_file(file_path)
+    if antivirus_error:
+        file_path.unlink(missing_ok=True)
+        return None, antivirus_error
+    return {
+        "original_filename": original_filename,
+        "stored_filename": stored_filename,
+        "mime_type": file_storage.mimetype,
+        "size_bytes": size_bytes,
+        "file_path": file_path,
+    }, None
+
+def serialize_attachment(row):
+    entry = dict(row)
+    entry["download_url"] = f"/attachments/{entry['id']}/download"
+    return entry
+
+def resolve_assignment_target(db, user_id, team_id):
+    if user_id and team_id:
+        return None, None, "Bitte nur Benutzer oder Team wählen."
+    if not user_id and not team_id:
+        return None, None, "Zielperson oder Team ist erforderlich."
+    if user_id:
+        user_row = db.execute('SELECT id FROM users WHERE id = ?', (user_id,)).fetchone()
+        if not user_row:
+            return None, None, "Benutzer nicht gefunden."
+    if team_id:
+        team_row = db.execute('SELECT id FROM teams WHERE id = ?', (team_id,)).fetchone()
+        if not team_row:
+            return None, None, "Team nicht gefunden."
+    return user_id, team_id, None
+
+def validate_assignment_transition(current_status, action):
+    if action == "checkin" and current_status != "checked_out":
+        return "Asset ist nicht ausgecheckt."
+    if action in {"assign", "checkout", "unassign"} and current_status == "checked_out":
+        return "Asset ist ausgecheckt. Bitte zuerst einchecken."
+    if action == "checkout" and current_status == "checked_out":
+        return "Asset ist bereits ausgecheckt."
+    return None
+
+def ensure_attachment_entity_access(db, entity_type, entity_id, access):
+    if entity_type == "asset":
+        asset = db.execute('SELECT id FROM assets WHERE id = ?', (entity_id,)).fetchone()
+        if not asset:
+            return None, ("Asset nicht gefunden", 404)
+        if not (access["is_superuser"] or "assets.view" in access["permissions"] or "assets.manage" in access["permissions"]):
+            return None, ("Keine Berechtigung", 403)
+        return dict(asset), None
+    if entity_type == "ticket":
+        ticket_row = db.execute('SELECT * FROM tickets WHERE id = ?', (entity_id,)).fetchone()
+        if not ticket_row:
+            return None, ("Ticket nicht gefunden", 404)
+        ticket = dict(ticket_row)
+        if not ensure_ticket_access(ticket, access):
+            return None, ("Keine Berechtigung", 403)
+        return ticket, None
+    if entity_type == "maintenance":
+        task = db.execute('SELECT id, device_id FROM maintenance_tasks WHERE id = ?', (entity_id,)).fetchone()
+        if not task:
+            return None, ("Wartungsaufgabe nicht gefunden", 404)
+        if not (access["is_superuser"] or "maintenance.view" in access["permissions"] or "maintenance.manage" in access["permissions"]):
+            return None, ("Keine Berechtigung", 403)
+        return dict(task), None
+    return None, ("Ungültiger Typ", 400)
+
 def fetch_ticket_assets(db, ticket_id):
     rows = db.execute('''
         SELECT a.*
@@ -2131,6 +5815,81 @@ def serialize_ad_settings(settings):
         "domain": settings["domain"] or "",
         "use_ssl": bool(settings["use_ssl"]),
         "has_bind_password": bool(settings["bind_password"])
+    }
+
+def get_server_settings(db):
+    settings = db.execute('SELECT * FROM server_settings WHERE id = 1').fetchone()
+    if not settings:
+        db.execute('INSERT INTO server_settings (id) VALUES (1)')
+        db.commit()
+        settings = db.execute('SELECT * FROM server_settings WHERE id = 1').fetchone()
+    return settings
+
+def serialize_server_settings_flat(settings):
+    if not settings:
+        return {
+            "host": DEFAULT_SERVER_SETTINGS["server"]["host"],
+            "port": DEFAULT_SERVER_SETTINGS["server"]["port"],
+            "debug": DEFAULT_SERVER_SETTINGS["server"]["debug"],
+            "pro_enabled": DEFAULT_SERVER_SETTINGS["proFeaturesEnabled"],
+            "backup_enabled": DEFAULT_SERVER_SETTINGS["backup"]["enabled"],
+            "backup_schedule": DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
+            "backup_time": DEFAULT_SERVER_SETTINGS["backup"]["time"],
+            "backup_retention_days": DEFAULT_SERVER_SETTINGS["backup"]["retentionDays"],
+            "backup_location": DEFAULT_SERVER_SETTINGS["backup"]["directory"],
+            "backup_compress": DEFAULT_SERVER_SETTINGS["backup"]["compress"],
+            "backup_encrypt": DEFAULT_SERVER_SETTINGS["backup"]["encrypt"],
+            "backup_notify_email": DEFAULT_SERVER_SETTINGS["backup"]["notifyEmail"],
+            "allow_db_import": DEFAULT_SERVER_SETTINGS["importExport"]["importAllowed"],
+            "allow_db_export": DEFAULT_SERVER_SETTINGS["importExport"]["exportAllowed"],
+            "export_format": DEFAULT_SERVER_SETTINGS["importExport"]["exportFormat"],
+            "import_mode": DEFAULT_SERVER_SETTINGS["importExport"]["importMode"],
+            "include_uploads": DEFAULT_SERVER_SETTINGS["importExport"]["includeUploads"],
+            "require_https": DEFAULT_SERVER_SETTINGS["security"]["forceHttps"],
+            "session_timeout_minutes": DEFAULT_SERVER_SETTINGS["security"]["sessionTimeoutMinutes"],
+            "max_failed_logins": DEFAULT_SERVER_SETTINGS["security"]["maxFailedAttempts"],
+            "lockout_minutes": DEFAULT_SERVER_SETTINGS["security"]["lockoutMinutes"],
+            "allowed_ip_ranges": "",
+            "password_min_length": DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"],
+            "enforce_mfa": DEFAULT_SERVER_SETTINGS["security"]["requireMfa"],
+            "terminal_enabled": DEFAULT_SERVER_SETTINGS["terminal"]["enabled"],
+            "terminal_require_reauth": DEFAULT_SERVER_SETTINGS["terminal"]["requireReauth"],
+            "terminal_ip_allowlist": "",
+            "terminal_allow_db_write": DEFAULT_SERVER_SETTINGS["terminal"]["allowDbWrite"],
+            "terminal_allow_service_restart": DEFAULT_SERVER_SETTINGS["terminal"]["allowServiceRestart"],
+            "terminal_break_glass": DEFAULT_SERVER_SETTINGS["terminal"]["breakGlassMode"]
+        }
+    return {
+        "host": settings["host"] or DEFAULT_SERVER_SETTINGS["server"]["host"],
+        "port": settings["port"] or DEFAULT_SERVER_SETTINGS["server"]["port"],
+        "debug": bool(settings["debug_mode"]),
+        "pro_enabled": bool(settings["pro_enabled"]),
+        "backup_enabled": bool(settings["backup_enabled"]),
+        "backup_schedule": settings["backup_schedule"] or DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
+        "backup_time": settings["backup_time"] or DEFAULT_SERVER_SETTINGS["backup"]["time"],
+        "backup_retention_days": settings["backup_retention_days"] or DEFAULT_SERVER_SETTINGS["backup"]["retentionDays"],
+        "backup_location": settings["backup_location"] or DEFAULT_SERVER_SETTINGS["backup"]["directory"],
+        "backup_compress": bool(settings["backup_compress"]),
+        "backup_encrypt": bool(settings["backup_encrypt"]),
+        "backup_notify_email": settings["backup_notify_email"] or "",
+        "allow_db_import": bool(settings["allow_db_import"]),
+        "allow_db_export": bool(settings["allow_db_export"]),
+        "export_format": settings["export_format"] or DEFAULT_SERVER_SETTINGS["importExport"]["exportFormat"],
+        "import_mode": settings["import_mode"] or DEFAULT_SERVER_SETTINGS["importExport"]["importMode"],
+        "include_uploads": bool(settings["include_uploads"]),
+        "require_https": bool(settings["require_https"]),
+        "session_timeout_minutes": settings["session_timeout_minutes"] or DEFAULT_SERVER_SETTINGS["security"]["sessionTimeoutMinutes"],
+        "max_failed_logins": settings["max_failed_logins"] or DEFAULT_SERVER_SETTINGS["security"]["maxFailedAttempts"],
+        "lockout_minutes": settings["lockout_minutes"] or DEFAULT_SERVER_SETTINGS["security"]["lockoutMinutes"],
+        "allowed_ip_ranges": settings["allowed_ip_ranges"] or "",
+        "password_min_length": settings["password_min_length"] or DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"],
+        "enforce_mfa": bool(settings["enforce_mfa"]),
+        "terminal_enabled": bool(settings["terminal_enabled"]),
+        "terminal_require_reauth": bool(settings["terminal_require_reauth"]),
+        "terminal_ip_allowlist": settings["terminal_ip_allowlist"] or "",
+        "terminal_allow_db_write": bool(settings["terminal_allow_db_write"]),
+        "terminal_allow_service_restart": bool(settings["terminal_allow_service_restart"]),
+        "terminal_break_glass": bool(settings["terminal_break_glass"])
     }
 
 def domain_to_base_dn(domain):
@@ -2242,14 +6001,28 @@ def login():
         password = request.form.get('password')
 
         db = get_db()
+        settings, _ = serialize_server_settings(get_server_settings(db))
+        security = settings["security"]
+        if is_user_locked(db, username):
+            log_activity(db, "login_locked", "user", details={"username": username})
+            db.commit()
+            return render_template('login.html', error="Account ist gesperrt. Bitte später erneut versuchen.")
         user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
 
         if user and check_password_hash(user['password_hash'], password):
+            if security["requireMfa"] and not user['otp_secret']:
+                log_activity(db, "login_failed_mfa", "user", user['id'], {"username": username})
+                db.commit()
+                return render_template('login.html', error="MFA ist erforderlich. Bitte OTP zuerst aktivieren.")
             session['logged_in'] = True
             session['username'] = username
+            session['mfa_verified'] = not security["requireMfa"]
             access = get_user_access(db)
             log_activity(db, "login", "user", user['id'], {"username": username})
+            clear_login_failures(db, username)
             db.commit()
+            if security["requireMfa"]:
+                return redirect(url_for("verify"))
             return redirect(get_post_login_redirect(access))
 
         ad_settings = get_ad_settings(db)
@@ -2260,13 +6033,24 @@ def login():
                 cursor = db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, placeholder_password))
                 assign_user_role(db, cursor.lastrowid, DEFAULT_ROLE_NAME)
                 existing_user = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+            if security["requireMfa"]:
+                user = db.execute('SELECT otp_secret FROM users WHERE username = ?', (username,)).fetchone()
+                if not user or not user['otp_secret']:
+                    log_activity(db, "login_failed_mfa", "user", details={"username": username, "source": "ad"})
+                    db.commit()
+                    return render_template('login.html', error="MFA ist erforderlich. Bitte OTP zuerst aktivieren.")
             session['logged_in'] = True
             session['username'] = username
+            session['mfa_verified'] = not security["requireMfa"]
             access = get_user_access(db)
             log_activity(db, "login", "user", existing_user['id'], {"username": username, "source": "ad"})
+            clear_login_failures(db, username)
             db.commit()
+            if security["requireMfa"]:
+                return redirect(url_for("verify"))
             return redirect(get_post_login_redirect(access))
 
+        record_login_failure(db, username, security["maxFailedAttempts"], security["lockoutMinutes"])
         log_activity(db, "login_failed", "user", details={"username": username})
         db.commit()
         return render_template('login.html', error="Ungültige Anmeldedaten")
@@ -2313,6 +6097,35 @@ def users_page():
     access = get_user_access(get_db())
     return render_template('users.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
+@app.route('/settings')
+@login_required
+@require_permission('server_settings.manage')
+def server_settings_page():
+    access = get_user_access(get_db())
+    initial_section = request.args.get("section") or "server"
+    return render_template(
+        'server_settings.html',
+        username=session.get('username'),
+        permissions=sorted(access["permissions"]),
+        is_superuser=access["is_superuser"],
+        initial_section=initial_section
+    )
+
+@app.route('/settings/terminal')
+@login_required
+@require_permission('server_settings.manage')
+def terminal_settings_page():
+    access = get_user_access(get_db())
+    if not (access["is_superuser"] or "terminal.view" in access["permissions"]):
+        return ("", 403)
+    return render_template(
+        'server_settings.html',
+        username=session.get('username'),
+        permissions=sorted(access["permissions"]),
+        is_superuser=access["is_superuser"],
+        initial_section="terminal"
+    )
+
 @app.route('/locations')
 @login_required
 @require_permissions('locations.view', 'locations.manage')
@@ -2354,6 +6167,13 @@ def dependencies_page():
 def time_machine_page():
     access = get_user_access(get_db())
     return render_template('time_machine.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
+@app.route('/health')
+@login_required
+@require_permissions('health.view', 'health.manage', 'health.run')
+def health_page():
+    access = get_user_access(get_db())
+    return render_template('health.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/api/categories/<int:category_id>', methods=['PUT', 'DELETE'])
 @login_required
@@ -2640,6 +6460,11 @@ def asset_detail(asset_id):
         ''', (asset_id,)).fetchall()
         asset = build_asset_summary(db, asset_row, device_rows=[dict(row) for row in device_rows])
         asset['devices'] = [dict(row) for row in device_rows]
+        asset["assignment"] = fetch_current_asset_assignment(db, asset_id)
+        if user_can("asset.view_history"):
+            asset["assignment_history"] = fetch_asset_assignment_history(db, asset_id)
+        else:
+            asset["assignment_history"] = []
         relation_rows = db.execute('''
             SELECT ar.id, ar.asset_id, ar.related_asset_id, ar.relation_type_id,
                    rt.name as relation_type_name,
@@ -2735,6 +6560,350 @@ def asset_detail(asset_id):
     db.execute('DELETE FROM asset_relations WHERE asset_id = ? OR related_asset_id = ?', (asset_id, asset_id))
     db.execute('DELETE FROM assets WHERE id = ?', (asset_id,))
     log_activity(db, "delete", "asset", asset_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/assets/<int:asset_id>/history', methods=['GET'])
+@login_required
+@require_permission('asset.view_history')
+def asset_assignment_history(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset nicht gefunden"}), 404
+    history = fetch_asset_assignment_history(db, asset_id)
+    return jsonify(history)
+
+@app.route('/assets/<int:asset_id>/assign', methods=['POST'])
+@login_required
+@require_permission('asset.assign')
+def assign_asset(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset nicht gefunden"}), 404
+    data = request.get_json() or {}
+    assigned_to_user_id = data.get("assigned_to_user_id")
+    assigned_to_team_id = data.get("assigned_to_team_id")
+    note = (data.get("note") or "").strip()
+    current = fetch_current_asset_assignment(db, asset_id)
+    transition_error = validate_assignment_transition(current["status"] if current else None, "assign")
+    if transition_error:
+        return jsonify({"error": transition_error}), 400
+    assigned_to_user_id, assigned_to_team_id, error = resolve_assignment_target(
+        db,
+        assigned_to_user_id,
+        assigned_to_team_id,
+    )
+    if error:
+        return jsonify({"error": error}), 400
+    status = "assigned"
+    if current and (
+        current.get("assigned_to_user_id") != assigned_to_user_id
+        or current.get("assigned_to_team_id") != assigned_to_team_id
+    ):
+        status = "transferred"
+    created_by_user_id = get_current_user_id(db)
+    now = datetime.utcnow().isoformat()
+    db.execute('''
+        INSERT INTO asset_assignment_history (
+            asset_id, assigned_to_user_id, assigned_to_team_id, status, note, created_by_user_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        asset_id,
+        assigned_to_user_id,
+        assigned_to_team_id,
+        status,
+        note,
+        created_by_user_id,
+        now
+    ))
+    log_activity(db, "ASSET_ASSIGNED", "asset", asset_id, {
+        "assigned_to_user_id": assigned_to_user_id,
+        "assigned_to_team_id": assigned_to_team_id,
+        "status": status,
+        "note": note
+    })
+    db.commit()
+    return jsonify({
+        "status": "ok",
+        "assignment": fetch_current_asset_assignment(db, asset_id),
+        "history": fetch_asset_assignment_history(db, asset_id),
+    }), 200
+
+@app.route('/assets/<int:asset_id>/checkout', methods=['POST'])
+@login_required
+@require_permission('asset.checkout')
+def checkout_asset(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset nicht gefunden"}), 404
+    data = request.get_json() or {}
+    assigned_to_user_id = data.get("assigned_to_user_id")
+    assigned_to_team_id = data.get("assigned_to_team_id")
+    due_at = (data.get("due_at") or "").strip() or None
+    note = (data.get("note") or "").strip()
+    current = fetch_current_asset_assignment(db, asset_id)
+    transition_error = validate_assignment_transition(current["status"] if current else None, "checkout")
+    if transition_error:
+        return jsonify({"error": transition_error}), 400
+    assigned_to_user_id, assigned_to_team_id, error = resolve_assignment_target(
+        db,
+        assigned_to_user_id,
+        assigned_to_team_id,
+    )
+    if error:
+        return jsonify({"error": error}), 400
+    created_by_user_id = get_current_user_id(db)
+    now = datetime.utcnow().isoformat()
+    db.execute('''
+        INSERT INTO asset_assignment_history (
+            asset_id, assigned_to_user_id, assigned_to_team_id, status,
+            checked_out_at, due_at, note, created_by_user_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        asset_id,
+        assigned_to_user_id,
+        assigned_to_team_id,
+        "checked_out",
+        now,
+        due_at,
+        note,
+        created_by_user_id,
+        now
+    ))
+    log_activity(db, "ASSET_CHECKED_OUT", "asset", asset_id, {
+        "assigned_to_user_id": assigned_to_user_id,
+        "assigned_to_team_id": assigned_to_team_id,
+        "due_at": due_at,
+        "note": note
+    })
+    from pondsec_ai.events import emit_event
+    emit_event(db, "asset.checked_out", "asset", asset_id, {"assignee": assigned_to_user_id or assigned_to_team_id, "due_date": due_at})
+    db.commit()
+    return jsonify({
+        "status": "ok",
+        "assignment": fetch_current_asset_assignment(db, asset_id),
+        "history": fetch_asset_assignment_history(db, asset_id),
+    }), 200
+
+@app.route('/assets/<int:asset_id>/checkin', methods=['POST'])
+@login_required
+@require_permission('asset.checkin')
+def checkin_asset(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset nicht gefunden"}), 404
+    data = request.get_json() or {}
+    note = (data.get("note") or "").strip()
+    current = fetch_current_asset_assignment(db, asset_id)
+    transition_error = validate_assignment_transition(current["status"] if current else None, "checkin")
+    if transition_error:
+        return jsonify({"error": transition_error}), 400
+    created_by_user_id = get_current_user_id(db)
+    now = datetime.utcnow().isoformat()
+    db.execute('''
+        INSERT INTO asset_assignment_history (
+            asset_id, assigned_to_user_id, assigned_to_team_id, status,
+            checked_in_at, note, created_by_user_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        asset_id,
+        current.get("assigned_to_user_id") if current else None,
+        current.get("assigned_to_team_id") if current else None,
+        "checked_in",
+        now,
+        note,
+        created_by_user_id,
+        now
+    ))
+    log_activity(db, "ASSET_CHECKED_IN", "asset", asset_id, {
+        "note": note
+    })
+    db.commit()
+    return jsonify({
+        "status": "ok",
+        "assignment": fetch_current_asset_assignment(db, asset_id),
+        "history": fetch_asset_assignment_history(db, asset_id),
+    }), 200
+
+@app.route('/assets/<int:asset_id>/unassign', methods=['POST'])
+@login_required
+@require_permission('asset.assign')
+def unassign_asset(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset nicht gefunden"}), 404
+    data = request.get_json() or {}
+    note = (data.get("note") or "").strip()
+    current = fetch_current_asset_assignment(db, asset_id)
+    transition_error = validate_assignment_transition(current["status"] if current else None, "unassign")
+    if transition_error:
+        return jsonify({"error": transition_error}), 400
+    created_by_user_id = get_current_user_id(db)
+    now = datetime.utcnow().isoformat()
+    db.execute('''
+        INSERT INTO asset_assignment_history (
+            asset_id, assigned_to_user_id, assigned_to_team_id, status, note, created_by_user_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        asset_id,
+        None,
+        None,
+        "unassigned",
+        note,
+        created_by_user_id,
+        now
+    ))
+    log_activity(db, "ASSET_UNASSIGNED", "asset", asset_id, {"note": note})
+    db.commit()
+    return jsonify({
+        "status": "ok",
+        "assignment": fetch_current_asset_assignment(db, asset_id),
+        "history": fetch_asset_assignment_history(db, asset_id),
+    }), 200
+
+@app.route('/api/asset-assignments/options', methods=['GET'])
+@login_required
+@require_permissions('asset.assign', 'asset.checkout')
+def asset_assignment_options():
+    db = get_db()
+    users = db.execute('SELECT id, username FROM users ORDER BY username').fetchall()
+    teams = db.execute('SELECT id, name FROM teams ORDER BY name').fetchall()
+    return jsonify({
+        "users": [dict(row) for row in users],
+        "teams": [dict(row) for row in teams],
+    })
+
+@app.route('/attachments', methods=['GET'])
+@login_required
+@require_permission('attachment.download')
+def list_attachments():
+    db = get_db()
+    entity_type = (request.args.get("entity_type") or "").strip()
+    entity_id = request.args.get("entity_id", type=int)
+    if not entity_type or not entity_id:
+        return jsonify({"error": "Entität fehlt"}), 400
+    access = get_user_access(db)
+    _, error = ensure_attachment_entity_access(db, entity_type, entity_id, access)
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    rows = db.execute('''
+        SELECT a.*, u.username as uploaded_by
+        FROM attachments a
+        LEFT JOIN users u ON u.id = a.uploaded_by_user_id
+        WHERE a.entity_type = ? AND a.entity_id = ? AND a.deleted_at IS NULL
+        ORDER BY a.created_at DESC
+    ''', (entity_type, entity_id)).fetchall()
+    return jsonify([serialize_attachment(row) for row in rows])
+
+@app.route('/attachments/upload', methods=['POST'])
+@login_required
+@require_permission('attachment.upload')
+def upload_attachment():
+    db = get_db()
+    entity_type = (request.form.get("entity_type") or "").strip()
+    entity_id = request.form.get("entity_id", type=int)
+    if not entity_type or not entity_id:
+        return jsonify({"error": "Entität fehlt"}), 400
+    access = get_user_access(db)
+    _, error = ensure_attachment_entity_access(db, entity_type, entity_id, access)
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    file_storage = request.files.get("file")
+    payload, error_message = store_attachment_file(file_storage, entity_type, entity_id)
+    if error_message:
+        return jsonify({"error": error_message}), 400
+    user_id = get_current_user_id(db)
+    cursor = db.execute('''
+        INSERT INTO attachments (
+            entity_type, entity_id, original_filename, stored_filename, mime_type, size_bytes, uploaded_by_user_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        entity_type,
+        entity_id,
+        payload["original_filename"],
+        payload["stored_filename"],
+        payload["mime_type"],
+        payload["size_bytes"],
+        user_id
+    ))
+    attachment_id = cursor.lastrowid
+    log_activity(db, "ATTACHMENT_UPLOADED", "attachment", attachment_id, {
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "filename": payload["original_filename"]
+    })
+    db.commit()
+    row = db.execute('''
+        SELECT a.*, u.username as uploaded_by
+        FROM attachments a
+        LEFT JOIN users u ON u.id = a.uploaded_by_user_id
+        WHERE a.id = ?
+    ''', (attachment_id,)).fetchone()
+    return jsonify(serialize_attachment(row)), 201
+
+@app.route('/attachments/<int:attachment_id>/download', methods=['GET'])
+@login_required
+@require_permission('attachment.download')
+def download_attachment(attachment_id):
+    db = get_db()
+    row = db.execute('''
+        SELECT *
+        FROM attachments
+        WHERE id = ? AND deleted_at IS NULL
+    ''', (attachment_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Anhang nicht gefunden"}), 404
+    access = get_user_access(db)
+    _, error = ensure_attachment_entity_access(db, row["entity_type"], row["entity_id"], access)
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    file_path = UPLOADS_DIR / "attachments" / row["entity_type"] / str(row["entity_id"]) / row["stored_filename"]
+    if not file_path.exists():
+        return jsonify({"error": "Datei nicht gefunden"}), 404
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=row["original_filename"],
+        mimetype=row["mime_type"] or "application/octet-stream",
+    )
+
+@app.route('/attachments/<int:attachment_id>/delete', methods=['POST'])
+@login_required
+@require_permission('attachment.delete')
+def delete_attachment(attachment_id):
+    db = get_db()
+    row = db.execute('''
+        SELECT *
+        FROM attachments
+        WHERE id = ? AND deleted_at IS NULL
+    ''', (attachment_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Anhang nicht gefunden"}), 404
+    access = get_user_access(db)
+    _, error = ensure_attachment_entity_access(db, row["entity_type"], row["entity_id"], access)
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    deleted_at = datetime.utcnow().isoformat()
+    db.execute('UPDATE attachments SET deleted_at = ? WHERE id = ?', (deleted_at, attachment_id))
+    log_activity(db, "ATTACHMENT_DELETED", "attachment", attachment_id, {
+        "entity_type": row["entity_type"],
+        "entity_id": row["entity_id"],
+        "filename": row["original_filename"]
+    })
     db.commit()
     return jsonify({"status": "deleted"}), 200
 
@@ -3579,6 +7748,395 @@ def single_points():
         return jsonify({"error": "Keine Berechtigung"}), 403
     return jsonify(calculate_spof_nodes(db))
 
+@app.route('/api/health/summary', methods=['GET'])
+@login_required
+@require_permissions('health.view', 'health.manage', 'health.run')
+def health_summary():
+    db = get_db()
+    latest_results = fetch_latest_health_results(db)
+    statuses = [row["status"] for row in latest_results]
+    overall_status = worst_health_status(statuses)
+    last_updated = None
+    if latest_results:
+        last_updated = max(row["observed_at"] for row in latest_results)
+    status_counts = {status: 0 for status in HEALTH_STATUS_ORDER.keys()}
+    for row in latest_results:
+        status_counts[normalize_health_status(row["status"])] += 1
+
+    services_results = [row for row in latest_results if row["check_type"] in ("service_unit", "process")]
+    services_status = worst_health_status([row["status"] for row in services_results]) if services_results else "UNKNOWN"
+
+    summary_cards = [
+        {
+            "key": "services",
+            "label": "Services",
+            "status": services_status
+        }
+    ]
+
+    def card_for(check_type, label, metric_key=None):
+        match = next((row for row in latest_results if row["check_type"] == check_type), None)
+        if not match:
+            return {"key": check_type, "label": label, "status": "UNKNOWN"}
+        metrics = safe_json_load(match["metrics_json"], default={})
+        return {
+            "key": check_type,
+            "label": label,
+            "status": match["status"],
+            "metric": metrics.get(metric_key) if metric_key else None
+        }
+
+    summary_cards.extend([
+        card_for("cpu_load", "CPU/Load", "load1"),
+        card_for("memory", "Memory", "mem_used_percent"),
+        card_for("disk", "Disk", "used_percent"),
+        card_for("db_ping", "DB", "latency_ms"),
+        card_for("internet", "Network", "latency_ms")
+    ])
+
+    events = db.execute(
+        '''
+        SELECT e.*, d.name
+        FROM health_events e
+        JOIN health_check_definitions d ON d.id = e.check_id
+        ORDER BY e.observed_at DESC
+        LIMIT 8
+        '''
+    ).fetchall()
+    incidents = db.execute(
+        '''
+        SELECT i.*, d.name
+        FROM health_incidents i
+        JOIN health_check_definitions d ON d.id = i.check_id
+        WHERE i.status = 'open'
+        ORDER BY i.opened_at DESC
+        '''
+    ).fetchall()
+
+    return jsonify({
+        "overall_status": overall_status,
+        "last_updated": last_updated,
+        "counts": status_counts,
+        "summary_cards": summary_cards,
+        "events": [dict(row) for row in events],
+        "incidents": [dict(row) for row in incidents]
+    })
+
+@app.route('/api/health/services', methods=['GET'])
+@login_required
+@require_permissions('health.view', 'health.manage', 'health.run')
+def health_services():
+    db = get_db()
+    latest_results = fetch_latest_health_results(db)
+    services = []
+    for row in latest_results:
+        if row["check_type"] not in ("service_unit", "process"):
+            continue
+        details = safe_json_load(row["details_json"], default={})
+        metrics = safe_json_load(row["metrics_json"], default={})
+        services.append({
+            "check_id": row["check_id"],
+            "name": row["name"],
+            "status": row["status"],
+            "uptime": details.get("active_since"),
+            "last_restart": details.get("active_since"),
+            "last_exit": details.get("last_exit"),
+            "metrics": metrics
+        })
+    return jsonify({"services": services})
+
+@app.route('/api/health/checks', methods=['GET', 'POST'])
+@login_required
+def health_checks():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('health.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get("name") or "").strip()
+        check_type = (data.get("check_type") or "").strip()
+        category = (data.get("category") or "Custom").strip()
+        interval_seconds = int(data.get("interval_seconds") or 60)
+        timeout_seconds = int(data.get("timeout_seconds") or 10)
+        enabled = 1 if data.get("enabled", True) else 0
+        config = data.get("config") or {}
+        if not name or not check_type:
+            return jsonify({"error": "Name und Check-Typ sind erforderlich"}), 400
+        slug_base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or f"check-{secrets.token_hex(2)}"
+        slug = slug_base
+        while db.execute("SELECT 1 FROM health_check_definitions WHERE slug = ?", (slug,)).fetchone():
+            slug = f"{slug_base}-{secrets.token_hex(2)}"
+        cursor = db.execute(
+            '''
+            INSERT INTO health_check_definitions (
+                name, slug, category, check_type, config_json,
+                interval_seconds, timeout_seconds, enabled
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                name,
+                slug,
+                category,
+                check_type,
+                json.dumps(config),
+                interval_seconds,
+                timeout_seconds,
+                enabled
+            )
+        )
+        db.commit()
+        new_row = db.execute(
+            "SELECT * FROM health_check_definitions WHERE id = ?",
+            (cursor.lastrowid,)
+        ).fetchone()
+        return jsonify({"check": serialize_health_definition(new_row)}), 201
+
+    if not (user_can('health.view') or user_can('health.manage') or user_can('health.run')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('SELECT * FROM health_check_definitions ORDER BY category, name').fetchall()
+    return jsonify({"checks": [serialize_health_definition(row) for row in rows]})
+
+@app.route('/api/health/checks/<int:check_id>', methods=['GET', 'PATCH'])
+@login_required
+def health_check_detail(check_id):
+    db = get_db()
+    row = db.execute('SELECT * FROM health_check_definitions WHERE id = ?', (check_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Check nicht gefunden"}), 404
+    if request.method == 'PATCH':
+        if not user_can('health.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        updates = {
+            "name": data.get("name", row["name"]),
+            "category": data.get("category", row["category"]),
+            "check_type": data.get("check_type", row["check_type"]),
+            "interval_seconds": int(data.get("interval_seconds") or row["interval_seconds"] or 60),
+            "timeout_seconds": int(data.get("timeout_seconds") or row["timeout_seconds"] or 10),
+            "enabled": 1 if data.get("enabled", row["enabled"]) else 0,
+            "config_json": json.dumps(data.get("config") or safe_json_load(row["config_json"]))
+        }
+        db.execute(
+            '''
+            UPDATE health_check_definitions
+            SET name = ?, category = ?, check_type = ?, interval_seconds = ?,
+                timeout_seconds = ?, enabled = ?, config_json = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            ''',
+            (
+                updates["name"],
+                updates["category"],
+                updates["check_type"],
+                updates["interval_seconds"],
+                updates["timeout_seconds"],
+                updates["enabled"],
+                updates["config_json"],
+                check_id
+            )
+        )
+        db.commit()
+        row = db.execute('SELECT * FROM health_check_definitions WHERE id = ?', (check_id,)).fetchone()
+        return jsonify({"check": serialize_health_definition(row)})
+
+    if not (user_can('health.view') or user_can('health.manage') or user_can('health.run')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    results = db.execute(
+        '''
+        SELECT r.*, d.name, d.slug, d.category, d.check_type
+        FROM health_check_results r
+        JOIN health_check_definitions d ON d.id = r.check_id
+        WHERE r.check_id = ?
+        ORDER BY r.observed_at DESC
+        LIMIT 20
+        ''',
+        (check_id,)
+    ).fetchall()
+    events = db.execute(
+        '''
+        SELECT *
+        FROM health_events
+        WHERE check_id = ?
+        ORDER BY observed_at DESC
+        LIMIT 20
+        ''',
+        (check_id,)
+    ).fetchall()
+    return jsonify({
+        "check": serialize_health_definition(row),
+        "results": [serialize_health_result(result) for result in results],
+        "events": [dict(event) for event in events]
+    })
+
+@app.route('/api/health/run', methods=['POST'])
+@login_required
+@require_permission('health.run')
+def health_run_now():
+    db = get_db()
+    data = request.get_json() or {}
+    check_ids = data.get("check_ids")
+    if check_ids:
+        check_ids = [int(item) for item in check_ids]
+    cursor = db.execute(
+        '''
+        INSERT INTO health_check_runs (started_at, status, triggered_by, initiated_by)
+        VALUES (?, 'queued', 'manual', ?)
+        ''',
+        (health_now(), session.get("username"))
+    )
+    run_id = cursor.lastrowid
+    db.commit()
+    thread = threading.Thread(
+        target=run_health_checks_async,
+        args=(check_ids, session.get("username"), run_id),
+        daemon=True
+    )
+    thread.start()
+    return jsonify({"run_id": run_id, "status": "queued"})
+
+@app.route('/api/health/history', methods=['GET'])
+@login_required
+@require_permissions('health.view', 'health.manage', 'health.run')
+def health_history():
+    db = get_db()
+    days = int(request.args.get("days") or 1)
+    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    events = db.execute(
+        '''
+        SELECT observed_at, current_status
+        FROM health_events
+        WHERE observed_at >= ?
+        ORDER BY observed_at ASC
+        ''',
+        (cutoff,)
+    ).fetchall()
+    metrics_rows = db.execute(
+        '''
+        SELECT r.observed_at, r.metrics_json, d.check_type
+        FROM health_check_results r
+        JOIN health_check_definitions d ON d.id = r.check_id
+        WHERE r.observed_at >= ?
+          AND d.check_type IN ('cpu_load', 'memory', 'disk')
+        ORDER BY r.observed_at ASC
+        ''',
+        (cutoff,)
+    ).fetchall()
+    metrics = {"cpu_load": [], "memory": [], "disk": []}
+    for row in metrics_rows:
+        metrics_data = safe_json_load(row["metrics_json"], default={})
+        metrics[row["check_type"]].append({
+            "observed_at": row["observed_at"],
+            "value": metrics_data.get("load1") if row["check_type"] == "cpu_load" else
+                     metrics_data.get("mem_used_percent") if row["check_type"] == "memory" else
+                     metrics_data.get("used_percent")
+        })
+    return jsonify({
+        "events": [dict(row) for row in events],
+        "metrics": metrics,
+        "window_days": days
+    })
+
+@app.route('/api/health/incidents', methods=['GET'])
+@login_required
+@require_permissions('health.view', 'health.manage', 'health.run')
+def health_incidents():
+    db = get_db()
+    rows = db.execute(
+        '''
+        SELECT i.*, d.name, d.slug
+        FROM health_incidents i
+        JOIN health_check_definitions d ON d.id = i.check_id
+        ORDER BY i.opened_at DESC
+        '''
+    ).fetchall()
+    return jsonify({"incidents": [dict(row) for row in rows]})
+
+@app.route('/api/health/incidents/<int:incident_id>/ack', methods=['POST'])
+@login_required
+@require_permission('health.manage')
+def health_incident_ack(incident_id):
+    db = get_db()
+    db.execute(
+        '''
+        UPDATE health_incidents
+        SET acknowledged_at = ?
+        WHERE id = ?
+        ''',
+        (health_now(), incident_id)
+    )
+    db.commit()
+    return jsonify({"status": "acknowledged"})
+
+@app.route('/api/health/incidents/<int:incident_id>/mute', methods=['POST'])
+@login_required
+@require_permission('health.manage')
+def health_incident_mute(incident_id):
+    db = get_db()
+    data = request.get_json() or {}
+    minutes = int(data.get("minutes") or 30)
+    muted_until = (datetime.utcnow() + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    db.execute(
+        '''
+        UPDATE health_incidents
+        SET muted_until = ?
+        WHERE id = ?
+        ''',
+        (muted_until, incident_id)
+    )
+    db.commit()
+    return jsonify({"status": "muted", "muted_until": muted_until})
+
+@app.route('/api/health/incidents/<int:incident_id>/ticket', methods=['POST'])
+@login_required
+@require_permission('health.manage')
+def health_incident_ticket(incident_id):
+    db = get_db()
+    incident = db.execute(
+        '''
+        SELECT i.*, d.name
+        FROM health_incidents i
+        JOIN health_check_definitions d ON d.id = i.check_id
+        WHERE i.id = ?
+        ''',
+        (incident_id,)
+    ).fetchone()
+    if not incident:
+        return jsonify({"error": "Incident nicht gefunden"}), 404
+    title = f"Health Incident: {incident['name']}"
+    description = (
+        f"Incident für Check {incident['name']}.\n"
+        f"Status: {incident['status']}\n"
+        f"Seit: {incident['opened_at']}\n"
+        f"Aktuell: {incident['last_status']}"
+    )
+    creator_id = get_current_user_id(db)
+    cursor = db.execute(
+        '''
+        INSERT INTO tickets (title, description, priority, status, requester_name, created_by_user_id, created_by, tags)
+        VALUES (?, ?, ?, 'open', ?, ?, ?, ?)
+        ''',
+        (
+            title,
+            description,
+            "high",
+            session.get("username"),
+            creator_id,
+            session.get("username"),
+            json.dumps(["health", "incident"])
+        )
+    )
+    ticket_id = cursor.lastrowid
+    db.execute(
+        '''
+        UPDATE health_incidents
+        SET ticket_id = ?
+        WHERE id = ?
+        ''',
+        (ticket_id, incident_id)
+    )
+    db.commit()
+    return jsonify({"status": "ticket_created", "ticket_id": ticket_id})
+
 @app.route('/api/tickets', methods=['GET', 'POST'])
 @login_required
 def tickets():
@@ -3594,8 +8152,8 @@ def tickets():
         priority = (data.get('priority') or 'normal').strip()
         status = (data.get('status') or 'open').strip()
         escalation_level = int(data.get('escalation_level') or 0)
-        requester_name = (data.get('requester_name') or session.get('username') or '').strip()
-        requester_email = (data.get('requester_email') or '').strip()
+        requester_name = (session.get('username') or '').strip()
+        requester_email = normalize_email(access["user"].get("email") if access.get("user") else "")
         assignee = (data.get('assignee') or '').strip()
         assignee_email = (data.get('assignee_email') or '').strip()
         due_date = (data.get('due_date') or '').strip()
@@ -3617,6 +8175,7 @@ def tickets():
         resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
         if not title or not description:
             return jsonify({"error": "Titel und Beschreibung sind erforderlich"}), 400
+        creator_id = access["user"]["id"] if access.get("user") else get_current_user_id(db)
         category_name = None
         if category_id:
             category_row = db.execute('SELECT name FROM ticket_categories WHERE id = ?', (category_id,)).fetchone()
@@ -3624,13 +8183,13 @@ def tickets():
         cursor = db.execute('''
             INSERT INTO tickets (
                 title, description, category_id, priority, status, requester_name,
-                requester_email, created_by, assignee, assignee_email, due_date, escalation_level,
+                requester_email, created_by_user_id, created_by, assignee, assignee_email, due_date, escalation_level,
                 resolved_at, resolution_action, resolution_outcome, resolution_notes, tags, custom_fields
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             title, description, category_id, priority, status, requester_name, requester_email,
-            session.get('username'), assignee, assignee_email, due_date, escalation_level,
+            creator_id, session.get('username'), assignee, assignee_email, due_date, escalation_level,
             resolved_at, resolution_action, resolution_outcome, resolution_notes, tags, custom_fields
         ))
         ticket_id = cursor.lastrowid
@@ -3648,6 +8207,7 @@ def tickets():
             "status": status,
             "requester_name": requester_name,
             "requester_email": requester_email,
+            "created_by_user_id": creator_id,
             "created_by": session.get('username'),
             "assignee": assignee,
             "assignee_email": assignee_email,
@@ -3656,11 +8216,13 @@ def tickets():
         if should_auto_create_roadmap(category_name):
             create_roadmap_for_ticket(db, new_ticket, category_name, created_by=session.get('username'))
         log_activity(db, "create", "ticket", ticket_id, {"title": title})
+        from pondsec_ai.events import emit_event
+        emit_event(db, "ticket.created", "ticket", ticket_id, {"title": title, "priority": priority})
         db.commit()
         ticket = fetch_ticket(db, ticket_id)
         if ticket:
             ticket = normalize_ticket_row(ticket)
-            trigger_ticket_notifications(db, "created", ticket)
+            trigger_ticket_notifications(db, "created", ticket, actor=session.get('username'))
         return jsonify({"status": "created", "id": ticket_id}), 201
 
     if not (user_can('tickets.view_all') or user_can('tickets.view_own')):
@@ -3687,11 +8249,13 @@ def tickets():
         filters.append('t.assignee = ?')
         params.append(assignee)
     if mine:
-        filters.append('t.created_by = ?')
-        params.append(session.get('username'))
+        owner_filter = '(t.created_by_user_id = ? OR (t.created_by_user_id IS NULL AND t.created_by = ?))'
+        filters.append(owner_filter)
+        params.extend([access["user"]["id"], access["user"]["username"]])
     if not access["is_superuser"] and 'tickets.view_all' not in access["permissions"]:
-        filters.append('t.created_by = ?')
-        params.append(session.get('username'))
+        owner_filter = '(t.created_by_user_id = ? OR (t.created_by_user_id IS NULL AND t.created_by = ?))'
+        filters.append(owner_filter)
+        params.extend([access["user"]["id"], access["user"]["username"]])
     if search:
         filters.append('(t.title LIKE ? OR t.description LIKE ? OR t.requester_name LIKE ?)')
         params.extend([f'%{search}%', f'%{search}%', f'%{search}%'])
@@ -3748,9 +8312,11 @@ def ticket_detail(ticket_id):
     if request.method == 'PUT':
         can_update = user_can('tickets.update')
         can_update_own = user_can('tickets.update_own')
-        if not can_update and not (can_update_own and ticket.get('created_by') == session.get('username')):
+        if not can_update and not (can_update_own and is_ticket_owner(ticket, access)):
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
+        if "created_by" in data or "created_by_user_id" in data:
+            return jsonify({"error": "Ticket-Ersteller kann nicht geändert werden"}), 400
         title = (data.get('title') or ticket['title']).strip()
         description = (data.get('description') or ticket['description']).strip()
         category_id = data.get('category_id')
@@ -3779,6 +8345,18 @@ def ticket_detail(ticket_id):
         if category_id:
             category_row = db.execute('SELECT name FROM ticket_categories WHERE id = ?', (category_id,)).fetchone()
             category_name = category_row["name"] if category_row else None
+        changes = build_ticket_changes(ticket, {
+            "title": title,
+            "description": description,
+            "category_name": category_name,
+            "priority": priority,
+            "status": status,
+            "assignee": assignee,
+            "assignee_email": assignee_email,
+            "due_date": due_date,
+            "requester_name": requester_name,
+            "requester_email": requester_email,
+        })
 
         db.execute('''
             UPDATE tickets
@@ -3821,14 +8399,13 @@ def ticket_detail(ticket_id):
         updated_ticket = fetch_ticket(db, ticket_id)
         if updated_ticket:
             normalized = normalize_ticket_row(updated_ticket)
-            trigger_ticket_notifications(db, "updated", normalized)
-            if status_changed:
-                trigger_ticket_notifications(db, "status_changed", normalized)
+            event_type = resolve_ticket_event_type(changes)
+            trigger_ticket_notifications(db, event_type, normalized, changes=changes, actor=session.get('username'))
         return jsonify({"status": "updated"}), 200
 
     can_delete = user_can('tickets.delete')
     can_delete_own = user_can('tickets.delete_own')
-    if not can_delete and not (can_delete_own and ticket.get('created_by') == session.get('username')):
+    if not can_delete and not (can_delete_own and is_ticket_owner(ticket, access)):
         return jsonify({"error": "Keine Berechtigung"}), 403
     db.execute('DELETE FROM ticket_comments WHERE ticket_id = ?', (ticket_id,))
     db.execute('DELETE FROM ticket_watchers WHERE ticket_id = ?', (ticket_id,))
@@ -3851,7 +8428,7 @@ def ticket_comments(ticket_id):
     if request.method == 'POST':
         can_comment = user_can('tickets.comment')
         can_comment_own = user_can('tickets.comment_own')
-        if not can_comment and not (can_comment_own and ticket.get('created_by') == session.get('username')):
+        if not can_comment and not (can_comment_own and is_ticket_owner(ticket, access)):
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         body = (data.get('body') or '').strip()
@@ -3869,7 +8446,7 @@ def ticket_comments(ticket_id):
         ticket = fetch_ticket(db, ticket_id)
         if ticket:
             ticket = normalize_ticket_row(ticket)
-            trigger_ticket_notifications(db, "commented", ticket, comment=body)
+            trigger_ticket_notifications(db, "commented", ticket, comment=body, actor=session.get('username'))
         return jsonify({"status": "created"}), 201
 
     comments = db.execute('''
@@ -3893,7 +8470,7 @@ def ticket_watchers(ticket_id):
     if request.method == 'POST':
         can_watch = user_can('tickets.watch')
         can_watch_own = user_can('tickets.watch_own')
-        if not can_watch and not (can_watch_own and ticket.get('created_by') == session.get('username')):
+        if not can_watch and not (can_watch_own and is_ticket_owner(ticket, access)):
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         email = (data.get('email') or '').strip()
@@ -3927,7 +8504,7 @@ def delete_ticket_watcher(ticket_id, watcher_id):
         return jsonify({"error": "Keine Berechtigung"}), 403
     can_watch = user_can('tickets.watch')
     can_watch_own = user_can('tickets.watch_own')
-    if not can_watch and not (can_watch_own and ticket.get('created_by') == session.get('username')):
+    if not can_watch and not (can_watch_own and is_ticket_owner(ticket, access)):
         return jsonify({"error": "Keine Berechtigung"}), 403
     result = db.execute('''
         DELETE FROM ticket_watchers
@@ -4266,8 +8843,10 @@ def notification_test():
 @app.route('/api/features', methods=['GET'])
 @login_required
 def feature_flags():
+    settings_row = get_server_settings(get_db())
+    settings, _ = serialize_server_settings(settings_row)
     return jsonify({
-        "pro_enabled": PRO_ENABLED,
+        "pro_enabled": bool(settings["proFeaturesEnabled"]),
         "pro_features": PRO_FEATURES,
         "free_features": FREE_FEATURES
     })
@@ -4566,17 +9145,27 @@ def manage_users():
         data = request.get_json()
         username = (data.get('username') or '').strip()
         password = data.get('password') or ''
+        email = normalize_email(data.get('email') or '')
         role_ids = data.get('role_ids') or []
         if not username or not password:
             return jsonify({"error": "Benutzername und Passwort sind erforderlich"}), 400
+        if email and not is_valid_email(email):
+            return jsonify({"error": "Ungültige E-Mail-Adresse"}), 400
+        if email:
+            existing_email = db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
+            if existing_email:
+                return jsonify({"error": "E-Mail bereits vergeben"}), 400
+        min_length = get_password_min_length(db)
+        if len(password) < min_length:
+            return jsonify({"error": f"Passwort muss mindestens {min_length} Zeichen lang sein"}), 400
         if role_ids and not user_can('roles.assign'):
             return jsonify({"error": "Keine Berechtigung für Rollen"}), 403
         password_hash = generate_password_hash(password)
         try:
             cursor = db.execute('''
-                INSERT INTO users (username, password_hash)
-                VALUES (?, ?)
-            ''', (username, password_hash))
+                INSERT INTO users (username, email, password_hash)
+                VALUES (?, ?, ?)
+            ''', (username, email or None, password_hash))
             user_id = cursor.lastrowid
             if role_ids:
                 db.execute('DELETE FROM user_roles WHERE user_id = ?', (user_id,))
@@ -4593,7 +9182,7 @@ def manage_users():
         except sqlite3.IntegrityError:
             return jsonify({"error": "Benutzername existiert bereits"}), 400
 
-    users = db.execute('SELECT id, username, otp_secret FROM users ORDER BY username').fetchall()
+    users = db.execute('SELECT id, username, email, otp_secret FROM users ORDER BY username').fetchall()
     result = []
     for user in users:
         entry = dict(user)
@@ -4609,11 +9198,36 @@ def manage_users():
         result.append(entry)
     return jsonify(result)
 
-@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@app.route('/api/users/<int:user_id>', methods=['PUT', 'DELETE'])
 @login_required
 @require_permission('users.manage')
 def remove_user(user_id):
     db = get_db()
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        email = normalize_email(data.get('email') or '')
+        if email and not is_valid_email(email):
+            return jsonify({"error": "Ungültige E-Mail-Adresse"}), 400
+        if email:
+            existing_email = db.execute(
+                'SELECT id FROM users WHERE email = ? AND id != ?',
+                (email, user_id)
+            ).fetchone()
+            if existing_email:
+                return jsonify({"error": "E-Mail bereits vergeben"}), 400
+        result = db.execute(
+            '''
+            UPDATE users
+            SET email = ?
+            WHERE id = ?
+            ''',
+            (email or None, user_id)
+        )
+        if result.rowcount == 0:
+            return jsonify({"error": "Benutzer nicht gefunden"}), 404
+        log_activity(db, "update", "user_email", user_id, {"email": email or None})
+        db.commit()
+        return jsonify({"status": "updated", "email": email or None}), 200
     current = db.execute('SELECT id FROM users WHERE username = ?', (session.get('username'),)).fetchone()
     if current and current['id'] == user_id:
         return jsonify({"error": "Eigenes Konto kann nicht gelöscht werden"}), 400
@@ -4633,6 +9247,9 @@ def reset_user_password(user_id):
     password = data.get('password') or ''
     if not password:
         return jsonify({"error": "Passwort ist erforderlich"}), 400
+    min_length = get_password_min_length(db)
+    if len(password) < min_length:
+        return jsonify({"error": f"Passwort muss mindestens {min_length} Zeichen lang sein"}), 400
     password_hash = generate_password_hash(password)
     result = db.execute('''
         UPDATE users
@@ -4753,6 +9370,7 @@ def current_user_info():
     return jsonify({
         "id": access["user"]["id"],
         "username": access["user"]["username"],
+        "email": access["user"].get("email"),
         "roles": access["roles"],
         "permissions": sorted(access["permissions"]),
         "is_superuser": access["is_superuser"]
@@ -4786,6 +9404,458 @@ def update_user_roles(user_id):
         ORDER BY r.name
     ''', (user_id,)).fetchall()
     return jsonify({"status": "updated", "roles": [dict(role) for role in roles]}), 200
+
+@app.route('/api/server-settings', methods=['GET', 'POST'])
+@login_required
+@require_permission('server_settings.manage')
+def server_settings():
+    db = get_db()
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        payload = {
+            "server": {
+                "host": data.get("host"),
+                "port": data.get("port"),
+                "debug": data.get("debug")
+            },
+            "proFeaturesEnabled": data.get("pro_enabled"),
+            "backup": {
+                "enabled": data.get("backup_enabled"),
+                "compress": data.get("backup_compress"),
+                "schedule": data.get("backup_schedule"),
+                "time": data.get("backup_time"),
+                "retentionDays": data.get("backup_retention_days"),
+                "directory": data.get("backup_location"),
+                "notifyEmail": data.get("backup_notify_email"),
+                "encrypt": data.get("backup_encrypt")
+            },
+            "importExport": {
+                "exportAllowed": data.get("allow_db_export"),
+                "importAllowed": data.get("allow_db_import"),
+                "exportFormat": data.get("export_format"),
+                "importMode": data.get("import_mode"),
+                "includeUploads": data.get("include_uploads")
+            },
+            "security": {
+                "forceHttps": data.get("require_https"),
+                "requireMfa": data.get("enforce_mfa"),
+                "sessionTimeoutMinutes": data.get("session_timeout_minutes"),
+                "maxFailedAttempts": data.get("max_failed_logins"),
+                "lockoutMinutes": data.get("lockout_minutes"),
+                "ipWhitelist": data.get("allowed_ip_ranges"),
+                "minPasswordLength": data.get("password_min_length")
+            }
+        }
+        settings_payload, errors = validate_settings_payload(payload)
+        if errors:
+            return jsonify({"error": "Ungültige Server-Einstellungen.", "details": errors}), 400
+        try:
+            persist_server_settings(db, settings_payload, session.get("username", "system"))
+            schedule_backup_jobs(settings_payload)
+            log_activity(db, "update", "server_settings", details={"source": "legacy_api"})
+            db.commit()
+        except sqlite3.Error:
+            db.rollback()
+            raise
+    settings = get_server_settings(db)
+    return jsonify(serialize_server_settings_flat(settings))
+
+@app.route('/api/settings/server', methods=['GET', 'PUT', 'PATCH'])
+@login_required
+@require_permission('server_settings.manage')
+def server_settings_v2():
+    db = get_db()
+    settings_row = get_server_settings(db)
+    current_settings, meta = serialize_server_settings(settings_row)
+    if request.method == 'GET':
+        return jsonify({"settings": current_settings, "meta": meta})
+
+    payload = request.get_json() or {}
+    if request.method == 'PATCH':
+        merged_payload = merge_settings(current_settings, payload)
+    else:
+        merged_payload = payload
+    settings_payload, errors = validate_settings_payload(merged_payload)
+    if errors:
+        return jsonify({"error": "Ungültige Server-Einstellungen.", "details": errors}), 400
+    try:
+        persist_server_settings(db, settings_payload, session.get("username", "system"))
+        schedule_backup_jobs(settings_payload)
+        log_activity(db, "update", "server_settings", details={"schema_version": SETTINGS_SCHEMA_VERSION})
+        db.commit()
+    except sqlite3.Error:
+        db.rollback()
+        raise
+    updated_settings, updated_meta = serialize_server_settings(get_server_settings(db))
+    return jsonify({"settings": updated_settings, "meta": updated_meta})
+
+@app.route('/api/settings/server/reload', methods=['POST'])
+@login_required
+@require_permission('server_settings.manage')
+def server_settings_reload():
+    settings_row = get_server_settings(get_db())
+    settings, meta = serialize_server_settings(settings_row)
+    return jsonify({
+        "status": "pending_restart" if meta["pendingRestart"] else "ok",
+        "pendingRestart": meta["pendingRestart"],
+        "requiresRestartFields": meta["requiresRestartFields"]
+    })
+
+@app.route('/api/settings/server/health', methods=['GET'])
+@login_required
+@require_permission('server_settings.manage')
+def server_settings_health():
+    settings_row = get_server_settings(get_db())
+    settings, meta = serialize_server_settings(settings_row)
+    runtime = load_runtime_settings()
+    return jsonify({
+        "runtime": runtime,
+        "settings": settings,
+        "pendingRestart": meta["pendingRestart"]
+    })
+
+@app.route('/api/settings/server/history', methods=['GET'])
+@login_required
+@require_permission('server_settings.manage')
+def server_settings_history():
+    db = get_db()
+    rows = db.execute(
+        '''
+        SELECT id, settings_json, created_at, created_by
+        FROM server_settings_revisions
+        ORDER BY id DESC
+        LIMIT 20
+        '''
+    ).fetchall()
+    revisions = []
+    for row in rows:
+        revisions.append({
+            "id": row["id"],
+            "createdAt": row["created_at"],
+            "createdBy": row["created_by"],
+            "settings": json.loads(row["settings_json"]) if row["settings_json"] else {}
+        })
+    return jsonify({"revisions": revisions})
+
+@app.route('/api/backups/run', methods=['POST'])
+@login_required
+@require_permission('server_settings.manage')
+def run_backup():
+    db = get_db()
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    data = request.get_json() or {}
+    force = bool(data.get("force"))
+    result = run_backup_job(db, settings, force=force)
+    return jsonify(result)
+
+@app.route('/api/backups/list', methods=['GET'])
+@login_required
+@require_permission('server_settings.manage')
+def list_backups():
+    db = get_db()
+    rows = db.execute(
+        '''
+        SELECT id, status, backup_path, backup_size_bytes, message, created_at
+        FROM backup_runs
+        ORDER BY created_at DESC
+        LIMIT 50
+        '''
+    ).fetchall()
+    backups = []
+    for row in rows:
+        backups.append({
+            "id": row["id"],
+            "status": row["status"],
+            "path": row["backup_path"],
+            "sizeBytes": row["backup_size_bytes"],
+            "message": row["message"],
+            "createdAt": row["created_at"]
+        })
+    return jsonify({"backups": backups})
+
+@app.route('/api/export', methods=['GET'])
+@login_required
+@require_permission('server_settings.manage')
+def export_data():
+    db = get_db()
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    if not settings["importExport"]["exportAllowed"]:
+        return jsonify({"error": "Export ist deaktiviert."}), 403
+    export_format = settings["importExport"]["exportFormat"]
+    include_uploads = settings["importExport"]["includeUploads"]
+    tables = [
+        "categories",
+        "locations",
+        "devices",
+        "assets",
+        "maintenance_tasks",
+        "asset_assignment_history",
+        "attachments",
+    ]
+    temp_dir = Path(tempfile.mkdtemp(prefix="inventory_export_"))
+    archive_path = None
+    try:
+        if export_format == "sqlite":
+            db_path = temp_dir / "inventory.db"
+            run_sqlite_backup(db_path)
+            if include_uploads and UPLOADS_DIR.exists():
+                archive_path = temp_dir / "inventory_export.zip"
+                with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                    archive.write(db_path, arcname="inventory.db")
+                    for path in UPLOADS_DIR.rglob("*"):
+                        if path.is_file():
+                            archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
+            else:
+                archive_path = db_path
+        elif export_format == "json":
+            payload = export_tables(db, tables)
+            data_path = temp_dir / "inventory_export.json"
+            data_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            if include_uploads and UPLOADS_DIR.exists():
+                archive_path = temp_dir / "inventory_export.zip"
+                with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                    archive.write(data_path, arcname="inventory_export.json")
+                    for path in UPLOADS_DIR.rglob("*"):
+                        if path.is_file():
+                            archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
+            else:
+                archive_path = data_path
+        else:
+            archive_path = temp_dir / "inventory_export.zip"
+            with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for table in tables:
+                    rows = db.execute(f"SELECT * FROM {table}").fetchall()
+                    csv_path = temp_dir / f"{table}.csv"
+                    if rows:
+                        fieldnames = rows[0].keys()
+                        with open(csv_path, "w", newline="", encoding="utf-8") as handle:
+                            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                            writer.writeheader()
+                            for row in rows:
+                                writer.writerow(dict(row))
+                    else:
+                        csv_path.write_text("", encoding="utf-8")
+                    archive.write(csv_path, arcname=f"{table}.csv")
+                if include_uploads and UPLOADS_DIR.exists():
+                    for path in UPLOADS_DIR.rglob("*"):
+                        if path.is_file():
+                            archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
+        if (export_format in {"sqlite", "json"} and include_uploads) or export_format == "csv":
+            filename = "inventory_export.zip"
+            mimetype = "application/zip"
+        else:
+            filename = f"inventory_export.{archive_path.suffix.lstrip('.')}"
+            mimetype = "application/octet-stream"
+        return Response(
+            archive_path.read_bytes(),
+            mimetype=mimetype,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+@app.route('/api/import', methods=['POST'])
+@login_required
+@require_permission('server_settings.manage')
+def import_data():
+    db = get_db()
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    if not settings["importExport"]["importAllowed"]:
+        return jsonify({"error": "Import ist deaktiviert."}), 403
+    if should_rate_limit(f"import:{session.get('username')}"):
+        return jsonify({"error": "Zu viele Import-Anfragen."}), 429
+    import_mode = settings["importExport"]["importMode"]
+    file_storage = request.files.get("file")
+    file_path, error = load_import_file(file_storage)
+    if error:
+        return jsonify({"error": error}), 400
+    antivirus_error = validate_import_file(file_path)
+    if antivirus_error:
+        shutil.rmtree(file_path.parent, ignore_errors=True)
+        return jsonify({"error": antivirus_error}), 400
+    tables = [
+        "categories",
+        "locations",
+        "devices",
+        "assets",
+        "maintenance_tasks",
+        "asset_assignment_history",
+        "attachments",
+    ]
+    try:
+        if import_mode == "replace":
+            run_backup_job(db, settings, force=True)
+        if file_path.suffix == ".json":
+            payload = json.loads(file_path.read_text(encoding="utf-8"))
+            with db:
+                import_data_payload(db, payload, import_mode, tables)
+        elif file_path.suffix == ".zip":
+            with zipfile.ZipFile(file_path, "r") as archive:
+                members = archive.namelist()
+                data_files = [name for name in members if name.endswith(".csv")]
+                if data_files:
+                    with db:
+                        if import_mode == "replace":
+                            for table in tables:
+                                db.execute(f"DELETE FROM {table}")
+                        for data_file in data_files:
+                            table_name = Path(data_file).stem
+                            if table_name not in tables:
+                                continue
+                            with archive.open(data_file) as handle:
+                                content = handle.read().decode("utf-8")
+                                reader = csv.DictReader(StringIO(content))
+                                import_table_rows(db, table_name, list(reader), import_mode if import_mode != "replace" else "append")
+                db.commit()
+                if settings["importExport"]["includeUploads"] and any(name.startswith("uploads/") for name in members):
+                    for member in members:
+                        if member.startswith("uploads/") and not member.endswith("/"):
+                            target_path = UPLOADS_DIR / Path(member).relative_to("uploads")
+                            target_path.parent.mkdir(parents=True, exist_ok=True)
+                            with archive.open(member) as source, open(target_path, "wb") as target:
+                                shutil.copyfileobj(source, target)
+        elif file_path.suffix in {".db", ".sqlite"}:
+            with db:
+                import_from_sqlite(db, file_path, import_mode, tables)
+        else:
+            return jsonify({"error": "Unbekanntes Import-Format."}), 400
+        log_activity(db, "import", "server_settings", details={"mode": import_mode})
+        db.commit()
+        return jsonify({"status": "success"})
+    finally:
+        shutil.rmtree(file_path.parent, ignore_errors=True)
+
+@app.route('/api/customize', methods=['GET', 'PUT', 'PATCH'])
+@login_required
+def customize_settings():
+    db = get_db()
+    user_id = get_current_user_id(db)
+    if not user_id:
+        return jsonify({"error": "Benutzer nicht gefunden."}), 401
+
+    record = get_customization_record(db, user_id)
+    existing = None
+    if record:
+        existing = json.loads(record["customization_json"])
+
+    if request.method == 'GET':
+        customization = migrate_customization(existing or DEFAULT_CUSTOMIZATION)
+        latest_revision = None
+        if record:
+            latest_revision = db.execute(
+                """
+                SELECT id FROM ui_customization_revisions
+                WHERE customization_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (record["id"],),
+            ).fetchone()
+        return jsonify({
+            "customization": customization,
+            "updated_at": record["updated_at"] if record else None,
+            "revision_id": latest_revision["id"] if latest_revision else None,
+        })
+
+    payload = request.get_json() or {}
+    if request.method == 'PATCH':
+        merged = deep_merge(existing or DEFAULT_CUSTOMIZATION, payload)
+    else:
+        merged = payload
+
+    customization = migrate_customization(merged)
+    valid, errors = validate_customization(customization)
+    if not valid:
+        return jsonify({"error": "Ungültige Customize-Daten.", "details": errors}), 400
+
+    customization_id = save_customization(db, user_id, customization, session.get("username", "system"))
+    latest_revision = db.execute(
+        """
+        SELECT id FROM ui_customization_revisions
+        WHERE customization_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (customization_id,),
+    ).fetchone()
+    updated_at = db.execute("SELECT updated_at FROM ui_customization WHERE id = ?", (customization_id,)).fetchone()
+    log_activity(db, "update", "ui_customization", entity_id=customization_id)
+    return jsonify({
+        "customization": customization,
+        "updated_at": updated_at["updated_at"] if updated_at else None,
+        "revision_id": latest_revision["id"] if latest_revision else None,
+    })
+
+@app.route('/api/customize/history', methods=['GET'])
+@login_required
+def customize_history():
+    db = get_db()
+    user_id = get_current_user_id(db)
+    if not user_id:
+        return jsonify({"revisions": []})
+    record = get_customization_record(db, user_id)
+    if not record:
+        return jsonify({"revisions": []})
+    rows = db.execute(
+        """
+        SELECT id, created_at, created_by, diff_json
+        FROM ui_customization_revisions
+        WHERE customization_id = ?
+        ORDER BY id DESC
+        LIMIT 20
+        """,
+        (record["id"],),
+    ).fetchall()
+    revisions = []
+    for row in rows:
+        revisions.append({
+            "id": row["id"],
+            "created_at": row["created_at"],
+            "created_by": row["created_by"],
+            "diff": json.loads(row["diff_json"]) if row["diff_json"] else [],
+        })
+    return jsonify({"revisions": revisions})
+
+@app.route('/api/customize/rollback/<int:revision_id>', methods=['POST'])
+@login_required
+def customize_rollback(revision_id):
+    db = get_db()
+    user_id = get_current_user_id(db)
+    if not user_id:
+        return jsonify({"error": "Benutzer nicht gefunden."}), 401
+
+    record = get_customization_record(db, user_id)
+    if not record:
+        return jsonify({"error": "Keine Customize-Konfiguration vorhanden."}), 404
+
+    revision = db.execute(
+        """
+        SELECT revision_json FROM ui_customization_revisions
+        WHERE id = ? AND customization_id = ?
+        """,
+        (revision_id, record["id"]),
+    ).fetchone()
+    if not revision:
+        return jsonify({"error": "Revision nicht gefunden."}), 404
+
+    customization = migrate_customization(json.loads(revision["revision_json"]))
+    customization_id = save_customization(db, user_id, customization, session.get("username", "system"))
+    latest_revision = db.execute(
+        """
+        SELECT id FROM ui_customization_revisions
+        WHERE customization_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (customization_id,),
+    ).fetchone()
+    updated_at = db.execute("SELECT updated_at FROM ui_customization WHERE id = ?", (customization_id,)).fetchone()
+    log_activity(db, "rollback", "ui_customization", entity_id=customization_id)
+    return jsonify({
+        "customization": customization,
+        "updated_at": updated_at["updated_at"] if updated_at else None,
+        "revision_id": latest_revision["id"] if latest_revision else None,
+    })
 
 @app.route('/api/ad/settings', methods=['GET'])
 @login_required
@@ -5078,6 +10148,9 @@ def maintenance_summary():
     db = get_db()
     if not (user_can('maintenance.view') or user_can('maintenance.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    if not settings["proFeaturesEnabled"]:
+        return jsonify({"pro_locked": True, "open": 0, "overdue": 0})
     open_count = db.execute('''
         SELECT COUNT(*) FROM maintenance_tasks WHERE status = 'open'
     ''').fetchone()[0]
@@ -5094,6 +10167,9 @@ def export_devices():
     db = get_db()
     if not (user_can('devices.view') or user_can('devices.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    if not settings["importExport"]["exportAllowed"]:
+        return jsonify({"error": "Export ist deaktiviert."}), 403
     devices = db.execute('''
         SELECT d.id, d.name, d.serial_number, d.specs, d.created_at, c.name as category_name
         FROM devices d
@@ -5515,6 +10591,290 @@ def stats():
     
     return render_template('stats.html', **context)
 
+@app.route('/api/terminal/session/start', methods=['POST'])
+@login_required
+@require_permission('terminal.use')
+def terminal_session_start():
+    db = get_db()
+    access = get_user_access(db)
+    settings_row = get_server_settings(db)
+    settings, _ = serialize_server_settings(settings_row)
+    terminal_settings = settings["terminal"]
+    if not terminal_settings["enabled"]:
+        return jsonify({"error": "Terminal ist deaktiviert."}), 403
+    remote_ip = get_remote_ip()
+    if not is_ip_allowed(remote_ip, terminal_settings["ipAllowlist"]):
+        return jsonify({"error": "IP nicht erlaubt."}), 403
+    user_id = access["user"]["id"]
+    if should_rate_limit_terminal(user_id):
+        return jsonify({"error": "Rate-Limit erreicht."}), 429
+
+    payload = request.get_json(silent=True) or {}
+    if terminal_settings["requireReauth"]:
+        password = payload.get("password") or ""
+        otp_code = payload.get("otp") or ""
+        user_row = db.execute(
+            "SELECT id, password_hash, otp_secret FROM users WHERE id = ?",
+            (user_id,)
+        ).fetchone()
+        if not password or not user_row or not check_password_hash(user_row["password_hash"], password):
+            log_terminal_audit(db, user_id, None, "session_start", {"reason": "password_failed"}, "error", 0)
+            return jsonify({"error": "Re-Auth fehlgeschlagen."}), 403
+        if user_row["otp_secret"]:
+            if not otp_code or not pyotp.TOTP(user_row["otp_secret"]).verify(str(otp_code).strip()):
+                log_terminal_audit(db, user_id, None, "session_start", {"reason": "otp_failed"}, "error", 0)
+                return jsonify({"error": "OTP erforderlich."}), 403
+        session["terminal_reauth_at"] = time.time()
+
+    session_id, expires_at = create_terminal_session(
+        db,
+        user_id,
+        "maintenance",
+        remote_ip,
+        request.headers.get("User-Agent", "")
+    )
+    log_terminal_audit(db, user_id, session_id, "session_start", {"ip": remote_ip}, "ok", 0)
+    return jsonify({
+        "session_id": session_id,
+        "expires_at": expires_at.isoformat(),
+        "limits": {
+            "rate_limit_per_minute": TERMINAL_RATE_LIMIT_MAX_REQUESTS,
+            "max_output_bytes": TERMINAL_MAX_OUTPUT_BYTES,
+            "session_ttl_seconds": TERMINAL_SESSION_TTL_SECONDS
+        },
+        "allowlists": {
+            "services": TERMINAL_SERVICE_ALLOWLIST,
+            "logs": list(TERMINAL_LOG_SOURCES.keys())
+        }
+    })
+
+@app.route('/api/terminal/session/stop', methods=['POST'])
+@login_required
+@require_permission('terminal.use')
+def terminal_session_stop():
+    db = get_db()
+    access = get_user_access(db)
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("session_id")
+    user_id = access["user"]["id"]
+    session_row = get_terminal_session(db, session_id, user_id)
+    if not session_row:
+        return jsonify({"error": "Session nicht gefunden."}), 404
+    terminate_terminal_session(db, session_id)
+    log_terminal_audit(db, user_id, session_id, "session_stop", {}, "ok", 0)
+    return jsonify({"status": "stopped"})
+
+@app.route('/api/terminal/run', methods=['POST'])
+@login_required
+@require_permission('terminal.use')
+def terminal_run_recipe():
+    db = get_db()
+    access = get_user_access(db)
+    settings_row = get_server_settings(db)
+    settings, _ = serialize_server_settings(settings_row)
+    terminal_settings = settings["terminal"]
+    if not terminal_settings["enabled"]:
+        return jsonify({"error": "Terminal ist deaktiviert."}), 403
+    remote_ip = get_remote_ip()
+    if not is_ip_allowed(remote_ip, terminal_settings["ipAllowlist"]):
+        return jsonify({"error": "IP nicht erlaubt."}), 403
+    user_id = access["user"]["id"]
+    if should_rate_limit_terminal(user_id):
+        return jsonify({"error": "Rate-Limit erreicht."}), 429
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("session_id")
+    recipe_id = (payload.get("recipe_id") or "").strip()
+    params = payload.get("params") or {}
+    session_row = get_terminal_session(db, session_id, user_id)
+    if not session_row:
+        return jsonify({"error": "Session ungültig oder abgelaufen."}), 403
+    recipe = TERMINAL_RECIPES.get(recipe_id)
+    if not recipe:
+        return jsonify({"error": "Recipe nicht erlaubt."}), 400
+
+    start_time = time.time()
+    try:
+        if recipe_id == "service_restart":
+            result = recipe["handler"](params, settings)
+        else:
+            result = recipe["handler"](params)
+    except Exception as exc:
+        result = {"status": "error", "output": f"Fehler: {exc}"}
+    duration_ms = int((time.time() - start_time) * 1000)
+    output = truncate_output(redact_text(result.get("output", "")))
+    status = result.get("status", "error")
+    touch_terminal_session(db, session_id)
+    log_terminal_audit(db, user_id, session_id, recipe_id, params, status, duration_ms, output)
+    response = {
+        "status": status,
+        "output": output,
+        "duration_ms": duration_ms
+    }
+    if result.get("meta"):
+        response["meta"] = redact_data(result["meta"])
+    return jsonify(response)
+
+@app.route('/api/terminal/audit', methods=['GET'])
+@login_required
+@require_permission('terminal.view')
+def terminal_audit():
+    db = get_db()
+    access = get_user_access(db)
+    user_id = access["user"]["id"]
+    start = request.args.get("from")
+    end = request.args.get("to")
+    params = [user_id]
+    query = '''
+        SELECT id, action_type, params_json, status, duration_ms, output_preview, created_at
+        FROM terminal_audit_logs
+        WHERE user_id = ?
+    '''
+    if start:
+        query += " AND created_at >= ?"
+        params.append(start)
+    if end:
+        query += " AND created_at <= ?"
+        params.append(end)
+    query += " ORDER BY created_at DESC LIMIT 200"
+    rows = db.execute(query, tuple(params)).fetchall()
+    entries = []
+    for row in rows:
+        try:
+            params_json = json.loads(row["params_json"]) if row["params_json"] else {}
+        except json.JSONDecodeError:
+            params_json = {}
+        entries.append({
+            "id": row["id"],
+            "action": row["action_type"],
+            "params": params_json,
+            "status": row["status"],
+            "duration_ms": row["duration_ms"],
+            "preview": row["output_preview"],
+            "created_at": row["created_at"]
+        })
+    return jsonify({"entries": entries})
+
+@app.route('/api/terminal/db/query', methods=['POST'])
+@login_required
+@require_permission('terminal.use')
+def terminal_db_query():
+    db = get_db()
+    access = get_user_access(db)
+    settings_row = get_server_settings(db)
+    settings, _ = serialize_server_settings(settings_row)
+    terminal_settings = settings["terminal"]
+    if not terminal_settings["enabled"]:
+        return jsonify({"error": "Terminal ist deaktiviert."}), 403
+    remote_ip = get_remote_ip()
+    if not is_ip_allowed(remote_ip, terminal_settings["ipAllowlist"]):
+        return jsonify({"error": "IP nicht erlaubt."}), 403
+    user_id = access["user"]["id"]
+    if should_rate_limit_terminal(user_id):
+        return jsonify({"error": "Rate-Limit erreicht."}), 429
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("session_id")
+    query = payload.get("query") or ""
+    session_row = get_terminal_session(db, session_id, user_id)
+    if not session_row:
+        return jsonify({"error": "Session ungültig oder abgelaufen."}), 403
+    if not is_safe_readonly_query(query):
+        return jsonify({"error": "Nur SELECT/EXPLAIN erlaubt."}), 400
+    if db_is_postgres():
+        return jsonify({"error": "DB-Console nur für SQLite verfügbar."}), 400
+
+    start_time = time.time()
+    normalized = normalize_sql_query(query)
+    result_rows = []
+    columns = []
+    status = "ok"
+    try:
+        with sqlite3.connect(DATABASE) as connection:
+            connection.row_factory = sqlite3.Row
+            cursor = connection.execute(normalized)
+            columns = [col[0] for col in (cursor.description or [])]
+            fetched = cursor.fetchmany(TERMINAL_DB_MAX_ROWS + 1)
+            truncated = len(fetched) > TERMINAL_DB_MAX_ROWS
+            if truncated:
+                fetched = fetched[:TERMINAL_DB_MAX_ROWS]
+            for row in fetched:
+                result_rows.append([redact_data(value) for value in row])
+    except Exception as exc:
+        status = "error"
+        columns = []
+        result_rows = []
+        output = f"Fehler: {exc}"
+    duration_ms = int((time.time() - start_time) * 1000)
+    if status == "ok":
+        output = f"{len(result_rows)} Zeilen zurückgegeben."
+    output = truncate_output(redact_text(output), max_bytes=TERMINAL_DB_MAX_BYTES)
+    touch_terminal_session(db, session_id)
+    log_terminal_audit(db, user_id, session_id, "db_query", {"query": query}, status, duration_ms, output)
+    return jsonify({
+        "status": status,
+        "columns": columns,
+        "rows": result_rows,
+        "duration_ms": duration_ms,
+        "output": output
+    })
+
+@app.route('/api/terminal/db/execute', methods=['POST'])
+@login_required
+@require_permission('terminal.db_write')
+def terminal_db_execute():
+    db = get_db()
+    access = get_user_access(db)
+    settings_row = get_server_settings(db)
+    settings, _ = serialize_server_settings(settings_row)
+    terminal_settings = settings["terminal"]
+    if not terminal_settings["enabled"] or not terminal_settings["allowDbWrite"]:
+        return jsonify({"error": "DB-Write ist deaktiviert."}), 403
+    remote_ip = get_remote_ip()
+    if not is_ip_allowed(remote_ip, terminal_settings["ipAllowlist"]):
+        return jsonify({"error": "IP nicht erlaubt."}), 403
+    user_id = access["user"]["id"]
+    if should_rate_limit_terminal(user_id):
+        return jsonify({"error": "Rate-Limit erreicht."}), 429
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("session_id")
+    query = payload.get("query") or ""
+    confirm = (payload.get("confirm") or "").strip().upper()
+    session_row = get_terminal_session(db, session_id, user_id)
+    if not session_row:
+        return jsonify({"error": "Session ungültig oder abgelaufen."}), 403
+    if confirm != "EXECUTE":
+        return jsonify({"error": "Bestätigung EXECUTE erforderlich."}), 400
+    if not normalize_sql_query(query):
+        return jsonify({"error": "Ungültiges SQL."}), 400
+    if is_safe_readonly_query(query):
+        return jsonify({"error": "Read-only Query bitte über /db/query ausführen."}), 400
+    if not terminal_settings["breakGlassMode"] and is_dangerous_query(query):
+        return jsonify({"error": "Query ist blockiert (Break-Glass deaktiviert)."}), 403
+    if db_is_postgres():
+        return jsonify({"error": "DB-Console nur für SQLite verfügbar."}), 400
+
+    start_time = time.time()
+    status = "ok"
+    rows_affected = 0
+    try:
+        with sqlite3.connect(DATABASE) as connection:
+            cursor = connection.execute(normalize_sql_query(query))
+            rows_affected = cursor.rowcount if cursor.rowcount is not None else 0
+            connection.commit()
+        output = f"{rows_affected} Zeilen geändert."
+    except Exception as exc:
+        status = "error"
+        output = f"Fehler: {exc}"
+    duration_ms = int((time.time() - start_time) * 1000)
+    output = truncate_output(redact_text(output), max_bytes=TERMINAL_DB_MAX_BYTES)
+    touch_terminal_session(db, session_id)
+    log_terminal_audit(db, user_id, session_id, "db_execute", {"query": query}, status, duration_ms, output)
+    return jsonify({
+        "status": status,
+        "rows_affected": rows_affected,
+        "duration_ms": duration_ms,
+        "output": output
+    })
+
 @app.route('/api/otp/setup', methods=['POST'])
 @login_required
 def setup_otp():
@@ -5554,6 +10914,37 @@ def setup_otp():
         'qr_code': img_str
     })
 
+def generate_recovery_codes():
+    return [secrets.token_hex(4) for _ in range(8)]
+
+@app.route('/api/otp/recovery', methods=['POST'])
+@login_required
+def create_recovery_codes():
+    db = get_db()
+    user = db.execute('SELECT id FROM users WHERE username = ?', (session.get('username'),)).fetchone()
+    if not user:
+        return jsonify({"error": "Benutzer nicht gefunden"}), 404
+    codes = generate_recovery_codes()
+    db.execute('DELETE FROM mfa_recovery_codes WHERE user_id = ?', (user["id"],))
+    for code in codes:
+        db.execute(
+            'INSERT INTO mfa_recovery_codes (user_id, code_hash) VALUES (?, ?)',
+            (user["id"], generate_password_hash(code))
+        )
+    log_activity(db, "mfa_recovery_generated", "user", user["id"])
+    db.commit()
+    return jsonify({"codes": codes})
+
+def verify_recovery_code(db, user_id, code):
+    rows = db.execute(
+        'SELECT id, code_hash FROM mfa_recovery_codes WHERE user_id = ? AND used_at IS NULL',
+        (user_id,)
+    ).fetchall()
+    for row in rows:
+        if check_password_hash(row["code_hash"], code):
+            db.execute('UPDATE mfa_recovery_codes SET used_at = CURRENT_TIMESTAMP WHERE id = ?', (row["id"],))
+            return True
+    return False
 
 @app.route('/verify')
 @login_required
@@ -5567,12 +10958,18 @@ def verify_otp():
     username = session.get('username')
 
     db = get_db()
-    user = db.execute('SELECT otp_secret FROM users WHERE username = ?', (username,)).fetchone()
+    user = db.execute('SELECT id, otp_secret FROM users WHERE username = ?', (username,)).fetchone()
 
-    if user and pyotp.TOTP(user['otp_secret']).verify(code):
+    if user and user['otp_secret'] and pyotp.TOTP(user['otp_secret']).verify(code):
         log_activity(db, "otp_verify", "user", details={"username": username})
         db.commit()
+        session['mfa_verified'] = True
         return jsonify({"verified": True}), 200
+    if user and code and verify_recovery_code(db, user["id"], code):
+        log_activity(db, "otp_recovery_used", "user", details={"username": username})
+        db.commit()
+        session['mfa_verified'] = True
+        return jsonify({"verified": True, "recovery": True}), 200
     else:
         log_activity(db, "otp_failed", "user", details={"username": username})
         db.commit()
@@ -5603,6 +11000,10 @@ def reset_password():
     if not pyotp.TOTP(user['otp_secret']).verify(otp_code):
         return render_template('reset_password.html', error="OTP ungültig.")
 
+    min_length = get_password_min_length(db)
+    if len(new_password) < min_length:
+        return render_template('reset_password.html', error=f"Passwort muss mindestens {min_length} Zeichen lang sein.")
+
     # Neues Passwort setzen
     new_hash = generate_password_hash(new_password)
     db.execute('UPDATE users SET password_hash = ? WHERE username = ?', (new_hash, username))
@@ -5632,6 +11033,31 @@ def otp_status():
     user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
     return jsonify({'enabled': bool(user and user['otp_secret'])})
 
+
+from pondsec_ai import register_pondsec_ai
+
+register_pondsec_ai(
+    app,
+    get_db=get_db,
+    get_user_access=get_user_access,
+    user_can=user_can,
+    ensure_ticket_access=ensure_ticket_access,
+    log_activity=log_activity,
+    login_required=login_required,
+    require_permission=require_permission,
+    require_permissions=require_permissions,
+)
+
 if __name__ == '__main__':
     init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    with app.app_context():
+        settings_row = get_server_settings(get_db())
+        settings, _ = serialize_server_settings(settings_row)
+        runtime = load_runtime_settings()
+        if not runtime or runtime == DEFAULT_SERVER_SETTINGS["server"]:
+            runtime = settings["server"]
+            store_runtime_settings(runtime)
+        RUNTIME_SETTINGS_CACHE = runtime
+        schedule_backup_jobs(settings)
+        schedule_health_jobs()
+    app.run(host=runtime["host"], port=runtime["port"], debug=runtime["debug"])

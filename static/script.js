@@ -10,8 +10,11 @@ document.addEventListener('alpine:init', () => {
         relationTypes: [],
         activeCategory: null,
         inventoryTab: 'devices',
+        categoriesOpen: false,
+        assetsOpen: false,
         searchQuery: '',
         categorySearchQuery: '',
+        assetSearchQuery: '',
         ownerQuery: '',
         locationFilter: '',
         categoryFilter: '',
@@ -19,12 +22,14 @@ document.addEventListener('alpine:init', () => {
         createdTo: '',
         specQuery: '',
         sortDropdownOpen: false,
-        filtersOpen: true,
+        filtersOpen: false,
         featureFlags: {
             pro_enabled: false,
             pro_features: [],
             free_features: []
         },
+        userPermissions: window.inventoryPermissions || [],
+        isSuperuser: window.inventoryIsSuperuser || false,
         maintenanceSummary: {
             pro_locked: true,
             open: 0,
@@ -35,9 +40,26 @@ document.addEventListener('alpine:init', () => {
         deviceDetailOpen: false,
         selectedAsset: null,
         assetDetailOpen: false,
+        assetAssignmentHistory: [],
+        assignmentModalOpen: false,
+        assignmentAction: '',
+        assignmentForm: {
+            assigned_to_user_id: '',
+            assigned_to_team_id: '',
+            due_at: '',
+            note: ''
+        },
+        assignmentOptions: {
+            users: [],
+            teams: []
+        },
+        assetAttachments: [],
+        assetAttachmentError: '',
         deviceTags: [],
         deviceNotes: [],
         maintenanceTasks: [],
+        maintenanceAttachments: {},
+        maintenanceAttachmentErrors: {},
         newTag: '',
         newNote: '',
         newMaintenance: {
@@ -45,6 +67,10 @@ document.addEventListener('alpine:init', () => {
             due_date: ''
         },
         currentSort: { field: null, direction: null },
+        otpModalOpen: false,
+        otpSecret: '',
+        otpQrCode: '',
+        otpEnabled: false,
         
         // Modals
         isCategoryModalOpen: false,
@@ -100,9 +126,11 @@ document.addEventListener('alpine:init', () => {
             await this.loadFeatureFlags();
             await this.loadMaintenanceSummary();
             await this.loadActivityFeed();
+            await this.checkOTPStatus();
             this.loadIconCatalog();
             this.$watch('searchQuery', () => this.searchDevices());
             this.$watch('categorySearchQuery', () => this.filterCategories());
+            this.$watch('assetSearchQuery', () => this.filterAssets());
             this.$watch('ownerQuery', () => this.searchDevices());
             this.$watch('locationFilter', () => this.searchDevices());
             this.$watch('categoryFilter', () => this.searchDevices());
@@ -111,6 +139,10 @@ document.addEventListener('alpine:init', () => {
             this.$watch('specQuery', () => this.searchDevices());
             feather.replace();
             this.startLiveRefresh();
+        },
+
+        can(permissionKey) {
+            return this.isSuperuser || this.userPermissions.includes(permissionKey);
         },
 
         async loadFeatureFlags() {
@@ -152,6 +184,57 @@ document.addEventListener('alpine:init', () => {
                 await this.loadMaintenanceSummary();
             }, 15000);
         },
+
+        async checkOTPStatus() {
+            try {
+                const response = await fetch('/api/otp/status', {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+                const data = await response.json();
+                this.otpEnabled = data.enabled;
+            } catch (error) {
+                console.error('Fehler beim Abrufen des 2FA-Status:', error);
+            }
+        },
+
+        async setupOTP() {
+            try {
+                const response = await fetch('/api/otp/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+                const data = await response.json();
+
+                if (data.enabled) {
+                    const confirmed = confirm('2FA ist bereits aktiviert. Möchten Sie es deaktivieren?');
+                    if (confirmed) {
+                        const disableResponse = await fetch('/api/otp/disable', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include'
+                        });
+                        const disableData = await disableResponse.json();
+                        if (disableData.disabled) {
+                            this.otpEnabled = false;
+                            alert('2FA wurde deaktiviert.');
+                        } else {
+                            alert('Fehler beim Deaktivieren von 2FA.');
+                        }
+                    }
+                    return;
+                }
+
+                this.otpSecret = data.secret;
+                this.otpQrCode = data.qr_code;
+                this.otpModalOpen = true;
+            } catch (error) {
+                console.error('Fehler:', error);
+                alert('Ein Fehler ist aufgetreten');
+            }
+        },
 		
         // Data Loading
         async loadCategories() {
@@ -170,6 +253,9 @@ document.addEventListener('alpine:init', () => {
 
         async loadDevices(categoryId = null) {
             this.activeCategory = categoryId;
+            if (categoryId) {
+                this.filtersOpen = false;
+            }
             const url = categoryId 
                 ? `/api/devices?category_id=${categoryId}`
                 : '/api/devices';
@@ -178,6 +264,11 @@ document.addEventListener('alpine:init', () => {
             if (response.ok) {
                 this.devices = await response.json();
                 this.searchDevices();
+                this.$nextTick(() => {
+                    if (window.feather) {
+                        feather.replace();
+                    }
+                });
             }
             if (this.selectedDevice) {
                 const updated = this.devices.find(device => device.id === this.selectedDevice.id);
@@ -286,6 +377,20 @@ document.addEventListener('alpine:init', () => {
             }
             return this.categories.filter(category =>
                 (category.name || '').toLowerCase().includes(query)
+            );
+        },
+
+        filterAssets() {
+            return this.filteredAssets();
+        },
+
+        filteredAssets() {
+            const query = (this.assetSearchQuery || '').toLowerCase().trim();
+            if (!query) {
+                return this.assets;
+            }
+            return this.assets.filter(asset =>
+                (asset.name || '').toLowerCase().includes(query)
             );
         },
 
@@ -641,6 +746,8 @@ document.addEventListener('alpine:init', () => {
             this.deviceTags = [];
             this.deviceNotes = [];
             this.maintenanceTasks = [];
+            this.maintenanceAttachments = {};
+            this.maintenanceAttachmentErrors = {};
         },
 
         async loadDeviceExtras(deviceId) {
@@ -663,6 +770,7 @@ document.addEventListener('alpine:init', () => {
                 const maintenanceRes = await fetch(`/api/maintenance?device_id=${deviceId}`);
                 if (maintenanceRes.ok) {
                     this.maintenanceTasks = await maintenanceRes.json();
+                    await this.loadMaintenanceAttachments();
                 }
             } catch (error) {
                 console.error('Error loading maintenance tasks:', error);
@@ -785,10 +893,194 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async loadMaintenanceAttachments() {
+            this.maintenanceAttachments = {};
+            this.maintenanceAttachmentErrors = {};
+            if (!this.can('attachment.download')) {
+                return;
+            }
+            const tasks = this.maintenanceTasks || [];
+            await Promise.all(tasks.map(async (task) => {
+                const response = await fetch(`/attachments?entity_type=maintenance&entity_id=${task.id}`);
+                if (response.ok) {
+                    this.maintenanceAttachments[task.id] = await response.json();
+                } else {
+                    this.maintenanceAttachments[task.id] = [];
+                }
+            }));
+        },
+
+        async uploadMaintenanceAttachment(taskId, event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('entity_type', 'maintenance');
+            formData.append('entity_id', taskId);
+            formData.append('file', file);
+            this.maintenanceAttachmentErrors[taskId] = '';
+            const response = await fetch('/attachments/upload', {
+                method: 'POST',
+                body: formData
+            });
+            if (response.ok) {
+                await this.loadMaintenanceAttachments();
+            } else {
+                const error = await response.json();
+                this.maintenanceAttachmentErrors[taskId] = error.error || 'Upload fehlgeschlagen';
+            }
+            event.target.value = '';
+        },
+
+        async deleteMaintenanceAttachment(taskId, attachmentId) {
+            if (!confirm('Anhang wirklich löschen?')) return;
+            const response = await fetch(`/attachments/${attachmentId}/delete`, { method: 'POST' });
+            if (response.ok) {
+                await this.loadMaintenanceAttachments();
+            }
+        },
+
         formatActivity(item) {
             const name = item.details?.name || item.details?.tag || '';
             const label = `${item.action} ${item.entity_type}`.replace('_', ' ');
             return `${label}${name ? ` • ${name}` : ''}`;
+        },
+
+        formatFileSize(bytes) {
+            if (!bytes && bytes !== 0) return '-';
+            if (bytes < 1024) return `${bytes} B`;
+            const kb = bytes / 1024;
+            if (kb < 1024) return `${kb.toFixed(1)} KB`;
+            const mb = kb / 1024;
+            return `${mb.toFixed(1)} MB`;
+        },
+
+        assignmentStatusLabel(status) {
+            const labels = {
+                assigned: 'Zugewiesen',
+                checked_out: 'Ausgegeben',
+                checked_in: 'Eingecheckt',
+                transferred: 'Übertragen',
+                unassigned: 'Nicht zugewiesen'
+            };
+            return labels[status] || status || '-';
+        },
+
+        assignmentTargetLabel(assignment) {
+            if (!assignment) return '-';
+            if (assignment.assigned_user) return assignment.assigned_user;
+            if (assignment.assigned_team) return assignment.assigned_team;
+            return '-';
+        },
+
+        async loadAssetAssignmentHistory(assetId) {
+            if (!this.can('asset.view_history')) {
+                this.assetAssignmentHistory = [];
+                return;
+            }
+            const response = await fetch(`/assets/${assetId}/history`);
+            if (response.ok) {
+                this.assetAssignmentHistory = await response.json();
+            }
+        },
+
+        async loadAssetAssignmentOptions() {
+            if (this.assignmentOptions.users.length || this.assignmentOptions.teams.length) {
+                return;
+            }
+            const response = await fetch('/api/asset-assignments/options');
+            if (response.ok) {
+                this.assignmentOptions = await response.json();
+            }
+        },
+
+        openAssetAssignmentModal(action) {
+            this.assignmentAction = action;
+            this.assignmentForm = {
+                assigned_to_user_id: '',
+                assigned_to_team_id: '',
+                due_at: '',
+                note: ''
+            };
+            if (action === 'assign' || action === 'checkout') {
+                this.loadAssetAssignmentOptions();
+            }
+            this.assignmentModalOpen = true;
+        },
+
+        closeAssetAssignmentModal() {
+            this.assignmentModalOpen = false;
+            this.assignmentAction = '';
+        },
+
+        async submitAssetAssignment() {
+            if (!this.selectedAsset) return;
+            const payload = {
+                assigned_to_user_id: this.assignmentForm.assigned_to_user_id || null,
+                assigned_to_team_id: this.assignmentForm.assigned_to_team_id || null,
+                due_at: this.assignmentForm.due_at || null,
+                note: this.assignmentForm.note || ''
+            };
+            const endpointMap = {
+                assign: 'assign',
+                checkout: 'checkout',
+                checkin: 'checkin',
+                unassign: 'unassign'
+            };
+            const endpoint = endpointMap[this.assignmentAction];
+            if (!endpoint) return;
+            const response = await fetch(`/assets/${this.selectedAsset.id}/${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (response.ok) {
+                const result = await response.json();
+                this.selectedAsset.assignment = result.assignment;
+                this.assetAssignmentHistory = result.history || [];
+                await this.loadAssets();
+                await this.loadActivityFeed();
+                this.closeAssetAssignmentModal();
+            } else {
+                const error = await response.json();
+                alert(error.error || 'Zuweisung konnte nicht gespeichert werden');
+            }
+        },
+
+        async loadAssetAttachments(assetId) {
+            const response = await fetch(`/attachments?entity_type=asset&entity_id=${assetId}`);
+            if (response.ok) {
+                this.assetAttachments = await response.json();
+            }
+        },
+
+        async uploadAssetAttachment(event) {
+            if (!this.selectedAsset) return;
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('entity_type', 'asset');
+            formData.append('entity_id', this.selectedAsset.id);
+            formData.append('file', file);
+            this.assetAttachmentError = '';
+            const response = await fetch('/attachments/upload', {
+                method: 'POST',
+                body: formData
+            });
+            if (response.ok) {
+                await this.loadAssetAttachments(this.selectedAsset.id);
+            } else {
+                const error = await response.json();
+                this.assetAttachmentError = error.error || 'Upload fehlgeschlagen';
+            }
+            event.target.value = '';
+        },
+
+        async deleteAssetAttachment(attachmentId) {
+            if (!confirm('Anhang wirklich löschen?')) return;
+            const response = await fetch(`/attachments/${attachmentId}/delete`, { method: 'POST' });
+            if (response.ok && this.selectedAsset) {
+                await this.loadAssetAttachments(this.selectedAsset.id);
+            }
         },
 
         // Asset Methods
@@ -967,6 +1259,12 @@ document.addEventListener('alpine:init', () => {
                     throw new Error('Asset konnte nicht geladen werden');
                 }
                 this.selectedAsset = await response.json();
+                this.assetAssignmentHistory = this.selectedAsset.assignment_history || [];
+                this.assetAttachments = [];
+                this.assetAttachmentError = '';
+                if (this.can('attachment.download')) {
+                    await this.loadAssetAttachments(asset.id);
+                }
                 this.assetDetailOpen = true;
             } catch (error) {
                 console.error('Error loading asset detail:', error);
@@ -977,6 +1275,9 @@ document.addEventListener('alpine:init', () => {
         closeAssetDetail() {
             this.assetDetailOpen = false;
             this.selectedAsset = null;
+            this.assetAssignmentHistory = [];
+            this.assetAttachments = [];
+            this.assetAttachmentError = '';
         },
 
         // Helper Methods

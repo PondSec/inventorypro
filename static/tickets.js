@@ -5,10 +5,13 @@ document.addEventListener('alpine:init', () => {
         alerts: [],
         assets: [],
         selectedTicket: null,
+        ticketAttachments: [],
+        ticketAttachmentError: '',
         knowledgeSuggestions: [],
         knowledgeLoading: false,
         userPermissions: window.inventoryPermissions || [],
         isSuperuser: window.inventoryIsSuperuser || false,
+        currentUsername: window.inventoryUsername || '',
         filters: {
             status: '',
             priority: '',
@@ -44,8 +47,6 @@ document.addEventListener('alpine:init', () => {
             description: '',
             category_id: '',
             priority: 'normal',
-            requester_name: '',
-            requester_email: '',
             assignee: '',
             assignee_email: '',
             due_date: '',
@@ -112,6 +113,9 @@ document.addEventListener('alpine:init', () => {
         openNewTicket() {
             this.ticketError = '';
             this.ticketModalOpen = true;
+            if (!this.newTicket.requester_name && this.currentUsername) {
+                this.newTicket.requester_name = this.currentUsername;
+            }
         },
 
         addCustomField() {
@@ -168,6 +172,7 @@ document.addEventListener('alpine:init', () => {
             const response = await fetch(`/api/tickets/${ticket.id}`);
             if (response.ok) {
                 this.selectedTicket = await response.json();
+                window.PONDSEC_AI_CONTEXT = { type: 'ticket', id: this.selectedTicket.id };
                 if (!this.selectedTicket.asset_ids) {
                     this.selectedTicket.asset_ids = (this.selectedTicket.assets || []).map((asset) => asset.id);
                 }
@@ -175,13 +180,67 @@ document.addEventListener('alpine:init', () => {
                 this.internalComment = false;
                 this.newWatcher = '';
                 await this.loadKnowledgeSuggestions();
+                if (this.can('attachment.download')) {
+                    await this.loadTicketAttachments(this.selectedTicket.id);
+                } else {
+                    this.ticketAttachments = [];
+                }
                 this.$nextTick(() => feather.replace());
             }
         },
 
         closeTicket() {
             this.selectedTicket = null;
+            window.PONDSEC_AI_CONTEXT = { type: 'tickets' };
             this.knowledgeSuggestions = [];
+            this.ticketAttachments = [];
+            this.ticketAttachmentError = '';
+        },
+
+        formatFileSize(bytes) {
+            if (!bytes && bytes !== 0) return '-';
+            if (bytes < 1024) return `${bytes} B`;
+            const kb = bytes / 1024;
+            if (kb < 1024) return `${kb.toFixed(1)} KB`;
+            const mb = kb / 1024;
+            return `${mb.toFixed(1)} MB`;
+        },
+
+        async loadTicketAttachments(ticketId) {
+            const response = await fetch(`/attachments?entity_type=ticket&entity_id=${ticketId}`);
+            if (response.ok) {
+                this.ticketAttachments = await response.json();
+            }
+        },
+
+        async uploadTicketAttachment(event) {
+            if (!this.selectedTicket) return;
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('entity_type', 'ticket');
+            formData.append('entity_id', this.selectedTicket.id);
+            formData.append('file', file);
+            this.ticketAttachmentError = '';
+            const response = await fetch('/attachments/upload', {
+                method: 'POST',
+                body: formData
+            });
+            if (response.ok) {
+                await this.loadTicketAttachments(this.selectedTicket.id);
+            } else {
+                const error = await response.json();
+                this.ticketAttachmentError = error.error || 'Upload fehlgeschlagen';
+            }
+            event.target.value = '';
+        },
+
+        async deleteTicketAttachment(attachmentId) {
+            if (!confirm('Anhang wirklich löschen?')) return;
+            const response = await fetch(`/attachments/${attachmentId}/delete`, { method: 'POST' });
+            if (response.ok && this.selectedTicket) {
+                await this.loadTicketAttachments(this.selectedTicket.id);
+            }
         },
 
         async loadKnowledgeSuggestions() {
@@ -245,8 +304,6 @@ document.addEventListener('alpine:init', () => {
                 description: this.newTicket.description,
                 category_id: this.newTicket.category_id || null,
                 priority: this.newTicket.priority,
-                requester_name: this.newTicket.requester_name,
-                requester_email: this.newTicket.requester_email,
                 assignee: this.newTicket.assignee,
                 assignee_email: this.newTicket.assignee_email,
                 due_date: this.newTicket.due_date,
@@ -268,8 +325,6 @@ document.addEventListener('alpine:init', () => {
                     description: '',
                     category_id: '',
                     priority: 'normal',
-                    requester_name: '',
-                    requester_email: '',
                     assignee: '',
                     assignee_email: '',
                     due_date: '',
