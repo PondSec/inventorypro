@@ -10,7 +10,7 @@ document.addEventListener('alpine:init', () => {
         relationTypes: [],
         activeCategory: null,
         inventoryTab: 'devices',
-        categoriesOpen: false,
+        categoriesOpen: true,
         assetsOpen: false,
         searchQuery: '',
         categorySearchQuery: '',
