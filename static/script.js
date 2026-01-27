@@ -264,6 +264,11 @@ document.addEventListener('alpine:init', () => {
             if (response.ok) {
                 this.devices = await response.json();
                 this.searchDevices();
+                this.$nextTick(() => {
+                    if (window.feather) {
+                        feather.replace();
+                    }
+                });
             }
             if (this.selectedDevice) {
                 const updated = this.devices.find(device => device.id === this.selectedDevice.id);
