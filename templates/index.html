@@ -523,7 +523,7 @@
                                         </thead>
                                         <tbody class="divide-y divide-slate-100">
                                             <template x-for="device in filteredDevices" :key="device.id">
-                                                <tr class="hover:bg-slate-50">
+                                                <tr class="hover:bg-slate-50 cursor-pointer" @click="openDeviceDetail(device)">
                                                     <td class="py-4 px-4 sm:px-6">
                                                         <p class="max-w-[14rem] truncate font-semibold text-slate-900 sm:max-w-none" x-text="device.name"></p>
                                                         <p class="text-xs text-slate-500" x-text="device.created_at?.slice(0, 10) || ''"></p>
@@ -545,15 +545,14 @@
                                                             <span x-show="Object.keys(JSON.parse(device.specs || '{}')).length === 0" class="text-xs text-slate-400">Keine Specs</span>
                                                         </div>
                                                     </td>
-                                                    <td class="py-4 px-4 sm:px-6 text-right">
+                                                    <td class="py-4 px-4 sm:px-6 text-right" @click.stop>
                                                         <div class="flex items-center justify-end gap-2" x-data="{ open: false }">
-                                                            <button @click="openDeviceDetail(device)" class="rounded-full border border-blue-100 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50">Öffnen</button>
-                                                            <button @click="open = !open" class="icon-button inline-flex items-center justify-center rounded-full border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-100" aria-label="Weitere Aktionen">
+                                                            <button @click.stop="open = !open" class="icon-button inline-flex items-center justify-center rounded-full border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-100" aria-label="Weitere Aktionen">
                                                                 <i data-feather="more-vertical" class="h-4 w-4"></i>
                                                             </button>
                                                             <div x-show="open" @click.away="open = false" class="absolute right-4 z-20 mt-24 w-40 rounded-2xl border border-slate-200 bg-white shadow-xl" x-transition>
-                                                                <button @click="openEditDeviceModal(device); open=false" class="block w-full px-4 py-2 text-left text-sm hover:bg-slate-50">Bearbeiten</button>
-                                                                <button @click="deleteDevice(device.id); open=false" class="block w-full px-4 py-2 text-left text-sm text-rose-600 hover:bg-rose-50">Löschen</button>
+                                                                <button @click.stop="openEditDeviceModal(device); open=false" class="block w-full px-4 py-2 text-left text-sm hover:bg-slate-50">Bearbeiten</button>
+                                                                <button @click.stop="deleteDevice(device.id); open=false" class="block w-full px-4 py-2 text-left text-sm text-rose-600 hover:bg-rose-50">Löschen</button>
                                                             </div>
                                                         </div>
                                                     </td>
