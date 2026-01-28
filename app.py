@@ -2313,6 +2313,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS assets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
+                parent_asset_id INTEGER,
                 notes TEXT,
                 specs TEXT,
                 acquisition_date TEXT,
@@ -2321,7 +2322,8 @@ def init_db():
                 depreciation_months INTEGER,
                 retirement_date TEXT,
                 retirement_reason TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (parent_asset_id) REFERENCES assets(id)
             )
         ''')
 
@@ -2332,6 +2334,11 @@ def init_db():
 
         try:
             c.execute('ALTER TABLE assets ADD COLUMN specs TEXT')
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            c.execute('ALTER TABLE assets ADD COLUMN parent_asset_id INTEGER')
         except sqlite3.OperationalError:
             pass
 
@@ -6392,6 +6399,17 @@ def manage_assets():
         name = (data.get('name') or '').strip()
         notes = (data.get('notes') or '').strip()
         specs = json.dumps(data.get('specs', {}))
+        parent_asset_id = data.get('parent_asset_id')
+        if parent_asset_id in ("", None):
+            parent_asset_id = None
+        if parent_asset_id is not None:
+            try:
+                parent_asset_id = int(parent_asset_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Ungültiges übergeordnetes Asset"}), 400
+            parent_asset = db.execute('SELECT id FROM assets WHERE id = ?', (parent_asset_id,)).fetchone()
+            if not parent_asset:
+                return jsonify({"error": "Übergeordnetes Asset nicht gefunden"}), 400
         acquisition_date = (data.get('acquisition_date') or '').strip() or None
         commissioning_date = (data.get('commissioning_date') or '').strip() or None
         warranty_end = (data.get('warranty_end') or '').strip() or None
@@ -6405,12 +6423,13 @@ def manage_assets():
         try:
             cursor = db.execute('''
                 INSERT INTO assets (
-                    name, notes, specs, acquisition_date, commissioning_date,
+                    name, parent_asset_id, notes, specs, acquisition_date, commissioning_date,
                     warranty_end, depreciation_months, retirement_date, retirement_reason
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 name,
+                parent_asset_id,
                 notes,
                 specs,
                 acquisition_date,
@@ -6445,8 +6464,9 @@ def manage_assets():
     if not (user_can('assets.view') or user_can('assets.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
     assets = db.execute('''
-        SELECT a.*, COUNT(ad.device_id) as device_count
+        SELECT a.*, p.name AS parent_name, COUNT(ad.device_id) as device_count
         FROM assets a
+        LEFT JOIN assets p ON p.id = a.parent_asset_id
         LEFT JOIN asset_devices ad ON a.id = ad.asset_id
         GROUP BY a.id
         ORDER BY a.created_at DESC
@@ -6501,6 +6521,20 @@ def asset_detail(asset_id):
             item["direction"] = "outgoing" if item["asset_id"] == asset_id else "incoming"
             relations.append(item)
         asset["relations"] = relations
+        parent_asset = None
+        if asset_row["parent_asset_id"]:
+            parent_asset = db.execute(
+                'SELECT id, name FROM assets WHERE id = ?',
+                (asset_row["parent_asset_id"],)
+            ).fetchone()
+        child_assets = db.execute('''
+            SELECT id, name, created_at
+            FROM assets
+            WHERE parent_asset_id = ?
+            ORDER BY created_at DESC
+        ''', (asset_id,)).fetchall()
+        asset["parent_asset"] = dict(parent_asset) if parent_asset else None
+        asset["child_assets"] = [dict(row) for row in child_assets]
         open_ticket_rows = db.execute('''
             SELECT t.id, t.title, t.status, t.priority, t.created_at
             FROM tickets t
@@ -6518,6 +6552,20 @@ def asset_detail(asset_id):
         name = (data.get('name') or '').strip()
         notes = (data.get('notes') or '').strip()
         specs = json.dumps(data.get('specs', {}))
+        parent_asset_id = data.get('parent_asset_id')
+        if parent_asset_id in ("", None):
+            parent_asset_id = None
+        if parent_asset_id is not None:
+            try:
+                parent_asset_id = int(parent_asset_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Ungültiges übergeordnetes Asset"}), 400
+        if parent_asset_id == asset_id:
+            return jsonify({"error": "Asset kann nicht sich selbst zugeordnet werden"}), 400
+        if parent_asset_id is not None:
+            parent_asset = db.execute('SELECT id FROM assets WHERE id = ?', (parent_asset_id,)).fetchone()
+            if not parent_asset:
+                return jsonify({"error": "Übergeordnetes Asset nicht gefunden"}), 400
         acquisition_date = (data.get('acquisition_date') or '').strip() or None
         commissioning_date = (data.get('commissioning_date') or '').strip() or None
         warranty_end = (data.get('warranty_end') or '').strip() or None
@@ -6530,11 +6578,12 @@ def asset_detail(asset_id):
             return jsonify({"error": "Name ist erforderlich"}), 400
         db.execute('''
             UPDATE assets
-            SET name = ?, notes = ?, specs = ?, acquisition_date = ?, commissioning_date = ?,
+            SET name = ?, parent_asset_id = ?, notes = ?, specs = ?, acquisition_date = ?, commissioning_date = ?,
                 warranty_end = ?, depreciation_months = ?, retirement_date = ?, retirement_reason = ?
             WHERE id = ?
         ''', (
             name,
+            parent_asset_id,
             notes,
             specs,
             acquisition_date,
@@ -6574,6 +6623,7 @@ def asset_detail(asset_id):
     ).fetchall()
     device_ids = [row["device_id"] for row in device_rows]
     mark_devices_as_in_stock(db, device_ids)
+    db.execute('UPDATE assets SET parent_asset_id = NULL WHERE parent_asset_id = ?', (asset_id,))
     db.execute('DELETE FROM ticket_assets WHERE asset_id = ?', (asset_id,))
     db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
     db.execute('DELETE FROM asset_relations WHERE asset_id = ? OR related_asset_id = ?', (asset_id, asset_id))
