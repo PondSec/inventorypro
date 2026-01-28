@@ -1089,6 +1089,7 @@ document.addEventListener('alpine:init', () => {
             this.currentAsset = {
                 id: null,
                 name: '',
+                parent_asset_id: '',
                 notes: '',
                 specs: [],
                 device_ids: [],
@@ -1120,6 +1121,7 @@ document.addEventListener('alpine:init', () => {
                 this.currentAsset = {
                     id: data.id,
                     name: data.name,
+                    parent_asset_id: data.parent_asset_id || '',
                     notes: data.notes || '',
                     specs: Object.entries(data.specs || {}).map(([key, value]) => ({
                         id: crypto.randomUUID(),
@@ -1190,6 +1192,7 @@ document.addEventListener('alpine:init', () => {
 
                 const payload = {
                     name: this.currentAsset.name,
+                    parent_asset_id: this.currentAsset.parent_asset_id || null,
                     notes: this.currentAsset.notes,
                     specs,
                     device_ids: this.currentAsset.device_ids,
