@@ -9,7 +9,6 @@ document.addEventListener('alpine:init', () => {
         assets: [],
         relationTypes: [],
         activeCategory: null,
-        activeAssetGroup: null,
         inventoryTab: 'devices',
         categoriesOpen: false,
         assetsOpen: false,
@@ -254,7 +253,6 @@ document.addEventListener('alpine:init', () => {
 
         async loadDevices(categoryId = null) {
             this.activeCategory = categoryId;
-            this.activeAssetGroup = null;
             if (categoryId) {
                 this.filtersOpen = false;
             }
@@ -1256,7 +1254,6 @@ document.addEventListener('alpine:init', () => {
 
         async openAssetDetail(asset) {
             try {
-                this.selectAssetGroup(asset);
                 const response = await fetch(`/api/assets/${asset.id}`);
                 if (!response.ok) {
                     throw new Error('Asset konnte nicht geladen werden');
@@ -1284,11 +1281,6 @@ document.addEventListener('alpine:init', () => {
         },
 
         // Helper Methods
-        selectAssetGroup(asset) {
-            this.activeCategory = null;
-            this.activeAssetGroup = asset?.id || null;
-        },
-
         getCategoryById(categoryId) {
             return this.categories.find(c => c.id === categoryId) || null;
         },
@@ -1296,25 +1288,6 @@ document.addEventListener('alpine:init', () => {
         getCategoryName(categoryId) {
             const category = this.getCategoryById(categoryId);
             return category ? category.name : 'Unknown';
-        },
-
-        getAssetById(assetId) {
-            return this.assets.find(asset => asset.id === assetId) || null;
-        },
-
-        getAssetName(assetId) {
-            const asset = this.getAssetById(assetId);
-            return asset ? asset.name : 'Unknown';
-        },
-
-        activeScopeLabel() {
-            if (this.activeCategory) {
-                return this.getCategoryName(this.activeCategory);
-            }
-            if (this.activeAssetGroup) {
-                return this.getAssetName(this.activeAssetGroup);
-            }
-            return 'Alle Geräte';
         },
 
         getCategoryFields(categoryId) {
