@@ -2310,9 +2310,18 @@ def init_db():
         ''')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS assets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
+                category_id INTEGER,
                 notes TEXT,
                 specs TEXT,
                 acquisition_date TEXT,
@@ -2321,7 +2330,8 @@ def init_db():
                 depreciation_months INTEGER,
                 retirement_date TEXT,
                 retirement_reason TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (category_id) REFERENCES asset_categories(id)
             )
         ''')
 
@@ -2332,6 +2342,11 @@ def init_db():
 
         try:
             c.execute('ALTER TABLE assets ADD COLUMN specs TEXT')
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            c.execute('ALTER TABLE assets ADD COLUMN category_id INTEGER')
         except sqlite3.OperationalError:
             pass
 
@@ -2353,11 +2368,25 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 asset_id INTEGER NOT NULL,
                 device_id INTEGER NOT NULL,
+                quantity INTEGER DEFAULT 1,
+                notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (asset_id) REFERENCES assets(id),
                 FOREIGN KEY (device_id) REFERENCES devices(id)
             )
         ''')
+
+        try:
+            c.execute('ALTER TABLE asset_devices ADD COLUMN quantity INTEGER DEFAULT 1')
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            c.execute('ALTER TABLE asset_devices ADD COLUMN notes TEXT')
+        except sqlite3.OperationalError:
+            pass
+
+        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_category_name ON assets(category_id, name)')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS asset_relation_types (
@@ -2393,6 +2422,43 @@ def init_db():
                 FOREIGN KEY (asset_id) REFERENCES assets(id)
             )
         ''')
+
+        c.execute('INSERT OR IGNORE INTO asset_categories (name) VALUES (?)', ("Assets",))
+        default_category_row = db.execute(
+            'SELECT id FROM asset_categories WHERE name = ?',
+            ("Assets",),
+        ).fetchone()
+        if default_category_row:
+            db.execute(
+                'UPDATE assets SET category_id = ? WHERE category_id IS NULL',
+                (default_category_row["id"],),
+            )
+
+        db.execute('UPDATE asset_devices SET quantity = 1 WHERE quantity IS NULL')
+        duplicate_rows = db.execute('''
+            SELECT asset_id, device_id,
+                   GROUP_CONCAT(id) AS ids,
+                   SUM(COALESCE(quantity, 1)) AS total_quantity
+            FROM asset_devices
+            GROUP BY asset_id, device_id
+            HAVING COUNT(*) > 1
+        ''').fetchall()
+        for row in duplicate_rows:
+            ids = [int(item) for item in row["ids"].split(",") if item]
+            if not ids:
+                continue
+            primary_id = ids[0]
+            db.execute(
+                'UPDATE asset_devices SET quantity = ? WHERE id = ?',
+                (row["total_quantity"], primary_id),
+            )
+            if len(ids) > 1:
+                placeholders = ",".join("?" for _ in ids[1:])
+                db.execute(
+                    f'DELETE FROM asset_devices WHERE id IN ({placeholders})',
+                    ids[1:],
+                )
+        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_devices_unique ON asset_devices(asset_id, device_id)')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS activity_log (
@@ -4669,7 +4735,7 @@ def format_time_machine_change(entity_label, action_label, details):
     return f"{entity_label} {action_label}{suffix}"
 
 DEPENDENCY_ENTITY_TYPES = {
-    "asset": {"table": "assets", "label": "Asset", "name_col": "name"},
+    "asset": {"table": "assets", "label": "Asset-Eintrag", "name_col": "name"},
     "device": {"table": "devices", "label": "Gerät", "name_col": "name"},
     "software": {"table": "software", "label": "Software", "name_col": "name"},
     "service": {"table": "services", "label": "Service", "name_col": "name"},
@@ -5643,6 +5709,68 @@ def mark_devices_as_in_stock(db, device_ids):
             (json.dumps(specs), row["id"]),
         )
 
+def mark_devices_as_in_stock_if_unassigned(db, device_ids):
+    unique_ids = [device_id for device_id in dict.fromkeys(device_ids) if device_id]
+    if not unique_ids:
+        return
+    placeholders = ",".join(["?"] * len(unique_ids))
+    assigned_rows = db.execute(
+        f'''
+            SELECT DISTINCT device_id
+            FROM asset_devices
+            WHERE device_id IN ({placeholders})
+        ''',
+        unique_ids,
+    ).fetchall()
+    assigned_ids = {row["device_id"] for row in assigned_rows}
+    to_update = [device_id for device_id in unique_ids if device_id not in assigned_ids]
+    if not to_update:
+        return
+    placeholders = ",".join(["?"] * len(to_update))
+    rows = db.execute(
+        f"SELECT id, specs FROM devices WHERE id IN ({placeholders})",
+        to_update,
+    ).fetchall()
+    for row in rows:
+        try:
+            specs = json.loads(row["specs"] or "{}")
+        except json.JSONDecodeError:
+            specs = {}
+        specs["Status"] = "Lager"
+        db.execute(
+            "UPDATE devices SET specs = ? WHERE id = ?",
+            (json.dumps(specs), row["id"]),
+        )
+
+def find_device_assignment_conflicts(db, device_ids, asset_id=None):
+    unique_ids = [device_id for device_id in dict.fromkeys(device_ids) if device_id]
+    if not unique_ids:
+        return []
+    placeholders = ",".join(["?"] * len(unique_ids))
+    params = list(unique_ids)
+    query = f'''
+        SELECT device_id, asset_id
+        FROM asset_devices
+        WHERE device_id IN ({placeholders})
+    '''
+    if asset_id:
+        query += ' AND asset_id != ?'
+        params.append(asset_id)
+    rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+def find_missing_device_ids(db, device_ids):
+    unique_ids = [device_id for device_id in dict.fromkeys(device_ids) if device_id]
+    if not unique_ids:
+        return []
+    placeholders = ",".join(["?"] * len(unique_ids))
+    rows = db.execute(
+        f"SELECT id FROM devices WHERE id IN ({placeholders})",
+        unique_ids,
+    ).fetchall()
+    existing_ids = {row["id"] for row in rows}
+    return [device_id for device_id in unique_ids if device_id not in existing_ids]
+
 def get_asset_devices_info(db, asset_id):
     rows = db.execute('''
         SELECT d.serial_number, l.name as location_name
@@ -6382,14 +6510,110 @@ def get_devices():
     return jsonify([dict(row) for row in devices])
 
 @app.route('/api/assets', methods=['GET', 'POST'])
+@app.route('/api/asset-categories', methods=['GET', 'POST'])
 @login_required
-def manage_assets():
+def manage_asset_categories():
     db = get_db()
     if request.method == 'POST':
         if not user_can('assets.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json()
+        data = request.get_json() or {}
         name = (data.get('name') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            cursor = db.execute(
+                'INSERT INTO asset_categories (name) VALUES (?)',
+                (name,),
+            )
+            category_id = cursor.lastrowid
+            log_activity(db, "create", "asset_category", category_id, {"name": name})
+            db.commit()
+            return jsonify({"status": "created", "id": category_id}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Kategorie existiert bereits"}), 409
+        except sqlite3.Error as e:
+            return jsonify({"error": f"Datenbankfehler: {str(e)}"}), 500
+
+    if not (user_can('assets.view') or user_can('assets.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    categories = db.execute('''
+        SELECT ac.*, COUNT(a.id) AS entry_count
+        FROM asset_categories ac
+        LEFT JOIN assets a ON a.category_id = ac.id
+        GROUP BY ac.id
+        ORDER BY ac.created_at DESC
+    ''').fetchall()
+    return jsonify([dict(row) for row in categories])
+
+@app.route('/api/assets/<int:category_id>', methods=['GET', 'PUT', 'DELETE'])
+@app.route('/api/asset-categories/<int:category_id>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def asset_category_detail(category_id):
+    db = get_db()
+    category_row = db.execute(
+        'SELECT * FROM asset_categories WHERE id = ?',
+        (category_id,),
+    ).fetchone()
+    if not category_row:
+        return jsonify({"error": "Asset-Kategorie nicht gefunden"}), 404
+
+    if request.method == 'GET':
+        if not (user_can('assets.view') or user_can('assets.manage')):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        entries = db.execute('''
+            SELECT a.*, ac.name AS category_name, COUNT(ad.device_id) AS device_count
+            FROM assets a
+            LEFT JOIN asset_categories ac ON a.category_id = ac.id
+            LEFT JOIN asset_devices ad ON a.id = ad.asset_id
+            WHERE a.category_id = ?
+            GROUP BY a.id
+            ORDER BY a.created_at DESC
+        ''', (category_id,)).fetchall()
+        entry_list = [build_asset_summary(db, row) for row in entries]
+        return jsonify({"category": dict(category_row), "entries": entry_list})
+
+    if request.method == 'PUT':
+        if not user_can('assets.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            db.execute(
+                'UPDATE asset_categories SET name = ? WHERE id = ?',
+                (name, category_id),
+            )
+            log_activity(db, "update", "asset_category", category_id, {"name": name})
+            db.commit()
+            return jsonify({"status": "updated"}), 200
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Kategorie existiert bereits"}), 409
+
+    if not user_can('assets.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    entry_count_row = db.execute(
+        'SELECT COUNT(*) AS total FROM assets WHERE category_id = ?',
+        (category_id,),
+    ).fetchone()
+    if entry_count_row and entry_count_row["total"] > 0:
+        return jsonify({"error": "Kategorie enthält noch Asset-Einträge"}), 409
+    db.execute('DELETE FROM asset_categories WHERE id = ?', (category_id,))
+    log_activity(db, "delete", "asset_category", category_id, {"name": category_row["name"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/asset-entries', methods=['GET', 'POST'])
+@login_required
+def manage_asset_entries():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('assets.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        category_id = data.get('category_id')
         notes = (data.get('notes') or '').strip()
         specs = json.dumps(data.get('specs', {}))
         acquisition_date = (data.get('acquisition_date') or '').strip() or None
@@ -6399,18 +6623,39 @@ def manage_assets():
         retirement_date = (data.get('retirement_date') or '').strip() or None
         retirement_reason = (data.get('retirement_reason') or '').strip()
         device_ids = data.get('device_ids') or []
+        device_items = data.get('device_items') or []
         relations = data.get('relations') or []
         if not name:
             return jsonify({"error": "Name ist erforderlich"}), 400
+        if not category_id:
+            return jsonify({"error": "Kategorie ist erforderlich"}), 400
+        category_row = db.execute(
+            'SELECT id FROM asset_categories WHERE id = ?',
+            (category_id,),
+        ).fetchone()
+        if not category_row:
+            return jsonify({"error": "Kategorie nicht gefunden"}), 404
+
+        if device_items:
+            device_ids = [item.get("device_id") for item in device_items if item.get("device_id")]
+
+        missing_ids = find_missing_device_ids(db, device_ids)
+        if missing_ids:
+            return jsonify({"error": "Ungültige Geräte-IDs"}), 400
+
+        conflicts = find_device_assignment_conflicts(db, device_ids)
+        if conflicts:
+            return jsonify({"error": "Geräte sind bereits anderen Asset-Einträgen zugewiesen"}), 409
         try:
             cursor = db.execute('''
                 INSERT INTO assets (
-                    name, notes, specs, acquisition_date, commissioning_date,
+                    name, category_id, notes, specs, acquisition_date, commissioning_date,
                     warranty_end, depreciation_months, retirement_date, retirement_reason
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 name,
+                category_id,
                 notes,
                 specs,
                 acquisition_date,
@@ -6421,11 +6666,23 @@ def manage_assets():
                 retirement_reason
             ))
             asset_id = cursor.lastrowid
-            for device_id in device_ids:
-                db.execute('''
-                    INSERT INTO asset_devices (asset_id, device_id)
-                    VALUES (?, ?)
-                ''', (asset_id, device_id))
+            if device_items:
+                for item in device_items:
+                    device_id = item.get("device_id")
+                    if not device_id:
+                        continue
+                    quantity = item.get("quantity") or 1
+                    notes_item = (item.get("notes") or "").strip() or None
+                    db.execute('''
+                        INSERT INTO asset_devices (asset_id, device_id, quantity, notes)
+                        VALUES (?, ?, ?, ?)
+                    ''', (asset_id, device_id, quantity, notes_item))
+            else:
+                for device_id in device_ids:
+                    db.execute('''
+                        INSERT INTO asset_devices (asset_id, device_id, quantity)
+                        VALUES (?, ?, 1)
+                    ''', (asset_id, device_id))
             mark_devices_as_used(db, device_ids)
             for relation in relations:
                 related_asset_id = relation.get("related_asset_id")
@@ -6436,40 +6693,51 @@ def manage_assets():
                     INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id)
                     VALUES (?, ?, ?)
                 ''', (asset_id, related_asset_id, relation_type_id))
-            log_activity(db, "create", "asset", asset_id, {"name": name})
+            log_activity(db, "create", "asset_entry", asset_id, {"name": name})
             db.commit()
             return jsonify({"status": "created", "id": asset_id}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Eintrag existiert bereits"}), 409
         except sqlite3.Error as e:
             return jsonify({"error": f"Datenbankfehler: {str(e)}"}), 500
 
     if not (user_can('assets.view') or user_can('assets.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
-    assets = db.execute('''
-        SELECT a.*, COUNT(ad.device_id) as device_count
+    category_id = request.args.get('category_id')
+    query = '''
+        SELECT a.*, ac.name AS category_name, COUNT(ad.device_id) AS device_count
         FROM assets a
+        LEFT JOIN asset_categories ac ON a.category_id = ac.id
         LEFT JOIN asset_devices ad ON a.id = ad.asset_id
-        GROUP BY a.id
-        ORDER BY a.created_at DESC
-    ''').fetchall()
-    result = []
-    for row in assets:
-        asset = build_asset_summary(db, row)
-        result.append(asset)
+    '''
+    params = []
+    if category_id:
+        query += ' WHERE a.category_id = ?'
+        params.append(category_id)
+    query += ' GROUP BY a.id ORDER BY a.created_at DESC'
+    assets = db.execute(query, params).fetchall()
+    result = [build_asset_summary(db, row) for row in assets]
     return jsonify(result)
 
-@app.route('/api/assets/<int:asset_id>', methods=['GET', 'PUT', 'DELETE'])
+@app.route('/api/asset-entries/<int:asset_id>', methods=['GET', 'PUT', 'DELETE'])
 @login_required
-def asset_detail(asset_id):
+def asset_entry_detail(asset_id):
     db = get_db()
-    asset_row = db.execute('SELECT * FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    asset_row = db.execute('''
+        SELECT a.*, ac.name AS category_name
+        FROM assets a
+        LEFT JOIN asset_categories ac ON a.category_id = ac.id
+        WHERE a.id = ?
+    ''', (asset_id,)).fetchone()
     if not asset_row:
-        return jsonify({"error": "Asset nicht gefunden"}), 404
+        return jsonify({"error": "Asset-Eintrag nicht gefunden"}), 404
 
     if request.method == 'GET':
         if not (user_can('assets.view') or user_can('assets.manage')):
             return jsonify({"error": "Keine Berechtigung"}), 403
         device_rows = db.execute('''
-            SELECT d.*, c.name as category_name, c.icon as category_icon, l.name as location_name
+            SELECT d.*, c.name as category_name, c.icon as category_icon, l.name as location_name,
+                   ad.quantity, ad.notes
             FROM devices d
             JOIN asset_devices ad ON ad.device_id = d.id
             JOIN categories c ON d.category_id = c.id
@@ -6514,8 +6782,9 @@ def asset_detail(asset_id):
     if request.method == 'PUT':
         if not user_can('assets.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json()
+        data = request.get_json() or {}
         name = (data.get('name') or '').strip()
+        category_id = data.get('category_id')
         notes = (data.get('notes') or '').strip()
         specs = json.dumps(data.get('specs', {}))
         acquisition_date = (data.get('acquisition_date') or '').strip() or None
@@ -6525,16 +6794,34 @@ def asset_detail(asset_id):
         retirement_date = (data.get('retirement_date') or '').strip() or None
         retirement_reason = (data.get('retirement_reason') or '').strip()
         device_ids = data.get('device_ids') or []
+        device_items = data.get('device_items') or []
         relations = data.get('relations') or []
         if not name:
             return jsonify({"error": "Name ist erforderlich"}), 400
+        if not category_id:
+            return jsonify({"error": "Kategorie ist erforderlich"}), 400
+        category_row = db.execute(
+            'SELECT id FROM asset_categories WHERE id = ?',
+            (category_id,),
+        ).fetchone()
+        if not category_row:
+            return jsonify({"error": "Kategorie nicht gefunden"}), 404
+        if device_items:
+            device_ids = [item.get("device_id") for item in device_items if item.get("device_id")]
+        missing_ids = find_missing_device_ids(db, device_ids)
+        if missing_ids:
+            return jsonify({"error": "Ungültige Geräte-IDs"}), 400
+        conflicts = find_device_assignment_conflicts(db, device_ids, asset_id=asset_id)
+        if conflicts:
+            return jsonify({"error": "Geräte sind bereits anderen Asset-Einträgen zugewiesen"}), 409
         db.execute('''
             UPDATE assets
-            SET name = ?, notes = ?, specs = ?, acquisition_date = ?, commissioning_date = ?,
+            SET name = ?, category_id = ?, notes = ?, specs = ?, acquisition_date = ?, commissioning_date = ?,
                 warranty_end = ?, depreciation_months = ?, retirement_date = ?, retirement_reason = ?
             WHERE id = ?
         ''', (
             name,
+            category_id,
             notes,
             specs,
             acquisition_date,
@@ -6545,13 +6832,33 @@ def asset_detail(asset_id):
             retirement_reason,
             asset_id
         ))
+        existing_rows = db.execute(
+            'SELECT device_id FROM asset_devices WHERE asset_id = ?',
+            (asset_id,),
+        ).fetchall()
+        existing_ids = {row["device_id"] for row in existing_rows}
         db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
-        for device_id in device_ids:
-            db.execute('''
-                INSERT INTO asset_devices (asset_id, device_id)
-                VALUES (?, ?)
-            ''', (asset_id, device_id))
+        if device_items:
+            for item in device_items:
+                device_id = item.get("device_id")
+                if not device_id:
+                    continue
+                quantity = item.get("quantity") or 1
+                notes_item = (item.get("notes") or "").strip() or None
+                db.execute('''
+                    INSERT INTO asset_devices (asset_id, device_id, quantity, notes)
+                    VALUES (?, ?, ?, ?)
+                ''', (asset_id, device_id, quantity, notes_item))
+        else:
+            for device_id in device_ids:
+                db.execute('''
+                    INSERT INTO asset_devices (asset_id, device_id, quantity)
+                    VALUES (?, ?, 1)
+                ''', (asset_id, device_id))
+        new_ids = set(device_ids)
+        removed_ids = [device_id for device_id in existing_ids if device_id not in new_ids]
         mark_devices_as_used(db, device_ids)
+        mark_devices_as_in_stock_if_unassigned(db, removed_ids)
         db.execute('DELETE FROM asset_relations WHERE asset_id = ?', (asset_id,))
         for relation in relations:
             related_asset_id = relation.get("related_asset_id")
@@ -6562,7 +6869,7 @@ def asset_detail(asset_id):
                 INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id)
                 VALUES (?, ?, ?)
             ''', (asset_id, related_asset_id, relation_type_id))
-        log_activity(db, "update", "asset", asset_id, {"name": name})
+        log_activity(db, "update", "asset_entry", asset_id, {"name": name})
         db.commit()
         return jsonify({"status": "updated"}), 200
 
@@ -6573,12 +6880,82 @@ def asset_detail(asset_id):
         (asset_id,),
     ).fetchall()
     device_ids = [row["device_id"] for row in device_rows]
-    mark_devices_as_in_stock(db, device_ids)
     db.execute('DELETE FROM ticket_assets WHERE asset_id = ?', (asset_id,))
     db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
     db.execute('DELETE FROM asset_relations WHERE asset_id = ? OR related_asset_id = ?', (asset_id, asset_id))
     db.execute('DELETE FROM assets WHERE id = ?', (asset_id,))
-    log_activity(db, "delete", "asset", asset_id)
+    mark_devices_as_in_stock_if_unassigned(db, device_ids)
+    log_activity(db, "delete", "asset_entry", asset_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/asset-entries/<int:asset_id>/devices', methods=['GET', 'POST'])
+@login_required
+def asset_entry_devices(asset_id):
+    db = get_db()
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset-Eintrag nicht gefunden"}), 404
+
+    if request.method == 'GET':
+        if not (user_can('assets.view') or user_can('assets.manage')):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        device_rows = db.execute('''
+            SELECT d.*, c.name as category_name, c.icon as category_icon, l.name as location_name,
+                   ad.quantity, ad.notes
+            FROM devices d
+            JOIN asset_devices ad ON ad.device_id = d.id
+            JOIN categories c ON d.category_id = c.id
+            LEFT JOIN locations l ON d.location_id = l.id
+            WHERE ad.asset_id = ?
+            ORDER BY d.created_at DESC
+        ''', (asset_id,)).fetchall()
+        return jsonify([dict(row) for row in device_rows])
+
+    if not user_can('assets.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json() or {}
+    items = data.get("items") or []
+    if not items:
+        return jsonify({"error": "Keine Geräte angegeben"}), 400
+    device_ids = [item.get("device_id") for item in items if item.get("device_id")]
+    missing_ids = find_missing_device_ids(db, device_ids)
+    if missing_ids:
+        return jsonify({"error": "Ungültige Geräte-IDs"}), 400
+    conflicts = find_device_assignment_conflicts(db, device_ids, asset_id=asset_id)
+    if conflicts:
+        return jsonify({"error": "Geräte sind bereits anderen Asset-Einträgen zugewiesen"}), 409
+    for item in items:
+        device_id = item.get("device_id")
+        if not device_id:
+            continue
+        quantity = item.get("quantity") or 1
+        notes_item = (item.get("notes") or "").strip() or None
+        try:
+            db.execute(
+                'INSERT INTO asset_devices (asset_id, device_id, quantity, notes) VALUES (?, ?, ?, ?)',
+                (asset_id, device_id, quantity, notes_item),
+            )
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Gerät bereits zugewiesen"}), 409
+    mark_devices_as_used(db, device_ids)
+    db.commit()
+    return jsonify({"status": "added"}), 201
+
+@app.route('/api/asset-entries/<int:asset_id>/devices/<int:device_id>', methods=['DELETE'])
+@login_required
+def asset_entry_device_remove(asset_id, device_id):
+    db = get_db()
+    if not user_can('assets.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    asset_row = db.execute('SELECT id FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    if not asset_row:
+        return jsonify({"error": "Asset-Eintrag nicht gefunden"}), 404
+    db.execute(
+        'DELETE FROM asset_devices WHERE asset_id = ? AND device_id = ?',
+        (asset_id, device_id),
+    )
+    mark_devices_as_in_stock_if_unassigned(db, [device_id])
     db.commit()
     return jsonify({"status": "deleted"}), 200
 
@@ -8892,7 +9269,9 @@ def time_machine_changes():
         "logout": "abgemeldet"
     }
     entity_labels = {
-        "asset": "Asset",
+        "asset": "Asset-Eintrag",
+        "asset_entry": "Asset-Eintrag",
+        "asset_category": "Asset-Kategorie",
         "device": "Gerät",
         "ticket": "Ticket",
         "roadmap": "Roadmap",
@@ -8906,6 +9285,8 @@ def time_machine_changes():
     }
     layer_map = {
         "asset": "assets",
+        "asset_entry": "assets",
+        "asset_category": "assets",
         "device": "devices",
         "ticket": "tickets",
         "roadmap": "roadmaps",
@@ -9091,7 +9472,9 @@ def time_machine_state():
     last_change_label = "—"
     if last_change_row:
         entity_labels = {
-            "asset": "Asset",
+            "asset": "Asset-Eintrag",
+            "asset_entry": "Asset-Eintrag",
+            "asset_category": "Asset-Kategorie",
             "device": "Gerät",
             "ticket": "Ticket",
             "roadmap": "Roadmap",
@@ -9606,7 +9989,9 @@ def export_data():
         "categories",
         "locations",
         "devices",
+        "asset_categories",
         "assets",
+        "asset_devices",
         "maintenance_tasks",
         "asset_assignment_history",
         "attachments",
