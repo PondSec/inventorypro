@@ -5771,6 +5771,23 @@ def find_missing_device_ids(db, device_ids):
     existing_ids = {row["id"] for row in rows}
     return [device_id for device_id in unique_ids if device_id not in existing_ids]
 
+def normalize_device_ids(device_ids):
+    normalized_ids = []
+    invalid_ids = []
+    for device_id in device_ids or []:
+        if device_id is None or device_id == "":
+            continue
+        if isinstance(device_id, (int, float)) and not isinstance(device_id, bool):
+            normalized_ids.append(int(device_id))
+            continue
+        if isinstance(device_id, str):
+            value = device_id.strip()
+            if value.isdigit():
+                normalized_ids.append(int(value))
+                continue
+        invalid_ids.append(device_id)
+    return normalized_ids, invalid_ids
+
 def get_asset_devices_info(db, asset_id):
     rows = db.execute('''
         SELECT d.serial_number, l.name as location_name
@@ -6639,6 +6656,10 @@ def manage_asset_entries():
         if device_items:
             device_ids = [item.get("device_id") for item in device_items if item.get("device_id")]
 
+        device_ids, invalid_ids = normalize_device_ids(device_ids)
+        if invalid_ids:
+            return jsonify({"error": "Ungültige Geräte-IDs"}), 400
+
         missing_ids = find_missing_device_ids(db, device_ids)
         if missing_ids:
             return jsonify({"error": "Ungültige Geräte-IDs"}), 400
@@ -6808,6 +6829,9 @@ def asset_entry_detail(asset_id):
             return jsonify({"error": "Kategorie nicht gefunden"}), 404
         if device_items:
             device_ids = [item.get("device_id") for item in device_items if item.get("device_id")]
+        device_ids, invalid_ids = normalize_device_ids(device_ids)
+        if invalid_ids:
+            return jsonify({"error": "Ungültige Geräte-IDs"}), 400
         missing_ids = find_missing_device_ids(db, device_ids)
         if missing_ids:
             return jsonify({"error": "Ungültige Geräte-IDs"}), 400
@@ -6919,6 +6943,9 @@ def asset_entry_devices(asset_id):
     if not items:
         return jsonify({"error": "Keine Geräte angegeben"}), 400
     device_ids = [item.get("device_id") for item in items if item.get("device_id")]
+    device_ids, invalid_ids = normalize_device_ids(device_ids)
+    if invalid_ids:
+        return jsonify({"error": "Ungültige Geräte-IDs"}), 400
     missing_ids = find_missing_device_ids(db, device_ids)
     if missing_ids:
         return jsonify({"error": "Ungültige Geräte-IDs"}), 400
