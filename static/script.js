@@ -6,7 +6,9 @@ document.addEventListener('alpine:init', () => {
         devices: [],
         filteredDevices: [],
         allDevices: [],
+        assetCategories: [],
         assets: [],
+        assetEntryOptions: [],
         relationTypes: [],
         activeCategory: null,
         inventoryTab: 'devices',
@@ -14,7 +16,7 @@ document.addEventListener('alpine:init', () => {
         assetsOpen: false,
         searchQuery: '',
         categorySearchQuery: '',
-        assetSearchQuery: '',
+        assetCategorySearchQuery: '',
         ownerQuery: '',
         locationFilter: '',
         categoryFilter: '',
@@ -40,6 +42,7 @@ document.addEventListener('alpine:init', () => {
         deviceDetailOpen: false,
         selectedAsset: null,
         assetDetailOpen: false,
+        selectedAssetCategory: null,
         assetAssignmentHistory: [],
         assignmentModalOpen: false,
         assignmentAction: '',
@@ -76,9 +79,11 @@ document.addEventListener('alpine:init', () => {
         isCategoryModalOpen: false,
         isDeviceModalOpen: false,
         isAssetModalOpen: false,
+        isAssetCategoryModalOpen: false,
         editingCategory: null,
         editingDevice: null,
         editingAsset: null,
+        editingAssetCategory: null,
         categoryMenuOpen: null,  // Geändert von openCategoryId zu categoryMenuOpen für Konsistenz
         openDeviceId: null,
         iconSearch: '',
@@ -90,6 +95,10 @@ document.addEventListener('alpine:init', () => {
             name: '',
             icon: 'cpu',
             fields: []
+        },
+        currentAssetCategory: {
+            id: null,
+            name: ''
         },
         currentDevice: {
             id: null,
@@ -121,6 +130,7 @@ document.addEventListener('alpine:init', () => {
             await this.loadLocations();
             await this.loadAllDevices();
             await this.loadDevices();
+            await this.loadAssetCategories();
             await this.loadAssets();
             await this.loadRelationTypes();
             await this.loadFeatureFlags();
@@ -130,7 +140,7 @@ document.addEventListener('alpine:init', () => {
             this.loadIconCatalog();
             this.$watch('searchQuery', () => this.searchDevices());
             this.$watch('categorySearchQuery', () => this.filterCategories());
-            this.$watch('assetSearchQuery', () => this.filterAssets());
+            this.$watch('assetCategorySearchQuery', () => this.filterAssetCategories());
             this.$watch('ownerQuery', () => this.searchDevices());
             this.$watch('locationFilter', () => this.searchDevices());
             this.$watch('categoryFilter', () => this.searchDevices());
@@ -285,10 +295,26 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        async loadAssets() {
-            const response = await fetch('/api/assets');
+        async loadAssetCategories() {
+            const response = await fetch('/api/asset-categories');
+            if (response.ok) {
+                this.assetCategories = await response.json();
+            }
+        },
+
+        async loadAssets(categoryId = null) {
+            const resolvedCategoryId = categoryId ?? this.selectedAssetCategory?.id;
+            const url = resolvedCategoryId ? `/api/asset-entries?category_id=${resolvedCategoryId}` : '/api/asset-entries';
+            const response = await fetch(url);
             if (response.ok) {
                 this.assets = await response.json();
+            }
+        },
+
+        async loadAssetEntryOptions() {
+            const response = await fetch('/api/asset-entries');
+            if (response.ok) {
+                this.assetEntryOptions = await response.json();
             }
         },
 
@@ -380,17 +406,17 @@ document.addEventListener('alpine:init', () => {
             );
         },
 
-        filterAssets() {
-            return this.filteredAssets();
+        filterAssetCategories() {
+            return this.filteredAssetCategories();
         },
 
-        filteredAssets() {
-            const query = (this.assetSearchQuery || '').toLowerCase().trim();
+        filteredAssetCategories() {
+            const query = (this.assetCategorySearchQuery || '').toLowerCase().trim();
             if (!query) {
-                return this.assets;
+                return this.assetCategories;
             }
-            return this.assets.filter(asset =>
-                (asset.name || '').toLowerCase().includes(query)
+            return this.assetCategories.filter(category =>
+                (category.name || '').toLowerCase().includes(query)
             );
         },
 
@@ -1083,12 +1109,95 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        // Asset Methods
+        // Asset Category Methods
+        openAddAssetCategoryModal() {
+            this.editingAssetCategory = false;
+            this.currentAssetCategory = { id: null, name: '' };
+            this.isAssetCategoryModalOpen = true;
+        },
+
+        editAssetCategoryModal(category) {
+            this.editingAssetCategory = true;
+            this.currentAssetCategory = { id: category.id, name: category.name };
+            this.isAssetCategoryModalOpen = true;
+        },
+
+        closeAssetCategoryModal() {
+            this.isAssetCategoryModalOpen = false;
+        },
+
+        async saveAssetCategory() {
+            try {
+                const payload = { name: this.currentAssetCategory.name };
+                let response;
+                if (this.editingAssetCategory) {
+                    response = await fetch(`/api/asset-categories/${this.currentAssetCategory.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    response = await fetch('/api/asset-categories', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Asset-Kategorie konnte nicht gespeichert werden');
+                }
+
+                await this.loadAssetCategories();
+                this.closeAssetCategoryModal();
+            } catch (error) {
+                console.error('Error saving asset category:', error);
+                alert('Error saving asset category: ' + error.message);
+            }
+        },
+
+        async deleteAssetCategory(categoryId) {
+            if (!confirm('Möchten Sie diese Asset-Kategorie wirklich löschen?')) {
+                return;
+            }
+            const response = await fetch(`/api/asset-categories/${categoryId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                if (this.selectedAssetCategory?.id === categoryId) {
+                    this.selectedAssetCategory = null;
+                    await this.loadAssets();
+                }
+                await this.loadAssetCategories();
+            } else {
+                const error = await response.json();
+                alert(error.error || 'Asset-Kategorie konnte nicht gelöscht werden');
+            }
+        },
+
+        async selectAssetCategory(category) {
+            this.selectedAssetCategory = category;
+            this.inventoryTab = 'assets';
+            await this.loadAssets(category.id);
+        },
+
+        async clearAssetCategorySelection() {
+            this.selectedAssetCategory = null;
+            await this.loadAssets();
+        },
+
+        // Asset Entry Methods
         async openAddAssetModal() {
+            if (this.assetCategories.length === 0) {
+                alert('Bitte zuerst eine Asset-Kategorie anlegen.');
+                return;
+            }
             this.editingAsset = false;
             this.currentAsset = {
                 id: null,
                 name: '',
+                category_id: this.selectedAssetCategory?.id || '',
                 notes: '',
                 specs: [],
                 device_ids: [],
@@ -1103,6 +1212,9 @@ document.addEventListener('alpine:init', () => {
             if (this.allDevices.length === 0) {
                 await this.loadAllDevices();
             }
+            if (this.assetEntryOptions.length === 0) {
+                await this.loadAssetEntryOptions();
+            }
             if (this.relationTypes.length === 0) {
                 await this.loadRelationTypes();
             }
@@ -1111,7 +1223,7 @@ document.addEventListener('alpine:init', () => {
 
         async openEditAssetModal(asset) {
             try {
-                const response = await fetch(`/api/assets/${asset.id}`);
+                const response = await fetch(`/api/asset-entries/${asset.id}`);
                 if (!response.ok) {
                     throw new Error('Asset konnte nicht geladen werden');
                 }
@@ -1120,6 +1232,7 @@ document.addEventListener('alpine:init', () => {
                 this.currentAsset = {
                     id: data.id,
                     name: data.name,
+                    category_id: data.category_id || '',
                     notes: data.notes || '',
                     specs: Object.entries(data.specs || {}).map(([key, value]) => ({
                         id: crypto.randomUUID(),
@@ -1141,6 +1254,9 @@ document.addEventListener('alpine:init', () => {
                             relation_type_id: relation.relation_type_id || ''
                         }))
                 };
+                if (this.assetEntryOptions.length === 0) {
+                    await this.loadAssetEntryOptions();
+                }
                 if (this.relationTypes.length === 0) {
                     await this.loadRelationTypes();
                 }
@@ -1190,6 +1306,7 @@ document.addEventListener('alpine:init', () => {
 
                 const payload = {
                     name: this.currentAsset.name,
+                    category_id: this.currentAsset.category_id,
                     notes: this.currentAsset.notes,
                     specs,
                     device_ids: this.currentAsset.device_ids,
@@ -1209,13 +1326,13 @@ document.addEventListener('alpine:init', () => {
 
                 let response;
                 if (this.editingAsset) {
-                    response = await fetch(`/api/assets/${this.currentAsset.id}`, {
+                    response = await fetch(`/api/asset-entries/${this.currentAsset.id}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
                 } else {
-                    response = await fetch('/api/assets', {
+                    response = await fetch('/api/asset-entries', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
@@ -1228,6 +1345,7 @@ document.addEventListener('alpine:init', () => {
                 }
 
                 await this.loadAssets();
+                await this.loadAssetEntryOptions();
                 this.closeAssetModal();
                 await this.loadActivityFeed();
             } catch (error) {
@@ -1240,11 +1358,12 @@ document.addEventListener('alpine:init', () => {
             if (!confirm('Möchten Sie dieses Asset wirklich löschen?')) {
                 return;
             }
-            const response = await fetch(`/api/assets/${assetId}`, {
+            const response = await fetch(`/api/asset-entries/${assetId}`, {
                 method: 'DELETE'
             });
             if (response.ok) {
                 await this.loadAssets();
+                await this.loadAssetEntryOptions();
                 await this.loadActivityFeed();
             } else {
                 const error = await response.json();
@@ -1254,7 +1373,7 @@ document.addEventListener('alpine:init', () => {
 
         async openAssetDetail(asset) {
             try {
-                const response = await fetch(`/api/assets/${asset.id}`);
+                const response = await fetch(`/api/asset-entries/${asset.id}`);
                 if (!response.ok) {
                     throw new Error('Asset konnte nicht geladen werden');
                 }
