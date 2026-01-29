@@ -149,7 +149,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async loadAssets() {
-            const response = await fetch('/api/assets');
+            const response = await fetch('/api/asset-entries');
             if (response.ok) {
                 this.assets = await response.json();
             }
