@@ -7,6 +7,52 @@ let sidebarLastFocus = null;
 let modalKeydownHandler = null;
 let activeModal = null;
 let modalLastFocus = null;
+let featherRetryTimer = null;
+
+const refreshFeatherIcons = () => {
+  if (!window.feather || typeof window.feather.replace !== 'function') {
+    return false;
+  }
+  window.feather.replace();
+  return true;
+};
+
+const scheduleFeatherRefresh = () => {
+  let attempts = 0;
+  const maxAttempts = 25;
+  const retry = () => {
+    attempts += 1;
+    if (refreshFeatherIcons() || attempts >= maxAttempts) {
+      if (featherRetryTimer) {
+        clearTimeout(featherRetryTimer);
+        featherRetryTimer = null;
+      }
+      return;
+    }
+    featherRetryTimer = setTimeout(retry, 120);
+  };
+  retry();
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  scheduleFeatherRefresh();
+  if (window.MutationObserver) {
+    const observer = new MutationObserver((mutations) => {
+      const hasNewIcons = mutations.some((mutation) =>
+        Array.from(mutation.addedNodes || []).some((node) => {
+          if (!(node instanceof Element)) {
+            return false;
+          }
+          return node.matches('[data-feather]') || node.querySelector?.('[data-feather]');
+        })
+      );
+      if (hasNewIcons) {
+        scheduleFeatherRefresh();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+});
 
 const getFocusableElements = (container) => {
   if (!container) {
