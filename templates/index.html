@@ -112,7 +112,7 @@
                         <a href="#inventory-taxonomy" class="sidebar-link">
                             <span>
                                 <span class="sidebar-link-icon"><i data-feather="layers" class="w-4 h-4"></i></span>
-                                Kategorien &amp; Assets verwalten
+                                Kategorien &amp; Asset-Kategorien verwalten
                             </span>
                         </a>
                         <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
@@ -123,7 +123,7 @@
                                     <span class="font-semibold text-slate-700" x-text="categories.length"></span>
                                 </div>
                                 <div class="flex items-center justify-between">
-                                    <span>Assets</span>
+                                    <span>Asset-Einträge</span>
                                     <span class="font-semibold text-slate-700" x-text="assets.length"></span>
                                 </div>
                             </div>
@@ -220,7 +220,7 @@
                         </button>
                         <div x-show="open" data-testid="dashboard-action-menu" @click.away="open = false" class="absolute right-0 z-30 mt-2 w-56 rounded-2xl border border-slate-200 bg-white shadow-xl" x-transition>
                             <button @click="openAddCategoryModal(); open=false" class="block w-full px-4 py-3 text-left text-sm hover:bg-slate-50">Kategorie anlegen</button>
-                            <button @click="openAddAssetModal(); open=false" class="block w-full px-4 py-3 text-left text-sm hover:bg-slate-50">Neues Asset</button>
+                            <button @click="openAddAssetModal(); open=false" class="block w-full px-4 py-3 text-left text-sm hover:bg-slate-50">Neuer Asset-Eintrag</button>
                             <a href="/api/export/devices" class="block px-4 py-3 text-sm hover:bg-slate-50">CSV Export</a>
                         </div>
                     </div>
@@ -289,7 +289,7 @@
                                 </span>
                                 <span class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
                                     <i data-feather="package" class="h-3 w-3"></i>
-                                    <span x-text="assets.length"></span> Assets
+                                    <span x-text="assets.length"></span> Asset-Einträge
                                 </span>
                             </div>
                         </div>
@@ -368,7 +368,7 @@
                         <div class="flex flex-wrap items-center justify-between gap-4">
                             <div>
                                 <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Struktur</p>
-                                <h3 class="text-xl font-semibold text-slate-900">Kategorien &amp; Assets verwalten</h3>
+                                <h3 class="text-xl font-semibold text-slate-900">Kategorien &amp; Asset-Kategorien verwalten</h3>
                                 <p class="mt-1 text-sm text-slate-500">Arbeite konzentriert in einem Bereich statt in der Sidebar.</p>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
@@ -388,7 +388,7 @@
                                     </span>
                                     <span class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1">
                                         <i data-feather="package" class="h-3 w-3"></i>
-                                        <span x-text="assets.length"></span>
+                                        <span x-text="assetCategories.length"></span>
                                     </span>
                                 </div>
                             </div>
@@ -410,7 +410,7 @@
                                 </button>
                                 <button x-show="taxonomyTab === 'assets'" @click="openAddAssetModal()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-600 hover:text-indigo-800">
                                     <i data-feather="plus-circle" class="h-4 w-4"></i>
-                                    Asset hinzufügen
+                                    Asset-Kategorie hinzufügen
                                 </button>
                             </div>
 
@@ -428,7 +428,7 @@
                                     </span>
                                 </div>
                                 <div class="relative" x-show="taxonomyTab === 'assets'">
-                                    <input type="text" x-model="assetSearchQuery" placeholder="Assets suchen..." class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 pr-9 text-xs text-slate-600 focus:border-blue-500 focus:ring-blue-500">
+                                    <input type="text" x-model="assetCategorySearchQuery" placeholder="Asset-Kategorien suchen..." class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 pr-9 text-xs text-slate-600 focus:border-blue-500 focus:ring-blue-500">
                                     <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
                                         <i data-feather="search" class="h-3 w-3"></i>
                                     </span>
@@ -483,7 +483,7 @@
                             </div>
 
                             <div class="mt-4 max-h-80 space-y-2 overflow-auto pr-1" x-show="taxonomyTab === 'assets'">
-                                <template x-for="asset in filteredAssets()" :key="asset.id">
+                                <template x-for="category in filteredAssetCategories()" :key="category.id">
                                     <div class="group grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-xl border border-transparent bg-white px-3 py-2 shadow-sm hover:border-slate-200">
                                         <button @click="openAssetDetail(asset)" class="flex items-start gap-3 min-w-0 text-left">
                                             <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 text-xs font-semibold" x-text="asset.device_count || 0"></span>
@@ -493,47 +493,20 @@
                                             </div>
                                         </button>
                                         <div class="flex items-center gap-2">
-                                            <button @click="openEditAssetModal(asset)" class="icon-button text-slate-500 hover:text-slate-900" aria-label="Asset bearbeiten">
+                                            <button @click="editAssetCategoryModal(category)" class="icon-button text-slate-500 hover:text-slate-900" aria-label="Asset-Kategorie bearbeiten">
                                                 <i data-feather="edit" class="w-4 h-4"></i>
                                             </button>
-                                            <button @click="deleteAsset(asset.id)" class="icon-button text-rose-500 hover:text-rose-700" aria-label="Asset löschen">
+                                            <button @click="deleteAssetCategory(category.id)" class="icon-button text-rose-500 hover:text-rose-700" aria-label="Asset-Kategorie löschen">
                                                 <i data-feather="trash-2" class="w-4 h-4"></i>
                                             </button>
                                         </div>
                                     </div>
                                 </template>
-                                <p x-show="filteredAssets().length === 0" class="text-xs text-slate-400">Keine Assets gefunden.</p>
+                                <p x-show="filteredAssetCategories().length === 0" class="text-xs text-slate-400">Keine Asset-Kategorien gefunden.</p>
                             </div>
                         </div>
                     </section>
-                    <section class="grid gap-6 lg:grid-cols-2" x-show="!activeCategory">
-                        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">PondSec AI</p>
-                                    <h3 class="text-lg font-semibold text-slate-900">PondSec AI Alerts</h3>
-                                </div>
-                                <a href="/ai/alerts" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">Alle ansehen</a>
-                            </div>
-                            <div id="pondsec-ai-alerts" class="mt-4 space-y-3 text-sm text-slate-600">
-                                <p class="text-sm text-slate-500">Lade Alerts...</p>
-                            </div>
-                        </div>
-                        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">PondSec AI</p>
-                                    <h3 class="text-lg font-semibold text-slate-900">Recent Agent Activity</h3>
-                                </div>
-                                <a href="/ai/activity" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">Alle ansehen</a>
-                            </div>
-                            <div id="pondsec-ai-activity" class="mt-4 space-y-3 text-sm text-slate-600">
-                                <p class="text-sm text-slate-500">Lade Aktivität...</p>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="grid gap-6" :class="activeCategory ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(0,1fr)_320px]'">
+                    <section class="grid gap-6" :class="(activeCategory || selectedAssetCategory) ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(0,1fr)_320px]'">
                         <div class="space-y-4">
                             <div class="flex flex-wrap items-center justify-between gap-3">
                                 <div class="inline-flex rounded-full border border-slate-200 bg-white p-1 text-xs font-semibold">
@@ -553,6 +526,9 @@
                                         <i data-feather="database" class="h-3 w-3"></i>
                                         <span x-text="filteredDevices.length"></span> Einträge
                                     </span>
+                                </div>
+                                <div x-show="selectedAssetCategory" class="border-b border-slate-200 px-6 py-3 text-xs text-slate-500">
+                                    Kategorie: <span class="font-semibold text-slate-700" x-text="selectedAssetCategory?.name"></span>
                                 </div>
                                 <div class="table-responsive scrollbar-hide">
                                     <table class="w-full table-fixed text-sm responsive-table">
@@ -612,19 +588,30 @@
                             <div x-show="inventoryTab === 'assets'" class="rounded-3xl border border-slate-200 bg-white shadow-sm">
                                 <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
                                     <div>
-                                        <h3 class="text-lg font-semibold text-slate-900">Assets</h3>
-                                        <p class="text-sm text-slate-500">Komponenten und Beziehungen zentral verwalten.</p>
+                                        <h3 class="text-lg font-semibold text-slate-900">Asset-Einträge</h3>
+                                        <p class="text-sm text-slate-500">Bundles aus Geräten in einer Kategorie verwalten.</p>
                                     </div>
-                                    <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                                        <i data-feather="package" class="h-3 w-3"></i>
-                                        <span x-text="assets.length"></span> Assets
-                                    </span>
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <button @click="openAddAssetModal()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                                            <i data-feather="plus-circle" class="h-4 w-4"></i>
+                                            Asset-Eintrag hinzufügen
+                                        </button>
+                                        <button x-show="selectedAssetCategory" @click="clearAssetCategorySelection()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800">
+                                            <i data-feather="x" class="h-4 w-4"></i>
+                                            Alle Kategorien
+                                        </button>
+                                        <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                                            <i data-feather="package" class="h-3 w-3"></i>
+                                            <span x-text="assets.length"></span> Einträge
+                                        </span>
+                                    </div>
                                 </div>
                                 <div class="table-responsive scrollbar-hide">
                                     <table class="w-full table-fixed text-sm responsive-table">
                                         <thead class="text-left text-slate-500">
                                             <tr class="border-b border-slate-200">
                                                 <th class="py-3 px-4 sm:px-6 font-semibold">Asset</th>
+                                                <th class="py-3 px-4 sm:px-6 font-semibold">Kategorie</th>
                                                 <th class="py-3 px-4 sm:px-6 font-semibold">Komponenten</th>
                                                 <th class="hidden md:table-cell py-3 px-4 sm:px-6 font-semibold">Notizen</th>
                                                 <th class="py-3 px-4 sm:px-6 font-semibold text-right">Aktionen</th>
@@ -638,6 +625,7 @@
                                                         <p class="text-xs text-slate-500" x-text="asset.category_name || 'Ohne Kategorie'"></p>
                                                         <p class="text-[11px] text-slate-400" x-text="asset.created_at?.slice(0, 10) || ''"></p>
                                                     </td>
+                                                    <td class="py-4 px-4 sm:px-6 text-slate-700 truncate max-w-0" x-text="asset.category_name || '-' "></td>
                                                     <td class="py-4 px-4 sm:px-6 text-slate-700">
                                                         <span class="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700" x-text="`${asset.device_count || 0} Geräte`"></span>
                                                     </td>
@@ -660,12 +648,12 @@
                                             </template>
                                         </tbody>
                                     </table>
-                                    <p x-show="assets.length === 0" class="px-6 py-6 text-sm text-slate-400">Noch keine Assets angelegt.</p>
+                                    <p x-show="assets.length === 0" class="px-6 py-6 text-sm text-slate-400">Noch keine Asset-Einträge angelegt.</p>
                                 </div>
                             </div>
                         </div>
 
-                        <aside class="space-y-4" x-show="!activeCategory">
+                        <aside class="space-y-4" x-show="!activeCategory && !selectedAssetCategory">
                             <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                                 <div class="flex items-center justify-between">
                                     <div>
@@ -693,6 +681,19 @@
                                         <span>Überfällig</span>
                                         <span class="font-semibold text-rose-600" x-text="maintenanceSummary.overdue"></span>
                                     </div>
+                                </div>
+                            </div>
+
+                            <div class="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4 shadow-sm">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-xs uppercase tracking-[0.2em] text-indigo-400">PondSec AI</p>
+                                        <p class="text-sm font-semibold text-indigo-900">AI Alerts</p>
+                                    </div>
+                                    <a href="/ai/alerts" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">Details</a>
+                                </div>
+                                <div id="pondsec-ai-alerts" class="mt-3 space-y-2 text-xs text-slate-600">
+                                    <p class="text-xs text-slate-500">Lade Alerts...</p>
                                 </div>
                             </div>
 
@@ -922,7 +923,7 @@
         <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
-                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Assetübersicht</p>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Asset-Eintrag</p>
                     <h3 class="text-xl font-semibold text-slate-900" x-text="selectedAsset?.name"></h3>
                 </div>
                 <button @click="closeAssetDetail()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Asset-Detail schließen">
@@ -1041,16 +1042,21 @@
                     <div class="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
                         <div class="flex items-center justify-between">
                             <div>
-                                <p class="text-sm font-semibold text-indigo-700">Asset-Komponenten</p>
+                                <p class="text-sm font-semibold text-indigo-700">Eintrag-Komponenten</p>
                                 <p class="text-xs text-indigo-500">Zugeordnete Geräte</p>
                             </div>
-                            <i data-feather="layers" class="w-4 h-4 text-indigo-400"></i>
+                            <div class="flex items-center gap-2">
+                                <button x-show="can('assets.manage')" @click="openEditAssetModal(selectedAsset)" class="rounded-full border border-indigo-100 bg-white px-3 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-50">Komponenten bearbeiten</button>
+                                <i data-feather="layers" class="w-4 h-4 text-indigo-400"></i>
+                            </div>
                         </div>
                         <div class="mt-4 space-y-3 text-sm">
                             <template x-for="device in selectedAsset?.devices || []" :key="device.id">
                                 <div class="rounded-2xl border border-indigo-100 bg-white px-3 py-2">
                                     <p class="font-semibold text-slate-800" x-text="device.name"></p>
                                     <p class="text-xs text-slate-500" x-text="device.category_name"></p>
+                                    <p class="text-xs text-slate-500" x-text="`Menge: ${device.quantity || 1}`"></p>
+                                    <p x-show="device.notes" class="text-xs text-slate-400" x-text="device.notes"></p>
                                 </div>
                             </template>
                             <p x-show="(selectedAsset?.devices || []).length === 0" class="text-xs text-indigo-500">Keine Geräte zugeordnet.</p>
@@ -1207,8 +1213,8 @@
         <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
-                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Asset</p>
-                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingAsset ? 'Asset bearbeiten' : 'Neues Asset'"></h3>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Asset-Eintrag</p>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingAsset ? 'Asset-Eintrag bearbeiten' : 'Neuer Asset-Eintrag'"></h3>
                 </div>
                 <button @click="closeAssetModal()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Asset-Modal schließen">
                     <i data-feather="x" class="w-5 h-5"></i>
@@ -1230,6 +1236,16 @@
                             </template>
                         </select>
                     </div>
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Asset-Kategorie*</label>
+                    <select x-model="currentAsset.category_id" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <option value="">-- Kategorie wählen --</option>
+                        <template x-for="category in assetCategories" :key="category.id">
+                            <option :value="category.id" x-text="category.name"></option>
+                        </template>
+                    </select>
+                    <p x-show="assetCategories.length === 0" class="mt-1 text-xs text-rose-500">Bitte zuerst eine Asset-Kategorie anlegen.</p>
                 </div>
                 <div>
                     <label class="text-sm font-semibold text-slate-700">Notizen</label>
@@ -1340,7 +1356,7 @@
                                     <label class="text-xs font-semibold text-slate-500">Ziel-Asset</label>
                                     <select x-model="relation.related_asset_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                         <option value="">-- Asset wählen --</option>
-                                        <template x-for="asset in assets.filter(item => item.id !== currentAsset.id)" :key="asset.id">
+                                        <template x-for="asset in assetEntryOptions.filter(item => item.id !== currentAsset.id)" :key="asset.id">
                                             <option :value="asset.id" x-text="asset.name"></option>
                                         </template>
                                     </select>
@@ -1384,6 +1400,30 @@
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" @click="closeAssetModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
+                    <button type="submit" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="isAssetCategoryModalOpen" @click.away="closeAssetCategoryModal()" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
+        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-lg">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Asset-Kategorie</p>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingAssetCategory ? 'Asset-Kategorie bearbeiten' : 'Neue Asset-Kategorie'"></h3>
+                </div>
+                <button @click="closeAssetCategoryModal()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Asset-Kategorie schließen">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <form @submit.prevent="saveAssetCategory()" class="space-y-4 p-6">
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Name*</label>
+                    <input type="text" x-model="currentAssetCategory.name" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    <button type="button" @click="closeAssetCategoryModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
                     <button type="submit" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Speichern</button>
                 </div>
             </form>
@@ -1756,12 +1796,12 @@
                 if (alertsEl) {
                     alertsEl.innerHTML = '';
                     if (!alerts.length) {
-                        alertsEl.innerHTML = '<p class="text-sm text-slate-500">Keine offenen Alerts.</p>';
+                        alertsEl.innerHTML = '<p class="text-xs text-slate-500">Keine offenen Alerts.</p>';
                     } else {
-                        alerts.slice(0, 4).forEach(alert => {
+                        alerts.slice(0, 3).forEach(alert => {
                             const item = document.createElement('div');
-                            item.className = 'rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3';
-                            item.innerHTML = `<p class=\"text-sm font-semibold text-slate-800\">${alert.title}</p><p class=\"text-xs text-slate-500\">${alert.created_at}</p>`;
+                            item.className = 'rounded-xl border border-indigo-100 bg-white/70 px-3 py-2';
+                            item.innerHTML = `<p class=\"text-xs font-semibold text-slate-800\">${alert.title}</p><p class=\"text-[11px] text-slate-500\">${alert.created_at}</p>`;
                             alertsEl.appendChild(item);
                         });
                     }
