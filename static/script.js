@@ -2,6 +2,7 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('app', () => ({
         // State
         categories: [],
+        assetCategories: [],
         locations: [],
         devices: [],
         filteredDevices: [],
@@ -14,6 +15,7 @@ document.addEventListener('alpine:init', () => {
         assetsOpen: false,
         searchQuery: '',
         categorySearchQuery: '',
+        assetCategorySearchQuery: '',
         assetSearchQuery: '',
         ownerQuery: '',
         locationFilter: '',
@@ -74,12 +76,15 @@ document.addEventListener('alpine:init', () => {
         
         // Modals
         isCategoryModalOpen: false,
+        isAssetCategoryModalOpen: false,
         isDeviceModalOpen: false,
         isAssetModalOpen: false,
         editingCategory: null,
+        editingAssetCategory: null,
         editingDevice: null,
         editingAsset: null,
         categoryMenuOpen: null,  // Geändert von openCategoryId zu categoryMenuOpen für Konsistenz
+        assetCategoryMenuOpen: null,
         openDeviceId: null,
         iconSearch: '',
         iconCatalog: [],
@@ -89,6 +94,14 @@ document.addEventListener('alpine:init', () => {
             id: null,
             name: '',
             icon: 'cpu',
+            description: '',
+            fields: []
+        },
+        currentAssetCategory: {
+            id: null,
+            name: '',
+            icon: 'package',
+            description: '',
             fields: []
         },
         currentDevice: {
@@ -103,8 +116,10 @@ document.addEventListener('alpine:init', () => {
         currentAsset: {
             id: null,
             name: '',
+            category_id: null,
             notes: '',
-            specs: [],
+            specs: {},
+            extraSpecs: [],
             device_ids: [],
             acquisition_date: '',
             commissioning_date: '',
@@ -118,6 +133,7 @@ document.addEventListener('alpine:init', () => {
         // Initialization
         async init() {
             await this.loadCategories();
+            await this.loadAssetCategories();
             await this.loadLocations();
             await this.loadAllDevices();
             await this.loadDevices();
@@ -130,6 +146,7 @@ document.addEventListener('alpine:init', () => {
             this.loadIconCatalog();
             this.$watch('searchQuery', () => this.searchDevices());
             this.$watch('categorySearchQuery', () => this.filterCategories());
+            this.$watch('assetCategorySearchQuery', () => this.filterAssetCategories());
             this.$watch('assetSearchQuery', () => this.filterAssets());
             this.$watch('ownerQuery', () => this.searchDevices());
             this.$watch('locationFilter', () => this.searchDevices());
@@ -241,6 +258,13 @@ document.addEventListener('alpine:init', () => {
             const response = await fetch('/api/categories');
             if (response.ok) {
                 this.categories = await response.json();
+            }
+        },
+
+        async loadAssetCategories() {
+            const response = await fetch('/api/asset-categories');
+            if (response.ok) {
+                this.assetCategories = await response.json();
             }
         },
 
@@ -380,6 +404,20 @@ document.addEventListener('alpine:init', () => {
             );
         },
 
+        filterAssetCategories() {
+            return this.filteredAssetCategories();
+        },
+
+        filteredAssetCategories() {
+            const query = (this.assetCategorySearchQuery || '').toLowerCase().trim();
+            if (!query) {
+                return this.assetCategories;
+            }
+            return this.assetCategories.filter(category =>
+                (category.name || '').toLowerCase().includes(query)
+            );
+        },
+
         filterAssets() {
             return this.filteredAssets();
         },
@@ -390,7 +428,8 @@ document.addEventListener('alpine:init', () => {
                 return this.assets;
             }
             return this.assets.filter(asset =>
-                (asset.name || '').toLowerCase().includes(query)
+                (asset.name || '').toLowerCase().includes(query) ||
+                (asset.category_name || '').toLowerCase().includes(query)
             );
         },
 
@@ -440,6 +479,7 @@ document.addEventListener('alpine:init', () => {
                 id: null,
                 name: '',
                 icon: 'cpu',
+                description: '',
                 fields: []
             };
             this.iconSearch = '';
@@ -454,6 +494,7 @@ document.addEventListener('alpine:init', () => {
 				id: category.id,
 				name: category.name,
 				icon: category.icon,
+                description: category.description || '',
 				fields: Object.entries(fieldsObject).map(([fieldName, fieldConfig]) => {
                     if (typeof fieldConfig === 'string') {
                         return {
@@ -533,6 +574,7 @@ document.addEventListener('alpine:init', () => {
                 const categoryData = {
                     name: this.currentCategory.name,
                     icon: this.currentCategory.icon,
+                    description: this.currentCategory.description,
                     fields
                 };
 
@@ -591,6 +633,147 @@ document.addEventListener('alpine:init', () => {
             const deleted = await this.deleteCategory(this.currentCategory.id);
             if (deleted) {
                 this.closeCategoryModal();
+            }
+        },
+
+        // Asset Category Methods
+        openAddAssetCategoryModal() {
+            this.editingAssetCategory = false;
+            this.currentAssetCategory = {
+                id: null,
+                name: '',
+                icon: 'package',
+                description: '',
+                fields: []
+            };
+            this.iconSearch = '';
+            this.isAssetCategoryModalOpen = true;
+            this.assetCategoryMenuOpen = null;
+        },
+
+        openEditAssetCategoryModal(category) {
+            this.editingAssetCategory = true;
+            const parsedFields = this.getAssetCategoryFields(category.id) || {};
+            this.currentAssetCategory = {
+                id: category.id,
+                name: category.name,
+                icon: category.icon || 'package',
+                description: category.description || '',
+                fields: Object.entries(parsedFields).map(([fieldName, fieldConfig]) => {
+                    const options = fieldConfig?.options || [];
+                    return {
+                        id: crypto.randomUUID(),
+                        name: fieldName,
+                        type: fieldConfig?.type || 'text',
+                        options,
+                        optionsText: options.join(', ')
+                    };
+                })
+            };
+            this.iconSearch = '';
+            this.isAssetCategoryModalOpen = true;
+            this.assetCategoryMenuOpen = null;
+        },
+
+        closeAssetCategoryModal() {
+            this.isAssetCategoryModalOpen = false;
+        },
+
+        addAssetCategoryField() {
+            this.currentAssetCategory.fields.push({
+                id: crypto.randomUUID(),
+                name: '',
+                type: 'text',
+                options: [],
+                optionsText: ''
+            });
+        },
+
+        removeAssetCategoryField(fieldId) {
+            this.currentAssetCategory.fields = this.currentAssetCategory.fields.filter(field => field.id !== fieldId);
+        },
+
+        async saveAssetCategory() {
+            try {
+                const fields = {};
+                for (const field of this.currentAssetCategory.fields) {
+                    const trimmedName = field.name.trim();
+                    if (!trimmedName) continue;
+                    if (field.type === 'select') {
+                        const options = (field.optionsText || '')
+                            .split(',')
+                            .map(option => option.trim())
+                            .filter(Boolean);
+                        fields[trimmedName] = {
+                            type: field.type,
+                            options
+                        };
+                    } else {
+                        fields[trimmedName] = field.type;
+                    }
+                }
+
+                const categoryData = {
+                    name: this.currentAssetCategory.name,
+                    icon: this.currentAssetCategory.icon,
+                    description: this.currentAssetCategory.description,
+                    fields
+                };
+
+                let response;
+                if (this.editingAssetCategory) {
+                    response = await fetch(`/api/asset-categories/${this.currentAssetCategory.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(categoryData)
+                    });
+                } else {
+                    response = await fetch('/api/asset-categories', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(categoryData)
+                    });
+                }
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to save asset category');
+                }
+
+                await this.loadAssetCategories();
+                this.closeAssetCategoryModal();
+                await this.loadAssets();
+                await this.loadActivityFeed();
+            } catch (error) {
+                console.error('Error saving asset category:', error);
+                alert('Error saving asset category: ' + error.message);
+            }
+        },
+
+        async deleteAssetCategory(categoryId) {
+            if (!confirm('Möchten Sie diese Asset-Kategorie wirklich löschen? Zugeordnete Assets bleiben erhalten.')) {
+                return false;
+            }
+            const response = await fetch(`/api/asset-categories/${categoryId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                await this.loadAssetCategories();
+                await this.loadAssets();
+                this.assetCategoryMenuOpen = null;
+                await this.loadActivityFeed();
+                return true;
+            }
+            const error = await response.json();
+            alert('Error deleting asset category: ' + (error.error || 'Unknown error'));
+            return false;
+        },
+
+        async confirmDeleteAssetCategory() {
+            if (!this.currentAssetCategory.id) return;
+            const deleted = await this.deleteAssetCategory(this.currentAssetCategory.id);
+            if (deleted) {
+                this.closeAssetCategoryModal();
             }
         },
 
@@ -1086,11 +1269,16 @@ document.addEventListener('alpine:init', () => {
         // Asset Methods
         async openAddAssetModal() {
             this.editingAsset = false;
+            if (this.assetCategories.length === 0) {
+                await this.loadAssetCategories();
+            }
             this.currentAsset = {
                 id: null,
                 name: '',
+                category_id: this.assetCategories[0]?.id || null,
                 notes: '',
-                specs: [],
+                specs: {},
+                extraSpecs: [],
                 device_ids: [],
                 acquisition_date: '',
                 commissioning_date: '',
@@ -1116,16 +1304,18 @@ document.addEventListener('alpine:init', () => {
                     throw new Error('Asset konnte nicht geladen werden');
                 }
                 const data = await response.json();
+                if (this.assetCategories.length === 0) {
+                    await this.loadAssetCategories();
+                }
+                const splitSpecs = this.splitAssetSpecsByCategory(data.category_id, data.specs || {});
                 this.editingAsset = true;
                 this.currentAsset = {
                     id: data.id,
                     name: data.name,
+                    category_id: data.category_id || null,
                     notes: data.notes || '',
-                    specs: Object.entries(data.specs || {}).map(([key, value]) => ({
-                        id: crypto.randomUUID(),
-                        name: key,
-                        value
-                    })),
+                    specs: splitSpecs.categorySpecs || {},
+                    extraSpecs: splitSpecs.extraSpecs || [],
                     device_ids: (data.devices || []).map(device => device.id),
                     acquisition_date: data.acquisition_date || '',
                     commissioning_date: data.commissioning_date || '',
@@ -1156,7 +1346,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         addAssetSpec() {
-            this.currentAsset.specs.push({
+            this.currentAsset.extraSpecs.push({
                 id: crypto.randomUUID(),
                 name: '',
                 value: ''
@@ -1164,7 +1354,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         removeAssetSpec(specId) {
-            this.currentAsset.specs = this.currentAsset.specs.filter(spec => spec.id !== specId);
+            this.currentAsset.extraSpecs = this.currentAsset.extraSpecs.filter(spec => spec.id !== specId);
         },
 
         addAssetRelation() {
@@ -1181,8 +1371,8 @@ document.addEventListener('alpine:init', () => {
 
         async saveAsset() {
             try {
-                const specs = {};
-                this.currentAsset.specs.forEach((spec) => {
+                const specs = { ...this.currentAsset.specs };
+                this.currentAsset.extraSpecs.forEach((spec) => {
                     const trimmedName = spec.name.trim();
                     if (!trimmedName) return;
                     specs[trimmedName] = spec.value;
@@ -1190,6 +1380,7 @@ document.addEventListener('alpine:init', () => {
 
                 const payload = {
                     name: this.currentAsset.name,
+                    category_id: this.currentAsset.category_id || null,
                     notes: this.currentAsset.notes,
                     specs,
                     device_ids: this.currentAsset.device_ids,
@@ -1282,12 +1473,18 @@ document.addEventListener('alpine:init', () => {
 
         // Helper Methods
         getCategoryById(categoryId) {
-            return this.categories.find(c => c.id === categoryId) || null;
+            if (categoryId === null || categoryId === undefined || categoryId === '') return null;
+            return this.categories.find(c => String(c.id) === String(categoryId)) || null;
         },
 
         getCategoryName(categoryId) {
             const category = this.getCategoryById(categoryId);
             return category ? category.name : 'Unknown';
+        },
+
+        getAssetCategoryById(categoryId) {
+            if (categoryId === null || categoryId === undefined || categoryId === '') return null;
+            return this.assetCategories.find(c => String(c.id) === String(categoryId)) || null;
         },
 
         getCategoryFields(categoryId) {
@@ -1315,6 +1512,52 @@ document.addEventListener('alpine:init', () => {
                     ];
                 })
             );
+        },
+
+        getAssetCategoryFields(categoryId) {
+            const category = this.getAssetCategoryById(categoryId);
+            if (!category) return null;
+            let parsed;
+            try {
+                parsed = JSON.parse(category.fields || '{}');
+            } catch (error) {
+                console.error('Error parsing asset category fields:', error);
+                return null;
+            }
+
+            return Object.fromEntries(
+                Object.entries(parsed).map(([fieldName, fieldConfig]) => {
+                    if (typeof fieldConfig === 'string') {
+                        return [fieldName, { type: fieldConfig, options: [] }];
+                    }
+                    return [
+                        fieldName,
+                        {
+                            type: fieldConfig?.type || 'text',
+                            options: Array.isArray(fieldConfig?.options) ? fieldConfig.options : []
+                        }
+                    ];
+                })
+            );
+        },
+
+        splitAssetSpecsByCategory(categoryId, specs) {
+            const categoryFields = this.getAssetCategoryFields(categoryId) || {};
+            const categoryFieldNames = new Set(Object.keys(categoryFields));
+            const categorySpecs = {};
+            const extraSpecs = [];
+            Object.entries(specs || {}).forEach(([key, value]) => {
+                if (categoryFieldNames.has(key)) {
+                    categorySpecs[key] = value;
+                } else {
+                    extraSpecs.push({
+                        id: crypto.randomUUID(),
+                        name: key,
+                        value
+                    });
+                }
+            });
+            return { categorySpecs, extraSpecs };
         },
 
         formatSpecValue(value) {

@@ -152,6 +152,18 @@ PERMISSIONS = [
         "group": "Inventar"
     },
     {
+        "key": "asset_categories.view",
+        "label": "Asset-Kategorien anzeigen",
+        "description": "Asset-Kategorien und Zuordnungen einsehen.",
+        "group": "Inventar"
+    },
+    {
+        "key": "asset_categories.manage",
+        "label": "Asset-Kategorien verwalten",
+        "description": "Asset-Kategorien erstellen, bearbeiten und löschen.",
+        "group": "Inventar"
+    },
+    {
         "key": "devices.view",
         "label": "Geräte anzeigen",
         "description": "Geräteübersicht einsehen.",
@@ -688,6 +700,8 @@ DEFAULT_ROLES = [
         "permissions": [
             "categories.view",
             "categories.manage",
+            "asset_categories.view",
+            "asset_categories.manage",
             "devices.view",
             "devices.manage",
             "assets.view",
@@ -2249,6 +2263,18 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
                 icon TEXT,
+                description TEXT,
+                fields TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS asset_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                icon TEXT,
+                description TEXT,
                 fields TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -2313,6 +2339,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS assets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
+                category_id INTEGER,
                 notes TEXT,
                 specs TEXT,
                 acquisition_date TEXT,
@@ -2321,9 +2348,15 @@ def init_db():
                 depreciation_months INTEGER,
                 retirement_date TEXT,
                 retirement_reason TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (category_id) REFERENCES asset_categories(id)
             )
         ''')
+
+        try:
+            c.execute('ALTER TABLE categories ADD COLUMN description TEXT')
+        except sqlite3.OperationalError:
+            pass
 
         try:
             c.execute('ALTER TABLE assets ADD COLUMN notes TEXT')
@@ -2332,6 +2365,11 @@ def init_db():
 
         try:
             c.execute('ALTER TABLE assets ADD COLUMN specs TEXT')
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            c.execute('ALTER TABLE assets ADD COLUMN category_id INTEGER')
         except sqlite3.OperationalError:
             pass
 
@@ -3459,16 +3497,252 @@ def init_db():
             )
         ''')
 
-        # Default-Kategorien
+        # Default-Kategorien (Geräte)
         default_categories = [
-            ("CPU", "cpu", '{"cores":"number","clock":"text","manufacturer":"text"}'),
-            ("GPU", "gpu", '{"vram":"text","model":"text","manufacturer":"text"}'),
-            ("RAM", "memory", '{"size":"text","type":"text","speed":"text"}')
+            ("Laptop", "laptop", "Mobile Arbeitsplätze und Notebooks.", json.dumps({
+                "CPU": "text",
+                "RAM (GB)": "number",
+                "Storage": "text",
+                "GPU": "text",
+                "Display (Zoll)": "number",
+                "OS": "text",
+                "Dockingfähig": "checkbox",
+                "Batterie-Zyklen": "number"
+            })),
+            ("Desktop / Workstation", "monitor", "Stationäre Arbeitsplätze und Workstations.", json.dumps({
+                "CPU": "text",
+                "RAM (GB)": "number",
+                "Storage": "text",
+                "GPU": "text",
+                "Formfaktor": {"type": "select", "options": ["Tower", "SFF", "Mini", "All-in-One"]},
+                "OS": "text",
+                "Netzteil (W)": "number"
+            })),
+            ("Server", "server", "Physische Server und Host-Systeme.", json.dumps({
+                "CPU": "text",
+                "Sockets": "number",
+                "RAM (GB)": "number",
+                "Storage": "text",
+                "RAID": "text",
+                "Virtualisierung": {"type": "select", "options": ["VMware", "Hyper-V", "KVM", "Bare Metal"]},
+                "Rack-Position": "text",
+                "IP / Hostname": "text"
+            })),
+            ("Thin Client", "terminal", "Terminal- und VDI-Endgeräte.", json.dumps({
+                "CPU": "text",
+                "RAM (GB)": "number",
+                "Storage": "text",
+                "VDI/Terminal": {"type": "select", "options": ["Citrix", "RDP", "VMware Horizon", "Web"]},
+                "OS": "text"
+            })),
+            ("Monitor / Display", "monitor", "Bildschirme und Displays.", json.dumps({
+                "Größe (Zoll)": "number",
+                "Auflösung": "text",
+                "Panel": {"type": "select", "options": ["IPS", "VA", "TN", "OLED"]},
+                "Anschlüsse": "text",
+                "HDR": "checkbox"
+            })),
+            ("Drucker / MFP", "printer", "Drucker, Scanner und Multifunktionsgeräte.", json.dumps({
+                "Typ": {"type": "select", "options": ["Laser", "Inkjet", "Thermo", "Label"]},
+                "Farbe": "checkbox",
+                "Duplex": "checkbox",
+                "Seiten/Minute": "number",
+                "Netzwerkfähig": "checkbox"
+            })),
+            ("Smartphone", "smartphone", "Firmenhandys und Mobiltelefone.", json.dumps({
+                "OS": {"type": "select", "options": ["iOS", "Android"]},
+                "Speicher (GB)": "number",
+                "IMEI": "text",
+                "SIM / eSIM": "text",
+                "MDM verwaltet": "checkbox"
+            })),
+            ("Tablet", "tablet", "Tablets für mobile Nutzung.", json.dumps({
+                "OS": {"type": "select", "options": ["iOS", "Android", "Windows"]},
+                "Speicher (GB)": "number",
+                "Display (Zoll)": "number",
+                "Stift-Unterstützung": "checkbox",
+                "MDM verwaltet": "checkbox"
+            })),
+            ("Switch", "share-2", "Netzwerk-Switches und Verteiler.", json.dumps({
+                "Ports": "number",
+                "Managed": "checkbox",
+                "Port-Speed": {"type": "select", "options": ["1G", "2.5G", "5G", "10G", "25G", "40G"]},
+                "PoE": {"type": "select", "options": ["Nein", "PoE", "PoE+", "PoE++"]},
+                "Uplink": "text"
+            })),
+            ("Router / Firewall", "shield", "Gateway-, Router- und Firewall-Systeme.", json.dumps({
+                "WAN": "text",
+                "VPN": "checkbox",
+                "Durchsatz (Gbps)": "number",
+                "Firmware": "text",
+                "HA-Cluster": "checkbox"
+            })),
+            ("Access Point", "wifi", "WLAN Access Points.", json.dumps({
+                "WiFi-Standard": {"type": "select", "options": ["802.11ac", "802.11ax", "802.11be"]},
+                "SSID": "text",
+                "Controller": "text",
+                "PoE": "checkbox",
+                "Montageort": "text"
+            })),
+            ("Storage / NAS", "hard-drive", "Storage-Systeme und NAS.", json.dumps({
+                "Kapazität (TB)": "number",
+                "RAID": "text",
+                "Protokoll": {"type": "select", "options": ["SMB", "NFS", "iSCSI", "S3"]},
+                "Bay-Anzahl": "number",
+                "IP / Hostname": "text"
+            })),
+            ("USV / Power", "battery-charging", "USV, Stromversorgung und Power-Units.", json.dumps({
+                "Leistung (VA)": "number",
+                "Laufzeit (Min)": "number",
+                "Batterie-Typ": "text",
+                "Steckdosen": "number",
+                "Netzwerk-Management": "checkbox"
+            })),
+            ("Kamera / CCTV", "camera", "IP-Kameras und Überwachung.", json.dumps({
+                "Auflösung": "text",
+                "Typ": {"type": "select", "options": ["IP", "Analog"]},
+                "IR / Nachtsicht": "checkbox",
+                "FOV": "text",
+                "Speicherziel": "text"
+            })),
+            ("Konferenz / AV", "video", "Meetingraum- und AV-Technik.", json.dumps({
+                "Typ": {"type": "select", "options": ["Display", "Konferenzkamera", "Audio", "Controller"]},
+                "Auflösung": "text",
+                "Anschlüsse": "text",
+                "Raum": "text"
+            })),
+            ("IoT / Sensor", "activity", "Sensoren, Gateways und IoT-Geräte.", json.dumps({
+                "Sensor-Typ": "text",
+                "Protokoll": {"type": "select", "options": ["MQTT", "HTTP", "LoRaWAN", "Zigbee", "BLE"]},
+                "Firmware": "text",
+                "Batterie": "text",
+                "Gateway": "text"
+            })),
+            ("Peripherie", "mouse-pointer", "Mäuse, Tastaturen, Scanner, Zubehör.", json.dumps({
+                "Typ": {"type": "select", "options": ["Maus", "Tastatur", "Scanner", "Dock", "Headset", "Sonstiges"]},
+                "Anschluss": {"type": "select", "options": ["USB", "Bluetooth", "RF", "Thunderbolt"]},
+                "Kompatibilität": "text"
+            })),
+            ("CPU", "cpu", "Prozessoren und Server-CPUs.", json.dumps({
+                "Cores": "number",
+                "Threads": "number",
+                "Takt": "text",
+                "Hersteller": "text",
+                "Sockel": "text"
+            })),
+            ("GPU", "gpu", "Grafikkarten und Beschleuniger.", json.dumps({
+                "VRAM": "text",
+                "Modell": "text",
+                "Hersteller": "text",
+                "Anschluss": "text",
+                "Leistungsaufnahme": "text"
+            })),
+            ("RAM", "memory", "Arbeitsspeicher und Module.", json.dumps({
+                "Kapazität": "text",
+                "Typ": "text",
+                "Takt": "text",
+                "Formfaktor": "text"
+            }))
         ]
         c.executemany('''
-            INSERT OR IGNORE INTO categories (name, icon, fields)
-            VALUES (?, ?, ?)
+            INSERT OR IGNORE INTO categories (name, icon, description, fields)
+            VALUES (?, ?, ?, ?)
         ''', default_categories)
+
+        # Default-Kategorien (Assets)
+        default_asset_categories = [
+            ("Arbeitsplatz", "briefcase", "Vollständige Arbeitsplatz-Ausstattung.", json.dumps({
+                "Asset-Tag": "text",
+                "Status": {"type": "select", "options": ["aktiv", "in Lager", "ausgemustert", "verliehen"]},
+                "Kritikalität": {"type": "select", "options": ["niedrig", "mittel", "hoch", "kritisch"]},
+                "Owner": "text",
+                "Team / Abteilung": "text",
+                "Kostenstelle": "text",
+                "Standort": "text",
+                "Support-Vertrag": "text"
+            })),
+            ("Server-Plattform", "server", "Server- und Host-Systeme inkl. Komponenten.", json.dumps({
+                "Asset-Tag": "text",
+                "Status": {"type": "select", "options": ["produktiv", "staging", "test", "außer Betrieb"]},
+                "Kritikalität": {"type": "select", "options": ["hoch", "kritisch"]},
+                "Owner": "text",
+                "Service": "text",
+                "RZ / Rack": "text",
+                "SLA": {"type": "select", "options": ["Gold", "Silver", "Bronze"]},
+                "Support-Vertrag": "text"
+            })),
+            ("Netzwerk", "share-2", "Switch-/Router-/Firewall-Stacks.", json.dumps({
+                "Asset-Tag": "text",
+                "Status": {"type": "select", "options": ["produktiv", "staging", "test"]},
+                "Kritikalität": {"type": "select", "options": ["mittel", "hoch", "kritisch"]},
+                "Owner": "text",
+                "Segment / VLAN": "text",
+                "Standort": "text",
+                "Provider": "text",
+                "Support-Vertrag": "text"
+            })),
+            ("Druckerpark", "printer", "Drucker- und Scan-Infrastruktur.", json.dumps({
+                "Asset-Tag": "text",
+                "Status": {"type": "select", "options": ["aktiv", "in Wartung", "außer Betrieb"]},
+                "Owner": "text",
+                "Standort": "text",
+                "Service-Partner": "text",
+                "Wartungsfenster": "text"
+            })),
+            ("Konferenzraum", "video", "Raumtechnik für Meetings.", json.dumps({
+                "Asset-Tag": "text",
+                "Status": {"type": "select", "options": ["aktiv", "eingeschränkt", "außer Betrieb"]},
+                "Raum": "text",
+                "Kapazität": "number",
+                "Owner": "text",
+                "Support-Kontakt": "text"
+            })),
+            ("Mobile Flotte", "smartphone", "Gerätepool für mobile Endgeräte.", json.dumps({
+                "Asset-Tag": "text",
+                "Status": {"type": "select", "options": ["aktiv", "in Lager", "ausgemustert"]},
+                "MDM": "text",
+                "Owner": "text",
+                "Ausgabe-Policy": "text",
+                "Service-Provider": "text"
+            })),
+            ("Storage-Cluster", "hard-drive", "Storage-Systeme inkl. Arrays.", json.dumps({
+                "Asset-Tag": "text",
+                "Status": {"type": "select", "options": ["produktiv", "staging", "test"]},
+                "Kritikalität": {"type": "select", "options": ["hoch", "kritisch"]},
+                "Owner": "text",
+                "Kapazität (TB)": "number",
+                "Protokolle": "text",
+                "Support-Vertrag": "text"
+            })),
+            ("Security / CCTV", "shield", "Videoüberwachung und Sicherheitstechnik.", json.dumps({
+                "Asset-Tag": "text",
+                "Status": {"type": "select", "options": ["aktiv", "eingeschränkt", "außer Betrieb"]},
+                "Standort": "text",
+                "Owner": "text",
+                "Datenschutz-Level": {"type": "select", "options": ["niedrig", "mittel", "hoch"]},
+                "Wartungsfenster": "text"
+            })),
+            ("Software-Lizenz", "code", "Lizenzverträge und Abos.", json.dumps({
+                "Lizenztyp": {"type": "select", "options": ["Einzeln", "Volumen", "Abo"]},
+                "Hersteller": "text",
+                "Vertragspartner": "text",
+                "Laufzeit": "text",
+                "Compliance": "text",
+                "Owner": "text"
+            })),
+            ("Cloud-Service", "cloud", "Cloud-Services und SaaS.", json.dumps({
+                "Service": "text",
+                "Provider": "text",
+                "Umgebung": {"type": "select", "options": ["prod", "staging", "dev"]},
+                "Kritikalität": {"type": "select", "options": ["mittel", "hoch", "kritisch"]},
+                "Owner": "text",
+                "SLA": "text"
+            }))
+        ]
+        c.executemany('''
+            INSERT OR IGNORE INTO asset_categories (name, icon, description, fields)
+            VALUES (?, ?, ?, ?)
+        ''', default_asset_categories)
 
         default_locations = [
             ("Lager", "Zentrales Lager"),
@@ -6192,13 +6466,14 @@ def handle_category(category_id):
             data = request.get_json()
             name = data['name'].strip()
             icon = data.get('icon', 'default').strip()
+            description = (data.get('description') or '').strip()
             fields = json.dumps(data['fields'])
 
             result = db.execute('''
                 UPDATE categories 
-                SET name = ?, icon = ?, fields = ?
+                SET name = ?, icon = ?, description = ?, fields = ?
                 WHERE id = ?
-            ''', (name, icon, fields, category_id))
+            ''', (name, icon, description, fields, category_id))
 
             if result.rowcount == 0:
                 return jsonify({"error": "Kategorie nicht gefunden"}), 404
@@ -6240,9 +6515,9 @@ def handle_categories():
         data = request.get_json()
         try:
             db.execute('''
-                INSERT INTO categories (name, icon, fields)
-                VALUES (?, ?, ?)
-            ''', (data['name'], data.get('icon', 'cpu'), json.dumps(data['fields'])))
+                INSERT INTO categories (name, icon, description, fields)
+                VALUES (?, ?, ?, ?)
+            ''', (data['name'], data.get('icon', 'cpu'), (data.get('description') or '').strip(), json.dumps(data['fields'])))
             log_activity(db, "create", "category", details={"name": data['name']})
             db.commit()
             return jsonify({"status": "success"}), 201
@@ -6252,6 +6527,81 @@ def handle_categories():
     if not (user_can('categories.view') or user_can('categories.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
     categories = db.execute('SELECT * FROM categories ORDER BY name').fetchall()
+    return jsonify([dict(row) for row in categories])
+
+@app.route('/api/asset-categories/<int:category_id>', methods=['PUT', 'DELETE'])
+@login_required
+def handle_asset_category(category_id):
+    db = get_db()
+    if not user_can('asset_categories.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+
+    if request.method == 'PUT':
+        try:
+            data = request.get_json()
+            name = data['name'].strip()
+            icon = data.get('icon', 'package').strip()
+            description = (data.get('description') or '').strip()
+            fields = json.dumps(data['fields'])
+
+            result = db.execute('''
+                UPDATE asset_categories
+                SET name = ?, icon = ?, description = ?, fields = ?
+                WHERE id = ?
+            ''', (name, icon, description, fields, category_id))
+
+            if result.rowcount == 0:
+                return jsonify({"error": "Asset-Kategorie nicht gefunden"}), 404
+
+            log_activity(db, "update", "asset_category", category_id, {"name": name})
+            db.commit()
+            return jsonify({"status": "updated"}), 200
+
+        except (KeyError, TypeError, ValueError) as e:
+            return jsonify({"error": f"Ungültige Daten: {str(e)}"}), 400
+
+    db.execute('UPDATE assets SET category_id = NULL WHERE category_id = ?', (category_id,))
+    result = db.execute('DELETE FROM asset_categories WHERE id = ?', (category_id,))
+    if result.rowcount == 0:
+        return jsonify({"error": "Asset-Kategorie nicht gefunden"}), 404
+
+    log_activity(db, "delete", "asset_category", category_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/asset-categories', methods=['GET', 'POST'])
+@login_required
+def handle_asset_categories():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('asset_categories.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json()
+        try:
+            db.execute('''
+                INSERT INTO asset_categories (name, icon, description, fields)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                data['name'],
+                data.get('icon', 'package'),
+                (data.get('description') or '').strip(),
+                json.dumps(data['fields'])
+            ))
+            log_activity(db, "create", "asset_category", details={"name": data['name']})
+            db.commit()
+            return jsonify({"status": "success"}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Asset-Kategorie existiert bereits"}), 400
+
+    if not (user_can('asset_categories.view') or user_can('asset_categories.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    categories = db.execute('''
+        SELECT ac.*, COUNT(a.id) as asset_count
+        FROM asset_categories ac
+        LEFT JOIN assets a ON a.category_id = ac.id
+        GROUP BY ac.id
+        ORDER BY ac.name
+    ''').fetchall()
     return jsonify([dict(row) for row in categories])
 
 @app.route('/api/devices/<int:device_id>', methods=['PUT', 'DELETE'])
@@ -6376,6 +6726,7 @@ def manage_assets():
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json()
         name = (data.get('name') or '').strip()
+        category_id = data.get('category_id') or None
         notes = (data.get('notes') or '').strip()
         specs = json.dumps(data.get('specs', {}))
         acquisition_date = (data.get('acquisition_date') or '').strip() or None
@@ -6391,12 +6742,13 @@ def manage_assets():
         try:
             cursor = db.execute('''
                 INSERT INTO assets (
-                    name, notes, specs, acquisition_date, commissioning_date,
+                    name, category_id, notes, specs, acquisition_date, commissioning_date,
                     warranty_end, depreciation_months, retirement_date, retirement_reason
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 name,
+                category_id,
                 notes,
                 specs,
                 acquisition_date,
@@ -6431,8 +6783,10 @@ def manage_assets():
     if not (user_can('assets.view') or user_can('assets.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
     assets = db.execute('''
-        SELECT a.*, COUNT(ad.device_id) as device_count
+        SELECT a.*, ac.name as category_name, ac.icon as category_icon, ac.description as category_description,
+               COUNT(ad.device_id) as device_count
         FROM assets a
+        LEFT JOIN asset_categories ac ON a.category_id = ac.id
         LEFT JOIN asset_devices ad ON a.id = ad.asset_id
         GROUP BY a.id
         ORDER BY a.created_at DESC
@@ -6447,7 +6801,12 @@ def manage_assets():
 @login_required
 def asset_detail(asset_id):
     db = get_db()
-    asset_row = db.execute('SELECT * FROM assets WHERE id = ?', (asset_id,)).fetchone()
+    asset_row = db.execute('''
+        SELECT a.*, ac.name as category_name, ac.icon as category_icon, ac.description as category_description
+        FROM assets a
+        LEFT JOIN asset_categories ac ON a.category_id = ac.id
+        WHERE a.id = ?
+    ''', (asset_id,)).fetchone()
     if not asset_row:
         return jsonify({"error": "Asset nicht gefunden"}), 404
 
@@ -6502,6 +6861,7 @@ def asset_detail(asset_id):
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json()
         name = (data.get('name') or '').strip()
+        category_id = data.get('category_id') or None
         notes = (data.get('notes') or '').strip()
         specs = json.dumps(data.get('specs', {}))
         acquisition_date = (data.get('acquisition_date') or '').strip() or None
@@ -6516,11 +6876,12 @@ def asset_detail(asset_id):
             return jsonify({"error": "Name ist erforderlich"}), 400
         db.execute('''
             UPDATE assets
-            SET name = ?, notes = ?, specs = ?, acquisition_date = ?, commissioning_date = ?,
+            SET name = ?, category_id = ?, notes = ?, specs = ?, acquisition_date = ?, commissioning_date = ?,
                 warranty_end = ?, depreciation_months = ?, retirement_date = ?, retirement_reason = ?
             WHERE id = ?
         ''', (
             name,
+            category_id,
             notes,
             specs,
             acquisition_date,
@@ -9590,6 +9951,7 @@ def export_data():
     include_uploads = settings["importExport"]["includeUploads"]
     tables = [
         "categories",
+        "asset_categories",
         "locations",
         "devices",
         "assets",
@@ -9680,6 +10042,7 @@ def import_data():
         return jsonify({"error": antivirus_error}), 400
     tables = [
         "categories",
+        "asset_categories",
         "locations",
         "devices",
         "assets",
