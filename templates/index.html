@@ -439,7 +439,7 @@
                                 <template x-for="category in filteredCategories()" :key="category.id">
                                     <div class="group grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-xl border border-transparent bg-white px-3 py-2 shadow-sm hover:border-slate-200">
                                         <button @click="loadDevices(category.id)" class="flex items-start gap-2 min-w-0 text-left">
-                                            <div class="mt-0.5" x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-slate-500' })"></div>
+                                            <div class="mt-0.5" x-html="renderIconSvg(category.icon, 'w-4 h-4 text-slate-500')"></div>
                                             <div class="min-w-0">
                                                 <p class="text-sm font-medium text-slate-700 whitespace-normal break-words leading-snug" x-text="category.name"></p>
                                                 <p class="text-xs text-slate-400 line-clamp-2" x-text="category.description || 'Keine Beschreibung hinterlegt.'"></p>
@@ -462,7 +462,7 @@
                                 <template x-for="category in filteredAssetCategories()" :key="category.id">
                                     <div class="group grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-xl border border-transparent bg-white px-3 py-2 shadow-sm hover:border-slate-200">
                                         <div class="flex items-start gap-2 min-w-0">
-                                            <div class="mt-0.5" x-html="feather.icons[category.icon]?.toSvg({ class: 'w-4 h-4 text-slate-500' })"></div>
+                                            <div class="mt-0.5" x-html="renderIconSvg(category.icon, 'w-4 h-4 text-slate-500')"></div>
                                             <div class="min-w-0">
                                                 <p class="text-sm font-medium text-slate-700 whitespace-normal break-words leading-snug" x-text="category.name"></p>
                                                 <p class="text-xs text-slate-400 line-clamp-2" x-text="category.description || 'Keine Beschreibung hinterlegt.'"></p>
@@ -1455,20 +1455,20 @@
                     <div class="mt-2 space-y-3">
                         <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <div class="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white">
-                                <div x-html="feather.icons[currentCategory.icon]?.toSvg({ class: 'w-5 h-5 text-slate-600' })"></div>
+                                <div x-html="renderIconSvg(currentCategory.icon, 'w-5 h-5 text-slate-600')"></div>
                             </div>
                             <div class="flex-1">
                                 <input type="text" x-model="iconSearch" placeholder="Icon suchen (z. B. box, camera, tool)" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
-                                <p class="mt-1 text-xs text-slate-400">Aktuell: <span class="font-semibold text-slate-600" x-text="currentCategory.icon"></span></p>
+                                <p class="mt-1 text-xs text-slate-400">Aktuell: <span class="font-semibold text-slate-600" x-text="formatIconLabel(currentCategory.icon)"></span></p>
                             </div>
                         </div>
                         <div class="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2">
                             <div class="grid grid-cols-4 gap-2 sm:grid-cols-6">
                                 <template x-for="iconName in filteredIconCatalog()" :key="iconName">
                                     <button type="button" @click="selectIcon(iconName)" class="flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide transition"
-                                        :class="currentCategory.icon === iconName ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'">
-                                        <div x-html="feather.icons[iconName]?.toSvg({ class: 'w-4 h-4' })"></div>
-                                        <span class="w-full truncate" x-text="iconName"></span>
+                                        :class="iconsMatch(currentCategory.icon, iconName) ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'">
+                                        <div x-html="renderIconSvg(iconName, 'w-4 h-4')"></div>
+                                        <span class="w-full truncate" x-text="formatIconLabel(iconName)"></span>
                                     </button>
                                 </template>
                             </div>
@@ -1553,20 +1553,20 @@
                     <div class="mt-2 space-y-3">
                         <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <div class="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white">
-                                <div x-html="feather.icons[currentAssetCategory.icon]?.toSvg({ class: 'w-5 h-5 text-slate-600' })"></div>
+                                <div x-html="renderIconSvg(currentAssetCategory.icon, 'w-5 h-5 text-slate-600')"></div>
                             </div>
                             <div class="flex-1">
                                 <input type="text" x-model="iconSearch" placeholder="Icon suchen (z. B. box, server, shield)" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500">
-                                <p class="mt-1 text-xs text-slate-400">Aktuell: <span class="font-semibold text-slate-600" x-text="currentAssetCategory.icon"></span></p>
+                                <p class="mt-1 text-xs text-slate-400">Aktuell: <span class="font-semibold text-slate-600" x-text="formatIconLabel(currentAssetCategory.icon)"></span></p>
                             </div>
                         </div>
                         <div class="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2">
                             <div class="grid grid-cols-4 gap-2 sm:grid-cols-6">
                                 <template x-for="iconName in filteredIconCatalog()" :key="iconName">
-                                    <button type="button" @click="currentAssetCategory.icon = iconName" class="flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide transition"
-                                        :class="currentAssetCategory.icon === iconName ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'">
-                                        <div x-html="feather.icons[iconName]?.toSvg({ class: 'w-4 h-4' })"></div>
-                                        <span class="w-full truncate" x-text="iconName"></span>
+                                    <button type="button" @click="selectAssetIcon(iconName)" class="flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide transition"
+                                        :class="iconsMatch(currentAssetCategory.icon, iconName) ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'">
+                                        <div x-html="renderIconSvg(iconName, 'w-4 h-4')"></div>
+                                        <span class="w-full truncate" x-text="formatIconLabel(iconName)"></span>
                                     </button>
                                 </template>
                             </div>
@@ -1831,6 +1831,7 @@
 
         document.addEventListener('DOMContentLoaded', loadPondSecWidgets);
     </script>
+    <script src="/static/icons.js"></script>
     <script src="/static/script.js"></script>
     <script src="/static/ui.js"></script>
     <script src="/static/theme.js"></script>
