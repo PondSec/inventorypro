@@ -70,6 +70,14 @@
                             </span>
                         </a>
                         {% endif %}
+                        {% if 'procurement.view' in permissions or 'procurement.manage' in permissions %}
+                        <a href="/procurement" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="shopping-cart" class="w-4 h-4"></i></span>
+                                Beschaffung
+                            </span>
+                        </a>
+                        {% endif %}
                         {% if 'ai.use' in permissions or 'ai.manage' in permissions %}
                         <a href="/ai/activity" class="sidebar-link">
                             <span>
