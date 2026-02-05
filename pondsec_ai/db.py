@@ -1,5 +1,6 @@
 """Database helpers and migrations for PondSec AI."""
 from datetime import datetime
+import sqlite3
 import json
 
 from .registry import TOOL_REGISTRY
@@ -136,7 +137,10 @@ def seed_default_tool_permissions(db):
     existing = db.execute('SELECT COUNT(*) as count FROM agent_tool_permissions').fetchone()["count"]
     if existing:
         return
-    roles = db.execute('SELECT id, is_superuser FROM roles').fetchall()
+    try:
+        roles = db.execute('SELECT id, is_superuser FROM roles').fetchall()
+    except sqlite3.OperationalError:
+        return
     superuser_roles = [row["id"] for row in roles if row["is_superuser"]]
     read_tools = [name for name, tool in TOOL_REGISTRY.items() if not tool.is_write]
     default_write_tools = {
