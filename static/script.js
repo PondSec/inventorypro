@@ -9,6 +9,8 @@ document.addEventListener('alpine:init', () => {
         allDevices: [],
         assetCategories: [],
         assets: [],
+        vendors: [],
+        purchaseOrders: [],
         assetEntryOptions: [],
         relationTypes: [],
         activeCategory: null,
@@ -134,6 +136,12 @@ document.addEventListener('alpine:init', () => {
             commissioning_date: '',
             warranty_end: '',
             depreciation_months: '',
+            vendor_id: '',
+            purchase_order_id: '',
+            purchase_cost: '',
+            currency: 'EUR',
+            cost_center: '',
+            invoice_number: '',
             retirement_date: '',
             retirement_reason: '',
             relations: []
@@ -149,6 +157,8 @@ document.addEventListener('alpine:init', () => {
             await this.loadAssetCategories();
             await this.loadAssets();
             await this.loadRelationTypes();
+            await this.loadVendors();
+            await this.loadPurchaseOrders();
             await this.loadFeatureFlags();
             await this.loadMaintenanceSummary();
             await this.loadActivityFeed();
@@ -348,6 +358,28 @@ document.addEventListener('alpine:init', () => {
             const response = await fetch('/api/asset-relation-types');
             if (response.ok) {
                 this.relationTypes = await response.json();
+            }
+        },
+
+        async loadVendors() {
+            if (!this.can('procurement.view') && !this.can('procurement.manage')) {
+                this.vendors = [];
+                return;
+            }
+            const response = await fetch('/api/vendors');
+            if (response.ok) {
+                this.vendors = await response.json();
+            }
+        },
+
+        async loadPurchaseOrders() {
+            if (!this.can('procurement.view') && !this.can('procurement.manage')) {
+                this.purchaseOrders = [];
+                return;
+            }
+            const response = await fetch('/api/purchase-orders');
+            if (response.ok) {
+                this.purchaseOrders = await response.json();
             }
         },
 
@@ -1220,6 +1252,18 @@ document.addEventListener('alpine:init', () => {
             return `${mb.toFixed(1)} MB`;
         },
 
+        formatCurrency(amount, currency) {
+            if (amount === null || amount === undefined || amount === '') return '-';
+            const value = Number(amount);
+            if (Number.isNaN(value)) return amount;
+            const code = currency || 'EUR';
+            try {
+                return new Intl.NumberFormat('de-DE', { style: 'currency', currency: code }).format(value);
+            } catch (error) {
+                return `${value.toFixed(2)} ${code}`;
+            }
+        },
+
         assignmentStatusLabel(status) {
             const labels = {
                 assigned: 'Zugewiesen',
@@ -1449,6 +1493,12 @@ document.addEventListener('alpine:init', () => {
                 commissioning_date: '',
                 warranty_end: '',
                 depreciation_months: '',
+                vendor_id: '',
+                purchase_order_id: '',
+                purchase_cost: '',
+                currency: 'EUR',
+                cost_center: '',
+                invoice_number: '',
                 retirement_date: '',
                 retirement_reason: '',
                 relations: []
@@ -1461,6 +1511,12 @@ document.addEventListener('alpine:init', () => {
             }
             if (this.relationTypes.length === 0) {
                 await this.loadRelationTypes();
+            }
+            if (this.vendors.length === 0) {
+                await this.loadVendors();
+            }
+            if (this.purchaseOrders.length === 0) {
+                await this.loadPurchaseOrders();
             }
             this.isAssetModalOpen = true;
         },
@@ -1489,6 +1545,12 @@ document.addEventListener('alpine:init', () => {
                     commissioning_date: data.commissioning_date || '',
                     warranty_end: data.warranty_end || '',
                     depreciation_months: data.depreciation_months ?? '',
+                    vendor_id: data.vendor_id || '',
+                    purchase_order_id: data.purchase_order_id || '',
+                    purchase_cost: data.purchase_cost ?? '',
+                    currency: data.currency || 'EUR',
+                    cost_center: data.cost_center || '',
+                    invoice_number: data.invoice_number || '',
                     retirement_date: data.retirement_date || '',
                     retirement_reason: data.retirement_reason || '',
                     relations: (data.relations || [])
@@ -1504,6 +1566,12 @@ document.addEventListener('alpine:init', () => {
                 }
                 if (this.relationTypes.length === 0) {
                     await this.loadRelationTypes();
+                }
+                if (this.vendors.length === 0) {
+                    await this.loadVendors();
+                }
+                if (this.purchaseOrders.length === 0) {
+                    await this.loadPurchaseOrders();
                 }
                 this.isAssetModalOpen = true;
             } catch (error) {
@@ -1559,6 +1627,12 @@ document.addEventListener('alpine:init', () => {
                     commissioning_date: this.currentAsset.commissioning_date,
                     warranty_end: this.currentAsset.warranty_end,
                     depreciation_months: this.currentAsset.depreciation_months || null,
+                    vendor_id: this.currentAsset.vendor_id || null,
+                    purchase_order_id: this.currentAsset.purchase_order_id || null,
+                    purchase_cost: this.currentAsset.purchase_cost || null,
+                    currency: this.currentAsset.currency || null,
+                    cost_center: this.currentAsset.cost_center,
+                    invoice_number: this.currentAsset.invoice_number,
                     retirement_date: this.currentAsset.retirement_date,
                     retirement_reason: this.currentAsset.retirement_reason,
                     relations: this.currentAsset.relations

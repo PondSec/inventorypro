@@ -494,6 +494,18 @@ PERMISSIONS = [
         "group": "Software"
     },
     {
+        "key": "procurement.view",
+        "label": "Beschaffung anzeigen",
+        "description": "Lieferanten, Verträge und Bestellungen einsehen.",
+        "group": "Beschaffung"
+    },
+    {
+        "key": "procurement.manage",
+        "label": "Beschaffung verwalten",
+        "description": "Lieferanten, Verträge und Bestellungen pflegen.",
+        "group": "Beschaffung"
+    },
+    {
         "key": "teams.view",
         "label": "Teams anzeigen",
         "description": "Teams und Verantwortlichkeiten einsehen.",
@@ -741,6 +753,8 @@ DEFAULT_ROLES = [
             "health.run",
             "software.view",
             "software.manage",
+            "procurement.view",
+            "procurement.manage",
             "teams.view",
             "teams.manage",
             "departments.view",
@@ -2388,6 +2402,12 @@ def init_db():
                 commissioning_date TEXT,
                 warranty_end TEXT,
                 depreciation_months INTEGER,
+                vendor_id INTEGER,
+                purchase_order_id INTEGER,
+                purchase_cost REAL,
+                currency TEXT,
+                cost_center TEXT,
+                invoice_number TEXT,
                 retirement_date TEXT,
                 retirement_reason TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -2420,6 +2440,12 @@ def init_db():
             ("commissioning_date", "TEXT"),
             ("warranty_end", "TEXT"),
             ("depreciation_months", "INTEGER"),
+            ("vendor_id", "INTEGER"),
+            ("purchase_order_id", "INTEGER"),
+            ("purchase_cost", "REAL"),
+            ("currency", "TEXT"),
+            ("cost_center", "TEXT"),
+            ("invoice_number", "TEXT"),
             ("retirement_date", "TEXT"),
             ("retirement_reason", "TEXT"),
         ):
@@ -3171,6 +3197,87 @@ def init_db():
                 FOREIGN KEY (software_id) REFERENCES software(id),
                 FOREIGN KEY (device_id) REFERENCES devices(id),
                 FOREIGN KEY (asset_id) REFERENCES assets(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS vendors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                vendor_type TEXT,
+                contact_name TEXT,
+                email TEXT,
+                phone TEXT,
+                website TEXT,
+                address TEXT,
+                rating INTEGER DEFAULT 3,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS contracts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vendor_id INTEGER,
+                name TEXT NOT NULL,
+                contract_type TEXT,
+                status TEXT DEFAULT 'active',
+                start_date TEXT,
+                end_date TEXT,
+                renewal_type TEXT DEFAULT 'manual',
+                renewal_notice_days INTEGER DEFAULT 30,
+                cost REAL,
+                currency TEXT DEFAULT 'EUR',
+                owner TEXT,
+                service_level TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS purchase_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vendor_id INTEGER,
+                po_number TEXT NOT NULL UNIQUE,
+                status TEXT DEFAULT 'draft',
+                order_date TEXT,
+                expected_date TEXT,
+                received_date TEXT,
+                cost_center TEXT,
+                requester TEXT,
+                approver TEXT,
+                subtotal REAL DEFAULT 0,
+                tax REAL DEFAULT 0,
+                total REAL DEFAULT 0,
+                currency TEXT DEFAULT 'EUR',
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS purchase_order_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                purchase_order_id INTEGER NOT NULL,
+                item_type TEXT DEFAULT 'asset',
+                item_name TEXT NOT NULL,
+                quantity INTEGER DEFAULT 1,
+                unit_cost REAL,
+                total_cost REAL,
+                asset_id INTEGER,
+                device_id INTEGER,
+                software_id INTEGER,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id),
+                FOREIGN KEY (asset_id) REFERENCES assets(id),
+                FOREIGN KEY (device_id) REFERENCES devices(id),
+                FOREIGN KEY (software_id) REFERENCES software(id)
             )
         ''')
 
@@ -5890,6 +5997,33 @@ def parse_datetime(value):
     except ValueError:
         return None
 
+def parse_float(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+def normalize_optional_int(value):
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+def ensure_fk_exists(db, table, value, label):
+    if value is None:
+        return None
+    row = db.execute(f"SELECT id FROM {table} WHERE id = ?", (value,)).fetchone()
+    if not row:
+        return f"{label} nicht gefunden"
+    return None
+
 def is_closed_status(status):
     return (status or "").strip().lower() in {"closed", "resolved", "done"}
 
@@ -6671,6 +6805,13 @@ def roadmap_page():
     access = get_user_access(get_db())
     return render_template('roadmap.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
+@app.route('/procurement')
+@login_required
+@require_permissions('procurement.view', 'procurement.manage')
+def procurement_page():
+    access = get_user_access(get_db())
+    return render_template('procurement.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
 @app.route('/dependencies')
 @login_required
 @require_permissions('dependencies.view', 'dependencies.manage')
@@ -6972,6 +7113,12 @@ def manage_asset_categories():
         commissioning_date = (data.get('commissioning_date') or '').strip() or None
         warranty_end = (data.get('warranty_end') or '').strip() or None
         depreciation_months = data.get('depreciation_months')
+        vendor_id = normalize_optional_int(data.get('vendor_id'))
+        purchase_order_id = normalize_optional_int(data.get('purchase_order_id'))
+        purchase_cost = parse_float(data.get('purchase_cost'))
+        currency = (data.get('currency') or '').strip() or None
+        cost_center = (data.get('cost_center') or '').strip() or None
+        invoice_number = (data.get('invoice_number') or '').strip() or None
         retirement_date = (data.get('retirement_date') or '').strip() or None
         retirement_reason = (data.get('retirement_reason') or '').strip()
         device_ids = data.get('device_ids') or []
@@ -6987,6 +7134,12 @@ def manage_asset_categories():
         ).fetchone()
         if not category_row:
             return jsonify({"error": "Kategorie nicht gefunden"}), 404
+        fk_error = ensure_fk_exists(db, "vendors", vendor_id, "Lieferant")
+        if fk_error:
+            return jsonify({"error": fk_error}), 400
+        fk_error = ensure_fk_exists(db, "purchase_orders", purchase_order_id, "Bestellung")
+        if fk_error:
+            return jsonify({"error": fk_error}), 400
 
         if device_items:
             device_ids = [item.get("device_id") for item in device_items if item.get("device_id")]
@@ -7006,9 +7159,10 @@ def manage_asset_categories():
             cursor = db.execute('''
                 INSERT INTO assets (
                     name, category_id, notes, specs, acquisition_date, commissioning_date,
-                    warranty_end, depreciation_months, retirement_date, retirement_reason
+                    warranty_end, depreciation_months, vendor_id, purchase_order_id, purchase_cost,
+                    currency, cost_center, invoice_number, retirement_date, retirement_reason
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 name,
                 category_id,
@@ -7018,6 +7172,12 @@ def manage_asset_categories():
                 commissioning_date,
                 warranty_end,
                 depreciation_months,
+                vendor_id,
+                purchase_order_id,
+                purchase_cost,
+                currency,
+                cost_center,
+                invoice_number,
                 retirement_date,
                 retirement_reason
             ))
@@ -7061,9 +7221,12 @@ def manage_asset_categories():
         return jsonify({"error": "Keine Berechtigung"}), 403
     query = '''
         SELECT a.*, ac.name as category_name, ac.icon as category_icon, ac.description as category_description,
+               v.name as vendor_name, po.po_number as purchase_order_number,
                COUNT(ad.device_id) as device_count
         FROM assets a
         LEFT JOIN asset_categories ac ON a.category_id = ac.id
+        LEFT JOIN vendors v ON a.vendor_id = v.id
+        LEFT JOIN purchase_orders po ON a.purchase_order_id = po.id
         LEFT JOIN asset_devices ad ON a.id = ad.asset_id
     '''
     params = []
@@ -7080,9 +7243,12 @@ def manage_asset_categories():
 def asset_entry_detail(asset_id):
     db = get_db()
     asset_row = db.execute('''
-        SELECT a.*, ac.name as category_name, ac.icon as category_icon, ac.description as category_description
+        SELECT a.*, ac.name as category_name, ac.icon as category_icon, ac.description as category_description,
+               v.name as vendor_name, po.po_number as purchase_order_number
         FROM assets a
         LEFT JOIN asset_categories ac ON a.category_id = ac.id
+        LEFT JOIN vendors v ON a.vendor_id = v.id
+        LEFT JOIN purchase_orders po ON a.purchase_order_id = po.id
         WHERE a.id = ?
     ''', (asset_id,)).fetchone()
     if not asset_row:
@@ -7147,6 +7313,12 @@ def asset_entry_detail(asset_id):
         commissioning_date = (data.get('commissioning_date') or '').strip() or None
         warranty_end = (data.get('warranty_end') or '').strip() or None
         depreciation_months = data.get('depreciation_months')
+        vendor_id = normalize_optional_int(data.get('vendor_id'))
+        purchase_order_id = normalize_optional_int(data.get('purchase_order_id'))
+        purchase_cost = parse_float(data.get('purchase_cost'))
+        currency = (data.get('currency') or '').strip() or None
+        cost_center = (data.get('cost_center') or '').strip() or None
+        invoice_number = (data.get('invoice_number') or '').strip() or None
         retirement_date = (data.get('retirement_date') or '').strip() or None
         retirement_reason = (data.get('retirement_reason') or '').strip()
         device_ids = data.get('device_ids') or []
@@ -7162,6 +7334,12 @@ def asset_entry_detail(asset_id):
         ).fetchone()
         if not category_row:
             return jsonify({"error": "Kategorie nicht gefunden"}), 404
+        fk_error = ensure_fk_exists(db, "vendors", vendor_id, "Lieferant")
+        if fk_error:
+            return jsonify({"error": fk_error}), 400
+        fk_error = ensure_fk_exists(db, "purchase_orders", purchase_order_id, "Bestellung")
+        if fk_error:
+            return jsonify({"error": fk_error}), 400
         if device_items:
             device_ids = [item.get("device_id") for item in device_items if item.get("device_id")]
         device_ids, invalid_ids = normalize_device_ids(device_ids)
@@ -7176,7 +7354,8 @@ def asset_entry_detail(asset_id):
         db.execute('''
             UPDATE assets
             SET name = ?, category_id = ?, notes = ?, specs = ?, acquisition_date = ?, commissioning_date = ?,
-                warranty_end = ?, depreciation_months = ?, retirement_date = ?, retirement_reason = ?
+                warranty_end = ?, depreciation_months = ?, vendor_id = ?, purchase_order_id = ?, purchase_cost = ?,
+                currency = ?, cost_center = ?, invoice_number = ?, retirement_date = ?, retirement_reason = ?
             WHERE id = ?
         ''', (
             name,
@@ -7187,6 +7366,12 @@ def asset_entry_detail(asset_id):
             commissioning_date,
             warranty_end,
             depreciation_months,
+            vendor_id,
+            purchase_order_id,
+            purchase_cost,
+            currency,
+            cost_center,
+            invoice_number,
             retirement_date,
             retirement_reason,
             asset_id
@@ -8343,6 +8528,485 @@ def software_installation_detail(installation_id):
     log_activity(db, "delete", "software_installation", installation_id, {"software_id": installation["software_id"]})
     db.commit()
     return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/vendors', methods=['GET', 'POST'])
+@login_required
+def vendors():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('procurement.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        vendor_type = (data.get('vendor_type') or '').strip()
+        contact_name = (data.get('contact_name') or '').strip()
+        email = (data.get('email') or '').strip()
+        phone = (data.get('phone') or '').strip()
+        website = (data.get('website') or '').strip()
+        address = (data.get('address') or '').strip()
+        notes = (data.get('notes') or '').strip()
+        rating = normalize_optional_int(data.get('rating')) or 3
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        if rating < 1 or rating > 5:
+            return jsonify({"error": "Bewertung muss zwischen 1 und 5 liegen"}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO vendors (name, vendor_type, contact_name, email, phone, website, address, rating, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (name, vendor_type, contact_name, email, phone, website, address, rating, notes))
+            log_activity(db, "create", "vendor", cursor.lastrowid, {"name": name})
+            db.commit()
+            return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Lieferant existiert bereits"}), 400
+
+    if not (user_can('procurement.view') or user_can('procurement.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('SELECT * FROM vendors ORDER BY name').fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/vendors/<int:vendor_id>', methods=['PUT', 'DELETE'])
+@login_required
+def vendor_detail(vendor_id):
+    db = get_db()
+    if not user_can('procurement.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    vendor = db.execute('SELECT * FROM vendors WHERE id = ?', (vendor_id,)).fetchone()
+    if not vendor:
+        return jsonify({"error": "Lieferant nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        name = (data.get('name') or vendor["name"] or '').strip()
+        vendor_type = (data.get('vendor_type') or vendor["vendor_type"] or '').strip()
+        contact_name = (data.get('contact_name') or vendor["contact_name"] or '').strip()
+        email = (data.get('email') or vendor["email"] or '').strip()
+        phone = (data.get('phone') or vendor["phone"] or '').strip()
+        website = (data.get('website') or vendor["website"] or '').strip()
+        address = (data.get('address') or vendor["address"] or '').strip()
+        notes = (data.get('notes') or vendor["notes"] or '').strip()
+        rating = normalize_optional_int(data.get('rating')) or vendor["rating"] or 3
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        if rating < 1 or rating > 5:
+            return jsonify({"error": "Bewertung muss zwischen 1 und 5 liegen"}), 400
+        db.execute('''
+            UPDATE vendors
+            SET name = ?, vendor_type = ?, contact_name = ?, email = ?, phone = ?, website = ?, address = ?, rating = ?, notes = ?
+            WHERE id = ?
+        ''', (name, vendor_type, contact_name, email, phone, website, address, rating, notes, vendor_id))
+        log_activity(db, "update", "vendor", vendor_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('UPDATE assets SET vendor_id = NULL WHERE vendor_id = ?', (vendor_id,))
+    db.execute('UPDATE contracts SET vendor_id = NULL WHERE vendor_id = ?', (vendor_id,))
+    db.execute('UPDATE purchase_orders SET vendor_id = NULL WHERE vendor_id = ?', (vendor_id,))
+    db.execute('DELETE FROM vendors WHERE id = ?', (vendor_id,))
+    log_activity(db, "delete", "vendor", vendor_id, {"name": vendor["name"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/contracts', methods=['GET', 'POST'])
+@login_required
+def contracts():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('procurement.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        vendor_id = normalize_optional_int(data.get('vendor_id'))
+        contract_type = (data.get('contract_type') or '').strip()
+        status = (data.get('status') or 'active').strip()
+        start_date = (data.get('start_date') or '').strip() or None
+        end_date = (data.get('end_date') or '').strip() or None
+        renewal_type = (data.get('renewal_type') or 'manual').strip()
+        renewal_notice_days = normalize_optional_int(data.get('renewal_notice_days')) or 30
+        cost = parse_float(data.get('cost'))
+        currency = (data.get('currency') or 'EUR').strip() or None
+        owner = (data.get('owner') or '').strip()
+        service_level = (data.get('service_level') or '').strip()
+        notes = (data.get('notes') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        fk_error = ensure_fk_exists(db, "vendors", vendor_id, "Lieferant")
+        if fk_error:
+            return jsonify({"error": fk_error}), 400
+        cursor = db.execute('''
+            INSERT INTO contracts (
+                vendor_id, name, contract_type, status, start_date, end_date, renewal_type,
+                renewal_notice_days, cost, currency, owner, service_level, notes
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            vendor_id,
+            name,
+            contract_type,
+            status,
+            start_date,
+            end_date,
+            renewal_type,
+            renewal_notice_days,
+            cost,
+            currency,
+            owner,
+            service_level,
+            notes
+        ))
+        log_activity(db, "create", "contract", cursor.lastrowid, {"name": name})
+        db.commit()
+        return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+
+    if not (user_can('procurement.view') or user_can('procurement.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('''
+        SELECT c.*, v.name as vendor_name
+        FROM contracts c
+        LEFT JOIN vendors v ON c.vendor_id = v.id
+        ORDER BY c.end_date IS NULL, c.end_date, c.name
+    ''').fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/contracts/<int:contract_id>', methods=['PUT', 'DELETE'])
+@login_required
+def contract_detail(contract_id):
+    db = get_db()
+    if not user_can('procurement.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    contract = db.execute('SELECT * FROM contracts WHERE id = ?', (contract_id,)).fetchone()
+    if not contract:
+        return jsonify({"error": "Vertrag nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        name = (data.get('name') or contract["name"] or '').strip()
+        vendor_id = normalize_optional_int(data.get('vendor_id')) if "vendor_id" in data else contract["vendor_id"]
+        contract_type = (data.get('contract_type') or contract["contract_type"] or '').strip()
+        status = (data.get('status') or contract["status"] or 'active').strip()
+        start_date = (data.get('start_date') or contract["start_date"] or '').strip() or None
+        end_date = (data.get('end_date') or contract["end_date"] or '').strip() or None
+        renewal_type = (data.get('renewal_type') or contract["renewal_type"] or 'manual').strip()
+        renewal_notice_days = normalize_optional_int(data.get('renewal_notice_days')) or contract["renewal_notice_days"] or 30
+        cost = parse_float(data.get('cost')) if "cost" in data else contract["cost"]
+        currency = (data.get('currency') or contract["currency"] or 'EUR').strip()
+        owner = (data.get('owner') or contract["owner"] or '').strip()
+        service_level = (data.get('service_level') or contract["service_level"] or '').strip()
+        notes = (data.get('notes') or contract["notes"] or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        fk_error = ensure_fk_exists(db, "vendors", vendor_id, "Lieferant")
+        if fk_error:
+            return jsonify({"error": fk_error}), 400
+        db.execute('''
+            UPDATE contracts
+            SET vendor_id = ?, name = ?, contract_type = ?, status = ?, start_date = ?, end_date = ?,
+                renewal_type = ?, renewal_notice_days = ?, cost = ?, currency = ?, owner = ?, service_level = ?, notes = ?
+            WHERE id = ?
+        ''', (
+            vendor_id,
+            name,
+            contract_type,
+            status,
+            start_date,
+            end_date,
+            renewal_type,
+            renewal_notice_days,
+            cost,
+            currency,
+            owner,
+            service_level,
+            notes,
+            contract_id
+        ))
+        log_activity(db, "update", "contract", contract_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('DELETE FROM contracts WHERE id = ?', (contract_id,))
+    log_activity(db, "delete", "contract", contract_id, {"name": contract["name"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+def calculate_purchase_order_totals(db, purchase_order_id, tax_override=None):
+    rows = db.execute(
+        'SELECT quantity, unit_cost FROM purchase_order_items WHERE purchase_order_id = ?',
+        (purchase_order_id,),
+    ).fetchall()
+    subtotal = 0.0
+    for row in rows:
+        qty = row["quantity"] or 0
+        unit_cost = row["unit_cost"] or 0
+        subtotal += float(qty) * float(unit_cost)
+    existing = db.execute('SELECT tax FROM purchase_orders WHERE id = ?', (purchase_order_id,)).fetchone()
+    tax = tax_override if tax_override is not None else (existing["tax"] if existing else 0)
+    total = subtotal + (tax or 0)
+    db.execute(
+        '''
+        UPDATE purchase_orders
+        SET subtotal = ?, tax = ?, total = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        ''',
+        (subtotal, tax or 0, total, purchase_order_id),
+    )
+    return subtotal, tax or 0, total
+
+@app.route('/api/purchase-orders', methods=['GET', 'POST'])
+@login_required
+def purchase_orders():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('procurement.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json() or {}
+        po_number = (data.get('po_number') or '').strip()
+        vendor_id = normalize_optional_int(data.get('vendor_id'))
+        status = (data.get('status') or 'draft').strip()
+        order_date = (data.get('order_date') or '').strip() or None
+        expected_date = (data.get('expected_date') or '').strip() or None
+        received_date = (data.get('received_date') or '').strip() or None
+        cost_center = (data.get('cost_center') or '').strip()
+        requester = (data.get('requester') or '').strip()
+        approver = (data.get('approver') or '').strip()
+        currency = (data.get('currency') or 'EUR').strip()
+        notes = (data.get('notes') or '').strip()
+        items = data.get('items') or []
+        tax = parse_float(data.get('tax')) or 0
+        if not po_number:
+            return jsonify({"error": "Bestellnummer ist erforderlich"}), 400
+        fk_error = ensure_fk_exists(db, "vendors", vendor_id, "Lieferant")
+        if fk_error:
+            return jsonify({"error": fk_error}), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO purchase_orders (
+                    vendor_id, po_number, status, order_date, expected_date, received_date, cost_center,
+                    requester, approver, subtotal, tax, total, currency, notes
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?)
+            ''', (
+                vendor_id,
+                po_number,
+                status,
+                order_date,
+                expected_date,
+                received_date,
+                cost_center,
+                requester,
+                approver,
+                tax,
+                currency,
+                notes
+            ))
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Bestellnummer existiert bereits"}), 400
+        purchase_order_id = cursor.lastrowid
+        for item in items:
+            item_name = (item.get("item_name") or "").strip()
+            if not item_name:
+                continue
+            quantity = normalize_optional_int(item.get("quantity")) or 1
+            unit_cost = parse_float(item.get("unit_cost")) or 0
+            total_cost = quantity * unit_cost
+            item_type = (item.get("item_type") or "asset").strip()
+            notes_item = (item.get("notes") or "").strip()
+            db.execute('''
+                INSERT INTO purchase_order_items (
+                    purchase_order_id, item_type, item_name, quantity, unit_cost, total_cost, notes
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                purchase_order_id,
+                item_type,
+                item_name,
+                quantity,
+                unit_cost,
+                total_cost,
+                notes_item
+            ))
+        subtotal, _, total = calculate_purchase_order_totals(db, purchase_order_id, tax_override=tax)
+        log_activity(db, "create", "purchase_order", purchase_order_id, {"po_number": po_number})
+        db.commit()
+        return jsonify({"status": "created", "id": purchase_order_id, "subtotal": subtotal, "total": total}), 201
+
+    if not (user_can('procurement.view') or user_can('procurement.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    rows = db.execute('''
+        SELECT po.*, v.name as vendor_name,
+               (SELECT COUNT(*) FROM purchase_order_items i WHERE i.purchase_order_id = po.id) as item_count
+        FROM purchase_orders po
+        LEFT JOIN vendors v ON po.vendor_id = v.id
+        ORDER BY po.created_at DESC
+    ''').fetchall()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/purchase-orders/<int:purchase_order_id>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def purchase_order_detail(purchase_order_id):
+    db = get_db()
+    if request.method == 'GET':
+        if not (user_can('procurement.view') or user_can('procurement.manage')):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        order = db.execute('''
+            SELECT po.*, v.name as vendor_name
+            FROM purchase_orders po
+            LEFT JOIN vendors v ON po.vendor_id = v.id
+            WHERE po.id = ?
+        ''', (purchase_order_id,)).fetchone()
+        if not order:
+            return jsonify({"error": "Bestellung nicht gefunden"}), 404
+        items = db.execute('''
+            SELECT *
+            FROM purchase_order_items
+            WHERE purchase_order_id = ?
+            ORDER BY id ASC
+        ''', (purchase_order_id,)).fetchall()
+        payload = dict(order)
+        payload["items"] = [dict(row) for row in items]
+        return jsonify(payload)
+
+    if not user_can('procurement.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    order = db.execute('SELECT * FROM purchase_orders WHERE id = ?', (purchase_order_id,)).fetchone()
+    if not order:
+        return jsonify({"error": "Bestellung nicht gefunden"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        po_number = (data.get('po_number') or order["po_number"] or '').strip()
+        vendor_id = normalize_optional_int(data.get('vendor_id')) if "vendor_id" in data else order["vendor_id"]
+        status = (data.get('status') or order["status"] or 'draft').strip()
+        order_date = (data.get('order_date') or order["order_date"] or '').strip() or None
+        expected_date = (data.get('expected_date') or order["expected_date"] or '').strip() or None
+        received_date = (data.get('received_date') or order["received_date"] or '').strip() or None
+        cost_center = (data.get('cost_center') or order["cost_center"] or '').strip()
+        requester = (data.get('requester') or order["requester"] or '').strip()
+        approver = (data.get('approver') or order["approver"] or '').strip()
+        currency = (data.get('currency') or order["currency"] or 'EUR').strip()
+        notes = (data.get('notes') or order["notes"] or '').strip()
+        tax = parse_float(data.get('tax')) if "tax" in data else order["tax"] or 0
+        items = data.get('items')
+        if not po_number:
+            return jsonify({"error": "Bestellnummer ist erforderlich"}), 400
+        fk_error = ensure_fk_exists(db, "vendors", vendor_id, "Lieferant")
+        if fk_error:
+            return jsonify({"error": fk_error}), 400
+        db.execute('''
+            UPDATE purchase_orders
+            SET vendor_id = ?, po_number = ?, status = ?, order_date = ?, expected_date = ?, received_date = ?,
+                cost_center = ?, requester = ?, approver = ?, currency = ?, notes = ?, tax = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (
+            vendor_id,
+            po_number,
+            status,
+            order_date,
+            expected_date,
+            received_date,
+            cost_center,
+            requester,
+            approver,
+            currency,
+            notes,
+            tax,
+            purchase_order_id
+        ))
+        if items is not None:
+            db.execute('DELETE FROM purchase_order_items WHERE purchase_order_id = ?', (purchase_order_id,))
+            for item in items:
+                item_name = (item.get("item_name") or "").strip()
+                if not item_name:
+                    continue
+                quantity = normalize_optional_int(item.get("quantity")) or 1
+                unit_cost = parse_float(item.get("unit_cost")) or 0
+                total_cost = quantity * unit_cost
+                item_type = (item.get("item_type") or "asset").strip()
+                notes_item = (item.get("notes") or "").strip()
+                db.execute('''
+                    INSERT INTO purchase_order_items (
+                        purchase_order_id, item_type, item_name, quantity, unit_cost, total_cost, notes
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    purchase_order_id,
+                    item_type,
+                    item_name,
+                    quantity,
+                    unit_cost,
+                    total_cost,
+                    notes_item
+                ))
+        calculate_purchase_order_totals(db, purchase_order_id, tax_override=tax)
+        log_activity(db, "update", "purchase_order", purchase_order_id, {"po_number": po_number})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    db.execute('UPDATE assets SET purchase_order_id = NULL WHERE purchase_order_id = ?', (purchase_order_id,))
+    db.execute('DELETE FROM purchase_order_items WHERE purchase_order_id = ?', (purchase_order_id,))
+    db.execute('DELETE FROM purchase_orders WHERE id = ?', (purchase_order_id,))
+    log_activity(db, "delete", "purchase_order", purchase_order_id, {"po_number": order["po_number"]})
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/procurement/renewals', methods=['GET'])
+@login_required
+def procurement_renewals():
+    db = get_db()
+    if not (user_can('procurement.view') or user_can('procurement.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    try:
+        days = int(request.args.get('days', 90))
+    except (TypeError, ValueError):
+        days = 90
+    today = datetime.utcnow().date()
+    cutoff = today + timedelta(days=days)
+
+    contract_rows = db.execute('''
+        SELECT c.*, v.name as vendor_name
+        FROM contracts c
+        LEFT JOIN vendors v ON c.vendor_id = v.id
+        WHERE c.end_date IS NOT NULL
+    ''').fetchall()
+    contracts_due = []
+    for row in contract_rows:
+        end_date = parse_date(row["end_date"])
+        if not end_date:
+            continue
+        if end_date < today or end_date > cutoff:
+            continue
+        status = (row["status"] or "").lower()
+        if status in {"closed", "expired", "cancelled"}:
+            continue
+        entry = dict(row)
+        entry["days_left"] = (end_date - today).days
+        contracts_due.append(entry)
+
+    asset_rows = db.execute('''
+        SELECT a.id, a.name, a.warranty_end, a.retirement_date, v.name as vendor_name
+        FROM assets a
+        LEFT JOIN vendors v ON a.vendor_id = v.id
+        WHERE a.warranty_end IS NOT NULL
+    ''').fetchall()
+    warranties_due = []
+    for row in asset_rows:
+        warranty_end = parse_date(row["warranty_end"])
+        if not warranty_end:
+            continue
+        if warranty_end < today or warranty_end > cutoff:
+            continue
+        retirement_date = parse_date(row["retirement_date"])
+        if retirement_date and retirement_date <= today:
+            continue
+        entry = dict(row)
+        entry["days_left"] = (warranty_end - today).days
+        warranties_due.append(entry)
+
+    return jsonify({
+        "days": days,
+        "contracts": contracts_due,
+        "warranties": warranties_due
+    })
 
 @app.route('/api/dependency-links', methods=['GET', 'POST'])
 @login_required
@@ -10357,6 +11021,10 @@ def export_data():
         "asset_devices",
         "maintenance_tasks",
         "asset_assignment_history",
+        "vendors",
+        "contracts",
+        "purchase_orders",
+        "purchase_order_items",
         "attachments",
     ]
     temp_dir = Path(tempfile.mkdtemp(prefix="inventory_export_"))
@@ -10448,6 +11116,10 @@ def import_data():
         "assets",
         "maintenance_tasks",
         "asset_assignment_history",
+        "vendors",
+        "contracts",
+        "purchase_orders",
+        "purchase_order_items",
         "attachments",
     ]
     try:
