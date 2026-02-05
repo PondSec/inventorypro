@@ -6978,7 +6978,7 @@ def manage_asset_categories():
 
     if not (user_can('assets.view') or user_can('assets.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
-    assets = db.execute('''
+    query = '''
         SELECT a.*, ac.name as category_name, ac.icon as category_icon, ac.description as category_description,
                COUNT(ad.device_id) as device_count
         FROM assets a
