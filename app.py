@@ -3513,6 +3513,11 @@ def init_db():
         ensure_default_roles(db)
         ensure_admin_user(db)
         seed_health_checks(db)
+        try:
+            from pondsec_ai.db import seed_default_tool_permissions
+            seed_default_tool_permissions(db)
+        except sqlite3.OperationalError:
+            pass
 
         db.commit()
 
@@ -11060,4 +11065,4 @@ if __name__ == '__main__':
         RUNTIME_SETTINGS_CACHE = runtime
         schedule_backup_jobs(settings)
         schedule_health_jobs()
-    app.run(host=runtime["host"], port=runtime["port"], debug=runtime["debug"])
+    app.run(host=runtime["host"], port=5001, debug=runtime["debug"])
