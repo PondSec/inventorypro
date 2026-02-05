@@ -164,7 +164,9 @@ document.addEventListener('alpine:init', () => {
             this.$watch('createdFrom', () => this.searchDevices());
             this.$watch('createdTo', () => this.searchDevices());
             this.$watch('specQuery', () => this.searchDevices());
-            feather.replace();
+            if (window.feather) {
+                feather.replace();
+            }
             this.startLiveRefresh();
         },
 
@@ -349,12 +351,59 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        loadIconCatalog() {
-            if (!window.feather || !feather.icons) {
-                this.iconCatalog = [];
-                return;
+        parseIconName(iconName) {
+            const raw = (iconName || '').toString().trim();
+            if (!raw) {
+                return { set: 'feather', name: 'cpu' };
             }
-            this.iconCatalog = Object.keys(feather.icons).sort();
+            if (raw.includes(':')) {
+                const [set, ...rest] = raw.split(':');
+                return { set: set || 'feather', name: rest.join(':') };
+            }
+            return { set: 'feather', name: raw };
+        },
+
+        iconsMatch(leftIcon, rightIcon) {
+            const left = this.parseIconName(leftIcon);
+            const right = this.parseIconName(rightIcon);
+            return left.set === right.set && left.name === right.name;
+        },
+
+        formatIconLabel(iconName) {
+            const { set, name } = this.parseIconName(iconName);
+            if (set === 'feather') {
+                return name;
+            }
+            return `${set}:${name}`;
+        },
+
+        renderIconSvg(iconName, className) {
+            const { set, name } = this.parseIconName(iconName);
+            if (set === 'feather') {
+                return window.feather?.icons?.[name]?.toSvg({ class: className }) || '';
+            }
+            if (set === 'tech') {
+                const renderer = window.InventoryCustomIcons?.[name];
+                return renderer ? renderer(className) : '';
+            }
+            return '';
+        },
+
+        loadIconCatalog() {
+            const catalog = [];
+            if (window.feather?.icons) {
+                Object.keys(window.feather.icons).forEach(name => {
+                    catalog.push(`feather:${name}`);
+                });
+            }
+            if (window.InventoryCustomIcons) {
+                Object.keys(window.InventoryCustomIcons).forEach(name => {
+                    catalog.push(`tech:${name}`);
+                });
+            }
+            this.iconCatalog = catalog.sort((a, b) => {
+                return this.formatIconLabel(a).localeCompare(this.formatIconLabel(b));
+            });
         },
 
         // Search and Sort
@@ -570,11 +619,19 @@ document.addEventListener('alpine:init', () => {
             if (!query) {
                 return this.iconCatalog;
             }
-            return this.iconCatalog.filter(iconName => iconName.includes(query));
+            return this.iconCatalog.filter(iconName => {
+                const { set, name } = this.parseIconName(iconName);
+                const label = `${set}:${name}`;
+                return name.includes(query) || set.includes(query) || label.includes(query);
+            });
         },
 
         selectIcon(iconName) {
             this.currentCategory.icon = iconName;
+        },
+
+        selectAssetIcon(iconName) {
+            this.currentAssetCategory.icon = iconName;
         },
 
         async saveCategory() {

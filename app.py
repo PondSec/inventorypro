@@ -2072,7 +2072,10 @@ def ensure_admin_user(db):
 
     password = secrets.token_urlsafe(12)
     password_hash = generate_password_hash(password)
-    cursor = db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, password_hash))
+    cursor = db.execute(
+        'INSERT INTO users (username, password_hash, must_change_password) VALUES (?, ?, 1)',
+        (username, password_hash)
+    )
     assign_user_role(db, cursor.lastrowid, "Admin")
 
     print("\n[!] ADMIN-KONTO ERSTELLT (kein Admin vorhanden):")
@@ -2092,7 +2095,7 @@ def get_user_access(db):
             "is_superuser": False
         }
         return g.user_access
-    user = db.execute('SELECT id, username, email FROM users WHERE username = ?', (username,)).fetchone()
+    user = db.execute('SELECT id, username, email, must_change_password FROM users WHERE username = ?', (username,)).fetchone()
     if not user:
         g.user_access = {
             "user": None,
@@ -2133,6 +2136,13 @@ def user_can(permission_key):
     access = get_user_access(get_db())
     return access["is_superuser"] or permission_key in access["permissions"]
 
+def must_change_password(db, username):
+    row = db.execute(
+        'SELECT must_change_password FROM users WHERE username = ?',
+        (username,)
+    ).fetchone()
+    return bool(row and row["must_change_password"])
+
 def require_permissions(*permission_keys):
     def decorator(f):
         @wraps(f)
@@ -2150,6 +2160,8 @@ def require_permission(permission_key):
     return require_permissions(permission_key)
 
 def get_post_login_redirect(access):
+    if access.get("user") and access["user"].get("must_change_password"):
+        return url_for('force_password_change')
     if access["is_superuser"]:
         return url_for('index')
     landing_targets = [
@@ -2193,6 +2205,23 @@ def close_connection(exception):
     if db is not None:
         db.close()
 
+@app.before_request
+def enforce_password_change():
+    username = session.get('username')
+    if not username:
+        return None
+    if request.path.startswith('/static/'):
+        return None
+    if request.path in ('/logout', '/force-password-change'):
+        return None
+    if request.path.startswith('/api/') and request.path == '/api/force-password-change':
+        return None
+    db = get_db()
+    if must_change_password(db, username):
+        if request.path.startswith('/api/'):
+            return jsonify({"error": "Passwort muss geändert werden"}), 403
+        return redirect(url_for('force_password_change'))
+
 def init_db():
     with app.app_context():
         db = get_db()
@@ -2205,11 +2234,16 @@ def init_db():
                 username TEXT NOT NULL UNIQUE,
                 email TEXT,
                 password_hash TEXT NOT NULL,
-                otp_secret TEXT
+                otp_secret TEXT,
+                must_change_password INTEGER DEFAULT 0
             )
         ''')
         try:
             c.execute('ALTER TABLE users ADD COLUMN email TEXT')
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0')
         except sqlite3.OperationalError:
             pass
         c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE email IS NOT NULL')
@@ -3558,7 +3592,7 @@ def init_db():
 
         # Default-Kategorien (Geräte)
         default_categories = [
-            ("Laptop", "laptop", "Mobile Arbeitsplätze und Notebooks.", json.dumps({
+            ("Laptop", "tech:laptop", "Mobile Arbeitsplätze und Notebooks.", json.dumps({
                 "CPU": "text",
                 "RAM (GB)": "number",
                 "Storage": "text",
@@ -3689,14 +3723,14 @@ def init_db():
                 "Hersteller": "text",
                 "Sockel": "text"
             })),
-            ("GPU", "gpu", "Grafikkarten und Beschleuniger.", json.dumps({
+            ("GPU", "tech:gpu", "Grafikkarten und Beschleuniger.", json.dumps({
                 "VRAM": "text",
                 "Modell": "text",
                 "Hersteller": "text",
                 "Anschluss": "text",
                 "Leistungsaufnahme": "text"
             })),
-            ("RAM", "memory", "Arbeitsspeicher und Module.", json.dumps({
+            ("RAM", "tech:ram", "Arbeitsspeicher und Module.", json.dumps({
                 "Kapazität": "text",
                 "Typ": "text",
                 "Takt": "text",
@@ -3707,6 +3741,23 @@ def init_db():
             INSERT OR IGNORE INTO categories (name, icon, description, fields)
             VALUES (?, ?, ?, ?)
         ''', default_categories)
+
+        # Icon-Migrationen für bestehende Datenbanken (alte Feather-Namen -> tech:* Icons)
+        c.execute('''
+            UPDATE categories
+            SET icon = 'tech:gpu'
+            WHERE name = 'GPU' AND (icon IS NULL OR icon IN ('gpu', 'feather:gpu'))
+        ''')
+        c.execute('''
+            UPDATE categories
+            SET icon = 'tech:ram'
+            WHERE name = 'RAM' AND (icon IS NULL OR icon IN ('memory', 'feather:memory', 'ram', 'feather:ram'))
+        ''')
+        c.execute('''
+            UPDATE categories
+            SET icon = 'tech:laptop'
+            WHERE name = 'Laptop' AND (icon IS NULL OR icon IN ('laptop', 'feather:laptop'))
+        ''')
 
         # Default-Kategorien (Assets)
         default_asset_categories = [
@@ -6492,6 +6543,36 @@ def login():
         return render_template('login.html', error="Ungültige Anmeldedaten")
 
     return render_template('login.html')
+
+@app.route('/force-password-change', methods=['GET', 'POST'])
+@login_required
+def force_password_change():
+    db = get_db()
+    username = session.get('username')
+    if not must_change_password(db, username):
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        new_password = request.form.get('new_password') or ''
+        confirm_password = request.form.get('confirm_password') or ''
+        if new_password != confirm_password:
+            return render_template('force_password_change.html', error="Passwörter stimmen nicht überein.")
+        min_length = get_password_min_length(db)
+        if len(new_password) < min_length:
+            return render_template(
+                'force_password_change.html',
+                error=f"Passwort muss mindestens {min_length} Zeichen lang sein."
+            )
+        password_hash = generate_password_hash(new_password)
+        db.execute(
+            'UPDATE users SET password_hash = ?, must_change_password = 0 WHERE username = ?',
+            (password_hash, username)
+        )
+        log_activity(db, "password_change_forced", "user", details={"username": username})
+        db.commit()
+        return redirect(url_for('index'))
+
+    return render_template('force_password_change.html')
 
 @app.route('/logout', methods=['POST'])  # Nur POST erlauben
 def logout():
