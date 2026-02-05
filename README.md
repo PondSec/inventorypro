@@ -135,6 +135,26 @@ export PONDSEC_AI_LLM_MAX_TOKENS=256
 ### Server-Einstellungen (UI)
 Im Admin-Bereich können u. a. Backup-Strategien, Import/Export-Optionen, Sicherheitsrichtlinien, MFA-Pflicht und IP-Whitelists verwaltet werden.
 
+
+### Seed-Daten für Kategorien & Assets
+Beim ersten Start werden Standard-Kategorien und Standard-Assets automatisch angelegt und bei späteren Starts versioniert aktualisiert (idempotent, ohne Duplikate). Die Seeds laufen standardmäßig in Dev und können in Produktion per ENV gesteuert werden.
+
+| Variable | Zweck | Default |
+| --- | --- | --- |
+| `INVENTORY_ENABLE_SEEDING` | Aktiviert/deaktiviert das automatische Seeding von Kategorien/Assets (`1`/`0`) | `1` |
+
+**Lokal/CI:**
+```bash
+export INVENTORY_ENABLE_SEEDING=1
+python app.py
+```
+
+Die API bietet erweiterte Funktionen für Kategorien/Assets:
+- Kategorie-Merge: `POST /api/categories/<id>/merge`
+- Kategorien sortieren: `POST /api/categories/reorder`
+- Asset Bulk-Aktionen: `POST /api/assets/bulk` (`move`, `archive`, `delete`, `tag`)
+- Archivierung als Soft-Delete für Kategorien und Assets.
+
 ## Betrieb & Wartung
 - Für Produktionsumgebungen empfiehlt sich ein WSGI-Server (z. B. Gunicorn) hinter einem Reverse-Proxy.
 - Backups sollten vor Updates erzwungen und regelmäßig getestet werden.

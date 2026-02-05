@@ -41,6 +41,8 @@ CORS(app)
 app.secret_key = os.urandom(24).hex()
 
 DATABASE = 'inventory.db'
+CATEGORY_SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+DEFAULT_SEED_VERSION = 1
 SETTINGS_SCHEMA_VERSION = 1
 APP_INSTANCE_PATH = Path(app.instance_path)
 RUNTIME_CONFIG_PATH = APP_INSTANCE_PATH / "runtime_config.json"
@@ -73,6 +75,54 @@ FREE_FEATURES = [
     "tags",
     "notes",
     "activity_feed"
+]
+
+DEFAULT_CATEGORY_SEEDS = [
+    {
+        "seed_key": "workstations",
+        "seed_version": 1,
+        "name": "Workstations",
+        "slug": "workstations",
+        "description": "Desktop- und Laptop-Arbeitsplätze für Mitarbeitende.",
+        "icon": "monitor",
+        "color": "#2563eb",
+        "sort_order": 10,
+        "fields": {"CPU": "text", "RAM": "text", "Speicher": "text"},
+        "assets": [
+            {"seed_key": "ws-lenovo-t14", "name": "Lenovo ThinkPad T14", "status": "active", "tags": ["laptop", "office"]},
+            {"seed_key": "ws-dell-optiplex", "name": "Dell OptiPlex 7010", "status": "active", "tags": ["desktop", "finance"]},
+        ],
+    },
+    {
+        "seed_key": "network",
+        "seed_version": 1,
+        "name": "Netzwerk",
+        "slug": "netzwerk",
+        "description": "Switches, Router und Firewall-Appliances.",
+        "icon": "share-2",
+        "color": "#0f766e",
+        "sort_order": 20,
+        "fields": {"Ports": "number", "Hersteller": "text", "Firmware": "text"},
+        "assets": [
+            {"seed_key": "nw-core-switch", "name": "Core Switch Rack A", "status": "active", "tags": ["switch", "core"]},
+            {"seed_key": "nw-edge-router", "name": "Edge Router WAN-1", "status": "active", "tags": ["router", "wan"]},
+        ],
+    },
+    {
+        "seed_key": "meeting-tech",
+        "seed_version": 1,
+        "name": "Meeting-Technik",
+        "slug": "meeting-technik",
+        "description": "Ausstattung für Besprechungsräume und hybride Meetings.",
+        "icon": "video",
+        "color": "#7c3aed",
+        "sort_order": 30,
+        "fields": {"Raum": "text", "Auflösung": "text", "Hersteller": "text"},
+        "assets": [
+            {"seed_key": "mt-room-cam", "name": "Conference Cam HQ", "status": "active", "tags": ["meeting", "kamera"]},
+            {"seed_key": "mt-room-display", "name": "Meeting Room Display 75\"", "status": "active", "tags": ["display", "meeting"]},
+        ],
+    },
 ]
 
 RUNTIME_SETTINGS_CACHE = None
@@ -2248,9 +2298,20 @@ def init_db():
             CREATE TABLE IF NOT EXISTS categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
+                slug TEXT UNIQUE,
+                description TEXT,
                 icon TEXT,
+                color TEXT DEFAULT '#2563eb',
+                sort_order INTEGER DEFAULT 0,
+                parent_id INTEGER,
+                is_archived INTEGER DEFAULT 0,
+                archived_at TEXT,
                 fields TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                seed_key TEXT UNIQUE,
+                seed_version INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (parent_id) REFERENCES categories(id)
             )
         ''')
 
@@ -2313,15 +2374,32 @@ def init_db():
             CREATE TABLE IF NOT EXISTS assets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
+                description TEXT,
                 notes TEXT,
                 specs TEXT,
+                category_id INTEGER,
+                status TEXT DEFAULT 'active',
+                tags TEXT DEFAULT '[]',
+                created_by_user_id INTEGER,
+                is_archived INTEGER DEFAULT 0,
+                archived_at TEXT,
+                file_name TEXT,
+                file_size INTEGER,
+                content_type TEXT,
+                content_hash TEXT,
+                source TEXT DEFAULT 'manual',
                 acquisition_date TEXT,
                 commissioning_date TEXT,
                 warranty_end TEXT,
                 depreciation_months INTEGER,
                 retirement_date TEXT,
                 retirement_reason TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                seed_key TEXT UNIQUE,
+                seed_version INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (category_id) REFERENCES categories(id),
+                FOREIGN KEY (created_by_user_id) REFERENCES users(id)
             )
         ''')
 
@@ -2347,6 +2425,52 @@ def init_db():
                 c.execute(f'ALTER TABLE assets ADD COLUMN {column} {column_type}')
             except sqlite3.OperationalError:
                 pass
+
+        for column, column_type in (
+            ("slug", "TEXT"),
+            ("description", "TEXT"),
+            ("color", "TEXT DEFAULT '#2563eb'"),
+            ("sort_order", "INTEGER DEFAULT 0"),
+            ("parent_id", "INTEGER"),
+            ("is_archived", "INTEGER DEFAULT 0"),
+            ("archived_at", "TEXT"),
+            ("seed_key", "TEXT"),
+            ("seed_version", "INTEGER DEFAULT 1"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ):
+            try:
+                c.execute(f'ALTER TABLE categories ADD COLUMN {column} {column_type}')
+            except sqlite3.OperationalError:
+                pass
+
+        for column, column_type in (
+            ("description", "TEXT"),
+            ("category_id", "INTEGER"),
+            ("status", "TEXT DEFAULT 'active'"),
+            ("tags", "TEXT DEFAULT '[]'"),
+            ("created_by_user_id", "INTEGER"),
+            ("is_archived", "INTEGER DEFAULT 0"),
+            ("archived_at", "TEXT"),
+            ("file_name", "TEXT"),
+            ("file_size", "INTEGER"),
+            ("content_type", "TEXT"),
+            ("content_hash", "TEXT"),
+            ("source", "TEXT DEFAULT 'manual'"),
+            ("seed_key", "TEXT"),
+            ("seed_version", "INTEGER DEFAULT 1"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ):
+            try:
+                c.execute(f'ALTER TABLE assets ADD COLUMN {column} {column_type}')
+            except sqlite3.OperationalError:
+                pass
+
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_slug_unique ON categories(slug) WHERE slug IS NOT NULL")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_seed_key_unique ON categories(seed_key) WHERE seed_key IS NOT NULL")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_categories_sort ON categories(sort_order)")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_seed_key_unique ON assets(seed_key) WHERE seed_key IS NOT NULL")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_assets_category_status ON assets(category_id, status, is_archived)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_assets_content_hash ON assets(content_hash)")
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS asset_devices (
@@ -2405,6 +2529,19 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS agent_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT,
+                type TEXT,
+                entity_type TEXT,
+                entity_id TEXT,
+                payload_json TEXT,
+                processed_at TEXT NULL
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_agent_events_processed_at ON agent_events (processed_at)')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS ticket_categories (
@@ -3428,6 +3565,19 @@ def init_db():
         ''')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS agent_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT,
+                type TEXT,
+                entity_type TEXT,
+                entity_id TEXT,
+                payload_json TEXT,
+                processed_at TEXT NULL
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_agent_events_processed_at ON agent_events (processed_at)')
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS roadmaps (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ticket_id INTEGER UNIQUE,
@@ -3459,16 +3609,8 @@ def init_db():
             )
         ''')
 
-        # Default-Kategorien
-        default_categories = [
-            ("CPU", "cpu", '{"cores":"number","clock":"text","manufacturer":"text"}'),
-            ("GPU", "gpu", '{"vram":"text","model":"text","manufacturer":"text"}'),
-            ("RAM", "memory", '{"size":"text","type":"text","speed":"text"}')
-        ]
-        c.executemany('''
-            INSERT OR IGNORE INTO categories (name, icon, fields)
-            VALUES (?, ?, ?)
-        ''', default_categories)
+        # Seed-Daten für Kategorien und Assets
+        seed_default_inventory(db)
 
         default_locations = [
             ("Lager", "Zentrales Lager"),
@@ -5640,7 +5782,12 @@ def build_asset_summary(db, asset_row, device_rows=None):
         asset_specs = json.loads(asset.get('specs') or '{}')
     except json.JSONDecodeError:
         asset_specs = {}
+    try:
+        asset_tags = json.loads(asset.get('tags') or '[]')
+    except json.JSONDecodeError:
+        asset_tags = []
     asset['specs'] = asset_specs
+    asset['tags'] = asset_tags
     device_rows = device_rows if device_rows is not None else get_asset_devices_info(db, asset["id"])
     serials, locations = summarize_device_info(device_rows)
     asset['serial_numbers'] = serials
@@ -6179,51 +6326,90 @@ def health_page():
 @login_required
 def handle_category(category_id):
     db = get_db()
+    row = db.execute('SELECT * FROM categories WHERE id = ?', (category_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Kategorie nicht gefunden"}), 404
     if not user_can('categories.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
 
     if request.method == 'PUT':
+        data = request.get_json() or {}
+        payload, error = validate_category_payload(db, data, category_id=category_id)
+        if error:
+            return jsonify({"error": error}), 400
         try:
-            data = request.get_json()
-            name = data['name'].strip()
-            icon = data.get('icon', 'default').strip()
-            fields = json.dumps(data['fields'])
-
-            result = db.execute('''
-                UPDATE categories 
-                SET name = ?, icon = ?, fields = ?
+            db.execute('''
+                UPDATE categories
+                SET name = ?, slug = ?, description = ?, icon = ?, color = ?, sort_order = ?, parent_id = ?,
+                    fields = ?, is_archived = ?, archived_at = ?, updated_at = ?
                 WHERE id = ?
-            ''', (name, icon, fields, category_id))
-
-            if result.rowcount == 0:
-                return jsonify({"error": "Kategorie nicht gefunden"}), 404
-
-            log_activity(db, "update", "category", category_id, {"name": name})
+            ''', (
+                payload['name'], payload['slug'], payload['description'], payload['icon'], payload['color'], payload['sort_order'],
+                payload['parent_id'], payload['fields'], payload['is_archived'], payload['archived_at'], datetime.utcnow().isoformat(), category_id
+            ))
+            log_activity(db, "update", "category", category_id, {"name": payload['name'], "slug": payload['slug']})
             db.commit()
             return jsonify({"status": "updated"}), 200
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Kategorie mit Name/Slug existiert bereits"}), 400
 
-        except (KeyError, TypeError, ValueError) as e:
-            return jsonify({"error": f"Ungültige Daten: {str(e)}"}), 400
-
-    elif request.method == 'DELETE':
-        device_rows = db.execute('SELECT id FROM devices WHERE category_id = ?', (category_id,)).fetchall()
-        device_ids = [row['id'] for row in device_rows]
-
-        for device_id in device_ids:
-            db.execute('DELETE FROM device_tags WHERE device_id = ?', (device_id,))
-            db.execute('DELETE FROM device_notes WHERE device_id = ?', (device_id,))
-            db.execute('DELETE FROM maintenance_tasks WHERE device_id = ?', (device_id,))
-
-        if device_ids:
-            db.execute('DELETE FROM devices WHERE category_id = ?', (category_id,))
-
-        result = db.execute('DELETE FROM categories WHERE id = ?', (category_id,))
-        if result.rowcount == 0:
-            return jsonify({"error": "Kategorie nicht gefunden"}), 404
-
-        log_activity(db, "delete", "category", category_id, {"deleted_devices": len(device_ids)})
+    has_assets = db.execute('SELECT COUNT(*) AS count FROM assets WHERE category_id = ? AND is_archived = 0', (category_id,)).fetchone()['count']
+    if has_assets:
+        db.execute('UPDATE categories SET is_archived = 1, archived_at = ?, updated_at = ? WHERE id = ?', (datetime.utcnow().isoformat(), datetime.utcnow().isoformat(), category_id))
+        log_activity(db, "archive", "category", category_id, {"auto": True})
         db.commit()
-        return jsonify({"status": "deleted"}), 200
+        return jsonify({"status": "archived"}), 200
+    db.execute('DELETE FROM categories WHERE id = ?', (category_id,))
+    log_activity(db, "delete", "category", category_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/categories/<int:category_id>/merge', methods=['POST'])
+@login_required
+@require_permission('categories.manage')
+def merge_category(category_id):
+    db = get_db()
+    data = request.get_json() or {}
+    target_category_id = data.get('target_category_id')
+    try:
+        target_category_id = int(target_category_id)
+    except (TypeError, ValueError):
+        return jsonify({"error": "target_category_id ist erforderlich"}), 400
+    if target_category_id == category_id:
+        return jsonify({"error": "Quelle und Ziel dürfen nicht identisch sein"}), 400
+    source = db.execute('SELECT * FROM categories WHERE id = ?', (category_id,)).fetchone()
+    target = db.execute('SELECT * FROM categories WHERE id = ?', (target_category_id,)).fetchone()
+    if not source or not target:
+        return jsonify({"error": "Kategorie nicht gefunden"}), 404
+    try:
+        db.execute('BEGIN')
+        db.execute('UPDATE assets SET category_id = ?, updated_at = ? WHERE category_id = ?', (target_category_id, datetime.utcnow().isoformat(), category_id))
+        db.execute('UPDATE categories SET is_archived = 1, archived_at = ?, updated_at = ? WHERE id = ?', (datetime.utcnow().isoformat(), datetime.utcnow().isoformat(), category_id))
+        log_activity(db, "merge", "category", category_id, {"target_category_id": target_category_id})
+        db.commit()
+    except sqlite3.Error as exc:
+        db.rollback()
+        return jsonify({"error": f"Merge fehlgeschlagen: {exc}"}), 500
+    return jsonify({"status": "merged"}), 200
+
+@app.route('/api/categories/reorder', methods=['POST'])
+@login_required
+@require_permission('categories.manage')
+def reorder_categories():
+    db = get_db()
+    payload = request.get_json() or {}
+    ordered_ids = payload.get('ordered_ids') or []
+    if not isinstance(ordered_ids, list) or not ordered_ids:
+        return jsonify({"error": "ordered_ids muss eine Liste sein"}), 400
+    try:
+        db.execute('BEGIN')
+        for index, category_id in enumerate(ordered_ids, start=1):
+            db.execute('UPDATE categories SET sort_order = ?, updated_at = ? WHERE id = ?', (index * 10, datetime.utcnow().isoformat(), category_id))
+        db.commit()
+    except sqlite3.Error as exc:
+        db.rollback()
+        return jsonify({"error": f"Sortierung fehlgeschlagen: {exc}"}), 500
+    return jsonify({"status": "ok"}), 200
 
 @app.route('/api/categories', methods=['GET', 'POST'])
 @login_required
@@ -6232,22 +6418,45 @@ def handle_categories():
     if request.method == 'POST':
         if not user_can('categories.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json()
+        payload, error = validate_category_payload(db, request.get_json() or {})
+        if error:
+            return jsonify({"error": error}), 400
         try:
             db.execute('''
-                INSERT INTO categories (name, icon, fields)
-                VALUES (?, ?, ?)
-            ''', (data['name'], data.get('icon', 'cpu'), json.dumps(data['fields'])))
-            log_activity(db, "create", "category", details={"name": data['name']})
+                INSERT INTO categories (name, slug, description, icon, color, sort_order, parent_id, fields, is_archived, archived_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                payload['name'], payload['slug'], payload['description'], payload['icon'], payload['color'], payload['sort_order'],
+                payload['parent_id'], payload['fields'], payload['is_archived'], payload['archived_at'], datetime.utcnow().isoformat()
+            ))
+            log_activity(db, "create", "category", details={"name": payload['name'], "slug": payload['slug']})
             db.commit()
             return jsonify({"status": "success"}), 201
         except sqlite3.IntegrityError:
-            return jsonify({"error": "Kategorie existiert bereits"}), 400
-    
+            return jsonify({"error": "Kategorie mit Name/Slug existiert bereits"}), 400
+
     if not (user_can('categories.view') or user_can('categories.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
-    categories = db.execute('SELECT * FROM categories ORDER BY name').fetchall()
-    return jsonify([dict(row) for row in categories])
+    query = '''
+        SELECT c.*, COUNT(a.id) AS asset_count, MAX(a.updated_at) AS last_asset_update,
+               COALESCE(SUM(a.file_size), 0) AS total_size_bytes
+        FROM categories c
+        LEFT JOIN assets a ON a.category_id = c.id
+        WHERE 1=1
+    '''
+    params = []
+    search = (request.args.get('search') or '').strip()
+    status = (request.args.get('status') or '').strip().lower()
+    if search:
+        query += ' AND (c.name LIKE ? OR c.slug LIKE ? OR c.description LIKE ?)'
+        params.extend([f'%{search}%', f'%{search}%', f'%{search}%'])
+    if status == 'active':
+        query += ' AND c.is_archived = 0'
+    elif status == 'archived':
+        query += ' AND c.is_archived = 1'
+    query += ' GROUP BY c.id ORDER BY c.sort_order ASC, c.name ASC'
+    rows = db.execute(query, params).fetchall()
+    return jsonify([dict(row) for row in rows])
 
 @app.route('/api/devices/<int:device_id>', methods=['PUT', 'DELETE'])
 @login_required
@@ -6362,6 +6571,44 @@ def get_devices():
     devices = db.execute(query, params).fetchall()
     return jsonify([dict(row) for row in devices])
 
+@app.route('/api/assets/bulk', methods=['POST'])
+@login_required
+@require_permission('assets.manage')
+def bulk_assets_action():
+    db = get_db()
+    data = request.get_json() or {}
+    asset_ids = data.get('asset_ids') or []
+    action = (data.get('action') or '').strip().lower()
+    if not isinstance(asset_ids, list) or not asset_ids:
+        return jsonify({"error": "asset_ids ist erforderlich"}), 400
+    placeholders = ','.join(['?'] * len(asset_ids))
+    if action == 'move':
+        target_category_id = data.get('target_category_id')
+        try:
+            target_category_id = int(target_category_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "target_category_id ist erforderlich"}), 400
+        db.execute(f"UPDATE assets SET category_id = ?, updated_at = ? WHERE id IN ({placeholders})", [target_category_id, datetime.utcnow().isoformat(), *asset_ids])
+    elif action == 'archive':
+        db.execute(f"UPDATE assets SET is_archived = 1, status = 'archived', archived_at = ?, updated_at = ? WHERE id IN ({placeholders})", [datetime.utcnow().isoformat(), datetime.utcnow().isoformat(), *asset_ids])
+    elif action == 'delete':
+        db.execute(f"UPDATE assets SET is_archived = 1, archived_at = ?, updated_at = ? WHERE id IN ({placeholders})", [datetime.utcnow().isoformat(), datetime.utcnow().isoformat(), *asset_ids])
+    elif action == 'tag':
+        tags = normalize_tags(data.get('tags') or [])
+        rows = db.execute(f"SELECT id, tags FROM assets WHERE id IN ({placeholders})", asset_ids).fetchall()
+        for row in rows:
+            try:
+                existing = json.loads(row['tags'] or '[]')
+            except json.JSONDecodeError:
+                existing = []
+            merged = normalize_tags(existing + tags)
+            db.execute('UPDATE assets SET tags = ?, updated_at = ? WHERE id = ?', (json.dumps(merged), datetime.utcnow().isoformat(), row['id']))
+    else:
+        return jsonify({"error": "Unbekannte Bulk-Action"}), 400
+    log_activity(db, "bulk_update", "asset", details={"action": action, "count": len(asset_ids)})
+    db.commit()
+    return jsonify({"status": "ok"}), 200
+
 @app.route('/api/assets', methods=['GET', 'POST'])
 @login_required
 def manage_assets():
@@ -6369,74 +6616,76 @@ def manage_assets():
     if request.method == 'POST':
         if not user_can('assets.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json()
-        name = (data.get('name') or '').strip()
-        notes = (data.get('notes') or '').strip()
-        specs = json.dumps(data.get('specs', {}))
-        acquisition_date = (data.get('acquisition_date') or '').strip() or None
-        commissioning_date = (data.get('commissioning_date') or '').strip() or None
-        warranty_end = (data.get('warranty_end') or '').strip() or None
-        depreciation_months = data.get('depreciation_months')
-        retirement_date = (data.get('retirement_date') or '').strip() or None
-        retirement_reason = (data.get('retirement_reason') or '').strip()
-        device_ids = data.get('device_ids') or []
-        relations = data.get('relations') or []
-        if not name:
-            return jsonify({"error": "Name ist erforderlich"}), 400
-        try:
-            cursor = db.execute('''
-                INSERT INTO assets (
-                    name, notes, specs, acquisition_date, commissioning_date,
-                    warranty_end, depreciation_months, retirement_date, retirement_reason
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                name,
-                notes,
-                specs,
-                acquisition_date,
-                commissioning_date,
-                warranty_end,
-                depreciation_months,
-                retirement_date,
-                retirement_reason
-            ))
-            asset_id = cursor.lastrowid
-            for device_id in device_ids:
-                db.execute('''
-                    INSERT INTO asset_devices (asset_id, device_id)
-                    VALUES (?, ?)
-                ''', (asset_id, device_id))
-            mark_devices_as_used(db, device_ids)
-            for relation in relations:
-                related_asset_id = relation.get("related_asset_id")
-                relation_type_id = relation.get("relation_type_id")
-                if not related_asset_id or related_asset_id == asset_id:
-                    continue
-                db.execute('''
-                    INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id)
-                    VALUES (?, ?, ?)
-                ''', (asset_id, related_asset_id, relation_type_id))
-            log_activity(db, "create", "asset", asset_id, {"name": name})
-            db.commit()
-            return jsonify({"status": "created", "id": asset_id}), 201
-        except sqlite3.Error as e:
-            return jsonify({"error": f"Datenbankfehler: {str(e)}"}), 500
+        payload, error = validate_asset_payload(db, request.get_json() or {})
+        if error:
+            return jsonify({"error": error}), 400
+        device_ids = (request.get_json() or {}).get('device_ids') or []
+        relations = (request.get_json() or {}).get('relations') or []
+        created_by = get_current_user_id(db)
+        duplicate_asset_id = None
+        if payload['content_hash']:
+            duplicate = db.execute('SELECT id FROM assets WHERE content_hash = ? AND is_archived = 0', (payload['content_hash'],)).fetchone()
+            duplicate_asset_id = duplicate['id'] if duplicate else None
+        cursor = db.execute('''
+            INSERT INTO assets (
+                name, description, notes, specs, category_id, status, tags, created_by_user_id, is_archived, archived_at,
+                file_name, file_size, content_type, content_hash, source,
+                acquisition_date, commissioning_date, warranty_end, depreciation_months, retirement_date, retirement_reason, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            payload['name'], payload['description'], payload['notes'], payload['specs'], payload['category_id'], payload['status'], payload['tags'],
+            created_by, payload['is_archived'], payload['archived_at'], payload['file_name'], payload['file_size'], payload['content_type'], payload['content_hash'], payload['source'],
+            payload['acquisition_date'], payload['commissioning_date'], payload['warranty_end'], payload['depreciation_months'], payload['retirement_date'], payload['retirement_reason'], datetime.utcnow().isoformat()
+        ))
+        asset_id = cursor.lastrowid
+        for device_id in device_ids:
+            db.execute('INSERT INTO asset_devices (asset_id, device_id) VALUES (?, ?)', (asset_id, device_id))
+        mark_devices_as_used(db, device_ids)
+        for relation in relations:
+            related_asset_id = relation.get("related_asset_id")
+            relation_type_id = relation.get("relation_type_id")
+            if not related_asset_id or related_asset_id == asset_id:
+                continue
+            db.execute('INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id) VALUES (?, ?, ?)', (asset_id, related_asset_id, relation_type_id))
+        details = {"name": payload['name'], "category_id": payload['category_id']}
+        if duplicate_asset_id:
+            details["possible_duplicate_of"] = duplicate_asset_id
+        log_activity(db, "create", "asset", asset_id, details)
+        db.commit()
+        return jsonify({"status": "created", "id": asset_id, "possible_duplicate_of": duplicate_asset_id}), 201
 
     if not (user_can('assets.view') or user_can('assets.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
-    assets = db.execute('''
-        SELECT a.*, COUNT(ad.device_id) as device_count
+    query = '''
+        SELECT a.*, COUNT(ad.device_id) as device_count, c.name AS category_name, c.slug AS category_slug
         FROM assets a
         LEFT JOIN asset_devices ad ON a.id = ad.asset_id
-        GROUP BY a.id
-        ORDER BY a.created_at DESC
-    ''').fetchall()
-    result = []
-    for row in assets:
-        asset = build_asset_summary(db, row)
-        result.append(asset)
-    return jsonify(result)
+        LEFT JOIN categories c ON c.id = a.category_id
+        WHERE 1=1
+    '''
+    params = []
+    search = (request.args.get('search') or '').strip().lower()
+    category_id = request.args.get('category_id')
+    status = (request.args.get('status') or '').strip().lower()
+    file_type = (request.args.get('file_type') or '').strip().lower()
+    if search:
+        query += ' AND (LOWER(a.name) LIKE ? OR LOWER(COALESCE(a.description,'')) LIKE ? OR LOWER(COALESCE(a.tags,'')) LIKE ?)'
+        params.extend([f'%{search}%', f'%{search}%', f'%{search}%'])
+    if category_id:
+        query += ' AND a.category_id = ?'
+        params.append(category_id)
+    if status:
+        if status == 'archived':
+            query += ' AND a.is_archived = 1'
+        else:
+            query += ' AND a.status = ?'
+            params.append(status)
+    if file_type:
+        query += ' AND LOWER(COALESCE(a.content_type,'')) LIKE ?'
+        params.append(f'%{file_type}%')
+    query += ' GROUP BY a.id ORDER BY a.updated_at DESC, a.created_at DESC'
+    rows = db.execute(query, params).fetchall()
+    return jsonify([build_asset_summary(db, row) for row in rows])
 
 @app.route('/api/assets/<int:asset_id>', methods=['GET', 'PUT', 'DELETE'])
 @login_required
@@ -6461,11 +6710,8 @@ def asset_detail(asset_id):
         asset = build_asset_summary(db, asset_row, device_rows=[dict(row) for row in device_rows])
         asset['devices'] = [dict(row) for row in device_rows]
         asset["assignment"] = fetch_current_asset_assignment(db, asset_id)
-        if user_can("asset.view_history"):
-            asset["assignment_history"] = fetch_asset_assignment_history(db, asset_id)
-        else:
-            asset["assignment_history"] = []
-        relation_rows = db.execute('''
+        asset["assignment_history"] = fetch_asset_assignment_history(db, asset_id) if user_can("asset.view_history") else []
+        relations = db.execute('''
             SELECT ar.id, ar.asset_id, ar.related_asset_id, ar.relation_type_id,
                    rt.name as relation_type_name,
                    a.name as asset_name, ra.name as related_asset_name
@@ -6476,62 +6722,32 @@ def asset_detail(asset_id):
             WHERE ar.asset_id = ? OR ar.related_asset_id = ?
             ORDER BY ar.created_at DESC
         ''', (asset_id, asset_id)).fetchall()
-        relations = []
-        for row in relation_rows:
-            item = dict(row)
-            item["direction"] = "outgoing" if item["asset_id"] == asset_id else "incoming"
-            relations.append(item)
-        asset["relations"] = relations
-        open_ticket_rows = db.execute('''
-            SELECT t.id, t.title, t.status, t.priority, t.created_at
-            FROM tickets t
-            JOIN ticket_assets ta ON ta.ticket_id = t.id
-            WHERE ta.asset_id = ? AND t.status NOT IN ('resolved', 'closed')
-            ORDER BY t.created_at DESC
-        ''', (asset_id,)).fetchall()
-        asset["open_tickets"] = [dict(row) for row in open_ticket_rows]
+        asset["relations"] = [{**dict(row), "direction": "outgoing" if row['asset_id'] == asset_id else "incoming"} for row in relations]
         return jsonify(asset)
 
     if request.method == 'PUT':
         if not user_can('assets.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json()
-        name = (data.get('name') or '').strip()
-        notes = (data.get('notes') or '').strip()
-        specs = json.dumps(data.get('specs', {}))
-        acquisition_date = (data.get('acquisition_date') or '').strip() or None
-        commissioning_date = (data.get('commissioning_date') or '').strip() or None
-        warranty_end = (data.get('warranty_end') or '').strip() or None
-        depreciation_months = data.get('depreciation_months')
-        retirement_date = (data.get('retirement_date') or '').strip() or None
-        retirement_reason = (data.get('retirement_reason') or '').strip()
-        device_ids = data.get('device_ids') or []
-        relations = data.get('relations') or []
-        if not name:
-            return jsonify({"error": "Name ist erforderlich"}), 400
+        data = request.get_json() or {}
+        payload, error = validate_asset_payload(db, data)
+        if error:
+            return jsonify({"error": error}), 400
         db.execute('''
             UPDATE assets
-            SET name = ?, notes = ?, specs = ?, acquisition_date = ?, commissioning_date = ?,
-                warranty_end = ?, depreciation_months = ?, retirement_date = ?, retirement_reason = ?
+            SET name = ?, description = ?, notes = ?, specs = ?, category_id = ?, status = ?, tags = ?,
+                is_archived = ?, archived_at = ?, file_name = ?, file_size = ?, content_type = ?, content_hash = ?, source = ?,
+                acquisition_date = ?, commissioning_date = ?, warranty_end = ?, depreciation_months = ?, retirement_date = ?, retirement_reason = ?, updated_at = ?
             WHERE id = ?
         ''', (
-            name,
-            notes,
-            specs,
-            acquisition_date,
-            commissioning_date,
-            warranty_end,
-            depreciation_months,
-            retirement_date,
-            retirement_reason,
-            asset_id
+            payload['name'], payload['description'], payload['notes'], payload['specs'], payload['category_id'], payload['status'], payload['tags'],
+            payload['is_archived'], payload['archived_at'], payload['file_name'], payload['file_size'], payload['content_type'], payload['content_hash'], payload['source'],
+            payload['acquisition_date'], payload['commissioning_date'], payload['warranty_end'], payload['depreciation_months'], payload['retirement_date'], payload['retirement_reason'], datetime.utcnow().isoformat(), asset_id
         ))
+        device_ids = data.get('device_ids') or []
+        relations = data.get('relations') or []
         db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
         for device_id in device_ids:
-            db.execute('''
-                INSERT INTO asset_devices (asset_id, device_id)
-                VALUES (?, ?)
-            ''', (asset_id, device_id))
+            db.execute('INSERT INTO asset_devices (asset_id, device_id) VALUES (?, ?)', (asset_id, device_id))
         mark_devices_as_used(db, device_ids)
         db.execute('DELETE FROM asset_relations WHERE asset_id = ?', (asset_id,))
         for relation in relations:
@@ -6539,29 +6755,17 @@ def asset_detail(asset_id):
             relation_type_id = relation.get("relation_type_id")
             if not related_asset_id or related_asset_id == asset_id:
                 continue
-            db.execute('''
-                INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id)
-                VALUES (?, ?, ?)
-            ''', (asset_id, related_asset_id, relation_type_id))
-        log_activity(db, "update", "asset", asset_id, {"name": name})
+            db.execute('INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id) VALUES (?, ?, ?)', (asset_id, related_asset_id, relation_type_id))
+        log_activity(db, "update", "asset", asset_id, {"name": payload['name'], "category_id": payload['category_id']})
         db.commit()
         return jsonify({"status": "updated"}), 200
 
     if not user_can('assets.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
-    device_rows = db.execute(
-        'SELECT device_id FROM asset_devices WHERE asset_id = ?',
-        (asset_id,),
-    ).fetchall()
-    device_ids = [row["device_id"] for row in device_rows]
-    mark_devices_as_in_stock(db, device_ids)
-    db.execute('DELETE FROM ticket_assets WHERE asset_id = ?', (asset_id,))
-    db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
-    db.execute('DELETE FROM asset_relations WHERE asset_id = ? OR related_asset_id = ?', (asset_id, asset_id))
-    db.execute('DELETE FROM assets WHERE id = ?', (asset_id,))
-    log_activity(db, "delete", "asset", asset_id)
+    db.execute('UPDATE assets SET is_archived = 1, status = "archived", archived_at = ?, updated_at = ? WHERE id = ?', (datetime.utcnow().isoformat(), datetime.utcnow().isoformat(), asset_id))
+    log_activity(db, "archive", "asset", asset_id)
     db.commit()
-    return jsonify({"status": "deleted"}), 200
+    return jsonify({"status": "archived"}), 200
 
 @app.route('/assets/<int:asset_id>/history', methods=['GET'])
 @login_required
@@ -11032,6 +11236,147 @@ def otp_status():
     db = get_db()
     user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
     return jsonify({'enabled': bool(user and user['otp_secret'])})
+
+
+def slugify(value):
+    normalized = re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower())
+    return normalized.strip("-") or f"item-{secrets.token_hex(3)}"
+
+def ensure_unique_category_slug(db, slug, category_id=None):
+    base_slug = slugify(slug)
+    candidate = base_slug
+    index = 1
+    while True:
+        row = db.execute("SELECT id FROM categories WHERE slug = ?", (candidate,)).fetchone()
+        if not row or (category_id and row["id"] == category_id):
+            return candidate
+        index += 1
+        candidate = f"{base_slug}-{index}"
+
+def normalize_tags(value):
+    if isinstance(value, list):
+        items = [str(v).strip() for v in value if str(v).strip()]
+    elif isinstance(value, str):
+        items = [v.strip() for v in value.split(",") if v.strip()]
+    else:
+        items = []
+    out = []
+    seen = set()
+    for item in items:
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+def validate_category_payload(db, data, category_id=None):
+    if not isinstance(data, dict):
+        return None, "Ungültige Daten."
+    name = (data.get("name") or "").strip()
+    if len(name) < 2 or len(name) > 80:
+        return None, "Name muss zwischen 2 und 80 Zeichen lang sein."
+    slug = (data.get("slug") or slugify(name)).strip().lower()
+    if not CATEGORY_SLUG_PATTERN.match(slug):
+        return None, "Slug darf nur Kleinbuchstaben, Zahlen und Bindestriche enthalten."
+    parent_id = data.get("parent_id")
+    if parent_id in ("", None):
+        parent_id = None
+    else:
+        try:
+            parent_id = int(parent_id)
+        except (TypeError, ValueError):
+            return None, "Parent ist ungültig."
+        if category_id and parent_id == category_id:
+            return None, "Kategorie kann nicht sich selbst als Parent haben."
+        if not db.execute("SELECT id FROM categories WHERE id = ?", (parent_id,)).fetchone():
+            return None, "Parent-Kategorie nicht gefunden."
+    fields = data.get("fields", {})
+    if not isinstance(fields, (dict, list)):
+        return None, "Felder müssen JSON-kompatibel sein."
+    payload = {
+        "name": name,
+        "slug": ensure_unique_category_slug(db, slug, category_id=category_id),
+        "description": (data.get("description") or "").strip()[:500],
+        "icon": (data.get("icon") or "folder").strip()[:50],
+        "color": (data.get("color") or "#2563eb").strip()[:20],
+        "sort_order": int(data.get("sort_order") or 0),
+        "parent_id": parent_id,
+        "fields": json.dumps(fields),
+        "is_archived": 1 if data.get("is_archived") else 0,
+    }
+    payload["archived_at"] = datetime.utcnow().isoformat() if payload["is_archived"] else None
+    return payload, None
+
+def validate_asset_payload(db, data):
+    if not isinstance(data, dict):
+        return None, "Ungültige Daten."
+    name = (data.get("name") or "").strip()
+    if len(name) < 2 or len(name) > 120:
+        return None, "Name muss zwischen 2 und 120 Zeichen lang sein."
+    try:
+        category_id = int(data.get("category_id"))
+    except (TypeError, ValueError):
+        return None, "Kategorie ist erforderlich."
+    if not db.execute("SELECT id FROM categories WHERE id = ?", (category_id,)).fetchone():
+        return None, "Kategorie nicht gefunden."
+    status = (data.get("status") or "active").strip().lower()
+    if status not in {"active", "archived", "retired"}:
+        return None, "Ungültiger Status."
+    try:
+        depreciation = int(data.get("depreciation_months")) if data.get("depreciation_months") not in (None, "") else None
+    except (TypeError, ValueError):
+        return None, "depreciation_months muss numerisch sein."
+    payload = {
+        "name": name,
+        "description": (data.get("description") or "").strip()[:1000],
+        "notes": (data.get("notes") or "").strip(),
+        "specs": json.dumps(data.get("specs") or {}),
+        "category_id": category_id,
+        "status": status,
+        "tags": json.dumps(normalize_tags(data.get("tags") or [])),
+        "is_archived": 1 if (data.get("is_archived") or status == "archived") else 0,
+        "file_name": (data.get("file_name") or "").strip()[:255] or None,
+        "file_size": int(data.get("file_size")) if data.get("file_size") not in (None, "") else None,
+        "content_type": (data.get("content_type") or "").strip()[:100] or None,
+        "content_hash": (data.get("content_hash") or "").strip()[:128] or None,
+        "source": (data.get("source") or "manual").strip()[:40],
+        "acquisition_date": (data.get("acquisition_date") or "").strip() or None,
+        "commissioning_date": (data.get("commissioning_date") or "").strip() or None,
+        "warranty_end": (data.get("warranty_end") or "").strip() or None,
+        "depreciation_months": depreciation,
+        "retirement_date": (data.get("retirement_date") or "").strip() or None,
+        "retirement_reason": (data.get("retirement_reason") or "").strip(),
+    }
+    payload["archived_at"] = datetime.utcnow().isoformat() if payload["is_archived"] else None
+    return payload, None
+
+def seed_default_inventory(db):
+    if os.environ.get("INVENTORY_ENABLE_SEEDING", "1") not in {"1", "true", "TRUE", "yes"}:
+        return
+    for category in DEFAULT_CATEGORY_SEEDS:
+        row = db.execute("SELECT id FROM categories WHERE seed_key = ?", (category["seed_key"],)).fetchone()
+        if row:
+            category_id = row["id"]
+            db.execute("UPDATE categories SET name = ?, slug = ?, description = ?, icon = ?, color = ?, sort_order = ?, fields = ?, seed_version = ?, updated_at = ? WHERE id = ?", (
+                category["name"], category["slug"], category.get("description"), category.get("icon"), category.get("color", "#2563eb"),
+                category.get("sort_order", 0), json.dumps(category.get("fields", {})), category.get("seed_version", DEFAULT_SEED_VERSION), datetime.utcnow().isoformat(), category_id
+            ))
+        else:
+            category_id = db.execute("INSERT INTO categories (name, slug, description, icon, color, sort_order, fields, seed_key, seed_version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (
+                category["name"], category["slug"], category.get("description"), category.get("icon"), category.get("color", "#2563eb"),
+                category.get("sort_order", 0), json.dumps(category.get("fields", {})), category["seed_key"], category.get("seed_version", DEFAULT_SEED_VERSION), datetime.utcnow().isoformat()
+            )).lastrowid
+        for asset in category.get("assets", []):
+            existing_asset = db.execute("SELECT id FROM assets WHERE seed_key = ?", (asset["seed_key"],)).fetchone()
+            if existing_asset:
+                db.execute("UPDATE assets SET name = ?, category_id = ?, status = ?, tags = ?, seed_version = ?, updated_at = ? WHERE id = ?", (
+                    asset["name"], category_id, asset.get("status", "active"), json.dumps(asset.get("tags", [])), category.get("seed_version", DEFAULT_SEED_VERSION), datetime.utcnow().isoformat(), existing_asset["id"]
+                ))
+            else:
+                db.execute("INSERT INTO assets (name, category_id, status, tags, seed_key, seed_version, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'seed', ?)", (
+                    asset["name"], category_id, asset.get("status", "active"), json.dumps(asset.get("tags", [])), asset["seed_key"], category.get("seed_version", DEFAULT_SEED_VERSION), datetime.utcnow().isoformat()
+                ))
 
 
 from pondsec_ai import register_pondsec_ai
