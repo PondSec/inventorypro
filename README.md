@@ -69,6 +69,10 @@ python app.py
 
 Die Anwendung läuft anschließend standardmäßig auf `http://localhost:5000`.
 
+## Troubleshooting
+### npm ERESOLVE bei Docker/Node-Builds (optional)
+Dieses Repository enthält **keinen** Node-/Docker-Build. Falls Sie jedoch in Ihrer Umgebung einen separaten Frontend-Container bauen und dabei `npm install` mit einem ERESOLVE-Fehler abbrechen sehen (z. B. Konflikte zwischen `xterm` und `xterm-addon-fit`), prüfen Sie die Versionen in `package.json` und `package-lock.json` auf Konsistenz. Ein typischer Workaround ist, die Peer-Dependencies explizit zu harmonisieren oder beim Build `npm install --legacy-peer-deps` zu verwenden. Damit bleibt der Python/Flask-Startpfad oben unverändert.
+
 ## Konfiguration
 ### Wichtige Umgebungsvariablen
 | Variable | Zweck | Default |
