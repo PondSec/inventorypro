@@ -93,6 +93,33 @@
                         {% endif %}
                     </div>
                 </div>
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Inventory Links</p>
+                    <div class="mt-3 space-y-1">
+                        {% if inventory_links %}
+                        {% for link in inventory_links %}
+                        <a href="/inventory-links/{{ link.id }}/portal" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="link-2" class="w-4 h-4"></i></span>
+                                {{ link.displayName }}
+                            </span>
+                            {% if link.healthStatus %}
+                            <span class="text-xs font-semibold rounded-full px-2 py-0.5 {% if link.healthStatus == 'ok' %}bg-emerald-100 text-emerald-700{% elif link.healthStatus == 'unauthorized' %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+                                {{ link.healthStatus }}
+                            </span>
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                        {% else %}
+                        <a href="/settings?section=server#inventory-links" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="plus-circle" class="w-4 h-4"></i></span>
+                                Link hinzufügen
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
 
                 {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
                 <div class="sidebar-panel">
@@ -470,6 +497,106 @@
 
                                 <div class="mt-6 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-700">
                                     Hinweis: Diese Einstellungen definieren Richtlinien. Die tatsächliche Umsetzung (z. B. Backup-Jobs, Importprozesse, Gateway-Regeln) erfolgt über deinen Infrastruktur-Stack.
+                                </div>
+                            </div>
+
+                            <div id="inventory-links" class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                        <i data-feather="link-2" class="h-5 w-5"></i>
+                                    </span>
+                                    <div>
+                                        <h2 class="text-xl font-semibold text-slate-900">Linked Inventory Pros</h2>
+                                        <p class="text-sm text-slate-500">Verknüpfe weitere Inventory Pro Instanzen und öffne sie im Portal.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-6 lg:grid-cols-2">
+                                    <div class="space-y-4">
+                                        <template x-for="link in inventoryLinks" :key="link.id">
+                                            <div class="rounded-2xl border border-slate-200 p-4">
+                                                <div class="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <p class="text-sm font-semibold text-slate-900" x-text="link.displayName"></p>
+                                                        <p class="text-xs text-slate-500" x-text="link.baseUrl"></p>
+                                                        <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                                            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600" x-text="link.authMode"></span>
+                                                            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600" x-text="link.verifyTls ? 'TLS geprüft' : 'TLS off'"></span>
+                                                            <template x-if="link.healthStatus">
+                                                                <span class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                                                                      :class="link.healthStatus === 'ok' ? 'bg-emerald-100 text-emerald-700' : (link.healthStatus === 'unauthorized' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700')"
+                                                                      x-text="link.healthStatus"></span>
+                                                            </template>
+                                                        </div>
+                                                    </div>
+                                                    <div class="flex flex-col gap-2">
+                                                        <button type="button" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50" @click="editInventoryLink(link)">Bearbeiten</button>
+                                                        <button type="button" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50" @click="deleteInventoryLink(link)">Entfernen</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <div x-show="inventoryLinks.length === 0" class="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                                            Noch keine verknüpften Instanzen. Lege rechts eine neue Verbindung an.
+                                        </div>
+                                    </div>
+
+                                    <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <div class="flex items-center justify-between">
+                                            <p class="text-sm font-semibold text-slate-700" x-text="editingInventoryLinkId ? 'Link bearbeiten' : 'Neuen Link hinzufügen'"></p>
+                                            <button type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700" @click="resetInventoryLinkForm">Zurücksetzen</button>
+                                        </div>
+                                        <div class="mt-4 space-y-3">
+                                            <div class="space-y-1">
+                                                <label class="text-xs font-semibold text-slate-600">Display Name</label>
+                                                <input type="text" x-model="inventoryLinkForm.displayName" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="HQ Inventory">
+                                            </div>
+                                            <div class="space-y-1">
+                                                <label class="text-xs font-semibold text-slate-600">Base URL</label>
+                                                <input type="text" x-model="inventoryLinkForm.baseUrl" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="https://inv.pondsec.com">
+                                            </div>
+                                            <div class="space-y-1">
+                                                <label class="text-xs font-semibold text-slate-600">Auth Mode</label>
+                                                <select x-model="inventoryLinkForm.authMode" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                                    <option value="apiKey">API Key</option>
+                                                    <option value="bearerToken">Bearer Token</option>
+                                                    <option value="basic">Basic</option>
+                                                    <option value="none">None</option>
+                                                </select>
+                                            </div>
+                                            <div class="space-y-1">
+                                                <label class="text-xs font-semibold text-slate-600">Secret</label>
+                                                <input type="password" x-model="inventoryLinkForm.secret" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nur bei Änderung neu eingeben">
+                                                <p class="text-[11px] text-slate-400">Secrets werden serverseitig verschlüsselt gespeichert.</p>
+                                            </div>
+                                            <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                                                <input type="checkbox" x-model="inventoryLinkForm.verifyTls" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                                <div>
+                                                    <p class="text-xs font-semibold text-slate-700">TLS Zertifikate prüfen</p>
+                                                    <p class="text-[11px] text-slate-400">Deaktivieren nur für selbstsignierte HTTPS-Ziele.</p>
+                                                </div>
+                                            </label>
+                                            <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                                                <input type="checkbox" x-model="inventoryLinkForm.allowPrivateNetwork" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                                <div>
+                                                    <p class="text-xs font-semibold text-slate-700">Private Netzwerke zulassen</p>
+                                                    <p class="text-[11px] text-slate-400">Erlaubt RFC1918 (LAN), blockiert weiterhin Loopback & Metadata.</p>
+                                                </div>
+                                            </label>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button type="button" class="rounded-2xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white" @click="saveInventoryLink" :disabled="inventoryLinkSaving">
+                                                    <span x-show="!inventoryLinkSaving">Speichern</span>
+                                                    <span x-show="inventoryLinkSaving">Speichert...</span>
+                                                </button>
+                                                <button type="button" class="rounded-2xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50" @click="testInventoryLink" :disabled="inventoryLinkTesting">
+                                                    <span x-show="!inventoryLinkTesting">Verbindung testen</span>
+                                                    <span x-show="inventoryLinkTesting">Teste...</span>
+                                                </button>
+                                            </div>
+                                            <div x-show="inventoryLinkMessage" class="rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-600" x-text="inventoryLinkMessage"></div>
+                                            <div x-show="inventoryLinkError" class="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-600" x-text="inventoryLinkError"></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -1301,6 +1428,20 @@
                         breakGlassMode: false
                     }
                 },
+                inventoryLinks: [],
+                inventoryLinkForm: {
+                    displayName: '',
+                    baseUrl: '',
+                    authMode: 'apiKey',
+                    secret: '',
+                    verifyTls: true,
+                    allowPrivateNetwork: true
+                },
+                editingInventoryLinkId: null,
+                inventoryLinkSaving: false,
+                inventoryLinkTesting: false,
+                inventoryLinkMessage: '',
+                inventoryLinkError: '',
                 meta: { pendingRestart: false, warnings: [], enforcedCapabilities: {} },
                 originalSettings: null,
                 ipWhitelistInput: '',
@@ -1393,6 +1534,7 @@
 
                 async init() {
                     await this.fetchSettings();
+                    await this.fetchInventoryLinks();
                     if (this.activeSection === 'terminal' && !this.canViewTerminal) {
                         this.activeSection = 'server';
                     }
@@ -1430,6 +1572,143 @@
                     } finally {
                         this.loading = false;
                         this.$nextTick(() => feather.replace());
+                    }
+                },
+
+                async fetchInventoryLinks() {
+                    this.inventoryLinkError = '';
+                    try {
+                        const response = await fetch('/api/inventory-links');
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Konnte Links nicht laden.');
+                        }
+                        this.inventoryLinks = await response.json();
+                    } catch (error) {
+                        this.inventoryLinkError = error.message;
+                    } finally {
+                        this.$nextTick(() => feather.replace());
+                    }
+                },
+
+                resetInventoryLinkForm(clearMessages = true) {
+                    this.inventoryLinkForm = {
+                        displayName: '',
+                        baseUrl: '',
+                        authMode: 'apiKey',
+                        secret: '',
+                        verifyTls: true,
+                        allowPrivateNetwork: true
+                    };
+                    this.editingInventoryLinkId = null;
+                    if (clearMessages) {
+                        this.inventoryLinkMessage = '';
+                        this.inventoryLinkError = '';
+                    }
+                },
+
+                editInventoryLink(link) {
+                    this.editingInventoryLinkId = link.id;
+                    this.inventoryLinkForm = {
+                        displayName: link.displayName,
+                        baseUrl: link.baseUrl,
+                        authMode: link.authMode,
+                        secret: '',
+                        verifyTls: link.verifyTls,
+                        allowPrivateNetwork: link.allowPrivateNetwork
+                    };
+                    this.inventoryLinkMessage = '';
+                    this.inventoryLinkError = '';
+                },
+
+                async saveInventoryLink() {
+                    this.inventoryLinkSaving = true;
+                    this.inventoryLinkError = '';
+                    this.inventoryLinkMessage = '';
+                    try {
+                        const payload = { ...this.inventoryLinkForm };
+                        if (this.editingInventoryLinkId) {
+                            const response = await fetch(`/api/inventory-links/${this.editingInventoryLinkId}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+                            if (!response.ok) {
+                                const error = await response.json();
+                                throw new Error(error.error || 'Konnte Link nicht speichern.');
+                            }
+                            this.inventoryLinkMessage = 'Link aktualisiert.';
+                        } else {
+                            const response = await fetch('/api/inventory-links', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+                            if (!response.ok) {
+                                const error = await response.json();
+                                throw new Error(error.error || 'Konnte Link nicht speichern.');
+                            }
+                            this.inventoryLinkMessage = 'Link hinzugefügt.';
+                        }
+                        await this.fetchInventoryLinks();
+                        this.resetInventoryLinkForm(false);
+                    } catch (error) {
+                        this.inventoryLinkError = error.message;
+                    } finally {
+                        this.inventoryLinkSaving = false;
+                    }
+                },
+
+                async deleteInventoryLink(link) {
+                    if (!confirm(`Link "${link.displayName}" entfernen?`)) return;
+                    this.inventoryLinkError = '';
+                    this.inventoryLinkMessage = '';
+                    try {
+                        const response = await fetch(`/api/inventory-links/${link.id}`, { method: 'DELETE' });
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Konnte Link nicht entfernen.');
+                        }
+                        this.inventoryLinkMessage = 'Link entfernt.';
+                        await this.fetchInventoryLinks();
+                        if (this.editingInventoryLinkId === link.id) {
+                            this.resetInventoryLinkForm();
+                        }
+                    } catch (error) {
+                        this.inventoryLinkError = error.message;
+                    }
+                },
+
+                async testInventoryLink() {
+                    this.inventoryLinkTesting = true;
+                    this.inventoryLinkError = '';
+                    this.inventoryLinkMessage = '';
+                    try {
+                        const payload = { ...this.inventoryLinkForm };
+                        const url = this.editingInventoryLinkId
+                            ? `/api/inventory-links/${this.editingInventoryLinkId}/test`
+                            : '/api/inventory-links/test';
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const result = await response.json();
+                        if (!response.ok) {
+                            throw new Error(result.error || 'Test fehlgeschlagen.');
+                        }
+                        if (result.status === 'ok') {
+                            this.inventoryLinkMessage = 'Verbindung erfolgreich.';
+                        } else if (result.status === 'unauthorized') {
+                            this.inventoryLinkError = 'Nicht autorisiert. Bitte Credentials prüfen.';
+                        } else {
+                            this.inventoryLinkError = result.error || 'Verbindung fehlgeschlagen.';
+                        }
+                        await this.fetchInventoryLinks();
+                    } catch (error) {
+                        this.inventoryLinkError = error.message;
+                    } finally {
+                        this.inventoryLinkTesting = false;
                     }
                 },
 
