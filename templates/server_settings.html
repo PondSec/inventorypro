@@ -506,8 +506,8 @@
                                         <i data-feather="link-2" class="h-5 w-5"></i>
                                     </span>
                                     <div>
-                                        <h2 class="text-xl font-semibold text-slate-900">Linked Inventory Pros</h2>
-                                        <p class="text-sm text-slate-500">Verknüpfe weitere Inventory Pro Instanzen und öffne sie im Portal.</p>
+                                        <h2 class="text-xl font-semibold text-slate-900">Inventory-Verbindungen</h2>
+                                        <p class="text-sm text-slate-500">Verbinde ein weiteres Inventory Pro mit wenigen Angaben und wechsle anschließend vollständig in dessen Oberfläche.</p>
                                     </div>
                                 </div>
 
@@ -530,6 +530,7 @@
                                                         </div>
                                                     </div>
                                                     <div class="flex flex-col gap-2">
+                                                        <a :href="`/inventory-links/${link.id}/portal`" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50">Öffnen</a>
                                                         <button type="button" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50" @click="editInventoryLink(link)">Bearbeiten</button>
                                                         <button type="button" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50" @click="deleteInventoryLink(link)">Entfernen</button>
                                                     </div>
@@ -537,55 +538,61 @@
                                             </div>
                                         </template>
                                         <div x-show="inventoryLinks.length === 0" class="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
-                                            Noch keine verknüpften Instanzen. Lege rechts eine neue Verbindung an.
+                                            Noch keine Verbindung. Gib rechts nur Name, URL und optional Zugangsdaten an.
                                         </div>
                                     </div>
 
                                     <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                                         <div class="flex items-center justify-between">
-                                            <p class="text-sm font-semibold text-slate-700" x-text="editingInventoryLinkId ? 'Link bearbeiten' : 'Neuen Link hinzufügen'"></p>
+                                            <p class="text-sm font-semibold text-slate-700" x-text="editingInventoryLinkId ? 'Verbindung bearbeiten' : 'Neue Verbindung anlegen'"></p>
                                             <button type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700" @click="resetInventoryLinkForm">Zurücksetzen</button>
                                         </div>
                                         <div class="mt-4 space-y-3">
                                             <div class="space-y-1">
-                                                <label class="text-xs font-semibold text-slate-600">Display Name</label>
+                                                <label class="text-xs font-semibold text-slate-600">Name der Instanz</label>
                                                 <input type="text" x-model="inventoryLinkForm.displayName" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="HQ Inventory">
                                             </div>
                                             <div class="space-y-1">
-                                                <label class="text-xs font-semibold text-slate-600">Base URL</label>
+                                                <label class="text-xs font-semibold text-slate-600">Ziel-URL</label>
                                                 <input type="text" x-model="inventoryLinkForm.baseUrl" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="https://inv.pondsec.com">
+                                                <p class="text-[11px] text-slate-400">Gib die vollständige Adresse der Zielinstanz ein.</p>
                                             </div>
                                             <div class="space-y-1">
-                                                <label class="text-xs font-semibold text-slate-600">Auth Mode</label>
-                                                <select x-model="inventoryLinkForm.authMode" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                                    <option value="apiKey">API Key</option>
-                                                    <option value="bearerToken">Bearer Token</option>
-                                                    <option value="login">Login (Benutzer)</option>
-                                                    <option value="basic">Basic</option>
-                                                    <option value="none">None</option>
-                                                </select>
+                                                <label class="text-xs font-semibold text-slate-600">Zugangsdaten (optional)</label>
+                                                <input type="password" x-model="inventoryLinkForm.secret" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Benutzername:Passwort oder API-Key">
+                                                <p class="text-[11px] text-slate-400">Automatisch erkannt: <span class="font-semibold">Benutzername:Passwort</span> → Login, sonst API-Key. Leer lassen für offene Instanzen.</p>
+                                                <p class="text-[11px] text-slate-400">Secrets werden serverseitig verschlüsselt gespeichert.</p>
                                             </div>
-                                            <div class="space-y-1">
-                                                <label class="text-xs font-semibold text-slate-600">Secret</label>
-                                                <input type="password" x-model="inventoryLinkForm.secret" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" :placeholder="inventoryLinkForm.authMode === 'login' ? 'Benutzername:Passwort' : 'Nur bei Änderung neu eingeben'">
-                                                <p class="text-[11px] text-slate-400" x-show="inventoryLinkForm.authMode !== 'login'">Secrets werden serverseitig verschlüsselt gespeichert.</p>
-                                                <p class="text-[11px] text-slate-400">Ohne <code>INVENTORY_LINKS_ENCRYPTION_KEY</code> werden Secrets unverschlüsselt gespeichert.</p>
-                                                <p class="text-[11px] text-slate-400" x-show="inventoryLinkForm.authMode === 'login'">Login nutzt /login der Zielinstanz und speichert die Session serverseitig.</p>
-                                            </div>
-                                            <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3">
-                                                <input type="checkbox" x-model="inventoryLinkForm.verifyTls" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-                                                <div>
-                                                    <p class="text-xs font-semibold text-slate-700">TLS Zertifikate prüfen</p>
-                                                    <p class="text-[11px] text-slate-400">Deaktivieren nur für selbstsignierte HTTPS-Ziele.</p>
+                                            <details class="rounded-2xl border border-slate-200 bg-white p-3">
+                                                <summary class="cursor-pointer text-xs font-semibold text-slate-700">Erweiterte Optionen</summary>
+                                                <div class="mt-3 space-y-3">
+                                                    <div class="space-y-1">
+                                                        <label class="text-xs font-semibold text-slate-600">Zugriffsmethode</label>
+                                                        <select x-model="inventoryLinkForm.authModeChoice" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                                            <option value="auto">Automatisch (empfohlen)</option>
+                                                            <option value="login">Login (Benutzer)</option>
+                                                            <option value="apiKey">API Key</option>
+                                                            <option value="bearerToken">Bearer Token</option>
+                                                            <option value="basic">Basic</option>
+                                                            <option value="none">Ohne Auth</option>
+                                                        </select>
+                                                    </div>
+                                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                                                        <input type="checkbox" x-model="inventoryLinkForm.verifyTls" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                                        <div>
+                                                            <p class="text-xs font-semibold text-slate-700">TLS Zertifikate prüfen</p>
+                                                            <p class="text-[11px] text-slate-400">Deaktivieren nur für selbstsignierte HTTPS-Ziele.</p>
+                                                        </div>
+                                                    </label>
+                                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                                                        <input type="checkbox" x-model="inventoryLinkForm.allowPrivateNetwork" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                                        <div>
+                                                            <p class="text-xs font-semibold text-slate-700">Private Netzwerke zulassen</p>
+                                                            <p class="text-[11px] text-slate-400">Erlaubt RFC1918 (LAN), blockiert weiterhin Loopback & Metadata.</p>
+                                                        </div>
+                                                    </label>
                                                 </div>
-                                            </label>
-                                            <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3">
-                                                <input type="checkbox" x-model="inventoryLinkForm.allowPrivateNetwork" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-                                                <div>
-                                                    <p class="text-xs font-semibold text-slate-700">Private Netzwerke zulassen</p>
-                                                    <p class="text-[11px] text-slate-400">Erlaubt RFC1918 (LAN), blockiert weiterhin Loopback & Metadata.</p>
-                                                </div>
-                                            </label>
+                                            </details>
                                             <div class="flex flex-wrap gap-2">
                                                 <button type="button" class="rounded-2xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white" @click="saveInventoryLink" :disabled="inventoryLinkSaving">
                                                     <span x-show="!inventoryLinkSaving">Speichern</span>
@@ -1435,10 +1442,10 @@
                 inventoryLinkForm: {
                     displayName: '',
                     baseUrl: '',
-                    authMode: 'apiKey',
+                    authModeChoice: 'auto',
                     secret: '',
                     verifyTls: true,
-                    allowPrivateNetwork: true
+                    allowPrivateNetwork: false
                 },
                 editingInventoryLinkId: null,
                 inventoryLinkSaving: false,
@@ -1598,10 +1605,10 @@
                     this.inventoryLinkForm = {
                         displayName: '',
                         baseUrl: '',
-                        authMode: 'apiKey',
+                        authModeChoice: 'auto',
                         secret: '',
                         verifyTls: true,
-                        allowPrivateNetwork: true
+                        allowPrivateNetwork: false
                     };
                     this.editingInventoryLinkId = null;
                     if (clearMessages) {
@@ -1615,7 +1622,7 @@
                     this.inventoryLinkForm = {
                         displayName: link.displayName,
                         baseUrl: link.baseUrl,
-                        authMode: link.authMode,
+                        authModeChoice: link.authMode || 'auto',
                         secret: '',
                         verifyTls: link.verifyTls,
                         allowPrivateNetwork: link.allowPrivateNetwork
@@ -1624,12 +1631,30 @@
                     this.inventoryLinkError = '';
                 },
 
+                buildInventoryLinkPayload() {
+                    const payload = { ...this.inventoryLinkForm };
+                    const choice = payload.authModeChoice || 'auto';
+                    let resolvedMode = choice;
+                    if (choice === 'auto') {
+                        if (!payload.secret) {
+                            resolvedMode = 'none';
+                        } else if (payload.secret.includes(':')) {
+                            resolvedMode = 'login';
+                        } else {
+                            resolvedMode = 'apiKey';
+                        }
+                    }
+                    payload.authMode = resolvedMode;
+                    delete payload.authModeChoice;
+                    return payload;
+                },
+
                 async saveInventoryLink() {
                     this.inventoryLinkSaving = true;
                     this.inventoryLinkError = '';
                     this.inventoryLinkMessage = '';
                     try {
-                        const payload = { ...this.inventoryLinkForm };
+                        const payload = this.buildInventoryLinkPayload();
                         if (this.editingInventoryLinkId) {
                             const response = await fetch(`/api/inventory-links/${this.editingInventoryLinkId}`, {
                                 method: 'PATCH',
@@ -1687,7 +1712,7 @@
                     this.inventoryLinkError = '';
                     this.inventoryLinkMessage = '';
                     try {
-                        const payload = { ...this.inventoryLinkForm };
+                        const payload = this.buildInventoryLinkPayload();
                         const url = this.editingInventoryLinkId
                             ? `/api/inventory-links/${this.editingInventoryLinkId}/test`
                             : '/api/inventory-links/test';
