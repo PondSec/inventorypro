@@ -136,15 +136,13 @@
                 </div>
             </header>
 
-            <main class="app-content flex-1 overflow-hidden p-8 pt-24">
-                <section class="h-full rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                    <iframe
-                        title="Inventory Link Portal"
-                        src="/api/inventory-links/{{ link.id }}/proxy/"
-                        class="h-[calc(100vh-12rem)] w-full"
-                        referrerpolicy="no-referrer"
-                    ></iframe>
-                </section>
+            <main class="app-content flex-1 overflow-hidden pt-[82px]">
+                <iframe
+                    title="Inventory Link Portal"
+                    src="/api/inventory-links/{{ link.id }}/proxy/"
+                    class="h-[calc(100vh-82px)] w-full border-0"
+                    referrerpolicy="no-referrer"
+                ></iframe>
             </main>
         </div>
     </div>

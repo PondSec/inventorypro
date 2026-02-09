@@ -560,14 +560,17 @@
                                                 <select x-model="inventoryLinkForm.authMode" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                                     <option value="apiKey">API Key</option>
                                                     <option value="bearerToken">Bearer Token</option>
+                                                    <option value="login">Login (Benutzer)</option>
                                                     <option value="basic">Basic</option>
                                                     <option value="none">None</option>
                                                 </select>
                                             </div>
                                             <div class="space-y-1">
                                                 <label class="text-xs font-semibold text-slate-600">Secret</label>
-                                                <input type="password" x-model="inventoryLinkForm.secret" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nur bei Änderung neu eingeben">
-                                                <p class="text-[11px] text-slate-400">Secrets werden serverseitig verschlüsselt gespeichert.</p>
+                                                <input type="password" x-model="inventoryLinkForm.secret" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" :placeholder="inventoryLinkForm.authMode === 'login' ? 'Benutzername:Passwort' : 'Nur bei Änderung neu eingeben'">
+                                                <p class="text-[11px] text-slate-400" x-show="inventoryLinkForm.authMode !== 'login'">Secrets werden serverseitig verschlüsselt gespeichert.</p>
+                                                <p class="text-[11px] text-slate-400">Ohne <code>INVENTORY_LINKS_ENCRYPTION_KEY</code> werden Secrets unverschlüsselt gespeichert.</p>
+                                                <p class="text-[11px] text-slate-400" x-show="inventoryLinkForm.authMode === 'login'">Login nutzt /login der Zielinstanz und speichert die Session serverseitig.</p>
                                             </div>
                                             <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3">
                                                 <input type="checkbox" x-model="inventoryLinkForm.verifyTls" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
