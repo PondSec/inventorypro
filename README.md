@@ -85,6 +85,10 @@ Dieses Repository enthält **keinen** Node-/Docker-Build. Falls Sie jedoch in Ih
 | `INVENTORY_ANTIVIRUS_COMMAND` | Optionaler AV-Check beim Import | – |
 | `APP_VERSION` | Anzeige in der UI/Diagnostics | `unbekannt` |
 | `FLASK_ENV` | Environment Label | `production` |
+| `INVENTORY_LINKS_ENCRYPTION_KEY` | Verschlüsselungsschlüssel für Linked Inventory Secrets | – |
+| `INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS` | RFC1918-Private Netzwerke erlauben (`1`/`0`) | `1` |
+| `INVENTORY_LINK_PROXY_TIMEOUT_SECONDS` | Proxy Timeout für Linked Inventory | `20` |
+| `INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS` | Proxy Requests pro Minute | `120` |
 
 ### PondSec AI – Ollama (kostenlos, lokal/remote)
 PondSec AI nutzt Ollama als Standard-LLM. Es werden **keine** API-Keys benötigt.
@@ -138,6 +142,30 @@ export PONDSEC_AI_LLM_MAX_TOKENS=256
 
 ### Server-Einstellungen (UI)
 Im Admin-Bereich können u. a. Backup-Strategien, Import/Export-Optionen, Sicherheitsrichtlinien, MFA-Pflicht und IP-Whitelists verwaltet werden.
+
+## Linked Inventory Pros (Multi-Instance Federation)
+Linked Inventory Pros werden im Bereich **Einstellungen → Linked Inventory Pros** gepflegt. Die Cloud-UI zeigt sie im Sidebar-Abschnitt **Inventory Links**. Die Inhalte werden serverseitig über den Proxy geladen (kein CORS, keine Secrets im Browser).
+
+### Beispiel: Public HTTPS über Cloudflare (inv.pondsec.com)
+1. Öffne **Einstellungen → Linked Inventory Pros**.
+2. Display Name: `PondSec HQ`
+3. Base URL: `https://inv.pondsec.com`
+4. Auth Mode: `API Key` oder `Bearer Token` (empfohlen).
+5. Secret: Deinen Key/Token eintragen.
+6. TLS prüfen aktiviert lassen.
+7. Verbindung testen → speichern.
+
+### Beispiel: LAN Host:Port (192.168.20.10:5001)
+1. Display Name: `Werkstatt`
+2. Base URL: `http://192.168.20.10:5001`
+3. Auth Mode: `API Key`/`Bearer Token` (empfohlen).
+4. Secret eintragen.
+5. Private Netzwerke zulassen aktivieren (Standard).
+6. Verbindung testen → speichern.
+
+**Hinweise**
+- Secrets werden serverseitig verschlüsselt gespeichert (`INVENTORY_LINKS_ENCRYPTION_KEY` erforderlich).
+- Cookie-basierte Logins werden in v1 nicht geteilt; nutze Header-Auth für zuverlässige Verbindungen.
 
 ## Betrieb & Wartung
 - Für Produktionsumgebungen empfiehlt sich ein WSGI-Server (z. B. Gunicorn) hinter einem Reverse-Proxy.
