@@ -560,7 +560,7 @@
                                             <div class="space-y-1">
                                                 <label class="text-xs font-semibold text-slate-600">Zugangsdaten (optional)</label>
                                                 <input type="password" x-model="inventoryLinkForm.secret" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Benutzername:Passwort oder API-Key">
-                                                <p class="text-[11px] text-slate-400">Automatisch erkannt: <span class="font-semibold">Benutzername:Passwort</span> → Login, sonst API-Key. Leer lassen für offene Instanzen.</p>
+                                                <p class="text-[11px] text-slate-400">Automatisch erkannt: <span class="font-semibold">Benutzername:Passwort</span> → Login, sonst API-Key. Leer lassen, um beim Öffnen nach Zugangsdaten zu fragen.</p>
                                                 <p class="text-[11px] text-slate-400">Secrets werden serverseitig verschlüsselt gespeichert.</p>
                                             </div>
                                             <details class="rounded-2xl border border-slate-200 bg-white p-3">
@@ -1637,7 +1637,7 @@
                     let resolvedMode = choice;
                     if (choice === 'auto') {
                         if (!payload.secret) {
-                            resolvedMode = 'none';
+                            resolvedMode = 'login';
                         } else if (payload.secret.includes(':')) {
                             resolvedMode = 'login';
                         } else {

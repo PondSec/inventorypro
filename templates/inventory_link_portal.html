@@ -18,14 +18,173 @@
             height: 100%;
             border: 0;
         }
+        .portal-auth-overlay {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.82);
+            z-index: 10;
+            padding: 24px;
+        }
+        .portal-auth-card {
+            width: min(420px, 100%);
+            border-radius: 20px;
+            background: #ffffff;
+            padding: 28px;
+            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+            font-family: "Inter", system-ui, -apple-system, sans-serif;
+        }
+        .portal-auth-card h1 {
+            margin: 0 0 8px;
+            font-size: 20px;
+            color: #0f172a;
+        }
+        .portal-auth-card p {
+            margin: 0 0 18px;
+            font-size: 14px;
+            color: #475569;
+        }
+        .portal-auth-card label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #334155;
+        }
+        .portal-auth-card input {
+            width: 100%;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            padding: 10px 12px;
+            font-size: 14px;
+            margin-bottom: 14px;
+            outline: none;
+        }
+        .portal-auth-card input:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+        .portal-auth-actions {
+            display: flex;
+            justify-content: flex-end;
+        }
+        .portal-auth-actions button {
+            border: none;
+            border-radius: 999px;
+            background: #0f172a;
+            color: #ffffff;
+            padding: 10px 18px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .portal-auth-error {
+            margin-top: 12px;
+            font-size: 12px;
+            color: #dc2626;
+            min-height: 16px;
+        }
     </style>
 </head>
 <body>
+    <div class="portal-auth-overlay" id="portal-auth">
+        <div class="portal-auth-card">
+            <h1>Verbindung authentifizieren</h1>
+            <p>Bitte melde dich an der Zielinstanz an, um die Daten zu laden.</p>
+            <form id="portal-auth-form">
+                <label for="portal-auth-user">Benutzername</label>
+                <input id="portal-auth-user" type="text" autocomplete="username" required>
+                <label for="portal-auth-pass">Passwort</label>
+                <input id="portal-auth-pass" type="password" autocomplete="current-password" required>
+                <div class="portal-auth-actions">
+                    <button type="submit">Verbinden</button>
+                </div>
+                <div class="portal-auth-error" id="portal-auth-error" role="alert" aria-live="polite"></div>
+            </form>
+        </div>
+    </div>
     <iframe
         title="Inventory Link Portal"
-        src="/api/inventory-links/{{ link.id }}/proxy/"
         class="portal-frame"
         referrerpolicy="no-referrer"
+        id="portal-frame"
+        data-link-id="{{ link.id }}"
+        data-auth-mode="{{ link.authMode }}"
     ></iframe>
+    <script>
+        (function () {
+            const frame = document.getElementById('portal-frame');
+            const overlay = document.getElementById('portal-auth');
+            const form = document.getElementById('portal-auth-form');
+            const errorBox = document.getElementById('portal-auth-error');
+            const linkId = frame.dataset.linkId;
+            const authMode = frame.dataset.authMode;
+
+            function showOverlay(message) {
+                overlay.style.display = 'flex';
+                if (message) {
+                    errorBox.textContent = message;
+                }
+            }
+
+            function hideOverlay() {
+                overlay.style.display = 'none';
+                errorBox.textContent = '';
+            }
+
+            function setFrameSource() {
+                frame.src = `/api/inventory-links/${linkId}/proxy/`;
+            }
+
+            async function ensureAuth() {
+                if (authMode !== 'login') {
+                    hideOverlay();
+                    setFrameSource();
+                    return;
+                }
+                try {
+                    const response = await fetch(`/api/inventory-links/${linkId}/auth/status`);
+                    const result = await response.json();
+                    if (!response.ok) {
+                        throw new Error(result.error || 'Status konnte nicht geladen werden.');
+                    }
+                    if (result.authenticated) {
+                        hideOverlay();
+                        setFrameSource();
+                    } else {
+                        showOverlay();
+                    }
+                } catch (error) {
+                    showOverlay(error.message);
+                }
+            }
+
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                errorBox.textContent = '';
+                const username = document.getElementById('portal-auth-user').value.trim();
+                const password = document.getElementById('portal-auth-pass').value;
+                try {
+                    const response = await fetch(`/api/inventory-links/${linkId}/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    const result = await response.json();
+                    if (!response.ok) {
+                        throw new Error(result.error || 'Login fehlgeschlagen.');
+                    }
+                    hideOverlay();
+                    setFrameSource();
+                } catch (error) {
+                    showOverlay(error.message);
+                }
+            });
+
+            ensureAuth();
+        })();
+    </script>
 </body>
 </html>
