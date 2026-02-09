@@ -1293,7 +1293,10 @@ def login_inventory_link_session(base_url, verify_tls, secret):
         "User-Agent": "InventoryPro-Link/1.0"
     }
     cookie_jar = http.cookiejar.CookieJar()
-    handlers = [urllib.request.HTTPCookieProcessor(cookie_jar)]
+    handlers = [
+        urllib.request.ProxyHandler({}),
+        urllib.request.HTTPCookieProcessor(cookie_jar)
+    ]
     context = None
     if base_url.startswith("https://"):
         context = build_inventory_link_ssl_context(verify_tls)
@@ -1492,7 +1495,7 @@ def perform_inventory_link_test(config):
         context = None
         if base_url.startswith("https://"):
             context = build_inventory_link_ssl_context(verify_tls)
-        handlers = [InventoryLinkNoRedirect()]
+        handlers = [urllib.request.ProxyHandler({}), InventoryLinkNoRedirect()]
         if context is not None:
             handlers.append(urllib.request.HTTPSHandler(context=context))
         opener = urllib.request.build_opener(*handlers)
@@ -11648,7 +11651,7 @@ def inventory_link_proxy(link_id, subpath):
     if link["base_url"].startswith("https://"):
         context = build_inventory_link_ssl_context(bool(link["verify_tls"]))
 
-    handlers = [InventoryLinkNoRedirect()]
+    handlers = [urllib.request.ProxyHandler({}), InventoryLinkNoRedirect()]
     if context is not None:
         handlers.append(urllib.request.HTTPSHandler(context=context))
     opener = urllib.request.build_opener(*handlers)
