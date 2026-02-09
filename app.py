@@ -1218,23 +1218,6 @@ def normalize_inventory_link_base_url(base_url):
         path = ""
     return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
-def derive_inventory_link_display_name(base_url):
-    parsed = urllib.parse.urlsplit(base_url)
-    hostname = parsed.hostname or parsed.netloc
-    if not hostname:
-        return "Inventory Pro"
-    return hostname
-
-def resolve_inventory_link_auth(auth_mode, secret):
-    mode = (auth_mode or "auto").strip()
-    if mode == "auto":
-        if not secret:
-            return "none", ""
-        if ":" in secret:
-            return "login", secret
-        return "apiKey", secret
-    return mode, secret
-
 def resolve_inventory_link_ips(hostname):
     try:
         infos = socket.getaddrinfo(hostname, None)
@@ -11427,29 +11410,28 @@ def inventory_links_api():
     data = request.get_json() or {}
     display_name = (data.get("displayName") or "").strip()
     base_url = (data.get("baseUrl") or "").strip()
-    auth_mode = data.get("authMode") or "auto"
+    auth_mode = data.get("authMode") or "apiKey"
     verify_tls = bool(data.get("verifyTls", True))
     allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
     secret = data.get("secret") or ""
 
-    auth_mode, secret = resolve_inventory_link_auth(auth_mode, secret)
+    if not display_name:
+        return jsonify({"error": "Display-Name ist erforderlich."}), 400
     if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
+    if auth_mode != "none" and not secret:
+        return jsonify({"error": "Secret ist erforderlich."}), 400
     if auth_mode == "login":
         try:
             parse_inventory_link_login_secret(secret)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-    if auth_mode != "none" and not secret:
-        return jsonify({"error": "Secret ist erforderlich."}), 400
+
     try:
         normalized = normalize_inventory_link_base_url(base_url)
         validate_inventory_link_target(normalized, allow_private_network)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-
-    if not display_name:
-        display_name = derive_inventory_link_display_name(normalized)
 
     if normalized.startswith("http://"):
         verify_tls = True
@@ -11487,18 +11469,12 @@ def inventory_links_test_draft():
         return jsonify({"error": "Nicht angemeldet"}), 401
     data = request.get_json() or {}
     base_url = (data.get("baseUrl") or "").strip()
-    auth_mode = data.get("authMode") or "auto"
+    auth_mode = data.get("authMode") or "apiKey"
     verify_tls = bool(data.get("verifyTls", True))
     allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
     secret = data.get("secret") or ""
-    auth_mode, secret = resolve_inventory_link_auth(auth_mode, secret)
     if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
-    if auth_mode == "login":
-        try:
-            parse_inventory_link_login_secret(secret)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
     try:
         normalized = normalize_inventory_link_base_url(base_url)
         validate_inventory_link_target(normalized, allow_private_network)
@@ -11541,18 +11517,8 @@ def inventory_link_detail_api(link_id):
     allow_private_network = bool(data.get("allowPrivateNetwork", bool(link["allow_private_network"])))
     secret = data.get("secret")
 
-    if auth_mode == "auto":
-        if secret is None:
-            existing_secret = ""
-            if link["secret_encrypted"]:
-                try:
-                    existing_secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
-                except ValueError as exc:
-                    return jsonify({"error": str(exc)}), 400
-            auth_mode, secret = resolve_inventory_link_auth("auto", existing_secret)
-        else:
-            auth_mode, secret = resolve_inventory_link_auth("auto", secret or "")
-
+    if not display_name:
+        return jsonify({"error": "Display-Name ist erforderlich."}), 400
     if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
     if auth_mode == "login" and secret is None:
@@ -11563,7 +11529,7 @@ def inventory_link_detail_api(link_id):
             parse_inventory_link_login_secret(existing_secret)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-    if auth_mode == "login" and secret:
+    elif auth_mode == "login" and secret:
         try:
             parse_inventory_link_login_secret(secret)
         except ValueError as exc:
@@ -11575,23 +11541,20 @@ def inventory_link_detail_api(link_id):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    if not display_name:
-        display_name = derive_inventory_link_display_name(normalized)
-
     if normalized.startswith("http://"):
         verify_tls = True
 
     secret_encrypted = link["secret_encrypted"]
-    if auth_mode == "none":
-        secret_encrypted = ""
-    elif secret is not None:
-        if not secret and not secret_encrypted:
+    if secret is not None:
+        if auth_mode != "none" and not secret and not secret_encrypted:
             return jsonify({"error": "Secret ist erforderlich."}), 400
         if secret:
             try:
                 secret_encrypted = encrypt_inventory_link_secret(secret)
             except ValueError as exc:
                 return jsonify({"error": str(exc)}), 400
+        elif auth_mode == "none":
+            secret_encrypted = ""
 
     db.execute(
         '''
