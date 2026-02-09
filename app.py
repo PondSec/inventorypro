@@ -116,6 +116,9 @@ DEFAULT_SERVER_SETTINGS = {
         "port": 5000,
         "debug": False
     },
+    "inventoryLinks": {
+        "token": ""
+    },
     "proFeaturesEnabled": False,
     "backup": {
         "enabled": False,
@@ -874,12 +877,16 @@ def serialize_server_settings(settings_row):
     else:
         ip_whitelist, _ = parse_ip_whitelist(settings_row["allowed_ip_ranges"] or "")
         terminal_allowlist, _ = parse_ip_whitelist(settings_row["terminal_ip_allowlist"] or "")
+        inventory_link_token = settings_row["inventory_link_token"] or ""
         settings = {
             "schemaVersion": settings_row["schema_version"] or SETTINGS_SCHEMA_VERSION,
             "server": {
                 "host": settings_row["host"] or DEFAULT_SERVER_SETTINGS["server"]["host"],
                 "port": settings_row["port"] or DEFAULT_SERVER_SETTINGS["server"]["port"],
                 "debug": bool(settings_row["debug_mode"])
+            },
+            "inventoryLinks": {
+                "token": inventory_link_token
             },
             "proFeaturesEnabled": bool(settings_row["pro_enabled"]),
             "backup": {
@@ -945,6 +952,7 @@ def validate_settings_payload(payload, partial=False):
         return None, {"settings": "Payload muss ein Objekt sein."}
     merged = merge_settings(DEFAULT_SERVER_SETTINGS, payload) if not partial else merge_settings(DEFAULT_SERVER_SETTINGS, payload)
     server = merged.get("server", {})
+    inventory_links = merged.get("inventoryLinks", {})
     host = (server.get("host") or "").strip()
     if not host:
         errors["server.host"] = "Host darf nicht leer sein."
@@ -1051,6 +1059,7 @@ def validate_settings_payload(payload, partial=False):
     merged["terminal"]["allowDbWrite"] = bool(terminal.get("allowDbWrite"))
     merged["terminal"]["allowServiceRestart"] = bool(terminal.get("allowServiceRestart"))
     merged["terminal"]["breakGlassMode"] = bool(terminal.get("breakGlassMode"))
+    merged["inventoryLinks"]["token"] = (inventory_links.get("token") or "").strip()
     merged["schemaVersion"] = SETTINGS_SCHEMA_VERSION
     return merged, None
 
@@ -1061,6 +1070,7 @@ def persist_server_settings(db, settings, updated_by):
         SET host = ?,
             port = ?,
             debug_mode = ?,
+            inventory_link_token = ?,
             pro_enabled = ?,
             backup_enabled = ?,
             backup_schedule = ?,
@@ -1097,6 +1107,7 @@ def persist_server_settings(db, settings, updated_by):
             settings["server"]["host"],
             settings["server"]["port"],
             1 if settings["server"]["debug"] else 0,
+            settings["inventoryLinks"]["token"],
             1 if settings["proFeaturesEnabled"] else 0,
             1 if settings["backup"]["enabled"] else 0,
             settings["backup"]["schedule"],
@@ -1283,6 +1294,19 @@ def extract_inventory_link_cookie_header(cookie_jar):
     expires_at = min(expiry_candidates) if expiry_candidates else None
     return "; ".join(cookies), expires_at
 
+class InventoryLinkConnectionError(RuntimeError):
+    pass
+
+def get_cached_inventory_link_cookie(link, user_id):
+    cache_key = f"{user_id}:{link['id']}"
+    cached = INVENTORY_LINK_LOGIN_SESSION_CACHE.get(cache_key)
+    if not cached:
+        return None
+    if cached["expires_at"] is None or cached["expires_at"] > time.time():
+        return cached["cookie"]
+    INVENTORY_LINK_LOGIN_SESSION_CACHE.pop(cache_key, None)
+    return None
+
 def login_inventory_link_session(base_url, verify_tls, secret):
     username, password = parse_inventory_link_login_secret(secret)
     login_url = urllib.parse.urljoin(f"{base_url.rstrip('/')}/", "login")
@@ -1303,16 +1327,23 @@ def login_inventory_link_session(base_url, verify_tls, secret):
         handlers.append(urllib.request.HTTPSHandler(context=context))
     opener = urllib.request.build_opener(*handlers)
     req = urllib.request.Request(login_url, data=payload, headers=headers, method="POST")
-    opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS).read(1024)
+    try:
+        opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS).read(1024)
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise ValueError("Login fehlgeschlagen. Prüfe Benutzername/Passwort.") from exc
+        raise InventoryLinkConnectionError(f"Login fehlgeschlagen (HTTP {exc.code}).") from exc
+    except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+        reason = getattr(exc, "reason", exc)
+        raise InventoryLinkConnectionError(f"Login-Verbindung fehlgeschlagen: {reason}") from exc
     cookie_header, expires_at = extract_inventory_link_cookie_header(cookie_jar)
     return cookie_header, expires_at
 
 def get_inventory_link_login_cookie(link, secret, user_id):
+    cached_cookie = get_cached_inventory_link_cookie(link, user_id)
+    if cached_cookie:
+        return cached_cookie
     cache_key = f"{user_id}:{link['id']}"
-    cached = INVENTORY_LINK_LOGIN_SESSION_CACHE.get(cache_key)
-    if cached:
-        if cached["expires_at"] is None or cached["expires_at"] > time.time():
-            return cached["cookie"]
     cookie_header, expires_at = login_inventory_link_session(
         link["base_url"],
         bool(link["verify_tls"]),
@@ -1392,14 +1423,17 @@ def build_inventory_link_request_headers(auth_mode, secret, link=None, user_id=N
             continue
         headers[key] = value
     if auth_mode == "apiKey":
-        headers["X-API-Key"] = secret
+        headers["X-Inventory-Link-Token"] = secret
     elif auth_mode == "bearerToken":
         headers["Authorization"] = f"Bearer {secret}"
     elif auth_mode == "basic":
         encoded = base64.b64encode(secret.encode("utf-8")).decode("utf-8")
         headers["Authorization"] = f"Basic {encoded}"
-    elif auth_mode == "login" and link and user_id and secret:
-        cookie_header = get_inventory_link_login_cookie(link, secret, user_id)
+    elif auth_mode == "login" and link and user_id:
+        if secret:
+            cookie_header = get_inventory_link_login_cookie(link, secret, user_id)
+        else:
+            cookie_header = get_cached_inventory_link_cookie(link, user_id)
         if cookie_header:
             headers["Cookie"] = cookie_header
     return headers
@@ -1460,7 +1494,7 @@ def stream_inventory_link_response(resp):
 def build_inventory_link_static_headers(auth_mode, secret, base_url=None, verify_tls=True):
     headers = {"Accept": "application/json"}
     if auth_mode == "apiKey":
-        headers["X-API-Key"] = secret
+        headers["X-Inventory-Link-Token"] = secret
     elif auth_mode == "bearerToken":
         headers["Authorization"] = f"Bearer {secret}"
     elif auth_mode == "basic":
@@ -1487,6 +1521,8 @@ def perform_inventory_link_test(config):
         headers = build_inventory_link_static_headers(auth_mode, secret, base_url=base_url, verify_tls=verify_tls)
     except ValueError as exc:
         return {"status": "unauthorized", "error": str(exc)}
+    except InventoryLinkConnectionError as exc:
+        return {"status": "down", "error": str(exc)}
     paths = ["/api/health/summary", "/"]
     last_error = None
     for path in paths:
@@ -3781,6 +3817,7 @@ def init_db():
                 host TEXT DEFAULT '0.0.0.0',
                 port INTEGER DEFAULT 5000,
                 debug_mode INTEGER DEFAULT 0,
+                inventory_link_token TEXT,
                 pro_enabled INTEGER DEFAULT 0,
                 backup_enabled INTEGER DEFAULT 0,
                 backup_schedule TEXT DEFAULT 'daily',
@@ -4001,6 +4038,7 @@ def init_db():
             )
         ''')
         for column, column_type in (
+            ("inventory_link_token", "TEXT"),
             ("backup_enabled", "INTEGER DEFAULT 0"),
             ("backup_schedule", "TEXT DEFAULT 'daily'"),
             ("backup_time", "TEXT DEFAULT '02:00'"),
@@ -5447,12 +5485,54 @@ def delete_user(username):
         else:
             print(f"[!] Benutzer '{username}' nicht gefunden.")
 
+def get_inventory_link_token(db):
+    settings = get_server_settings(db)
+    if not settings:
+        return ""
+    return (settings["inventory_link_token"] or "").strip()
+
+def build_inventory_link_service_access(db):
+    user = db.execute('''
+        SELECT u.id, u.username, u.email, u.must_change_password
+        FROM users u
+        JOIN user_roles ur ON ur.user_id = u.id
+        JOIN roles r ON r.id = ur.role_id
+        WHERE r.is_superuser = 1
+        ORDER BY u.id
+        LIMIT 1
+    ''').fetchone()
+    if not user:
+        return None
+    roles = db.execute('''
+        SELECT r.id, r.name, r.is_superuser
+        FROM roles r
+        JOIN user_roles ur ON ur.role_id = r.id
+        WHERE ur.user_id = ?
+        ORDER BY r.name
+    ''', (user["id"],)).fetchall()
+    permission_rows = db.execute('SELECT key FROM permissions').fetchall()
+    permissions = {row["key"] for row in permission_rows}
+    return {
+        "user": dict(user),
+        "roles": [dict(role) for role in roles],
+        "permissions": permissions,
+        "is_superuser": True
+    }
 
 # Login Required
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get('logged_in'):
+            token = (request.headers.get("X-Inventory-Link-Token") or request.headers.get("X-API-Key") or "").strip()
+            if token:
+                db = get_db()
+                configured = get_inventory_link_token(db)
+                if configured and secrets.compare_digest(token, configured):
+                    access = build_inventory_link_service_access(db)
+                    if access:
+                        g.user_access = access
+                        return f(*args, **kwargs)
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -6866,6 +6946,7 @@ def serialize_server_settings_flat(settings):
             "host": DEFAULT_SERVER_SETTINGS["server"]["host"],
             "port": DEFAULT_SERVER_SETTINGS["server"]["port"],
             "debug": DEFAULT_SERVER_SETTINGS["server"]["debug"],
+            "inventory_link_token": DEFAULT_SERVER_SETTINGS["inventoryLinks"]["token"],
             "pro_enabled": DEFAULT_SERVER_SETTINGS["proFeaturesEnabled"],
             "backup_enabled": DEFAULT_SERVER_SETTINGS["backup"]["enabled"],
             "backup_schedule": DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
@@ -6898,6 +6979,7 @@ def serialize_server_settings_flat(settings):
         "host": settings["host"] or DEFAULT_SERVER_SETTINGS["server"]["host"],
         "port": settings["port"] or DEFAULT_SERVER_SETTINGS["server"]["port"],
         "debug": bool(settings["debug_mode"]),
+        "inventory_link_token": settings["inventory_link_token"] or DEFAULT_SERVER_SETTINGS["inventoryLinks"]["token"],
         "pro_enabled": bool(settings["pro_enabled"]),
         "backup_enabled": bool(settings["backup_enabled"]),
         "backup_schedule": settings["backup_schedule"] or DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
@@ -11605,6 +11687,23 @@ def inventory_link_test_api(link_id):
     db.commit()
     return jsonify(result), 200
 
+@app.route('/api/inventory-links/token', methods=['POST'])
+@login_required
+@require_permission('server_settings.manage')
+def inventory_link_token_generate():
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    settings_row = get_server_settings(db)
+    settings, _ = serialize_server_settings(settings_row)
+    settings["inventoryLinks"]["token"] = secrets.token_urlsafe(32)
+    persist_server_settings(db, settings, user.get("username") or "system")
+    log_activity(db, "update", "server_settings", details={"inventory_links": "token_rotated"})
+    db.commit()
+    return jsonify({"token": settings["inventoryLinks"]["token"]}), 200
+
 class InventoryLinkNoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -11642,6 +11741,8 @@ def inventory_link_proxy(link_id, subpath):
         headers = build_inventory_link_request_headers(link["auth_mode"], secret, link=link, user_id=user["id"])
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 401
+    except InventoryLinkConnectionError as exc:
+        return jsonify({"error": str(exc)}), 502
     data = None
     if request.method not in {"GET", "HEAD"}:
         data = request.get_data()
@@ -11669,6 +11770,8 @@ def inventory_link_proxy(link_id, subpath):
                 headers = build_inventory_link_request_headers(link["auth_mode"], secret, link=link, user_id=user["id"])
             except ValueError as exc:
                 return jsonify({"error": str(exc)}), 401
+            except InventoryLinkConnectionError as exc:
+                return jsonify({"error": str(exc)}), 502
             req = urllib.request.Request(target_url, data=data if data else None, headers=headers, method=request.method)
             resp = perform_proxy_request(req)
     except urllib.error.URLError as exc:
