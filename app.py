@@ -1283,6 +1283,19 @@ def extract_inventory_link_cookie_header(cookie_jar):
     expires_at = min(expiry_candidates) if expiry_candidates else None
     return "; ".join(cookies), expires_at
 
+class InventoryLinkConnectionError(RuntimeError):
+    pass
+
+def get_cached_inventory_link_cookie(link, user_id):
+    cache_key = f"{user_id}:{link['id']}"
+    cached = INVENTORY_LINK_LOGIN_SESSION_CACHE.get(cache_key)
+    if not cached:
+        return None
+    if cached["expires_at"] is None or cached["expires_at"] > time.time():
+        return cached["cookie"]
+    INVENTORY_LINK_LOGIN_SESSION_CACHE.pop(cache_key, None)
+    return None
+
 def login_inventory_link_session(base_url, verify_tls, secret):
     username, password = parse_inventory_link_login_secret(secret)
     login_url = urllib.parse.urljoin(f"{base_url.rstrip('/')}/", "login")
@@ -1303,16 +1316,23 @@ def login_inventory_link_session(base_url, verify_tls, secret):
         handlers.append(urllib.request.HTTPSHandler(context=context))
     opener = urllib.request.build_opener(*handlers)
     req = urllib.request.Request(login_url, data=payload, headers=headers, method="POST")
-    opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS).read(1024)
+    try:
+        opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS).read(1024)
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise ValueError("Login fehlgeschlagen. Prüfe Benutzername/Passwort.") from exc
+        raise InventoryLinkConnectionError(f"Login fehlgeschlagen (HTTP {exc.code}).") from exc
+    except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+        reason = getattr(exc, "reason", exc)
+        raise InventoryLinkConnectionError(f"Login-Verbindung fehlgeschlagen: {reason}") from exc
     cookie_header, expires_at = extract_inventory_link_cookie_header(cookie_jar)
     return cookie_header, expires_at
 
 def get_inventory_link_login_cookie(link, secret, user_id):
+    cached_cookie = get_cached_inventory_link_cookie(link, user_id)
+    if cached_cookie:
+        return cached_cookie
     cache_key = f"{user_id}:{link['id']}"
-    cached = INVENTORY_LINK_LOGIN_SESSION_CACHE.get(cache_key)
-    if cached:
-        if cached["expires_at"] is None or cached["expires_at"] > time.time():
-            return cached["cookie"]
     cookie_header, expires_at = login_inventory_link_session(
         link["base_url"],
         bool(link["verify_tls"]),
@@ -1398,8 +1418,11 @@ def build_inventory_link_request_headers(auth_mode, secret, link=None, user_id=N
     elif auth_mode == "basic":
         encoded = base64.b64encode(secret.encode("utf-8")).decode("utf-8")
         headers["Authorization"] = f"Basic {encoded}"
-    elif auth_mode == "login" and link and user_id and secret:
-        cookie_header = get_inventory_link_login_cookie(link, secret, user_id)
+    elif auth_mode == "login" and link and user_id:
+        if secret:
+            cookie_header = get_inventory_link_login_cookie(link, secret, user_id)
+        else:
+            cookie_header = get_cached_inventory_link_cookie(link, user_id)
         if cookie_header:
             headers["Cookie"] = cookie_header
     return headers
@@ -1487,6 +1510,8 @@ def perform_inventory_link_test(config):
         headers = build_inventory_link_static_headers(auth_mode, secret, base_url=base_url, verify_tls=verify_tls)
     except ValueError as exc:
         return {"status": "unauthorized", "error": str(exc)}
+    except InventoryLinkConnectionError as exc:
+        return {"status": "down", "error": str(exc)}
     paths = ["/api/health/summary", "/"]
     last_error = None
     for path in paths:
@@ -11605,6 +11630,66 @@ def inventory_link_test_api(link_id):
     db.commit()
     return jsonify(result), 200
 
+@app.route('/api/inventory-links/<link_id>/auth/status', methods=['GET'])
+@login_required
+def inventory_link_auth_status(link_id):
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return jsonify({"error": "Link nicht gefunden."}), 404
+    if link["auth_mode"] != "login":
+        return jsonify({"authenticated": True}), 200
+    cached_cookie = get_cached_inventory_link_cookie(link, user["id"])
+    return jsonify({"authenticated": bool(cached_cookie)}), 200
+
+@app.route('/api/inventory-links/<link_id>/auth/login', methods=['POST'])
+@login_required
+def inventory_link_auth_login(link_id):
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return jsonify({"error": "Link nicht gefunden."}), 404
+    if link["auth_mode"] != "login":
+        return jsonify({"error": "Dieser Link benötigt keine Login-Authentifizierung."}), 400
+    data = request.get_json() or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    if not username or not password:
+        return jsonify({"error": "Benutzername und Passwort erforderlich."}), 400
+    try:
+        validate_inventory_link_target(link["base_url"], bool(link["allow_private_network"]))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    secret = f"{username}:{password}"
+    try:
+        cookie_header, expires_at = login_inventory_link_session(
+            link["base_url"],
+            bool(link["verify_tls"]),
+            secret
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 401
+    except InventoryLinkConnectionError as exc:
+        return jsonify({"error": str(exc)}), 502
+    if not cookie_header:
+        return jsonify({"error": "Login fehlgeschlagen. Prüfe Benutzername/Passwort."}), 401
+    cache_key = f"{user['id']}:{link['id']}"
+    INVENTORY_LINK_LOGIN_SESSION_CACHE[cache_key] = {
+        "cookie": cookie_header,
+        "expires_at": expires_at or (time.time() + INVENTORY_LINK_LOGIN_TTL_SECONDS)
+    }
+    update_inventory_link_health(db, link_id, "ok")
+    db.commit()
+    return jsonify({"authenticated": True}), 200
+
 class InventoryLinkNoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -11642,6 +11727,8 @@ def inventory_link_proxy(link_id, subpath):
         headers = build_inventory_link_request_headers(link["auth_mode"], secret, link=link, user_id=user["id"])
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 401
+    except InventoryLinkConnectionError as exc:
+        return jsonify({"error": str(exc)}), 502
     data = None
     if request.method not in {"GET", "HEAD"}:
         data = request.get_data()
@@ -11669,6 +11756,8 @@ def inventory_link_proxy(link_id, subpath):
                 headers = build_inventory_link_request_headers(link["auth_mode"], secret, link=link, user_id=user["id"])
             except ValueError as exc:
                 return jsonify({"error": str(exc)}), 401
+            except InventoryLinkConnectionError as exc:
+                return jsonify({"error": str(exc)}), 502
             req = urllib.request.Request(target_url, data=data if data else None, headers=headers, method=request.method)
             resp = perform_proxy_request(req)
     except urllib.error.URLError as exc:
