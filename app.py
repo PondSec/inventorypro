@@ -16,6 +16,7 @@ import shutil
 import time
 import subprocess
 import socket
+import http.cookiejar
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -57,6 +58,7 @@ INVENTORY_LINK_PROXY_TIMEOUT_SECONDS = int(os.environ.get("INVENTORY_LINK_PROXY_
 INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS = 60
 INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS", 120))
 INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT = os.environ.get("INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS", "1").lower() not in {"0", "false", "no"}
+INVENTORY_LINK_LOGIN_TTL_SECONDS = int(os.environ.get("INVENTORY_LINK_LOGIN_TTL_SECONDS", 30 * 60))
 PRO_ENABLED = True
 APP_START_TIME = time.time()
 TERMINAL_RATE_LIMIT_WINDOW_SECONDS = 60
@@ -86,6 +88,7 @@ BACKUP_SCHEDULER = BackgroundScheduler()
 HEALTH_SCHEDULER = BackgroundScheduler()
 RATE_LIMIT_CACHE = {}
 INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE = {}
+INVENTORY_LINK_LOGIN_SESSION_CACHE = {}
 
 HEALTH_STATUS_ORDER = {
     "OK": 0,
@@ -1255,6 +1258,67 @@ def validate_inventory_link_target(base_url, allow_private_network):
             raise ValueError("Zieladresse ist nicht erlaubt.")
     return parsed
 
+def parse_inventory_link_login_secret(secret):
+    if not secret or ":" not in secret:
+        raise ValueError("Login-Secret muss im Format Benutzername:Passwort vorliegen.")
+    username, password = secret.split(":", 1)
+    username = username.strip()
+    if not username or not password:
+        raise ValueError("Login-Secret muss Benutzername und Passwort enthalten.")
+    return username, password
+
+def extract_inventory_link_cookie_header(cookie_jar):
+    cookies = []
+    expiry_candidates = []
+    for cookie in cookie_jar:
+        cookies.append(f"{cookie.name}={cookie.value}")
+        if cookie.expires:
+            expiry_candidates.append(cookie.expires)
+    if not cookies:
+        return None, None
+    expires_at = min(expiry_candidates) if expiry_candidates else None
+    return "; ".join(cookies), expires_at
+
+def login_inventory_link_session(base_url, verify_tls, secret):
+    username, password = parse_inventory_link_login_secret(secret)
+    login_url = urllib.parse.urljoin(f"{base_url.rstrip('/')}/", "login")
+    payload = urllib.parse.urlencode({"username": username, "password": password}).encode("utf-8")
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "text/html",
+        "User-Agent": "InventoryPro-Link/1.0"
+    }
+    cookie_jar = http.cookiejar.CookieJar()
+    handlers = [urllib.request.HTTPCookieProcessor(cookie_jar)]
+    context = None
+    if base_url.startswith("https://"):
+        context = build_inventory_link_ssl_context(verify_tls)
+        handlers.append(urllib.request.HTTPSHandler(context=context))
+    opener = urllib.request.build_opener(*handlers)
+    req = urllib.request.Request(login_url, data=payload, headers=headers, method="POST")
+    opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS).read(1024)
+    cookie_header, expires_at = extract_inventory_link_cookie_header(cookie_jar)
+    return cookie_header, expires_at
+
+def get_inventory_link_login_cookie(link, secret, user_id):
+    cache_key = f"{user_id}:{link['id']}"
+    cached = INVENTORY_LINK_LOGIN_SESSION_CACHE.get(cache_key)
+    if cached:
+        if cached["expires_at"] is None or cached["expires_at"] > time.time():
+            return cached["cookie"]
+    cookie_header, expires_at = login_inventory_link_session(
+        link["base_url"],
+        bool(link["verify_tls"]),
+        secret
+    )
+    if not cookie_header:
+        raise ValueError("Login fehlgeschlagen. Prüfe Benutzername/Passwort.")
+    INVENTORY_LINK_LOGIN_SESSION_CACHE[cache_key] = {
+        "cookie": cookie_header,
+        "expires_at": expires_at or (time.time() + INVENTORY_LINK_LOGIN_TTL_SECONDS)
+    }
+    return cookie_header
+
 def serialize_inventory_link(row):
     return {
         "id": row["id"],
@@ -1313,7 +1377,7 @@ def build_inventory_link_target_url(base_url, subpath, query_string):
         target = f"{target}?{query}"
     return target
 
-def build_inventory_link_request_headers(auth_mode, secret):
+def build_inventory_link_request_headers(auth_mode, secret, link=None, user_id=None):
     headers = {}
     for key, value in request.headers.items():
         lower = key.lower()
@@ -1327,6 +1391,10 @@ def build_inventory_link_request_headers(auth_mode, secret):
     elif auth_mode == "basic":
         encoded = base64.b64encode(secret.encode("utf-8")).decode("utf-8")
         headers["Authorization"] = f"Basic {encoded}"
+    elif auth_mode == "login" and link and user_id and secret:
+        cookie_header = get_inventory_link_login_cookie(link, secret, user_id)
+        if cookie_header:
+            headers["Cookie"] = cookie_header
     return headers
 
 def rewrite_inventory_link_location(location, link_id, base_url):
@@ -1382,7 +1450,7 @@ def stream_inventory_link_response(resp):
             resp.close()
     return generate()
 
-def build_inventory_link_static_headers(auth_mode, secret):
+def build_inventory_link_static_headers(auth_mode, secret, base_url=None, verify_tls=True):
     headers = {"Accept": "application/json"}
     if auth_mode == "apiKey":
         headers["X-API-Key"] = secret
@@ -1391,6 +1459,10 @@ def build_inventory_link_static_headers(auth_mode, secret):
     elif auth_mode == "basic":
         encoded = base64.b64encode(secret.encode("utf-8")).decode("utf-8")
         headers["Authorization"] = f"Basic {encoded}"
+    elif auth_mode == "login" and base_url and secret:
+        cookie_header, _ = login_inventory_link_session(base_url, verify_tls, secret)
+        if cookie_header:
+            headers["Cookie"] = cookie_header
     return headers
 
 def perform_inventory_link_test(config):
@@ -1404,7 +1476,10 @@ def perform_inventory_link_test(config):
     except ValueError as exc:
         return {"status": "down", "error": str(exc)}
 
-    headers = build_inventory_link_static_headers(auth_mode, secret)
+    try:
+        headers = build_inventory_link_static_headers(auth_mode, secret, base_url=base_url, verify_tls=verify_tls)
+    except ValueError as exc:
+        return {"status": "unauthorized", "error": str(exc)}
     paths = ["/api/health/summary", "/"]
     last_error = None
     for path in paths:
@@ -11332,10 +11407,15 @@ def inventory_links_api():
 
     if not display_name:
         return jsonify({"error": "Display-Name ist erforderlich."}), 400
-    if auth_mode not in {"apiKey", "bearerToken", "basic", "none"}:
+    if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
     if auth_mode != "none" and not secret:
         return jsonify({"error": "Secret ist erforderlich."}), 400
+    if auth_mode == "login":
+        try:
+            parse_inventory_link_login_secret(secret)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     try:
         normalized = normalize_inventory_link_base_url(base_url)
@@ -11383,7 +11463,7 @@ def inventory_links_test_draft():
     verify_tls = bool(data.get("verifyTls", True))
     allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
     secret = data.get("secret") or ""
-    if auth_mode not in {"apiKey", "bearerToken", "basic", "none"}:
+    if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
     try:
         normalized = normalize_inventory_link_base_url(base_url)
@@ -11429,8 +11509,21 @@ def inventory_link_detail_api(link_id):
 
     if not display_name:
         return jsonify({"error": "Display-Name ist erforderlich."}), 400
-    if auth_mode not in {"apiKey", "bearerToken", "basic", "none"}:
+    if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
+    if auth_mode == "login" and secret is None:
+        if not link["secret_encrypted"]:
+            return jsonify({"error": "Secret ist erforderlich."}), 400
+        try:
+            existing_secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
+            parse_inventory_link_login_secret(existing_secret)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+    elif auth_mode == "login" and secret:
+        try:
+            parse_inventory_link_login_secret(secret)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     try:
         normalized = normalize_inventory_link_base_url(base_url)
@@ -11532,7 +11625,10 @@ def inventory_link_proxy(link_id, subpath):
         secret = ""
 
     target_url = build_inventory_link_target_url(link["base_url"], subpath, request.query_string)
-    headers = build_inventory_link_request_headers(link["auth_mode"], secret)
+    try:
+        headers = build_inventory_link_request_headers(link["auth_mode"], secret, link=link, user_id=user["id"])
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 401
     data = None
     if request.method not in {"GET", "HEAD"}:
         data = request.get_data()
@@ -11546,10 +11642,22 @@ def inventory_link_proxy(link_id, subpath):
     if context is not None:
         handlers.append(urllib.request.HTTPSHandler(context=context))
     opener = urllib.request.build_opener(*handlers)
+    def perform_proxy_request(request_obj):
+        try:
+            return opener.open(request_obj, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS)
+        except urllib.error.HTTPError as exc:
+            return exc
+
     try:
-        resp = opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS)
-    except urllib.error.HTTPError as exc:
-        resp = exc
+        resp = perform_proxy_request(req)
+        if link["auth_mode"] == "login" and resp.getcode() in {401, 403}:
+            INVENTORY_LINK_LOGIN_SESSION_CACHE.pop(f"{user['id']}:{link['id']}", None)
+            try:
+                headers = build_inventory_link_request_headers(link["auth_mode"], secret, link=link, user_id=user["id"])
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 401
+            req = urllib.request.Request(target_url, data=data if data else None, headers=headers, method=request.method)
+            resp = perform_proxy_request(req)
     except urllib.error.URLError as exc:
         return jsonify({"error": f"Proxy-Fehler: {exc.reason}"}), 502
     except ssl.SSLError as exc:
