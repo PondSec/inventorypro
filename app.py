@@ -59,6 +59,10 @@ INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS = 60
 INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS", 120))
 INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT = os.environ.get("INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS", "1").lower() not in {"0", "false", "no"}
 INVENTORY_LINK_LOGIN_TTL_SECONDS = int(os.environ.get("INVENTORY_LINK_LOGIN_TTL_SECONDS", 30 * 60))
+INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS = os.environ.get(
+    "INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS",
+    "1"
+).lower() in {"1", "true", "yes"}
 PRO_ENABLED = True
 APP_START_TIME = time.time()
 TERMINAL_RATE_LIMIT_WINDOW_SECONDS = 60
@@ -1938,15 +1942,21 @@ def encrypt_inventory_link_secret(secret):
         return ""
     cipher = get_inventory_links_encryption()
     if cipher is None:
-        raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
+        if not INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS:
+            raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
+        return f"plain:{secret}"
     return cipher.encrypt(secret.encode("utf-8")).decode("utf-8")
 
 def decrypt_inventory_link_secret(secret_encrypted):
     if not secret_encrypted:
         return ""
+    if secret_encrypted.startswith("plain:"):
+        return secret_encrypted.removeprefix("plain:")
     cipher = get_inventory_links_encryption()
     if cipher is None:
-        raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
+        if not INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS:
+            raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
+        return secret_encrypted
     return cipher.decrypt(secret_encrypted.encode("utf-8")).decode("utf-8")
 
 def run_sqlite_backup(target_path):
