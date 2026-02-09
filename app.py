@@ -18,6 +18,7 @@ import subprocess
 import socket
 import urllib.request
 import urllib.error
+import urllib.parse
 import ssl
 import threading
 import html
@@ -30,6 +31,7 @@ import qrcode.image.svg
 from io import BytesIO, StringIO
 import base64
 import secrets
+import uuid
 from ldap3 import Server, Connection, BASE, ALL
 from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
@@ -51,6 +53,10 @@ ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"
 BLOCKED_ATTACHMENT_EXTENSIONS = {".exe", ".js", ".html", ".htm", ".bat", ".sh", ".ps1"}
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_REQUESTS = 10
+INVENTORY_LINK_PROXY_TIMEOUT_SECONDS = int(os.environ.get("INVENTORY_LINK_PROXY_TIMEOUT_SECONDS", 20))
+INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS = 60
+INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS", 120))
+INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT = os.environ.get("INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS", "1").lower() not in {"0", "false", "no"}
 PRO_ENABLED = True
 APP_START_TIME = time.time()
 TERMINAL_RATE_LIMIT_WINDOW_SECONDS = 60
@@ -79,6 +85,7 @@ RUNTIME_SETTINGS_CACHE = None
 BACKUP_SCHEDULER = BackgroundScheduler()
 HEALTH_SCHEDULER = BackgroundScheduler()
 RATE_LIMIT_CACHE = {}
+INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE = {}
 
 HEALTH_STATUS_ORDER = {
     "OK": 0,
@@ -1154,6 +1161,19 @@ def should_rate_limit_terminal(user_id):
     TERMINAL_RATE_LIMIT_CACHE[key] = entries
     return False
 
+def should_rate_limit_inventory_proxy(user_id):
+    now = time.time()
+    window_start = now - INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS
+    key = f"inventory_links_proxy:{user_id}"
+    entries = INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE.get(key, [])
+    entries = [timestamp for timestamp in entries if timestamp >= window_start]
+    if len(entries) >= INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS:
+        INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE[key] = entries
+        return True
+    entries.append(now)
+    INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE[key] = entries
+    return False
+
 def get_remote_ip():
     remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
     return (remote_ip or "").split(",")[0].strip()
@@ -1172,6 +1192,252 @@ def is_ip_allowed(remote_ip, allowlist):
         except ValueError:
             continue
     return False
+
+def normalize_inventory_link_base_url(base_url):
+    if not base_url:
+        raise ValueError("Base URL fehlt.")
+    candidate = base_url.strip()
+    parsed = urllib.parse.urlsplit(candidate)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Base URL muss mit http oder https beginnen.")
+    if not parsed.netloc:
+        raise ValueError("Base URL benötigt einen Host.")
+    if parsed.username or parsed.password:
+        raise ValueError("Base URL darf keine Zugangsdaten enthalten.")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Base URL darf keine Query oder Fragmente enthalten.")
+    path = (parsed.path or "").rstrip("/")
+    if path == "/":
+        path = ""
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+def resolve_inventory_link_ips(hostname):
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return []
+    ips = []
+    for info in infos:
+        sockaddr = info[4]
+        if sockaddr:
+            ips.append(sockaddr[0])
+    return list(dict.fromkeys(ips))
+
+def inventory_links_allow_loopback():
+    return os.environ.get("INVENTORY_LINKS_ALLOW_LOOPBACK", "0").lower() in {"1", "true", "yes"}
+
+def is_inventory_link_ip_blocked(ip_str, allow_private_network):
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True
+    if ip_obj.is_loopback and not inventory_links_allow_loopback():
+        return True
+    if ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified or ip_obj.is_reserved:
+        return True
+    if str(ip_obj) == "169.254.169.254":
+        return True
+    if ip_obj.is_private and not allow_private_network:
+        return True
+    return False
+
+def validate_inventory_link_target(base_url, allow_private_network):
+    normalized = normalize_inventory_link_base_url(base_url)
+    parsed = urllib.parse.urlsplit(normalized)
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("Base URL Host konnte nicht gelesen werden.")
+    resolved_ips = resolve_inventory_link_ips(hostname)
+    if not resolved_ips:
+        raise ValueError("Host konnte nicht aufgelöst werden.")
+    for ip_str in resolved_ips:
+        if is_inventory_link_ip_blocked(ip_str, allow_private_network):
+            raise ValueError("Zieladresse ist nicht erlaubt.")
+    return parsed
+
+def serialize_inventory_link(row):
+    return {
+        "id": row["id"],
+        "displayName": row["display_name"],
+        "baseUrl": row["base_url"],
+        "verifyTls": bool(row["verify_tls"]),
+        "authMode": row["auth_mode"],
+        "allowPrivateNetwork": bool(row["allow_private_network"]),
+        "healthStatus": row["health_status"],
+        "lastCheckedAt": row["health_last_checked_at"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+def list_inventory_links(db, user_id):
+    rows = db.execute(
+        '''
+        SELECT id, display_name, base_url, verify_tls, auth_mode, allow_private_network,
+               health_status, health_last_checked_at, created_at, updated_at
+        FROM inventory_links
+        WHERE user_id = ?
+        ORDER BY display_name
+        ''',
+        (user_id,)
+    ).fetchall()
+    return [serialize_inventory_link(row) for row in rows]
+
+def get_inventory_link(db, user_id, link_id):
+    return db.execute(
+        '''
+        SELECT *
+        FROM inventory_links
+        WHERE id = ? AND user_id = ?
+        ''',
+        (link_id, user_id)
+    ).fetchone()
+
+def update_inventory_link_health(db, link_id, status):
+    db.execute(
+        '''
+        UPDATE inventory_links
+        SET health_status = ?, health_last_checked_at = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        ''',
+        (status, datetime.utcnow().isoformat(), link_id)
+    )
+
+def build_inventory_link_target_url(base_url, subpath, query_string):
+    base = base_url.rstrip("/")
+    if subpath:
+        target = f"{base}/{subpath}"
+    else:
+        target = f"{base}/"
+    if query_string:
+        query = query_string.decode("utf-8") if isinstance(query_string, (bytes, bytearray)) else str(query_string)
+        target = f"{target}?{query}"
+    return target
+
+def build_inventory_link_request_headers(auth_mode, secret):
+    headers = {}
+    for key, value in request.headers.items():
+        lower = key.lower()
+        if lower in {"host", "origin", "referer", "cookie", "authorization", "proxy-authorization", "content-length"}:
+            continue
+        headers[key] = value
+    if auth_mode == "apiKey":
+        headers["X-API-Key"] = secret
+    elif auth_mode == "bearerToken":
+        headers["Authorization"] = f"Bearer {secret}"
+    elif auth_mode == "basic":
+        encoded = base64.b64encode(secret.encode("utf-8")).decode("utf-8")
+        headers["Authorization"] = f"Basic {encoded}"
+    return headers
+
+def rewrite_inventory_link_location(location, link_id, base_url):
+    if not location:
+        return None
+    base_parsed = urllib.parse.urlsplit(base_url)
+    joined = urllib.parse.urlsplit(urllib.parse.urljoin(f"{base_url.rstrip('/')}/", location))
+    if joined.scheme and joined.netloc:
+        if joined.scheme != base_parsed.scheme or joined.netloc != base_parsed.netloc:
+            return None
+    path = joined.path or "/"
+    if not path.startswith("/"):
+        path = f"/{path}"
+    query = f"?{joined.query}" if joined.query else ""
+    return f"/api/inventory-links/{link_id}/proxy{path}{query}"
+
+def filter_inventory_link_response_headers(headers, link_id, base_url):
+    filtered = {}
+    for key, value in headers.items():
+        lower = key.lower()
+        if lower in {
+            "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+            "te", "trailers", "transfer-encoding", "upgrade", "content-length",
+            "set-cookie"
+        }:
+            continue
+        if lower == "location":
+            rewritten = rewrite_inventory_link_location(value, link_id, base_url)
+            if rewritten is None:
+                continue
+            filtered[key] = rewritten
+            continue
+        filtered[key] = value
+    return filtered
+
+def build_inventory_link_ssl_context(verify_tls):
+    if verify_tls:
+        return ssl.create_default_context()
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+def stream_inventory_link_response(resp):
+    def generate():
+        try:
+            while True:
+                chunk = resp.read(8192)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            resp.close()
+    return generate()
+
+def build_inventory_link_static_headers(auth_mode, secret):
+    headers = {"Accept": "application/json"}
+    if auth_mode == "apiKey":
+        headers["X-API-Key"] = secret
+    elif auth_mode == "bearerToken":
+        headers["Authorization"] = f"Bearer {secret}"
+    elif auth_mode == "basic":
+        encoded = base64.b64encode(secret.encode("utf-8")).decode("utf-8")
+        headers["Authorization"] = f"Basic {encoded}"
+    return headers
+
+def perform_inventory_link_test(config):
+    base_url = config.get("base_url") or ""
+    auth_mode = config.get("auth_mode") or "apiKey"
+    secret = config.get("secret") or ""
+    verify_tls = bool(config.get("verify_tls", True))
+    allow_private_network = bool(config.get("allow_private_network", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    try:
+        validate_inventory_link_target(base_url, allow_private_network)
+    except ValueError as exc:
+        return {"status": "down", "error": str(exc)}
+
+    headers = build_inventory_link_static_headers(auth_mode, secret)
+    paths = ["/api/health/summary", "/"]
+    last_error = None
+    for path in paths:
+        target_url = f"{base_url.rstrip('/')}{path}"
+        req = urllib.request.Request(target_url, headers=headers, method="GET")
+        context = None
+        if base_url.startswith("https://"):
+            context = build_inventory_link_ssl_context(verify_tls)
+        handlers = [InventoryLinkNoRedirect()]
+        if context is not None:
+            handlers.append(urllib.request.HTTPSHandler(context=context))
+        opener = urllib.request.build_opener(*handlers)
+        try:
+            resp = opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS)
+            status_code = resp.getcode()
+            payload = resp.read(4096)
+            info = {"statusCode": status_code}
+            content_type = resp.headers.get("Content-Type", "")
+            if "application/json" in content_type:
+                try:
+                    info.update(json.loads(payload.decode("utf-8")))
+                except json.JSONDecodeError:
+                    pass
+            return {"status": "ok", "message": "Verbindung erfolgreich.", "info": info}
+        except urllib.error.HTTPError as exc:
+            if exc.code in {401, 403}:
+                return {"status": "unauthorized", "error": "Nicht autorisiert."}
+            last_error = f"HTTP {exc.code}"
+        except ssl.SSLError as exc:
+            return {"status": "down", "error": f"TLS-Fehler: {str(exc)}"}
+        except urllib.error.URLError as exc:
+            last_error = str(exc.reason)
+    return {"status": "down", "error": last_error or "Verbindung fehlgeschlagen."}
 
 REDACT_PATTERNS = [
     re.compile(r"(?i)(password|passphrase|token|secret|api_key|apikey|authorization|bearer|private_key|dsn|connection string)\\s*[:=]\\s*([^\\s,;]+)"),
@@ -1580,6 +1846,33 @@ def get_backup_encryption():
         return Fernet(key)
     except (ValueError, TypeError):
         return None
+
+def get_inventory_links_encryption():
+    key = os.environ.get("INVENTORY_LINKS_ENCRYPTION_KEY")
+    if not key:
+        return None
+    try:
+        return Fernet(key)
+    except (ValueError, TypeError):
+        return None
+
+def encrypt_inventory_link_secret(secret):
+    if secret is None:
+        return None
+    if secret == "":
+        return ""
+    cipher = get_inventory_links_encryption()
+    if cipher is None:
+        raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
+    return cipher.encrypt(secret.encode("utf-8")).decode("utf-8")
+
+def decrypt_inventory_link_secret(secret_encrypted):
+    if not secret_encrypted:
+        return ""
+    cipher = get_inventory_links_encryption()
+    if cipher is None:
+        raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
+    return cipher.decrypt(secret_encrypted.encode("utf-8")).decode("utf-8")
 
 def run_sqlite_backup(target_path):
     with sqlite3.connect(DATABASE) as source:
@@ -2145,6 +2438,21 @@ def get_user_access(db):
         "is_superuser": is_superuser
     }
     return g.user_access
+
+@app.context_processor
+def inject_inventory_links():
+    try:
+        access = get_user_access(get_db())
+    except Exception:
+        return {}
+    user = access.get("user")
+    if not user:
+        return {}
+    try:
+        links = list_inventory_links(get_db(), user["id"])
+    except Exception:
+        links = []
+    return {"inventory_links": links}
 
 def user_can(permission_key):
     access = get_user_access(get_db())
@@ -3426,6 +3734,24 @@ def init_db():
                 created_by TEXT
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS inventory_links (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                display_name TEXT NOT NULL,
+                base_url TEXT NOT NULL,
+                verify_tls INTEGER DEFAULT 1,
+                auth_mode TEXT DEFAULT 'apiKey',
+                secret_encrypted TEXT,
+                allow_private_network INTEGER DEFAULT 1,
+                health_status TEXT,
+                health_last_checked_at TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_inventory_links_user_id ON inventory_links(user_id)')
         c.execute('''
             CREATE TABLE IF NOT EXISTS backup_runs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6775,6 +7101,25 @@ def terminal_settings_page():
         permissions=sorted(access["permissions"]),
         is_superuser=access["is_superuser"],
         initial_section="terminal"
+    )
+
+@app.route('/inventory-links/<link_id>/portal')
+@login_required
+def inventory_link_portal(link_id):
+    access = get_user_access(get_db())
+    db = get_db()
+    user = access.get("user")
+    if not user:
+        return redirect(url_for('login'))
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return ("Link nicht gefunden.", 404)
+    return render_template(
+        'inventory_link_portal.html',
+        username=session.get('username'),
+        permissions=sorted(access["permissions"]),
+        is_superuser=access["is_superuser"],
+        link=serialize_inventory_link(link)
     )
 
 @app.route('/locations')
@@ -10964,6 +11309,261 @@ def server_settings_history():
             "settings": json.loads(row["settings_json"]) if row["settings_json"] else {}
         })
     return jsonify({"revisions": revisions})
+
+@app.route('/api/inventory-links', methods=['GET', 'POST'])
+@login_required
+def inventory_links_api():
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+
+    if request.method == 'GET':
+        return jsonify(list_inventory_links(db, user["id"]))
+
+    data = request.get_json() or {}
+    display_name = (data.get("displayName") or "").strip()
+    base_url = (data.get("baseUrl") or "").strip()
+    auth_mode = data.get("authMode") or "apiKey"
+    verify_tls = bool(data.get("verifyTls", True))
+    allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    secret = data.get("secret") or ""
+
+    if not display_name:
+        return jsonify({"error": "Display-Name ist erforderlich."}), 400
+    if auth_mode not in {"apiKey", "bearerToken", "basic", "none"}:
+        return jsonify({"error": "Ungültiger Auth-Modus."}), 400
+    if auth_mode != "none" and not secret:
+        return jsonify({"error": "Secret ist erforderlich."}), 400
+
+    try:
+        normalized = normalize_inventory_link_base_url(base_url)
+        validate_inventory_link_target(normalized, allow_private_network)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if normalized.startswith("http://"):
+        verify_tls = True
+
+    try:
+        secret_encrypted = encrypt_inventory_link_secret(secret) if secret else ""
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    link_id = str(uuid.uuid4())
+    db.execute(
+        '''
+        INSERT INTO inventory_links (
+            id, user_id, display_name, base_url, verify_tls, auth_mode, secret_encrypted,
+            allow_private_network, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ''',
+        (
+            link_id, user["id"], display_name, normalized, 1 if verify_tls else 0,
+            auth_mode, secret_encrypted, 1 if allow_private_network else 0
+        )
+    )
+    log_activity(db, "create", "inventory_link", details={"link_id": link_id, "display_name": display_name})
+    db.commit()
+    link_row = get_inventory_link(db, user["id"], link_id)
+    return jsonify(serialize_inventory_link(link_row)), 201
+
+@app.route('/api/inventory-links/test', methods=['POST'])
+@login_required
+def inventory_links_test_draft():
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    data = request.get_json() or {}
+    base_url = (data.get("baseUrl") or "").strip()
+    auth_mode = data.get("authMode") or "apiKey"
+    verify_tls = bool(data.get("verifyTls", True))
+    allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    secret = data.get("secret") or ""
+    if auth_mode not in {"apiKey", "bearerToken", "basic", "none"}:
+        return jsonify({"error": "Ungültiger Auth-Modus."}), 400
+    try:
+        normalized = normalize_inventory_link_base_url(base_url)
+        validate_inventory_link_target(normalized, allow_private_network)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if normalized.startswith("http://"):
+        verify_tls = True
+    result = perform_inventory_link_test({
+        "base_url": normalized,
+        "verify_tls": verify_tls,
+        "auth_mode": auth_mode,
+        "secret": secret,
+        "allow_private_network": allow_private_network
+    })
+    return jsonify(result), 200
+
+@app.route('/api/inventory-links/<link_id>', methods=['PATCH', 'DELETE'])
+@login_required
+def inventory_link_detail_api(link_id):
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return jsonify({"error": "Link nicht gefunden."}), 404
+
+    if request.method == 'DELETE':
+        db.execute('DELETE FROM inventory_links WHERE id = ? AND user_id = ?', (link_id, user["id"]))
+        log_activity(db, "delete", "inventory_link", details={"link_id": link_id})
+        db.commit()
+        return jsonify({"status": "deleted"}), 200
+
+    data = request.get_json() or {}
+    display_name = (data.get("displayName") or link["display_name"]).strip()
+    base_url = (data.get("baseUrl") or link["base_url"]).strip()
+    auth_mode = data.get("authMode") or link["auth_mode"]
+    verify_tls = bool(data.get("verifyTls", bool(link["verify_tls"])))
+    allow_private_network = bool(data.get("allowPrivateNetwork", bool(link["allow_private_network"])))
+    secret = data.get("secret")
+
+    if not display_name:
+        return jsonify({"error": "Display-Name ist erforderlich."}), 400
+    if auth_mode not in {"apiKey", "bearerToken", "basic", "none"}:
+        return jsonify({"error": "Ungültiger Auth-Modus."}), 400
+
+    try:
+        normalized = normalize_inventory_link_base_url(base_url)
+        validate_inventory_link_target(normalized, allow_private_network)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if normalized.startswith("http://"):
+        verify_tls = True
+
+    secret_encrypted = link["secret_encrypted"]
+    if secret is not None:
+        if auth_mode != "none" and not secret and not secret_encrypted:
+            return jsonify({"error": "Secret ist erforderlich."}), 400
+        if secret:
+            try:
+                secret_encrypted = encrypt_inventory_link_secret(secret)
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
+        elif auth_mode == "none":
+            secret_encrypted = ""
+
+    db.execute(
+        '''
+        UPDATE inventory_links
+        SET display_name = ?, base_url = ?, verify_tls = ?, auth_mode = ?, secret_encrypted = ?,
+            allow_private_network = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND user_id = ?
+        ''',
+        (
+            display_name, normalized, 1 if verify_tls else 0, auth_mode, secret_encrypted,
+            1 if allow_private_network else 0, link_id, user["id"]
+        )
+    )
+    log_activity(db, "update", "inventory_link", details={"link_id": link_id})
+    db.commit()
+    updated = get_inventory_link(db, user["id"], link_id)
+    return jsonify(serialize_inventory_link(updated)), 200
+
+@app.route('/api/inventory-links/<link_id>/test', methods=['POST'])
+@login_required
+def inventory_link_test_api(link_id):
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return jsonify({"error": "Link nicht gefunden."}), 404
+    secret = ""
+    if link["auth_mode"] != "none":
+        try:
+            secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+    result = perform_inventory_link_test({
+        "base_url": link["base_url"],
+        "verify_tls": bool(link["verify_tls"]),
+        "auth_mode": link["auth_mode"],
+        "secret": secret,
+        "allow_private_network": bool(link["allow_private_network"])
+    })
+    status_label = result.get("status")
+    update_inventory_link_health(db, link_id, status_label)
+    db.commit()
+    return jsonify(result), 200
+
+class InventoryLinkNoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+@app.route('/api/inventory-links/<link_id>/proxy/', defaults={'subpath': ''}, methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'])
+@app.route('/api/inventory-links/<link_id>/proxy/<path:subpath>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'])
+@login_required
+def inventory_link_proxy(link_id, subpath):
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    if should_rate_limit_inventory_proxy(user["id"]):
+        return jsonify({"error": "Rate limit erreicht."}), 429
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return jsonify({"error": "Link nicht gefunden."}), 404
+
+    try:
+        validate_inventory_link_target(link["base_url"], bool(link["allow_private_network"]))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if link["auth_mode"] != "none":
+        try:
+            secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+    else:
+        secret = ""
+
+    target_url = build_inventory_link_target_url(link["base_url"], subpath, request.query_string)
+    headers = build_inventory_link_request_headers(link["auth_mode"], secret)
+    data = None
+    if request.method not in {"GET", "HEAD"}:
+        data = request.get_data()
+    req = urllib.request.Request(target_url, data=data if data else None, headers=headers, method=request.method)
+
+    context = None
+    if link["base_url"].startswith("https://"):
+        context = build_inventory_link_ssl_context(bool(link["verify_tls"]))
+
+    handlers = [InventoryLinkNoRedirect()]
+    if context is not None:
+        handlers.append(urllib.request.HTTPSHandler(context=context))
+    opener = urllib.request.build_opener(*handlers)
+    try:
+        resp = opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS)
+    except urllib.error.HTTPError as exc:
+        resp = exc
+    except urllib.error.URLError as exc:
+        return jsonify({"error": f"Proxy-Fehler: {exc.reason}"}), 502
+    except ssl.SSLError as exc:
+        return jsonify({"error": f"TLS-Fehler: {str(exc)}"}), 502
+
+    status_code = resp.getcode()
+    response_headers = filter_inventory_link_response_headers(resp.headers, link_id, link["base_url"])
+    log_activity(db, "proxy", "inventory_link", details={"link_id": link_id, "method": request.method, "path": subpath})
+    db.commit()
+    return Response(
+        stream_inventory_link_response(resp),
+        status=status_code,
+        headers=response_headers
+    )
 
 @app.route('/api/backups/run', methods=['POST'])
 @login_required
