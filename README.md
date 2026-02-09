@@ -164,7 +164,8 @@ Linked Inventory Pros werden im Bereich **Einstellungen → Linked Inventory Pro
 6. Verbindung testen → speichern.
 
 **Hinweise**
-- Secrets werden serverseitig verschlüsselt gespeichert (`INVENTORY_LINKS_ENCRYPTION_KEY` erforderlich).
+- Secrets werden serverseitig verschlüsselt gespeichert (`INVENTORY_LINKS_ENCRYPTION_KEY` empfohlen). Ohne Key werden Secrets unverschlüsselt abgelegt, sofern `INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS=1` gesetzt ist.
+- Alternativ ist `Login` möglich: Secret im Format `Benutzername:Passwort`, die Session wird serverseitig verwaltet.
 - Cookie-basierte Logins werden in v1 nicht geteilt; nutze Header-Auth für zuverlässige Verbindungen.
 
 ## Betrieb & Wartung
