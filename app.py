@@ -37,6 +37,7 @@ from ldap3 import Server, Connection, BASE, ALL
 from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
 import smtplib
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 
 app = Flask(__name__)
@@ -93,6 +94,10 @@ HEALTH_SCHEDULER = BackgroundScheduler()
 RATE_LIMIT_CACHE = {}
 INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE = {}
 INVENTORY_LINK_LOGIN_SESSION_CACHE = {}
+CLOUD_INTEGRATION_SECRET_HEADER = "X-InventoryPro-Secret"
+CLOUD_SSO_TICKET_MAX_AGE_SECONDS = int(os.environ.get("CLOUD_SSO_TICKET_MAX_AGE_SECONDS", 120))
+CLOUD_SSO_TICKET_SALT = "inventorypro-cloud-sso-v1"
+_USED_CLOUD_SSO_TICKETS = {}
 
 HEALTH_STATUS_ORDER = {
     "OK": 0,
@@ -1143,6 +1148,414 @@ def get_password_min_length(db):
         return DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"]
     return settings_row["password_min_length"] or DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"]
 
+
+def normalize_external_base_url(value):
+    candidate = (value or "").strip()
+    if not candidate:
+        return ""
+    parsed = urllib.parse.urlsplit(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Ungültige URL. Nur http(s) ist erlaubt.")
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+
+
+def serialize_cloud_integration_settings(row):
+    if not row:
+        return {
+            "enabled": False,
+            "cloudBaseUrl": "",
+            "syncEnabled": True,
+            "ssoEnabled": True,
+            "autoProvisionUsers": True,
+            "defaultRoleName": DEFAULT_ROLE_NAME,
+            "allowIframeEmbedding": True,
+            "hasSharedSecret": False,
+            "updatedAt": None,
+            "updatedBy": None,
+        }
+    return {
+        "enabled": bool(row["enabled"]),
+        "cloudBaseUrl": (row["cloud_base_url"] or "").strip(),
+        "syncEnabled": bool(row["sync_enabled"]),
+        "ssoEnabled": bool(row["sso_enabled"]),
+        "autoProvisionUsers": bool(row["auto_provision_users"]),
+        "defaultRoleName": (row["default_role_name"] or DEFAULT_ROLE_NAME).strip() or DEFAULT_ROLE_NAME,
+        "allowIframeEmbedding": bool(row["allow_iframe_embedding"]),
+        "hasSharedSecret": bool((row["shared_secret_hash"] or "").strip()),
+        "updatedAt": row["updated_at"],
+        "updatedBy": row["updated_by"],
+    }
+
+
+def get_cloud_integration_settings(db):
+    db.execute("INSERT OR IGNORE INTO cloud_integration_settings (id) VALUES (1)")
+    row = db.execute(
+        '''
+        SELECT id, enabled, cloud_base_url, shared_secret_hash, sync_enabled, sso_enabled,
+               shared_secret_encrypted, auto_provision_users, default_role_name, allow_iframe_embedding, updated_at, updated_by
+        FROM cloud_integration_settings
+        WHERE id = 1
+        '''
+    ).fetchone()
+    return serialize_cloud_integration_settings(row), row
+
+
+def verify_cloud_integration_secret(row, provided_secret):
+    configured_hash = (row["shared_secret_hash"] or "").strip() if row else ""
+    candidate = (provided_secret or "").strip()
+    if not configured_hash or not candidate:
+        return False
+    try:
+        return check_password_hash(configured_hash, candidate)
+    except ValueError:
+        return False
+
+
+def require_cloud_integration_secret(db):
+    settings, row = get_cloud_integration_settings(db)
+    if not settings["enabled"]:
+        return None, jsonify({"error": "Cloud-Integration ist deaktiviert."}), 403
+    header_secret = request.headers.get(CLOUD_INTEGRATION_SECRET_HEADER)
+    if not verify_cloud_integration_secret(row, header_secret):
+        return None, jsonify({"error": "Ungültiges Integrations-Secret."}), 401
+    return settings, None, None
+
+
+def _normalize_cloud_role_names(value):
+    if not isinstance(value, list):
+        return []
+    names = []
+    seen = set()
+    for entry in value:
+        if not isinstance(entry, str):
+            continue
+        role_name = entry.strip()
+        if not role_name:
+            continue
+        key = role_name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        names.append(role_name)
+    return names
+
+
+def _resolve_cloud_role_ids(db, role_names, default_role_name):
+    selected = []
+    if role_names:
+        placeholders = ",".join("?" for _ in role_names)
+        rows = db.execute(
+            f"SELECT id, name FROM roles WHERE lower(name) IN ({placeholders})",
+            tuple(name.lower() for name in role_names),
+        ).fetchall()
+        by_name = {row["name"].lower(): row["id"] for row in rows}
+        for name in role_names:
+            role_id = by_name.get(name.lower())
+            if role_id is not None and role_id not in selected:
+                selected.append(role_id)
+    if selected:
+        return selected
+
+    role = db.execute(
+        "SELECT id FROM roles WHERE lower(name) = ?",
+        ((default_role_name or DEFAULT_ROLE_NAME).strip().lower(),),
+    ).fetchone()
+    if role:
+        return [role["id"]]
+    fallback = db.execute("SELECT id FROM roles WHERE name = ?", (DEFAULT_ROLE_NAME,)).fetchone()
+    if fallback:
+        return [fallback["id"]]
+    return []
+
+
+def _upsert_cloud_user(db, payload, *, allow_create, default_role_name):
+    if not isinstance(payload, dict):
+        raise ValueError("Ungültiger User-Payload.")
+
+    username = (payload.get("username") or "").strip()
+    subject = str(
+        payload.get("subject")
+        or payload.get("sub")
+        or payload.get("cloud_user_id")
+        or payload.get("external_user_id")
+        or ""
+    ).strip()
+    email = normalize_email(payload.get("email") or "")
+    role_names = _normalize_cloud_role_names(payload.get("role_names"))
+
+    if len(username) < 3:
+        raise ValueError("username muss mindestens 3 Zeichen lang sein.")
+    if not subject:
+        raise ValueError("subject ist erforderlich.")
+
+    user = db.execute("SELECT id, username FROM users WHERE cloud_user_id = ?", (subject,)).fetchone()
+    if not user:
+        user = db.execute("SELECT id, username FROM users WHERE lower(username) = ?", (username.lower(),)).fetchone()
+
+    created = False
+    if not user:
+        if not allow_create:
+            raise PermissionError("Auto-Provisioning ist deaktiviert.")
+        placeholder_password = generate_password_hash(secrets.token_urlsafe(24))
+        cursor = db.execute(
+            "INSERT INTO users (username, email, password_hash, cloud_user_id) VALUES (?, ?, ?, ?)",
+            (username, email or None, placeholder_password, subject),
+        )
+        user_id = cursor.lastrowid
+        created = True
+    else:
+        user_id = user["id"]
+        username_conflict = db.execute(
+            "SELECT id FROM users WHERE lower(username) = ? AND id != ?",
+            (username.lower(), user_id),
+        ).fetchone()
+        if username_conflict:
+            raise ValueError("username wird bereits von einem anderen Benutzer verwendet.")
+        subject_conflict = db.execute(
+            "SELECT id FROM users WHERE cloud_user_id = ? AND id != ?",
+            (subject, user_id),
+        ).fetchone()
+        if subject_conflict:
+            raise ValueError("subject ist bereits einem anderen Benutzer zugeordnet.")
+        db.execute(
+            "UPDATE users SET username = ?, email = ?, cloud_user_id = ? WHERE id = ?",
+            (username, email or None, subject, user_id),
+        )
+
+    role_ids = _resolve_cloud_role_ids(db, role_names, default_role_name)
+    db.execute("DELETE FROM user_roles WHERE user_id = ?", (user_id,))
+    for role_id in role_ids:
+        db.execute(
+            "INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)",
+            (user_id, role_id),
+        )
+
+    return {
+        "status": "created" if created else "updated",
+        "id": user_id,
+        "username": username,
+        "email": email or None,
+        "cloud_user_id": subject,
+    }
+
+
+def _cloud_ticket_serializer():
+    return URLSafeTimedSerializer(app.secret_key, salt=CLOUD_SSO_TICKET_SALT)
+
+
+def _cleanup_cloud_sso_tickets():
+    now = time.time()
+    expired = [jti for jti, ttl in _USED_CLOUD_SSO_TICKETS.items() if ttl <= now]
+    for jti in expired:
+        _USED_CLOUD_SSO_TICKETS.pop(jti, None)
+
+
+def issue_cloud_sso_ticket(user_id):
+    _cleanup_cloud_sso_tickets()
+    payload = {"uid": int(user_id), "jti": secrets.token_urlsafe(18)}
+    return _cloud_ticket_serializer().dumps(payload)
+
+
+def consume_cloud_sso_ticket(ticket):
+    if not ticket:
+        raise ValueError("Missing SSO ticket.")
+    try:
+        payload = _cloud_ticket_serializer().loads(ticket, max_age=CLOUD_SSO_TICKET_MAX_AGE_SECONDS)
+    except SignatureExpired as error:
+        raise ValueError("SSO-Ticket ist abgelaufen.") from error
+    except BadSignature as error:
+        raise ValueError("Ungültiges SSO-Ticket.") from error
+
+    if not isinstance(payload, dict):
+        raise ValueError("Ungültiger Ticket-Payload.")
+    jti = str(payload.get("jti") or "").strip()
+    user_id = payload.get("uid")
+    if not jti or user_id is None:
+        raise ValueError("Ungültiger Ticket-Payload.")
+
+    _cleanup_cloud_sso_tickets()
+    if jti in _USED_CLOUD_SSO_TICKETS:
+        raise ValueError("SSO-Ticket wurde bereits verwendet.")
+    _USED_CLOUD_SSO_TICKETS[jti] = time.time() + CLOUD_SSO_TICKET_MAX_AGE_SECONDS
+    try:
+        return int(user_id)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Ungültige Benutzerkennung im Ticket.") from error
+
+
+def sanitize_relative_next_path(value):
+    target = (value or "").strip() or "/"
+    if not target.startswith("/"):
+        return "/"
+    if target.startswith("//"):
+        return "/"
+    return target
+
+
+def build_cloud_summary_payload(db):
+    assets_total = db.execute("SELECT COUNT(*) AS c FROM assets").fetchone()["c"] or 0
+    categories_total = db.execute("SELECT COUNT(*) AS c FROM asset_categories").fetchone()["c"] or 0
+    users_total = db.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"] or 0
+    tickets_total = db.execute("SELECT COUNT(*) AS c FROM tickets").fetchone()["c"] or 0
+    tickets_open = db.execute(
+        "SELECT COUNT(*) AS c FROM tickets WHERE lower(status) NOT IN ('closed', 'resolved', 'done')"
+    ).fetchone()["c"] or 0
+
+    recent_assets = db.execute(
+        '''
+        SELECT a.id, a.name, ac.name AS category_name, a.created_at
+        FROM assets a
+        LEFT JOIN asset_categories ac ON ac.id = a.category_id
+        ORDER BY datetime(a.created_at) DESC
+        LIMIT 5
+        '''
+    ).fetchall()
+    recent_tickets = db.execute(
+        '''
+        SELECT t.id, t.title, t.status, t.updated_at, t.created_at
+        FROM tickets t
+        ORDER BY datetime(COALESCE(t.updated_at, t.created_at)) DESC
+        LIMIT 5
+        '''
+    ).fetchall()
+
+    return {
+        "counts": {
+            "assets": assets_total,
+            "categories": categories_total,
+            "users": users_total,
+            "tickets_total": tickets_total,
+            "tickets_open": tickets_open,
+        },
+        "recent_assets": [
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "category": row["category_name"],
+                "created_at": row["created_at"],
+                "url": "/",
+            }
+            for row in recent_assets
+        ],
+        "recent_tickets": [
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "status": row["status"],
+                "updated_at": row["updated_at"] or row["created_at"],
+                "url": "/tickets",
+            }
+            for row in recent_tickets
+        ],
+    }
+
+
+def build_cloud_recents_payload(db, limit):
+    limited = max(1, min(int(limit or 10), 30))
+    rows = []
+    rows.extend(
+        {
+            "type": "asset",
+            "id": row["id"],
+            "title": row["name"],
+            "subtitle": row["category_name"] or "Asset",
+            "timestamp": row["created_at"],
+            "url": "/",
+        }
+        for row in db.execute(
+            '''
+            SELECT a.id, a.name, ac.name AS category_name, a.created_at
+            FROM assets a
+            LEFT JOIN asset_categories ac ON ac.id = a.category_id
+            ORDER BY datetime(a.created_at) DESC
+            LIMIT ?
+            ''',
+            (limited,),
+        ).fetchall()
+    )
+    rows.extend(
+        {
+            "type": "ticket",
+            "id": row["id"],
+            "title": row["title"],
+            "subtitle": row["status"] or "open",
+            "timestamp": row["updated_at"] or row["created_at"],
+            "url": "/tickets",
+        }
+        for row in db.execute(
+            '''
+            SELECT id, title, status, updated_at, created_at
+            FROM tickets
+            ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
+            LIMIT ?
+            ''',
+            (limited,),
+        ).fetchall()
+    )
+    rows.sort(key=lambda item: item.get("timestamp") or "", reverse=True)
+    return {"items": rows[:limited], "count": min(len(rows), limited)}
+
+
+def build_cloud_search_payload(db, query, limit):
+    q = (query or "").strip()
+    limited = max(1, min(int(limit or 20), 50))
+    if not q:
+        return {"items": [], "count": 0}
+
+    like = f"%{q.lower()}%"
+    items = []
+    for row in db.execute(
+        '''
+        SELECT id, name, notes
+        FROM assets
+        WHERE lower(name) LIKE ? OR lower(COALESCE(notes, '')) LIKE ?
+        ORDER BY datetime(created_at) DESC
+        LIMIT ?
+        ''',
+        (like, like, limited),
+    ).fetchall():
+        items.append({"type": "asset", "id": row["id"], "title": row["name"], "subtitle": row["notes"] or "", "url": "/"})
+
+    if len(items) < limited:
+        remaining = limited - len(items)
+        for row in db.execute(
+            '''
+            SELECT id, title, status
+            FROM tickets
+            WHERE lower(title) LIKE ? OR lower(COALESCE(description, '')) LIKE ?
+            ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
+            LIMIT ?
+            ''',
+            (like, like, remaining),
+        ).fetchall():
+            items.append(
+                {"type": "ticket", "id": row["id"], "title": row["title"], "subtitle": row["status"] or "", "url": "/tickets"}
+            )
+
+    if len(items) < limited:
+        remaining = limited - len(items)
+        for row in db.execute(
+            '''
+            SELECT id, username, email
+            FROM users
+            WHERE lower(username) LIKE ? OR lower(COALESCE(email, '')) LIKE ?
+            ORDER BY username ASC
+            LIMIT ?
+            ''',
+            (like, like, remaining),
+        ).fetchall():
+            items.append(
+                {
+                    "type": "user",
+                    "id": row["id"],
+                    "title": row["username"],
+                    "subtitle": row["email"] or "Benutzer",
+                    "url": "/users",
+                }
+            )
+
+    return {"items": items[:limited], "count": len(items[:limited])}
+
 def should_rate_limit(key):
     now = time.time()
     window_start = now - RATE_LIMIT_WINDOW_SECONDS
@@ -1987,6 +2400,15 @@ def decrypt_inventory_link_secret(secret_encrypted):
         return secret_encrypted
     return cipher.decrypt(secret_encrypted.encode("utf-8")).decode("utf-8")
 
+
+def encrypt_cloud_integration_secret(secret):
+    # Reuse the Inventory Links secret storage rules (Fernet or plaintext fallback).
+    return encrypt_inventory_link_secret(secret)
+
+
+def decrypt_cloud_integration_secret(secret_encrypted):
+    return decrypt_inventory_link_secret(secret_encrypted)
+
 def run_sqlite_backup(target_path):
     with sqlite3.connect(DATABASE) as source:
         with sqlite3.connect(target_path) as dest:
@@ -2681,7 +3103,12 @@ def init_db():
             c.execute('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0')
         except sqlite3.OperationalError:
             pass
+        try:
+            c.execute('ALTER TABLE users ADD COLUMN cloud_user_id TEXT')
+        except sqlite3.OperationalError:
+            pass
         c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE email IS NOT NULL')
+        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_cloud_user_id ON users(cloud_user_id) WHERE cloud_user_id IS NOT NULL')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS roles (
@@ -3848,6 +4275,23 @@ def init_db():
             )
         ''')
         c.execute('''
+            CREATE TABLE IF NOT EXISTS cloud_integration_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                enabled INTEGER DEFAULT 0,
+                cloud_base_url TEXT DEFAULT '',
+                shared_secret_hash TEXT DEFAULT '',
+                shared_secret_encrypted TEXT DEFAULT '',
+                sync_enabled INTEGER DEFAULT 1,
+                sso_enabled INTEGER DEFAULT 1,
+                auto_provision_users INTEGER DEFAULT 1,
+                default_role_name TEXT DEFAULT 'Mitarbeiter',
+                allow_iframe_embedding INTEGER DEFAULT 1,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_by TEXT
+            )
+        ''')
+        c.execute('INSERT OR IGNORE INTO cloud_integration_settings (id) VALUES (1)')
+        c.execute('''
             CREATE TABLE IF NOT EXISTS inventory_links (
                 id TEXT PRIMARY KEY,
                 user_id INTEGER NOT NULL,
@@ -4057,6 +4501,24 @@ def init_db():
         ):
             try:
                 c.execute(f'ALTER TABLE server_settings ADD COLUMN {column} {column_type}')
+            except sqlite3.OperationalError:
+                pass
+
+        for column, column_type in (
+            ("enabled", "INTEGER DEFAULT 0"),
+            ("cloud_base_url", "TEXT DEFAULT ''"),
+            ("shared_secret_hash", "TEXT DEFAULT ''"),
+            ("shared_secret_encrypted", "TEXT DEFAULT ''"),
+            ("sync_enabled", "INTEGER DEFAULT 1"),
+            ("sso_enabled", "INTEGER DEFAULT 1"),
+            ("auto_provision_users", "INTEGER DEFAULT 1"),
+            ("default_role_name", f"TEXT DEFAULT '{DEFAULT_ROLE_NAME}'"),
+            ("allow_iframe_embedding", "INTEGER DEFAULT 1"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("updated_by", "TEXT"),
+        ):
+            try:
+                c.execute(f'ALTER TABLE cloud_integration_settings ADD COLUMN {column} {column_type}')
             except sqlite3.OperationalError:
                 pass
 
@@ -11422,6 +11884,310 @@ def server_settings_history():
             "settings": json.loads(row["settings_json"]) if row["settings_json"] else {}
         })
     return jsonify({"revisions": revisions})
+
+
+@app.route('/api/integration/cloud/settings', methods=['GET', 'PUT'])
+@login_required
+@require_permission('server_settings.manage')
+def cloud_integration_settings_api():
+    db = get_db()
+    settings, row = get_cloud_integration_settings(db)
+    if request.method == 'GET':
+        return jsonify({"settings": settings})
+
+    payload = request.get_json() or {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Ungültiger Payload."}), 400
+
+    enabled = bool(payload.get("enabled", settings["enabled"]))
+    sync_enabled = bool(payload.get("syncEnabled", settings["syncEnabled"]))
+    sso_enabled = bool(payload.get("ssoEnabled", settings["ssoEnabled"]))
+    auto_provision_users = bool(payload.get("autoProvisionUsers", settings["autoProvisionUsers"]))
+    allow_iframe_embedding = bool(payload.get("allowIframeEmbedding", settings["allowIframeEmbedding"]))
+    default_role_name = (payload.get("defaultRoleName") or settings["defaultRoleName"] or DEFAULT_ROLE_NAME).strip() or DEFAULT_ROLE_NAME
+
+    try:
+        cloud_base_url = normalize_external_base_url(payload.get("cloudBaseUrl", settings["cloudBaseUrl"]))
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+    if enabled and not cloud_base_url:
+        return jsonify({"error": "cloudBaseUrl ist erforderlich, wenn Integration aktiv ist."}), 400
+
+    role_exists = db.execute('SELECT id FROM roles WHERE lower(name) = ?', (default_role_name.lower(),)).fetchone()
+    if not role_exists:
+        return jsonify({"error": "defaultRoleName existiert nicht."}), 400
+
+    clear_secret = bool(payload.get("clearSharedSecret"))
+    shared_secret = str(payload.get("sharedSecret") or "").strip()
+    current_hash = (row["shared_secret_hash"] or "").strip() if row else ""
+    current_encrypted = (row["shared_secret_encrypted"] or "").strip() if row else ""
+    if clear_secret:
+        current_hash = ""
+        current_encrypted = ""
+    if shared_secret:
+        if len(shared_secret) < 12:
+            return jsonify({"error": "sharedSecret muss mindestens 12 Zeichen haben."}), 400
+        current_hash = generate_password_hash(shared_secret)
+        try:
+            current_encrypted = encrypt_cloud_integration_secret(shared_secret)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+
+    if enabled and (sync_enabled or sso_enabled) and not current_hash:
+        return jsonify({"error": "sharedSecret ist erforderlich, wenn Sync oder SSO aktiv sind."}), 400
+
+    db.execute(
+        '''
+        UPDATE cloud_integration_settings
+        SET enabled = ?,
+            cloud_base_url = ?,
+            shared_secret_hash = ?,
+            shared_secret_encrypted = ?,
+            sync_enabled = ?,
+            sso_enabled = ?,
+            auto_provision_users = ?,
+            default_role_name = ?,
+            allow_iframe_embedding = ?,
+            updated_at = CURRENT_TIMESTAMP,
+            updated_by = ?
+        WHERE id = 1
+        ''',
+        (
+            1 if enabled else 0,
+            cloud_base_url,
+            current_hash,
+            current_encrypted,
+            1 if sync_enabled else 0,
+            1 if sso_enabled else 0,
+            1 if auto_provision_users else 0,
+            default_role_name,
+            1 if allow_iframe_embedding else 0,
+            session.get("username", "system"),
+        ),
+    )
+    log_activity(db, "update", "cloud_integration_settings", details={"enabled": enabled})
+    db.commit()
+    updated, _ = get_cloud_integration_settings(db)
+    return jsonify({"settings": updated})
+
+
+@app.route('/api/integration/cloud/users/sync', methods=['POST'])
+def cloud_users_sync_api():
+    db = get_db()
+    settings, error_response, status = require_cloud_integration_secret(db)
+    if error_response is not None:
+        return error_response, status
+    if not settings["syncEnabled"]:
+        return jsonify({"error": "Cloud-User-Sync ist deaktiviert."}), 403
+
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "JSON-Objekt erwartet."}), 400
+
+    entries = payload.get("users") if isinstance(payload.get("users"), list) else [payload]
+    if not entries:
+        return jsonify({"error": "Mindestens ein User-Payload ist erforderlich."}), 400
+
+    items = []
+    for entry in entries:
+        try:
+            item = _upsert_cloud_user(
+                db,
+                entry,
+                allow_create=bool(settings["autoProvisionUsers"]),
+                default_role_name=settings["defaultRoleName"],
+            )
+            items.append(item)
+        except PermissionError as error:
+            db.rollback()
+            return jsonify({"error": str(error)}), 403
+        except ValueError as error:
+            db.rollback()
+            return jsonify({"error": str(error)}), 400
+        except sqlite3.IntegrityError:
+            db.rollback()
+            return jsonify({"error": "Benutzer konnte nicht synchronisiert werden (Konflikt)."}), 409
+
+    log_activity(db, "sync", "cloud_users", details={"count": len(items)})
+    db.commit()
+    return jsonify({"items": items, "count": len(items)})
+
+
+@app.route('/api/integration/cloud/sso/ticket', methods=['POST'])
+def cloud_sso_ticket_api():
+    db = get_db()
+    settings, error_response, status = require_cloud_integration_secret(db)
+    if error_response is not None:
+        return error_response, status
+    if not settings["ssoEnabled"]:
+        return jsonify({"error": "Cloud-SSO ist deaktiviert."}), 403
+
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "JSON-Objekt erwartet."}), 400
+
+    try:
+        item = _upsert_cloud_user(
+            db,
+            payload,
+            allow_create=bool(settings["autoProvisionUsers"]),
+            default_role_name=settings["defaultRoleName"],
+        )
+    except PermissionError as error:
+        db.rollback()
+        return jsonify({"error": str(error)}), 403
+    except ValueError as error:
+        db.rollback()
+        return jsonify({"error": str(error)}), 400
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify({"error": "Benutzer konnte nicht für SSO vorbereitet werden."}), 409
+
+    ticket = issue_cloud_sso_ticket(item["id"])
+    db.commit()
+    return jsonify(
+        {
+            "ticket": ticket,
+            "expires_in": CLOUD_SSO_TICKET_MAX_AGE_SECONDS,
+            "user": {"id": item["id"], "username": item["username"], "cloud_user_id": item["cloud_user_id"]},
+        }
+    )
+
+
+@app.route('/integration/cloud/sso/login', methods=['GET'])
+def cloud_sso_login():
+    db = get_db()
+    settings, _ = get_cloud_integration_settings(db)
+    if not settings["enabled"] or not settings["ssoEnabled"]:
+        return redirect(url_for("login"))
+
+    ticket = (request.args.get("ticket") or "").strip()
+    next_path = sanitize_relative_next_path(request.args.get("next") or "/")
+    try:
+        user_id = consume_cloud_sso_ticket(ticket)
+    except ValueError:
+        return redirect(url_for("login"))
+
+    user = db.execute("SELECT id, username FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+
+    session['logged_in'] = True
+    session['username'] = user["username"]
+    session['mfa_verified'] = True
+    session["last_activity"] = int(time.time())
+    log_activity(db, "login_cloud_sso", "user", user["id"], {"username": user["username"]})
+    db.commit()
+    return redirect(next_path)
+
+
+def request_cloud_sso_ticket(cloud_base_url, shared_secret, payload, *, timeout_seconds=15):
+    target_url = (cloud_base_url or "").rstrip("/") + "/integration/inventorypro/sso/ticket"
+    data = json.dumps(payload).encode("utf-8")
+    request_obj = urllib.request.Request(target_url, data=data, method="POST")
+    request_obj.add_header("Accept", "application/json")
+    request_obj.add_header("Content-Type", "application/json")
+    request_obj.add_header(CLOUD_INTEGRATION_SECRET_HEADER, (shared_secret or "").strip())
+    try:
+        with urllib.request.urlopen(request_obj, timeout=timeout_seconds) as response:
+            raw = response.read() or b"{}"
+            decoded = json.loads(raw.decode("utf-8", errors="replace") or "{}")
+            if not isinstance(decoded, dict):
+                raise ValueError("Ungültige Cloud-Antwort.")
+            ticket = str(decoded.get("ticket") or "").strip()
+            if not ticket:
+                raise ValueError("Cloud hat kein Ticket geliefert.")
+            return ticket, int(decoded.get("expires_in") or 0)
+    except urllib.error.HTTPError as error:
+        raw = error.read() or b""
+        message = raw.decode("utf-8", errors="replace").strip()
+        raise ValueError(f"Cloud Ticket Fehler ({error.code}): {message or 'Request failed'}") from error
+    except (urllib.error.URLError, TimeoutError, socket.timeout, json.JSONDecodeError) as error:
+        raise ValueError(f"Cloud ist nicht erreichbar: {error}") from error
+
+
+@app.route('/integration/cloud/open', methods=['GET'])
+@login_required
+def open_cloud_from_inventory():
+    db = get_db()
+    settings, row = get_cloud_integration_settings(db)
+    if not settings["enabled"] or not settings["ssoEnabled"] or not settings["cloudBaseUrl"]:
+        return redirect("/settings?section=server#cloud-integration")
+
+    secret_enc = (row["shared_secret_encrypted"] or "").strip() if row else ""
+    try:
+        shared_secret = decrypt_cloud_integration_secret(secret_enc)
+    except ValueError:
+        shared_secret = ""
+    if not shared_secret:
+        return redirect("/settings?section=server#cloud-integration")
+
+    next_path = (request.args.get("next") or "").strip() or "/app/home"
+    if not next_path.startswith("/") or next_path.startswith("//"):
+        next_path = "/app/home"
+
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return redirect(url_for("login"))
+    role_names = [role.get("name") for role in (access.get("roles") or []) if role.get("name")]
+
+    payload = {
+        "subject": f"inv-u-{user['id']}",
+        "username": user["username"],
+        "role_names": role_names,
+        "is_active": True,
+    }
+
+    try:
+        ticket, _ = request_cloud_sso_ticket(settings["cloudBaseUrl"], shared_secret, payload)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 502
+
+    cloud_login_url = (settings["cloudBaseUrl"] or "").rstrip("/") + "/login"
+    params = urllib.parse.urlencode({"sso_ticket": ticket, "next": next_path})
+    return redirect(f"{cloud_login_url}?{params}")
+
+
+@app.route('/api/integration/cloud/summary', methods=['GET'])
+def cloud_summary_api():
+    db = get_db()
+    settings, error_response, status = require_cloud_integration_secret(db)
+    if error_response is not None:
+        return error_response, status
+    payload = build_cloud_summary_payload(db)
+    payload["integration"] = {"enabled": True, "allowIframeEmbedding": bool(settings["allowIframeEmbedding"])}
+    return jsonify(payload)
+
+
+@app.route('/api/integration/cloud/recents', methods=['GET'])
+def cloud_recents_api():
+    db = get_db()
+    _, error_response, status = require_cloud_integration_secret(db)
+    if error_response is not None:
+        return error_response, status
+    limit = request.args.get("limit", 12)
+    try:
+        payload = build_cloud_recents_payload(db, limit)
+    except ValueError:
+        return jsonify({"error": "Ungültiger limit-Parameter."}), 400
+    return jsonify(payload)
+
+
+@app.route('/api/integration/cloud/search', methods=['GET'])
+def cloud_search_api():
+    db = get_db()
+    _, error_response, status = require_cloud_integration_secret(db)
+    if error_response is not None:
+        return error_response, status
+    query = request.args.get("q") or request.args.get("query") or ""
+    limit = request.args.get("limit", 20)
+    try:
+        payload = build_cloud_search_payload(db, query, limit)
+    except ValueError:
+        return jsonify({"error": "Ungültiger limit-Parameter."}), 400
+    return jsonify(payload)
 
 @app.route('/api/inventory-links', methods=['GET', 'POST'])
 @login_required
