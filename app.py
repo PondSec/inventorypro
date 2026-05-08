@@ -38,16 +38,16 @@ from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
 import smtplib
 
-
-app = Flask(__name__)
+INVENTORY_INSTANCE_PATH = os.environ.get("INVENTORY_INSTANCE_PATH") or None
+app = Flask(__name__, instance_path=INVENTORY_INSTANCE_PATH) if INVENTORY_INSTANCE_PATH else Flask(__name__)
 CORS(app)
-app.secret_key = os.urandom(24).hex()
+app.secret_key = os.environ.get("APP_SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY") or os.urandom(24).hex()
 
-DATABASE = 'inventory.db'
+DATABASE = os.environ.get("INVENTORY_DATABASE_PATH") or "inventory.db"
 SETTINGS_SCHEMA_VERSION = 1
 APP_INSTANCE_PATH = Path(app.instance_path)
 RUNTIME_CONFIG_PATH = APP_INSTANCE_PATH / "runtime_config.json"
-UPLOADS_DIR = Path(os.environ.get("INVENTORY_UPLOADS_DIR", "uploads"))
+UPLOADS_DIR = Path(os.environ.get("INVENTORY_UPLOADS_DIR") or "uploads")
 MAX_IMPORT_BYTES = int(os.environ.get("INVENTORY_MAX_IMPORT_BYTES", 50 * 1024 * 1024))
 MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_BYTES))
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
@@ -789,21 +789,52 @@ DEFAULT_ROLES = [
         ]
     }
 ]
+def ensure_instance_path():
+    APP_INSTANCE_PATH.mkdir(parents=True, exist_ok=True)
+
+def ensure_runtime_directories():
+    ensure_instance_path()
+    Path(DATABASE).parent.mkdir(parents=True, exist_ok=True)
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
+        ensure_runtime_directories()
         db = g._database = sqlite3.connect(DATABASE)
         db.row_factory = sqlite3.Row
     return db
 
-def ensure_instance_path():
-    APP_INSTANCE_PATH.mkdir(parents=True, exist_ok=True)
+def parse_bool_env(value):
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+def apply_runtime_env_overrides(runtime):
+    resolved = dict(runtime)
+    env_host = (os.environ.get("INVENTORY_HOST") or "").strip()
+    env_port = (os.environ.get("INVENTORY_PORT") or os.environ.get("PORT") or "").strip()
+    env_debug = parse_bool_env(os.environ.get("INVENTORY_DEBUG"))
+    if env_host:
+        resolved["host"] = env_host
+    if env_port:
+        try:
+            resolved["port"] = int(env_port)
+        except ValueError:
+            pass
+    if env_debug is not None:
+        resolved["debug"] = env_debug
+    return resolved
 
 def load_runtime_settings():
     global RUNTIME_SETTINGS_CACHE
     if RUNTIME_SETTINGS_CACHE is not None:
-        return RUNTIME_SETTINGS_CACHE
+        return apply_runtime_env_overrides(RUNTIME_SETTINGS_CACHE)
     runtime = None
     if RUNTIME_CONFIG_PATH.exists():
         try:
@@ -816,6 +847,7 @@ def load_runtime_settings():
             "port": DEFAULT_SERVER_SETTINGS["server"]["port"],
             "debug": DEFAULT_SERVER_SETTINGS["server"]["debug"]
         }
+    runtime = apply_runtime_env_overrides(runtime)
     RUNTIME_SETTINGS_CACHE = runtime
     return runtime
 
@@ -2486,22 +2518,29 @@ def ensure_admin_user(db):
     if admin_exists:
         return
 
-    username = "admin"
+    requested_username = (os.environ.get("INVENTORY_INITIAL_ADMIN_USERNAME") or "").strip()
+    configured_password = (os.environ.get("INVENTORY_INITIAL_ADMIN_PASSWORD") or "").strip()
+    username_base = requested_username or "admin"
+    username = username_base
     while db.execute('SELECT 1 FROM users WHERE username = ?', (username,)).fetchone():
-        username = f"admin-{secrets.token_hex(3)}"
+        username = f"{username_base}-{secrets.token_hex(3)}"
 
-    password = secrets.token_urlsafe(12)
+    password = configured_password or secrets.token_urlsafe(12)
     password_hash = generate_password_hash(password)
     cursor = db.execute(
-        'INSERT INTO users (username, password_hash, must_change_password) VALUES (?, ?, 1)',
-        (username, password_hash)
+        'INSERT INTO users (username, password_hash, must_change_password) VALUES (?, ?, ?)',
+        (username, password_hash, 0 if configured_password else 1)
     )
     assign_user_role(db, cursor.lastrowid, "Admin")
 
     print("\n[!] ADMIN-KONTO ERSTELLT (kein Admin vorhanden):")
     print(f"    Benutzername: {username}")
-    print(f"    Passwort:    {password}")
-    print("    WICHTIG: Passwort nach dem ersten Login ändern!\n")
+    if configured_password:
+        print("    Passwort:    via INVENTORY_INITIAL_ADMIN_PASSWORD gesetzt")
+        print("    Hinweis:     Zugangsdaten wurden aus Umgebungsvariablen übernommen.\n")
+    else:
+        print(f"    Passwort:    {password}")
+        print("    WICHTIG: Passwort nach dem ersten Login ändern!\n")
 
 def get_user_access(db):
     if hasattr(g, 'user_access'):
@@ -2658,6 +2697,7 @@ def enforce_password_change():
         return redirect(url_for('force_password_change'))
 
 def init_db():
+    ensure_runtime_directories()
     with app.app_context():
         db = get_db()
         c = db.cursor()
@@ -13310,4 +13350,4 @@ if __name__ == '__main__':
         RUNTIME_SETTINGS_CACHE = runtime
         schedule_backup_jobs(settings)
         schedule_health_jobs()
-    app.run(host=runtime["host"], port=5001, debug=runtime["debug"])
+    app.run(host=runtime["host"], port=runtime["port"], debug=runtime["debug"])
