@@ -38,16 +38,16 @@ from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
 import smtplib
 
-
-app = Flask(__name__)
+INVENTORY_INSTANCE_PATH = os.environ.get("INVENTORY_INSTANCE_PATH") or None
+app = Flask(__name__, instance_path=INVENTORY_INSTANCE_PATH) if INVENTORY_INSTANCE_PATH else Flask(__name__)
 CORS(app)
-app.secret_key = os.urandom(24).hex()
+app.secret_key = os.environ.get("APP_SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY") or os.urandom(24).hex()
 
-DATABASE = 'inventory.db'
+DATABASE = os.environ.get("INVENTORY_DATABASE_PATH") or "inventory.db"
 SETTINGS_SCHEMA_VERSION = 1
 APP_INSTANCE_PATH = Path(app.instance_path)
 RUNTIME_CONFIG_PATH = APP_INSTANCE_PATH / "runtime_config.json"
-UPLOADS_DIR = Path(os.environ.get("INVENTORY_UPLOADS_DIR", "uploads"))
+UPLOADS_DIR = Path(os.environ.get("INVENTORY_UPLOADS_DIR") or "uploads")
 MAX_IMPORT_BYTES = int(os.environ.get("INVENTORY_MAX_IMPORT_BYTES", 50 * 1024 * 1024))
 MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_BYTES))
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
@@ -57,6 +57,35 @@ RATE_LIMIT_MAX_REQUESTS = 10
 INVENTORY_LINK_PROXY_TIMEOUT_SECONDS = int(os.environ.get("INVENTORY_LINK_PROXY_TIMEOUT_SECONDS", 20))
 INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS = 60
 INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS", 120))
+INVENTORY_LINK_PROXY_TEXT_CONTENT_TYPES = (
+    "text/html",
+    "application/xhtml+xml",
+    "application/javascript",
+    "text/javascript",
+    "application/x-javascript",
+    "text/css",
+)
+INVENTORY_LINK_PROXY_REWRITE_PATH_PREFIXES = (
+    "api",
+    "static",
+    "login",
+    "logout",
+    "reset",
+    "force-password-change",
+    "locations",
+    "tickets",
+    "knowledge",
+    "roadmap",
+    "procurement",
+    "stats",
+    "dependencies",
+    "time-machine",
+    "health",
+    "users",
+    "settings",
+    "ai",
+    "inventory-links",
+)
 INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT = os.environ.get("INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS", "1").lower() not in {"0", "false", "no"}
 INVENTORY_LINK_LOGIN_TTL_SECONDS = int(os.environ.get("INVENTORY_LINK_LOGIN_TTL_SECONDS", 30 * 60))
 INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS = os.environ.get(
@@ -789,21 +818,52 @@ DEFAULT_ROLES = [
         ]
     }
 ]
+def ensure_instance_path():
+    APP_INSTANCE_PATH.mkdir(parents=True, exist_ok=True)
+
+def ensure_runtime_directories():
+    ensure_instance_path()
+    Path(DATABASE).parent.mkdir(parents=True, exist_ok=True)
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
+        ensure_runtime_directories()
         db = g._database = sqlite3.connect(DATABASE)
         db.row_factory = sqlite3.Row
     return db
 
-def ensure_instance_path():
-    APP_INSTANCE_PATH.mkdir(parents=True, exist_ok=True)
+def parse_bool_env(value):
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+def apply_runtime_env_overrides(runtime):
+    resolved = dict(runtime)
+    env_host = (os.environ.get("INVENTORY_HOST") or "").strip()
+    env_port = (os.environ.get("INVENTORY_PORT") or os.environ.get("PORT") or "").strip()
+    env_debug = parse_bool_env(os.environ.get("INVENTORY_DEBUG"))
+    if env_host:
+        resolved["host"] = env_host
+    if env_port:
+        try:
+            resolved["port"] = int(env_port)
+        except ValueError:
+            pass
+    if env_debug is not None:
+        resolved["debug"] = env_debug
+    return resolved
 
 def load_runtime_settings():
     global RUNTIME_SETTINGS_CACHE
     if RUNTIME_SETTINGS_CACHE is not None:
-        return RUNTIME_SETTINGS_CACHE
+        return apply_runtime_env_overrides(RUNTIME_SETTINGS_CACHE)
     runtime = None
     if RUNTIME_CONFIG_PATH.exists():
         try:
@@ -816,6 +876,7 @@ def load_runtime_settings():
             "port": DEFAULT_SERVER_SETTINGS["server"]["port"],
             "debug": DEFAULT_SERVER_SETTINGS["server"]["debug"]
         }
+    runtime = apply_runtime_env_overrides(runtime)
     RUNTIME_SETTINGS_CACHE = runtime
     return runtime
 
@@ -1408,7 +1469,10 @@ def build_inventory_link_request_headers(auth_mode, secret, link=None, user_id=N
     headers = {}
     for key, value in request.headers.items():
         lower = key.lower()
-        if lower in {"host", "origin", "referer", "cookie", "authorization", "proxy-authorization", "content-length"}:
+        if lower in {
+            "host", "origin", "referer", "cookie", "authorization", "proxy-authorization",
+            "content-length", "accept-encoding"
+        }:
             continue
         headers[key] = value
     if auth_mode == "apiKey":
@@ -1430,16 +1494,335 @@ def build_inventory_link_request_headers(auth_mode, secret, link=None, user_id=N
 def rewrite_inventory_link_location(location, link_id, base_url):
     if not location:
         return None
+    rewritten = rewrite_inventory_link_url_reference(location, link_id, base_url)
+    if rewritten == location:
+        return None
+    return rewritten
+
+def get_inventory_link_proxy_prefix(link_id):
+    return f"/api/inventory-links/{link_id}/proxy"
+
+def rewrite_inventory_link_url_reference(url, link_id, base_url):
+    if not url:
+        return url
+    proxy_prefix = get_inventory_link_proxy_prefix(link_id)
+    if url.startswith(proxy_prefix):
+        return url
+    if url.startswith(("data:", "blob:", "javascript:", "mailto:", "tel:", "#", "//")):
+        return url
+    if url.startswith("/"):
+        return f"{proxy_prefix}{url}"
+    joined = urllib.parse.urlsplit(urllib.parse.urljoin(f"{base_url.rstrip('/')}/", url))
     base_parsed = urllib.parse.urlsplit(base_url)
-    joined = urllib.parse.urlsplit(urllib.parse.urljoin(f"{base_url.rstrip('/')}/", location))
     if joined.scheme and joined.netloc:
         if joined.scheme != base_parsed.scheme or joined.netloc != base_parsed.netloc:
-            return None
+            return url
     path = joined.path or "/"
     if not path.startswith("/"):
         path = f"/{path}"
     query = f"?{joined.query}" if joined.query else ""
-    return f"/api/inventory-links/{link_id}/proxy{path}{query}"
+    fragment = f"#{joined.fragment}" if joined.fragment else ""
+    return f"{proxy_prefix}{path}{query}{fragment}"
+
+def get_inventory_link_response_charset(content_type):
+    if not content_type:
+        return "utf-8"
+    match = re.search(r"charset=([^\s;]+)", content_type, re.IGNORECASE)
+    if not match:
+        return "utf-8"
+    return match.group(1).strip("\"'")
+
+def should_rewrite_inventory_link_response(content_type):
+    if not content_type:
+        return False
+    lowered = content_type.lower()
+    return any(token in lowered for token in INVENTORY_LINK_PROXY_TEXT_CONTENT_TYPES)
+
+def build_inventory_link_runtime_injection(link_id, base_url):
+    proxy_prefix = get_inventory_link_proxy_prefix(link_id)
+    remote_origin = f"{urllib.parse.urlsplit(base_url).scheme}://{urllib.parse.urlsplit(base_url).netloc}"
+    proxy_prefix_json = json.dumps(proxy_prefix)
+    remote_origin_json = json.dumps(remote_origin)
+    return f"""
+<base href="{proxy_prefix.rstrip('/')}/">
+<script>
+(function () {{
+    const PROXY_PREFIX = {proxy_prefix_json};
+    const REMOTE_ORIGIN = {remote_origin_json};
+    const URL_ATTRIBUTES = ['href', 'src', 'action', 'poster'];
+    const IGNORE_PATTERN = /^(?:data:|blob:|javascript:|mailto:|tel:|#)/i;
+
+    function proxify(url) {{
+        if (!url || typeof url !== 'string') {{
+            return url;
+        }}
+        if (url.startsWith(PROXY_PREFIX) || IGNORE_PATTERN.test(url) || url.startsWith('//')) {{
+            return url;
+        }}
+        if (url.startsWith('/')) {{
+            return PROXY_PREFIX + url;
+        }}
+        try {{
+            const parsed = new URL(url, window.location.href);
+            const path = (parsed.pathname || '/') + (parsed.search || '') + (parsed.hash || '');
+            if (parsed.origin === window.location.origin) {{
+                if (path.startsWith(PROXY_PREFIX)) {{
+                    return path;
+                }}
+                return PROXY_PREFIX + (path.startsWith('/') ? path : '/' + path);
+            }}
+            if (parsed.origin === REMOTE_ORIGIN) {{
+                return PROXY_PREFIX + (path.startsWith('/') ? path : '/' + path);
+            }}
+        }} catch (error) {{
+            return url;
+        }}
+        return url;
+    }}
+
+    function rewriteSrcset(value) {{
+        if (!value) {{
+            return value;
+        }}
+        return value.split(',').map((entry) => {{
+            const trimmed = entry.trim();
+            if (!trimmed) {{
+                return trimmed;
+            }}
+            const parts = trimmed.split(/\\s+/);
+            parts[0] = proxify(parts[0]);
+            return parts.join(' ');
+        }}).join(', ');
+    }}
+
+    function rewriteElement(node) {{
+        if (!(node instanceof Element)) {{
+            return;
+        }}
+        URL_ATTRIBUTES.forEach((attribute) => {{
+            if (!node.hasAttribute(attribute)) {{
+                return;
+            }}
+            const current = node.getAttribute(attribute);
+            const rewritten = proxify(current);
+            if (rewritten !== current) {{
+                node.setAttribute(attribute, rewritten);
+            }}
+        }});
+        if (node.hasAttribute('srcset')) {{
+            const currentSrcset = node.getAttribute('srcset');
+            const rewrittenSrcset = rewriteSrcset(currentSrcset);
+            if (rewrittenSrcset !== currentSrcset) {{
+                node.setAttribute('srcset', rewrittenSrcset);
+            }}
+        }}
+    }}
+
+    function rewriteTree(root) {{
+        if (!root) {{
+            return;
+        }}
+        if (root instanceof Element) {{
+            rewriteElement(root);
+        }}
+        if (root.querySelectorAll) {{
+            root.querySelectorAll('[href],[src],[action],[poster],[srcset]').forEach(rewriteElement);
+        }}
+    }}
+
+    if (window.fetch) {{
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {{
+            if (typeof input === 'string') {{
+                return originalFetch(proxify(input), init);
+            }}
+            if (input instanceof URL) {{
+                return originalFetch(proxify(input.toString()), init);
+            }}
+            if (window.Request && input instanceof Request) {{
+                return originalFetch(new Request(proxify(input.url), input), init);
+            }}
+            return originalFetch(input, init);
+        }};
+    }}
+
+    const originalXhrOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (method, url) {{
+        if (typeof url === 'string') {{
+            arguments[1] = proxify(url);
+        }}
+        return originalXhrOpen.apply(this, arguments);
+    }};
+
+    const originalPushState = history.pushState.bind(history);
+    history.pushState = function (state, title, url) {{
+        if (typeof url === 'string') {{
+            url = proxify(url);
+        }}
+        return originalPushState(state, title, url);
+    }};
+
+    const originalReplaceState = history.replaceState.bind(history);
+    history.replaceState = function (state, title, url) {{
+        if (typeof url === 'string') {{
+            url = proxify(url);
+        }}
+        return originalReplaceState(state, title, url);
+    }};
+
+    const originalSubmit = HTMLFormElement.prototype.submit;
+    HTMLFormElement.prototype.submit = function () {{
+        if (this.hasAttribute('action')) {{
+            const action = this.getAttribute('action');
+            const rewritten = proxify(action);
+            if (rewritten !== action) {{
+                this.setAttribute('action', rewritten);
+            }}
+        }}
+        return originalSubmit.call(this);
+    }};
+
+    document.addEventListener('click', (event) => {{
+        const link = event.target.closest('a[href]');
+        if (!link) {{
+            return;
+        }}
+        const href = link.getAttribute('href');
+        const rewritten = proxify(href);
+        if (rewritten !== href) {{
+            link.setAttribute('href', rewritten);
+        }}
+    }}, true);
+
+    document.addEventListener('submit', (event) => {{
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement) || !form.hasAttribute('action')) {{
+            return;
+        }}
+        const action = form.getAttribute('action');
+        const rewritten = proxify(action);
+        if (rewritten !== action) {{
+            form.setAttribute('action', rewritten);
+        }}
+    }}, true);
+
+    const observer = new MutationObserver((mutations) => {{
+        mutations.forEach((mutation) => {{
+            if (mutation.type === 'attributes' && mutation.target instanceof Element) {{
+                rewriteElement(mutation.target);
+            }}
+            mutation.addedNodes.forEach((node) => rewriteTree(node));
+        }});
+    }});
+
+    if (document.documentElement) {{
+        observer.observe(document.documentElement, {{
+            subtree: true,
+            childList: true,
+            attributes: true,
+            attributeFilter: URL_ATTRIBUTES.concat(['srcset'])
+        }});
+    }}
+
+    if (document.readyState === 'loading') {{
+        document.addEventListener('DOMContentLoaded', () => rewriteTree(document));
+    }} else {{
+        rewriteTree(document);
+    }}
+
+    window.__inventoryLinkProxify = proxify;
+}})();
+</script>
+"""
+
+def rewrite_inventory_link_text_content(payload, content_type, link_id, base_url):
+    charset = get_inventory_link_response_charset(content_type)
+    route_prefix_pattern = "|".join(re.escape(item) for item in INVENTORY_LINK_PROXY_REWRITE_PATH_PREFIXES)
+    text = payload.decode(charset, errors="replace")
+
+    def replace_attr(match):
+        prefix, quote, url = match.groups()
+        rewritten = rewrite_inventory_link_url_reference(url, link_id, base_url)
+        return f"{prefix}{quote}{rewritten}{quote}"
+
+    def replace_css_url(match):
+        prefix, quote, url, suffix = match.groups()
+        rewritten = rewrite_inventory_link_url_reference(url, link_id, base_url)
+        return f"{prefix}{quote}{rewritten}{quote}{suffix}"
+
+    def replace_srcset(match):
+        prefix, quote, urls = match.groups()
+        candidates = []
+        for candidate in urls.split(","):
+            entry = candidate.strip()
+            if not entry:
+                continue
+            parts = entry.split()
+            parts[0] = rewrite_inventory_link_url_reference(parts[0], link_id, base_url)
+            candidates.append(" ".join(parts))
+        return f"{prefix}{quote}{', '.join(candidates)}{quote}"
+
+    def replace_refresh(match):
+        prefix, quote, refresh_prefix, url = match.groups()
+        rewritten = rewrite_inventory_link_url_reference(url, link_id, base_url)
+        return f"{prefix}{quote}{refresh_prefix}{rewritten}{quote}"
+
+    def replace_js_paths(match):
+        quote, url = match.groups()
+        rewritten = rewrite_inventory_link_url_reference(url, link_id, base_url)
+        return f"{quote}{rewritten}{quote}"
+
+    text = re.sub(
+        r'(\b(?:href|src|action|poster)\s*=\s*)(["\'])([^"\']+)\2',
+        replace_attr,
+        text,
+        flags=re.IGNORECASE
+    )
+    text = re.sub(
+        r'(\bsrcset\s*=\s*)(["\'])([^"\']*)\2',
+        replace_srcset,
+        text,
+        flags=re.IGNORECASE
+    )
+    text = re.sub(
+        r'(\bcontent\s*=\s*)(["\'])([^"\']*url=)([^"\']+)\2',
+        replace_refresh,
+        text,
+        flags=re.IGNORECASE
+    )
+    text = re.sub(
+        r'(url\(\s*)(["\']?)(/[^)"\']+)\2(\s*\))',
+        replace_css_url,
+        text,
+        flags=re.IGNORECASE
+    )
+    text = re.sub(
+        rf'(["\'`])((?:/(?:{route_prefix_pattern})(?:[^"\'`<\\]*)?)|/(?:[?#][^"\'`<\\]*)?|/)\1',
+        replace_js_paths,
+        text
+    )
+
+    lowered = (content_type or "").lower()
+    if "text/html" in lowered or "application/xhtml+xml" in lowered:
+        text = re.sub(
+            r'<meta[^>]+http-equiv=["\']Content-Security-Policy["\'][^>]*>\s*',
+            '',
+            text,
+            flags=re.IGNORECASE
+        )
+        injection = build_inventory_link_runtime_injection(link_id, base_url)
+        if re.search(r"<head\b[^>]*>", text, flags=re.IGNORECASE):
+            text = re.sub(
+                r'(<head\b[^>]*>)',
+                lambda match: match.group(1) + injection,
+                text,
+                count=1,
+                flags=re.IGNORECASE
+            )
+        else:
+            text = injection + text
+
+    return text.encode(charset, errors="replace")
 
 def filter_inventory_link_response_headers(headers, link_id, base_url):
     filtered = {}
@@ -1448,7 +1831,8 @@ def filter_inventory_link_response_headers(headers, link_id, base_url):
         if lower in {
             "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
             "te", "trailers", "transfer-encoding", "upgrade", "content-length",
-            "set-cookie"
+            "set-cookie", "content-encoding", "x-frame-options",
+            "content-security-policy", "content-security-policy-report-only"
         }:
             continue
         if lower == "location":
@@ -2486,22 +2870,29 @@ def ensure_admin_user(db):
     if admin_exists:
         return
 
-    username = "admin"
+    requested_username = (os.environ.get("INVENTORY_INITIAL_ADMIN_USERNAME") or "").strip()
+    configured_password = (os.environ.get("INVENTORY_INITIAL_ADMIN_PASSWORD") or "").strip()
+    username_base = requested_username or "admin"
+    username = username_base
     while db.execute('SELECT 1 FROM users WHERE username = ?', (username,)).fetchone():
-        username = f"admin-{secrets.token_hex(3)}"
+        username = f"{username_base}-{secrets.token_hex(3)}"
 
-    password = secrets.token_urlsafe(12)
+    password = configured_password or secrets.token_urlsafe(12)
     password_hash = generate_password_hash(password)
     cursor = db.execute(
-        'INSERT INTO users (username, password_hash, must_change_password) VALUES (?, ?, 1)',
-        (username, password_hash)
+        'INSERT INTO users (username, password_hash, must_change_password) VALUES (?, ?, ?)',
+        (username, password_hash, 0 if configured_password else 1)
     )
     assign_user_role(db, cursor.lastrowid, "Admin")
 
     print("\n[!] ADMIN-KONTO ERSTELLT (kein Admin vorhanden):")
     print(f"    Benutzername: {username}")
-    print(f"    Passwort:    {password}")
-    print("    WICHTIG: Passwort nach dem ersten Login ändern!\n")
+    if configured_password:
+        print("    Passwort:    via INVENTORY_INITIAL_ADMIN_PASSWORD gesetzt")
+        print("    Hinweis:     Zugangsdaten wurden aus Umgebungsvariablen übernommen.\n")
+    else:
+        print(f"    Passwort:    {password}")
+        print("    WICHTIG: Passwort nach dem ersten Login ändern!\n")
 
 def get_user_access(db):
     if hasattr(g, 'user_access'):
@@ -2658,6 +3049,7 @@ def enforce_password_change():
         return redirect(url_for('force_password_change'))
 
 def init_db():
+    ensure_runtime_directories()
     with app.app_context():
         db = get_db()
         c = db.cursor()
@@ -7232,7 +7624,8 @@ def inventory_link_portal(link_id):
         username=session.get('username'),
         permissions=sorted(access["permissions"]),
         is_superuser=access["is_superuser"],
-        link=serialize_inventory_link(link)
+        link=serialize_inventory_link(link),
+        active_link_id=link_id
     )
 
 @app.route('/locations')
@@ -11769,6 +12162,15 @@ def inventory_link_proxy(link_id, subpath):
     response_headers = filter_inventory_link_response_headers(resp.headers, link_id, link["base_url"])
     log_activity(db, "proxy", "inventory_link", details={"link_id": link_id, "method": request.method, "path": subpath})
     db.commit()
+    content_type = resp.headers.get("Content-Type", "")
+    if request.method != "HEAD" and should_rewrite_inventory_link_response(content_type):
+        body = resp.read()
+        rewritten = rewrite_inventory_link_text_content(body, content_type, link_id, link["base_url"])
+        return Response(
+            rewritten,
+            status=status_code,
+            headers=response_headers
+        )
     return Response(
         stream_inventory_link_response(resp),
         status=status_code,
@@ -13310,4 +13712,4 @@ if __name__ == '__main__':
         RUNTIME_SETTINGS_CACHE = runtime
         schedule_backup_jobs(settings)
         schedule_health_jobs()
-    app.run(host=runtime["host"], port=5001, debug=runtime["debug"])
+    app.run(host=runtime["host"], port=runtime["port"], debug=runtime["debug"])

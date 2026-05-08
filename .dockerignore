@@ -1,0 +1,13 @@
+.DS_Store
+.env
+.git
+.gitignore
+.pytest_cache
+.venv
+__pycache__/
+backups/
+instance/runtime_config.json
+inventory.db
+playwright-report/
+uploads/
+venv/
