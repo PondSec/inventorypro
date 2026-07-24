@@ -399,24 +399,6 @@ PERMISSIONS = [
         "group": "Tickets"
     },
     {
-        "key": "ai.use",
-        "label": "PondSec AI nutzen",
-        "description": "PondSec AI chatten und Vorschläge erhalten.",
-        "group": "PondSec AI"
-    },
-    {
-        "key": "ai.manage",
-        "label": "PondSec AI verwalten",
-        "description": "PondSec AI Einstellungen und Regeln verwalten.",
-        "group": "PondSec AI"
-    },
-    {
-        "key": "ai.approve",
-        "label": "PondSec AI freigeben",
-        "description": "PondSec AI Aktionen genehmigen oder ablehnen.",
-        "group": "PondSec AI"
-    },
-    {
         "key": "users.manage",
         "label": "Benutzer verwalten",
         "description": "Benutzer anlegen, löschen und Passwörter zurücksetzen.",
@@ -784,7 +766,6 @@ DEFAULT_ROLES = [
             "ticket_categories.manage",
             "ticket_alerts.manage",
             "notifications.manage",
-            "ai.use",
             "stats.view",
             "activity.view",
             "roadmap.view",
@@ -4856,16 +4837,24 @@ def init_db():
             pass
 
         seed_permissions(db)
+        ai_permission_rows = db.execute(
+            "SELECT id FROM permissions WHERE key IN ('ai.use', 'ai.manage', 'ai.approve')"
+        ).fetchall()
+        if ai_permission_rows:
+            ai_permission_ids = [row["id"] for row in ai_permission_rows]
+            placeholders = ",".join("?" for _ in ai_permission_ids)
+            db.execute(
+                f"DELETE FROM role_permissions WHERE permission_id IN ({placeholders})",
+                ai_permission_ids,
+            )
+            db.execute(
+                f"DELETE FROM permissions WHERE id IN ({placeholders})",
+                ai_permission_ids,
+            )
         seed_roles(db)
         ensure_default_roles(db)
         ensure_admin_user(db)
         seed_health_checks(db)
-        try:
-            from pondsec_ai.db import seed_default_tool_permissions
-            seed_default_tool_permissions(db)
-        except sqlite3.OperationalError:
-            pass
-
         db.commit()
 
 # Setup-Funktion zum Benutzer erstellen
@@ -8532,8 +8521,6 @@ def checkout_asset(asset_id):
         "due_at": due_at,
         "note": note
     })
-    from pondsec_ai.events import emit_event
-    emit_event(db, "asset.checked_out", "asset", asset_id, {"assignee": assigned_to_user_id or assigned_to_team_id, "due_date": due_at})
     db.commit()
     return jsonify({
         "status": "ok",
@@ -10546,8 +10533,6 @@ def tickets():
         if should_auto_create_roadmap(category_name):
             create_roadmap_for_ticket(db, new_ticket, category_name, created_by=session.get('username'))
         log_activity(db, "create", "ticket", ticket_id, {"title": title})
-        from pondsec_ai.events import emit_event
-        emit_event(db, "ticket.created", "ticket", ticket_id, {"title": title, "priority": priority})
         db.commit()
         ticket = fetch_ticket(db, ticket_id)
         if ticket:
@@ -13940,20 +13925,6 @@ def otp_status():
     user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
     return jsonify({'enabled': bool(user and user['otp_secret'])})
 
-
-from pondsec_ai import register_pondsec_ai
-
-register_pondsec_ai(
-    app,
-    get_db=get_db,
-    get_user_access=get_user_access,
-    user_can=user_can,
-    ensure_ticket_access=ensure_ticket_access,
-    log_activity=log_activity,
-    login_required=login_required,
-    require_permission=require_permission,
-    require_permissions=require_permissions,
-)
 
 if __name__ == '__main__':
     init_db()
