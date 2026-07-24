@@ -210,6 +210,7 @@ class MobileInteractionTestCase(unittest.TestCase):
                     "[data-testid='role-modal']",
                     "[data-testid='role-modal-close']",
                 )
+                page.click("[data-testid='admin-users-tab']")
                 page.click("[data-testid='user-action-menu-toggle']")
                 page.wait_for_selector("[data-testid='user-action-menu']", state="visible")
                 page.click("text=Passwort reset")
