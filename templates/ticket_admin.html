@@ -79,7 +79,7 @@
                     <label class="sd-checkbox"><input type="checkbox" x-model="notificationSettings.enabled"><span>E-Mail-Benachrichtigungen aktivieren</span></label>
                     <div class="sd-form-row"><label>SMTP-Host<input type="text" x-model="notificationSettings.smtp_host" placeholder="smtp.example.com"></label><label>Port<input type="number" x-model.number="notificationSettings.smtp_port" min="1" max="65535"></label></div>
                     <div class="sd-form-row"><label>Benutzername<input type="text" x-model="notificationSettings.smtp_username" autocomplete="username"></label><label>Passwort<input type="password" x-model="notificationSettings.smtp_password" autocomplete="new-password" placeholder="Unverändert lassen"></label></div>
-                    <div class="sd-form-row"><label>Absenderadresse<input type="email" x-model="notificationSettings.from_email"></label><label>Absendername<input type="text" x-model="notificationSettings.from_name"></label></div>
+                    <div class="sd-form-row"><label>Absenderadresse<input type="email" x-model="notificationSettings.smtp_from"></label><label>Standardempfänger<input type="text" x-model="notificationSettings.default_recipients" placeholder="support@example.com"></label></div>
                     <label class="sd-checkbox"><input type="checkbox" x-model="notificationSettings.use_tls"><span>TLS verwenden</span></label>
                     <footer><button type="button" class="sd-button" @click="sendTestNotification()"><i data-feather="send"></i>Test senden</button><button type="submit" class="sd-button sd-button-primary" :disabled="saving">Einstellungen speichern</button></footer>
                 </form>
