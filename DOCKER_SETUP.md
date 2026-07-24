@@ -95,15 +95,3 @@ docker run -d \
   -v inventorypro-data:/data \
   inventorypro:latest
 ```
-
-## Optional: Ollama für PondSec AI anbinden
-
-Wenn Ollama auf dem Host läuft, kannst du zusätzlich diese Variablen setzen:
-
-```bash
-PONDSEC_AI_LLM_PROVIDER=ollama
-PONDSEC_AI_OLLAMA_URL=http://host.docker.internal:11434
-PONDSEC_AI_OLLAMA_MODEL=mistral
-```
-
-`host.docker.internal` ist im Compose-Setup bereits hinterlegt.
