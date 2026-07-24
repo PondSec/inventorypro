@@ -26,17 +26,14 @@ document.addEventListener('alpine:init', () => {
         toastSequence: 0,
         iconRefreshTimer: null,
         navigation: [
-            { key: 'general', label: 'Allgemein', icon: 'sliders', description: 'Standardwerte und grundlegendes Verhalten.', enabled: true, available: true },
+            { key: 'general', label: 'Übersicht', icon: 'layout', description: 'Aktive Konfiguration und verbindliche Workflow-Regeln.', enabled: true, available: true },
             { key: 'categories', label: 'Kategorien', icon: 'folder', description: 'Kategorien, Beschreibungen und Standard-SLAs.', enabled: true, available: true },
-            { key: 'statuses', label: 'Status & Workflows', icon: 'git-branch', description: 'Statuswerte und zulässige Übergänge.', enabled: true, available: false },
-            { key: 'priorities', label: 'Prioritätsmatrix', icon: 'alert-circle', description: 'Prioritäten aus Auswirkung und Dringlichkeit.', enabled: true, available: false },
-            { key: 'slas', label: 'SLA-Regeln', icon: 'clock', description: 'Reaktions- und Lösungsziele nach Bedingungen.', enabled: true, available: false },
+            { key: 'workflows', label: 'Workflows & Reviews', icon: 'git-pull-request', description: 'Statusübergänge und verpflichtende Change-Abnahmen.', enabled: true, available: true },
+            { key: 'priorities', label: 'Prioritäten', icon: 'alert-circle', description: 'Verbindliche Bedeutung und Bearbeitungsreihenfolge.', enabled: true, available: true },
+            { key: 'slas', label: 'SLA-Regeln', icon: 'clock', description: 'Lösungsziele der aktiven Ticketkategorien.', enabled: true, available: true },
             { key: 'automations', label: 'Automationen', icon: 'zap', description: 'Ereignisbasierte Alerts und Aktionen.', enabled: true, available: true },
             { key: 'email', label: 'E-Mail', icon: 'mail', description: 'SMTP-Versand und Absenderkonfiguration.', enabled: true, available: true },
-            { key: 'templates', label: 'Vorlagen', icon: 'copy', description: 'Wiederverwendbare Ticket- und Antwortvorlagen.', enabled: true, available: false },
-            { key: 'custom-fields', label: 'Custom Fields', icon: 'list', description: 'Zusätzliche Felder je Tickettyp.', enabled: true, available: false },
-            { key: 'teams', label: 'Teams & Queues', icon: 'users', description: 'Zuständigkeiten und Queue-Zugriffe.', enabled: true, available: false },
-            { key: 'permissions', label: 'Berechtigungen', icon: 'shield', description: 'Rollen und Ticketrechte.', enabled: true, available: false }
+            { key: 'permissions', label: 'Berechtigungen', icon: 'shield', description: 'Rollen, Benutzer und Ticketrechte verwalten.', enabled: true, available: true }
         ],
 
         async init() {
@@ -71,7 +68,7 @@ document.addEventListener('alpine:init', () => {
             this.loading = true;
             this.error = '';
             try {
-                if (this.section === 'categories' && this.can('ticket_categories.manage')) await this.loadCategories();
+                if (['categories', 'slas'].includes(this.section) && this.can('ticket_categories.manage')) await this.loadCategories();
                 if (this.section === 'automations' && this.can('ticket_alerts.manage')) await this.loadAlerts();
                 if (this.section === 'email' && this.can('notifications.manage')) await this.loadNotificationSettings();
             } catch (error) {
