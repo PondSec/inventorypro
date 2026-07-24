@@ -99,6 +99,7 @@
                 <button type="button" @click="openBulk('status')"><i data-feather="repeat"></i>Status</button>
                 <button type="button" @click="openBulk('priority')"><i data-feather="alert-circle"></i>Priorität</button>
                 <button type="button" @click="exportSelected()"><i data-feather="download"></i>Export</button>
+                <button x-show="canDeleteSelection()" type="button" class="sd-bulk-danger" @click="deleteSelected()" :disabled="deletingTickets"><i data-feather="trash-2"></i><span x-text="deletingTickets ? 'Wird gelöscht …' : 'Löschen'"></span></button>
                 <button type="button" class="sd-bulk-clear" @click="selectedIds = []">Auswahl aufheben</button>
             </section>
 
