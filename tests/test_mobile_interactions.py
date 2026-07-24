@@ -201,6 +201,7 @@ class MobileInteractionTestCase(unittest.TestCase):
                 )
 
                 page.goto(f"{self.base_url}/users")
+                page.click("[data-testid='admin-roles-tab']")
                 page.wait_for_selector("[data-testid='edit-role-button']")
                 self.open_modal_and_close(
                     page,
