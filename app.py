@@ -41,8 +41,26 @@ import smtplib
 
 INVENTORY_INSTANCE_PATH = os.environ.get("INVENTORY_INSTANCE_PATH") or None
 app = Flask(__name__, instance_path=INVENTORY_INSTANCE_PATH) if INVENTORY_INSTANCE_PATH else Flask(__name__)
-CORS(app)
 app.secret_key = os.environ.get("APP_SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY") or os.urandom(24).hex()
+ALLOWED_CORS_ORIGINS = tuple(
+    origin.strip().rstrip("/")
+    for origin in (os.environ.get("INVENTORY_ALLOWED_ORIGINS") or "").split(",")
+    if origin.strip()
+)
+if ALLOWED_CORS_ORIGINS:
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": ALLOWED_CORS_ORIGINS}},
+        supports_credentials=True,
+    )
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=(
+        os.environ.get("INVENTORY_SECURE_COOKIES", "0").strip().lower()
+        in {"1", "true", "yes", "on"}
+    ),
+)
 
 DATABASE = os.environ.get("INVENTORY_DATABASE_PATH") or "inventory.db"
 SETTINGS_SCHEMA_VERSION = 1
@@ -6111,6 +6129,72 @@ def record_login_failure(db, username, max_failed, lockout_minutes):
 
 def clear_login_failures(db, username):
     db.execute('DELETE FROM login_attempts WHERE username = ?', (username,))
+
+def request_origin():
+    origin = (request.headers.get("Origin") or "").strip().rstrip("/")
+    if origin:
+        return origin
+    referer = (request.headers.get("Referer") or "").strip()
+    if not referer:
+        return ""
+    parsed = urllib.parse.urlsplit(referer)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+def expected_request_origins():
+    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+    forwarded_host = (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()
+    scheme = forwarded_proto or request.scheme
+    host = forwarded_host or request.host
+    origins = {f"{scheme}://{host}".rstrip("/"), request.host_url.rstrip("/")}
+    origins.update(ALLOWED_CORS_ORIGINS)
+    return origins
+
+@app.before_request
+def enforce_same_origin_writes():
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    if (request.headers.get("Sec-Fetch-Site") or "").strip().lower() == "cross-site":
+        return jsonify({"error": "Cross-Site-Anfrage abgewiesen."}), 403
+    origin = request_origin()
+    if origin and origin not in expected_request_origins():
+        return jsonify({"error": "Anfrageursprung ist nicht zulässig."}), 403
+    return None
+
+@app.after_request
+def apply_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    )
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'none'; "
+        "form-action 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+        "https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://unpkg.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'",
+    )
+    if request.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+    if request.is_secure or forwarded_proto == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    return response
 
 @app.before_request
 def enforce_security_policies():
