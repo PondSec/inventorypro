@@ -15974,20 +15974,29 @@ def verify():
 @app.route('/api/otp/verify', methods=['POST'])
 @login_required
 def verify_otp():
-    code = request.json.get('code')
-    username = session.get('username')
+    payload = request.get_json(silent=True) or {}
+    code = str(payload.get('code') or "").strip()
+    username = session.get('username') or ""
+    rate_limit_key = f"otp-verify:{get_remote_ip()}:{username.lower()}"
+    if should_rate_limit(rate_limit_key):
+        return jsonify({
+            "verified": False,
+            "error": "Zu viele Prüfversuche. Bitte kurz warten.",
+        }), 429
 
     db = get_db()
     user = db.execute('SELECT id, otp_secret FROM users WHERE username = ?', (username,)).fetchone()
 
-    if user and user['otp_secret'] and pyotp.TOTP(user['otp_secret']).verify(code):
+    if user and user['otp_secret'] and code and pyotp.TOTP(user['otp_secret']).verify(code):
         log_activity(db, "otp_verify", "user", details={"username": username})
         db.commit()
+        RATE_LIMIT_CACHE.pop(rate_limit_key, None)
         session['mfa_verified'] = True
         return jsonify({"verified": True}), 200
     if user and code and verify_recovery_code(db, user["id"], code):
         log_activity(db, "otp_recovery_used", "user", details={"username": username})
         db.commit()
+        RATE_LIMIT_CACHE.pop(rate_limit_key, None)
         session['mfa_verified'] = True
         return jsonify({"verified": True, "recovery": True}), 200
     else:
@@ -16001,24 +16010,30 @@ def reset_page():
 
 @app.route('/reset', methods=['POST'])
 def reset_password():
-    username = request.form.get('username')
-    otp_code = request.form.get('otp')
-    new_password = request.form.get('new_password')
+    username = (request.form.get('username') or "").strip()
+    otp_code = (request.form.get('otp') or "").strip()
+    new_password = request.form.get('new_password') or ""
+    neutral_error = "Zurücksetzen nicht möglich. Angaben prüfen oder Administrator kontaktieren."
+    rate_limit_key = f"password-reset:{get_remote_ip()}:{username.lower()}"
 
     if not all([username, otp_code, new_password]):
         return render_template('reset_password.html', error="Alle Felder ausfüllen!")
+    if should_rate_limit(rate_limit_key):
+        return render_template(
+            'reset_password.html',
+            error="Zu viele Versuche. Bitte kurz warten.",
+        ), 429
 
     db = get_db()
     user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
-
-    if not user:
-        return render_template('reset_password.html', error="Benutzer existiert nicht.")
-
-    if not user['otp_secret']:
-        return render_template('reset_password.html', error="Kein OTP eingerichtet.")
-
-    if not pyotp.TOTP(user['otp_secret']).verify(otp_code):
-        return render_template('reset_password.html', error="OTP ungültig.")
+    verification_secret = (
+        user["otp_secret"]
+        if user and user["otp_secret"]
+        else "JBSWY3DPEHPK3PXP"
+    )
+    otp_valid = pyotp.TOTP(verification_secret).verify(otp_code)
+    if not user or not user["otp_secret"] or not otp_valid:
+        return render_template('reset_password.html', error=neutral_error), 400
 
     min_length = get_password_min_length(db)
     if len(new_password) < min_length:
@@ -16029,8 +16044,8 @@ def reset_password():
     db.execute('UPDATE users SET password_hash = ? WHERE username = ?', (new_hash, username))
     log_activity(db, "password_reset", "user", details={"username": username})
     db.commit()
+    RATE_LIMIT_CACHE.pop(rate_limit_key, None)
 
-    #return render_template('reset_password.html', success="Passwort erfolgreich geändert!")
     return redirect(url_for('login'))
 
 @app.route('/api/otp/disable', methods=['POST'])
