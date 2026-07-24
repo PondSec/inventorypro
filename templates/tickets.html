@@ -81,7 +81,7 @@
                     <button type="button" class="sd-button" @click="filterOpen = true"><i data-feather="filter"></i><span>Filter</span><small x-show="activeFilterCount" x-text="activeFilterCount"></small></button>
                     <button type="button" class="sd-icon-button" @click="saveViewOpen = true" aria-label="Ansicht speichern" title="Ansicht speichern"><i data-feather="bookmark"></i></button>
                     <button type="button" class="sd-icon-button" @click="loadTickets()" aria-label="Aktualisieren" title="Aktualisieren"><i data-feather="refresh-cw"></i></button>
-                    <button x-show="can('tickets.create')" type="button" class="sd-button sd-button-primary" @click="openCreateTicket()"><i data-feather="plus"></i><span>Ticket</span></button>
+                    <button x-show="can('tickets.create')" type="button" class="sd-button sd-button-primary" @click="openCreateTicket()" data-testid="open-ticket-modal" aria-label="Neues Ticket erstellen"><i data-feather="plus"></i><span>Ticket</span></button>
                 </div>
             </header>
 
@@ -239,9 +239,25 @@
                         <button type="button" class="sd-metadata-toggle" @click="metadataCollapsed = !metadataCollapsed" :aria-label="metadataCollapsed ? 'Metadaten einblenden' : 'Metadaten ausblenden'"><span class="sd-icon-slot" x-html="iconSvg(metadataCollapsed ? 'chevron-left' : 'chevron-right')"></span></button>
                         <div x-show="!metadataCollapsed">
                             <section><h3>Ticketdetails</h3>
-                                <label>Status<select x-model="selectedTicket.status" x-effect="$nextTick(() => { $el.value = selectedTicket.status || 'open' })" @change="updateTicketField('status', selectedTicket.status)" :disabled="!canUpdateTicket()"><template x-for="item in statuses" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
+                                <label>Status<select x-model="selectedTicket.status" x-effect="$nextTick(() => { $el.value = selectedTicket.status || 'open' })" @change="updateTicketField('status', selectedTicket.status)" :disabled="!canUpdateTicket()"><template x-for="item in statuses" :key="item.value"><option :value="item.value" :disabled="statusOptionDisabled(item.value)" x-text="item.label"></option></template></select></label>
                                 <label>Priorität<select x-model="selectedTicket.priority" x-effect="$nextTick(() => { $el.value = selectedTicket.priority || 'normal' })" @change="updateTicketField('priority', selectedTicket.priority)" :disabled="!canUpdateTicket()"><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
-                                <label>Kategorie<select x-model="selectedTicket.category_id" x-effect="$nextTick(() => { $el.value = selectedTicket.category_id || '' })" @change="updateTicketField('category_id', selectedTicket.category_id)" :disabled="!canUpdateTicket()"><option value="">Keine Kategorie</option><template x-for="category in categories" :key="category.id"><option :value="category.id" x-text="category.name"></option></template></select></label>
+                                <label>Kategorie<select x-model="selectedTicket.category_id" x-effect="$nextTick(() => { $el.value = selectedTicket.category_id || '' })" @change="updateTicketField('category_id', selectedTicket.category_id)" :disabled="!canUpdateTicket() || Boolean(selectedTicket.review_relation)"><option value="">Keine Kategorie</option><template x-for="category in categories" :key="category.id"><option :value="category.id" x-text="category.name"></option></template></select></label>
+                            </section>
+                            <section x-show="selectedTicket.review_relation" class="sd-review-gate">
+                                <h3>Change-Kontrolle</h3>
+                                <a
+                                    :href="selectedTicket.review_relation?.role === 'change' ? `/tickets/${selectedTicket.review_relation.review_ticket_id}` : `/tickets/${selectedTicket.review_relation?.change_ticket_id}`"
+                                    class="sd-review-link"
+                                >
+                                    <span class="sd-icon-slot" x-html="iconSvg(selectedTicket.review_relation?.approved ? 'check-circle' : 'shield')"></span>
+                                    <span>
+                                        <strong x-text="reviewGateLabel()"></strong>
+                                        <small x-show="selectedTicket.review_relation?.role === 'change' && !selectedTicket.review_relation?.approved">Der Change bleibt bis zur Review-Abnahme gesperrt.</small>
+                                        <small x-show="selectedTicket.review_relation?.role === 'change' && selectedTicket.review_relation?.approved">Review abgenommen; Abschluss ist freigegeben.</small>
+                                        <small x-show="selectedTicket.review_relation?.role === 'review'">Zugehörigen Change öffnen.</small>
+                                    </span>
+                                    <span class="sd-icon-slot" x-html="iconSvg('arrow-up-right')"></span>
+                                </a>
                             </section>
                             <section><h3>Personen</h3>
                                 <label>Anfragender<input type="text" :value="selectedTicket.requester_name || selectedTicket.created_by" disabled></label>
@@ -251,7 +267,7 @@
                                 <label>Fälligkeit<input type="date" x-model="selectedTicket.due_date" @change="updateTicketField('due_date', selectedTicket.due_date)" :disabled="!canUpdateTicket()"></label>
                                 <div class="sd-sla-card"><strong x-text="slaState(selectedTicket).label"></strong><span>Reaktionsziel und Lösungszeit gemäß Kategorie-SLA</span></div>
                             </section>
-                            <section><div class="sd-section-heading"><h3>Assets</h3><button type="button" @click="openAssetPicker('detail')" :disabled="!canUpdateTicket()"><i data-feather="plus"></i></button></div>
+                            <section><div class="sd-section-heading"><h3>Assets</h3><button type="button" @click="openAssetPicker('detail')" :disabled="!canUpdateTicket()" aria-label="Assets verknüpfen"><i data-feather="plus"></i></button></div>
                                 <div class="sd-linked-assets"><template x-for="asset in selectedTicket.assets || []" :key="asset.id"><article><i data-feather="monitor"></i><div><strong x-text="asset.name"></strong><small x-text="asset.category_name || 'Asset'"></small></div><button type="button" @click="unlinkAsset(asset.id)" aria-label="Asset entfernen"><i data-feather="x"></i></button></article></template><p x-show="!(selectedTicket.assets || []).length">Keine Assets verknüpft.</p></div>
                             </section>
                         </div>
@@ -276,7 +292,7 @@
         </aside>
     </div>
 
-    <div x-show="createOpen" x-cloak class="sd-modal-layer" @keydown.escape.window="closeCreateTicket()">
+    <div x-show="createOpen" x-cloak class="sd-modal-layer" @keydown.escape.window="closeCreateTicket()" data-testid="ticket-modal-container">
         <button class="sd-overlay-dismiss" type="button" @click="closeCreateTicket()" aria-label="Dialog schließen"></button>
         <section class="sd-modal sd-create-modal" role="dialog" aria-modal="true" aria-labelledby="create-title" data-testid="ticket-modal">
             <header><div><p>Service Desk</p><h2 id="create-title">Neues Ticket erstellen</h2></div><button type="button" @click="closeCreateTicket()" data-testid="ticket-modal-close" aria-label="Schließen"><i data-feather="x"></i></button></header>
@@ -284,7 +300,24 @@
                 <div class="sd-create-main">
                     <label>Titel <span aria-hidden="true">*</span><input x-ref="createTitle" type="text" x-model="newTicket.title" required placeholder="Kurze, eindeutige Zusammenfassung"></label>
                     <label>Beschreibung <span aria-hidden="true">*</span><textarea x-model="newTicket.description" rows="7" required placeholder="Was ist passiert, seit wann und welche Auswirkungen gibt es?"></textarea></label>
-                    <div class="sd-form-row"><label>Tickettyp<select x-model="newTicket.type"><option value="incident">Incident</option><option value="service_request">Service Request</option><option value="problem">Problem</option><option value="change">Change</option><option value="improvement">Verbesserung</option><option value="inquiry">Allgemeine Anfrage</option></select></label><label>Kategorie<select x-model="newTicket.category_id"><option value="">Kategorie wählen</option><template x-for="category in categories" :key="category.id"><option :value="category.id" x-text="category.name"></option></template></select></label></div>
+                    <div class="sd-form-row"><label>Tickettyp<select x-model="newTicket.type" @change="ticketTypeChanged()"><option value="incident">Incident</option><option value="service_request">Service Request</option><option value="problem">Problem</option><option value="change">Change</option><option value="review">Review</option><option value="improvement">Verbesserung</option><option value="inquiry">Allgemeine Anfrage</option></select></label><label>Kategorie<select x-model="newTicket.category_id" @change="ticketCategoryChanged()"><option value="">Kategorie wählen</option><template x-for="category in categories" :key="category.id"><option :value="category.id" x-text="category.name"></option></template></select></label></div>
+                    <div x-show="creatingReview" class="sd-review-assignment">
+                        <div>
+                            <span class="sd-icon-slot" x-html="iconSvg('git-pull-request')"></span>
+                            <span><strong>Zugehörigen Change auswählen</strong><small>Ein Review kann ohne eindeutigen Change-Bezug nicht erstellt werden.</small></span>
+                        </div>
+                        <label>Change suchen<input type="search" x-model="changeSearch" @input.debounce.300ms="loadReviewableChanges()" placeholder="Ticket-ID oder Titel"></label>
+                        <label>Zugehöriger Change <span aria-hidden="true">*</span>
+                            <select x-model="newTicket.change_ticket_id" :disabled="reviewChangesLoading" required>
+                                <option value="" x-text="reviewChangesLoading ? 'Changes werden geladen …' : 'Change auswählen'"></option>
+                                <template x-for="change in reviewableChanges" :key="change.id">
+                                    <option :value="change.id" x-text="`#${change.id} · ${change.title}`"></option>
+                                </template>
+                            </select>
+                        </label>
+                        <p x-show="!reviewChangesLoading && !reviewableChanges.length">Keine offenen Changes ohne Review gefunden.</p>
+                    </div>
+                    <div x-show="creatingChange" class="sd-form-hint sd-review-hint"><i data-feather="shield"></i><p>Beim Erstellen wird automatisch ein verknüpftes Kontroll-Review angelegt. Gelöst oder geschlossen werden kann der Change erst nach dessen Abnahme.</p></div>
                     <button type="button" class="sd-asset-summary" @click="openAssetPicker('create')"><i data-feather="monitor"></i><span><strong>Betroffene Assets</strong><small x-text="newTicket.asset_ids.length ? `${newTicket.asset_ids.length} ausgewählt` : 'Assets suchen und verknüpfen'"></small></span><i data-feather="chevron-right"></i></button>
                 </div>
                 <aside><h3>Zuweisung & Planung</h3><label>Priorität<select x-model="newTicket.priority"><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label><label x-show="can('tickets.update')">Zuständig<input type="text" x-model="newTicket.assignee" placeholder="Optional"></label><label x-show="can('tickets.update')">Fälligkeit<input type="date" x-model="newTicket.due_date"></label><div class="sd-form-hint"><i data-feather="info"></i><p>Der Anfragende wird aus deinem angemeldeten Benutzerkonto übernommen. SLA-Ziele folgen der gewählten Kategorie.</p></div></aside>
@@ -330,6 +363,6 @@
     <div class="sd-toast-region" aria-live="polite"><template x-for="toast in toasts" :key="toast.id"><div class="sd-toast" :class="toast.type"><span class="sd-icon-slot" x-html="iconSvg(toast.type === 'error' ? 'alert-triangle' : 'check-circle')"></span><span x-text="toast.message"></span></div></template></div>
 
     <script src="/static/vendor/feather.min.js"></script>
-    <script src="/static/tickets.js?v=service-desk-20260724-4"></script>
+    <script src="/static/tickets.js?v=service-desk-20260725-5"></script>
 </body>
 </html>
