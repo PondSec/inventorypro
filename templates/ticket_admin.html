@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="de" x-data="ticketAdmin()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro · Ticket-Administration</title>
+    <script src="/static/theme.js"></script>
+    <script src="/static/vendor/alpinejs.min.js" defer></script>
+    <script>
+        window.inventoryPermissions = {{ permissions | tojson }};
+        window.inventoryIsSuperuser = {{ is_superuser | tojson }};
+        window.ticketAdminSection = {{ section | tojson }};
+    </script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="sd-body ticket-admin-body">
+    <div class="ticket-admin-shell">
+        <aside class="ticket-admin-nav" aria-label="Ticket-Administration">
+            <a class="ticket-admin-back" href="/tickets"><i data-feather="arrow-left"></i><span>Zurück zum Service Desk</span></a>
+            <div class="ticket-admin-title"><span class="sd-brand-mark"><i data-feather="settings"></i></span><div><strong>Ticket-Administration</strong><small>Konfiguration & Workflows</small></div></div>
+            <nav>
+                <template x-for="item in navigation" :key="item.key">
+                    <a :href="`/admin/tickets/${item.key}`" :class="{ active: section === item.key, disabled: !item.enabled }" @click="selectSection($event, item)">
+                        <i :data-feather="item.icon"></i><span x-text="item.label"></span><small x-show="!item.available">Geplant</small>
+                    </a>
+                </template>
+            </nav>
+        </aside>
+
+        <main class="ticket-admin-main">
+            <header class="ticket-admin-header">
+                <div><p>Inventory Pro / Ticket-Administration</p><h1 x-text="currentSection.label"></h1><span x-text="currentSection.description"></span></div>
+                <a href="/tickets" class="sd-button"><i data-feather="external-link"></i>Service Desk öffnen</a>
+            </header>
+
+            <div x-show="error" class="sd-error" role="alert"><i data-feather="alert-triangle"></i><span x-text="error"></span><button type="button" @click="loadSection()">Erneut versuchen</button></div>
+
+            <section x-show="section === 'general'" class="ticket-admin-content">
+                <div class="ticket-admin-empty">
+                    <i data-feather="sliders"></i>
+                    <h2>Allgemeine Einstellungen</h2>
+                    <p>Die operativen Ticketfunktionen verwenden die bestehenden Rollen, Statuswerte und Kategorie-SLAs. Weitere Standardwerte werden in kommenden Modulen ergänzt.</p>
+                </div>
+            </section>
+
+            <section x-show="section === 'categories' && can('ticket_categories.manage')" class="ticket-admin-content">
+                <div class="ticket-admin-section-heading"><div><h2>Kategorien</h2><p>Strukturieren Anfragen und legen das Standard-SLA fest.</p></div><button type="button" class="sd-button sd-button-primary" @click="openCategory()"><i data-feather="plus"></i>Kategorie</button></div>
+                <div class="ticket-admin-table-wrap">
+                    <table class="ticket-admin-table">
+                        <thead><tr><th>Name</th><th>Beschreibung</th><th>SLA</th><th>Standard</th><th><span class="sr-only">Aktionen</span></th></tr></thead>
+                        <tbody>
+                            <template x-for="category in categories" :key="category.id">
+                                <tr><td><strong x-text="category.name"></strong></td><td x-text="category.description || '—'"></td><td><span x-text="`${category.sla_hours || 72} Stunden`"></span></td><td><span x-text="category.is_default ? 'Ja' : 'Nein'"></span></td><td><button type="button" @click="openCategory(category)" aria-label="Kategorie bearbeiten"><i data-feather="edit-2"></i></button><button type="button" class="danger" @click="deleteCategory(category)" aria-label="Kategorie löschen"><i data-feather="trash-2"></i></button></td></tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <p x-show="!loading && !categories.length" class="sd-empty-inline">Noch keine Kategorien vorhanden.</p>
+                </div>
+            </section>
+
+            <section x-show="section === 'automations' && can('ticket_alerts.manage')" class="ticket-admin-content">
+                <div class="ticket-admin-section-heading"><div><h2>Alerts & Automationen</h2><p>Ereignisbasierte Benachrichtigungen für kritische Ticketänderungen.</p></div><button type="button" class="sd-button sd-button-primary" @click="openAlert()"><i data-feather="plus"></i>Alert</button></div>
+                <div class="ticket-admin-table-wrap">
+                    <table class="ticket-admin-table">
+                        <thead><tr><th>Name</th><th>Trigger</th><th>Bedingungen</th><th>Empfänger</th><th>Status</th><th><span class="sr-only">Aktionen</span></th></tr></thead>
+                        <tbody>
+                            <template x-for="alert in alerts" :key="alert.id">
+                                <tr><td><strong x-text="alert.name"></strong></td><td x-text="eventLabel(alert.event_type)"></td><td x-text="alertConditions(alert)"></td><td x-text="alert.recipient_emails || '—'"></td><td><span class="sd-status" :data-status="alert.is_enabled ? 'resolved' : 'pending'"><i></i><span x-text="alert.is_enabled ? 'Aktiv' : 'Inaktiv'"></span></span></td><td><button type="button" class="danger" @click="deleteAlert(alert)" aria-label="Alert löschen"><i data-feather="trash-2"></i></button></td></tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <p x-show="!loading && !alerts.length" class="sd-empty-inline">Noch keine Alerts konfiguriert.</p>
+                </div>
+            </section>
+
+            <section x-show="section === 'email' && can('notifications.manage')" class="ticket-admin-content">
+                <div class="ticket-admin-section-heading"><div><h2>E-Mail-Konfiguration</h2><p>SMTP-Versand für Ticketbenachrichtigungen.</p></div></div>
+                <form class="ticket-admin-form" @submit.prevent="saveNotificationSettings()">
+                    <label class="sd-checkbox"><input type="checkbox" x-model="notificationSettings.enabled"><span>E-Mail-Benachrichtigungen aktivieren</span></label>
+                    <div class="sd-form-row"><label>SMTP-Host<input type="text" x-model="notificationSettings.smtp_host" placeholder="smtp.example.com"></label><label>Port<input type="number" x-model.number="notificationSettings.smtp_port" min="1" max="65535"></label></div>
+                    <div class="sd-form-row"><label>Benutzername<input type="text" x-model="notificationSettings.smtp_username" autocomplete="username"></label><label>Passwort<input type="password" x-model="notificationSettings.smtp_password" autocomplete="new-password" placeholder="Unverändert lassen"></label></div>
+                    <div class="sd-form-row"><label>Absenderadresse<input type="email" x-model="notificationSettings.from_email"></label><label>Absendername<input type="text" x-model="notificationSettings.from_name"></label></div>
+                    <label class="sd-checkbox"><input type="checkbox" x-model="notificationSettings.use_tls"><span>TLS verwenden</span></label>
+                    <footer><button type="button" class="sd-button" @click="sendTestNotification()"><i data-feather="send"></i>Test senden</button><button type="submit" class="sd-button sd-button-primary" :disabled="saving">Einstellungen speichern</button></footer>
+                </form>
+            </section>
+
+            <section x-show="!currentSection.available" class="ticket-admin-content">
+                <div class="ticket-admin-empty"><i :data-feather="currentSection.icon"></i><h2 x-text="currentSection.label"></h2><p>Dieser Konfigurationsbereich ist in der neuen Informationsarchitektur vorgesehen und wird schrittweise an das vorhandene Backend angebunden.</p></div>
+            </section>
+        </main>
+    </div>
+
+    <div x-show="categoryModalOpen" x-cloak class="sd-modal-layer">
+        <button class="sd-overlay-dismiss" type="button" @click="categoryModalOpen = false" aria-label="Dialog schließen"></button>
+        <form class="sd-modal sd-small-modal" @submit.prevent="saveCategory()" role="dialog" aria-modal="true" aria-labelledby="category-dialog-title">
+            <header><div><p>Ticketklassifizierung</p><h2 id="category-dialog-title" x-text="categoryForm.id ? 'Kategorie bearbeiten' : 'Kategorie erstellen'"></h2></div><button type="button" @click="categoryModalOpen = false"><i data-feather="x"></i></button></header>
+            <div class="sd-modal-body"><label>Name<input type="text" x-model="categoryForm.name" required></label><label>Beschreibung<textarea x-model="categoryForm.description" rows="3"></textarea></label><label>SLA-Ziel in Stunden<input type="number" x-model.number="categoryForm.sla_hours" min="1"></label><label class="sd-checkbox"><input type="checkbox" x-model="categoryForm.is_default"><span>Als Standard-Kategorie verwenden</span></label></div>
+            <footer><button type="button" class="sd-button" @click="categoryModalOpen = false">Abbrechen</button><button type="submit" class="sd-button sd-button-primary">Speichern</button></footer>
+        </form>
+    </div>
+
+    <div x-show="alertModalOpen" x-cloak class="sd-modal-layer">
+        <button class="sd-overlay-dismiss" type="button" @click="alertModalOpen = false" aria-label="Dialog schließen"></button>
+        <form class="sd-modal sd-small-modal" @submit.prevent="saveAlert()" role="dialog" aria-modal="true" aria-labelledby="alert-dialog-title">
+            <header><div><p>Ticketautomation</p><h2 id="alert-dialog-title">Alert erstellen</h2></div><button type="button" @click="alertModalOpen = false"><i data-feather="x"></i></button></header>
+            <div class="sd-modal-body"><label>Name<input type="text" x-model="alertForm.name" required></label><label>Trigger<select x-model="alertForm.event_type"><option value="created">Ticket erstellt</option><option value="updated">Ticket aktualisiert</option><option value="commented">Kommentar hinzugefügt</option><option value="status_changed">Status geändert</option></select></label><label>Status-Bedingung<select x-model="alertForm.status_match"><option value="">Jeder Status</option><option value="open">Offen</option><option value="in_progress">In Bearbeitung</option><option value="pending">Wartend</option><option value="resolved">Gelöst</option><option value="closed">Geschlossen</option></select></label><label>Prioritäts-Bedingung<select x-model="alertForm.priority_match"><option value="">Jede Priorität</option><option value="low">Niedrig</option><option value="normal">Normal</option><option value="high">Hoch</option><option value="urgent">Kritisch</option></select></label><label>Empfänger-E-Mails<textarea x-model="alertForm.recipient_emails" rows="2" placeholder="support@example.com, lead@example.com"></textarea></label><label class="sd-checkbox"><input type="checkbox" x-model="alertForm.is_enabled"><span>Alert aktivieren</span></label></div>
+            <footer><button type="button" class="sd-button" @click="alertModalOpen = false">Abbrechen</button><button type="submit" class="sd-button sd-button-primary">Alert speichern</button></footer>
+        </form>
+    </div>
+
+    <div class="sd-toast-region" aria-live="polite"><template x-for="toast in toasts" :key="toast.id"><div class="sd-toast" :class="toast.type"><i :data-feather="toast.type === 'error' ? 'alert-triangle' : 'check-circle'"></i><span x-text="toast.message"></span></div></template></div>
+
+    <script src="/static/vendor/feather.min.js"></script>
+    <script src="/static/ticket-admin.js"></script>
+    <script>document.addEventListener('DOMContentLoaded', () => window.feather?.replace());</script>
+</body>
+</html>
