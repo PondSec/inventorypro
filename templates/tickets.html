@@ -33,7 +33,7 @@
             </nav>
             <div class="sd-global-footer">
                 <a x-show="canManageTickets()" href="/admin/tickets/categories" aria-label="Ticket-Administration"><i data-feather="settings"></i><span>Ticket-Admin</span></a>
-                <button type="button" @click="showShortcuts = true" aria-label="Tastaturkürzel"><i data-feather="command"></i><span>Kürzel</span></button>
+                <button type="button" @click="openShortcuts()" aria-label="Tastaturkürzel"><i data-feather="command"></i><span>Kürzel</span></button>
                 <form action="/logout" method="post"><button type="submit" aria-label="Abmelden"><i data-feather="log-out"></i><span>Abmelden</span></button></form>
             </div>
         </aside>
@@ -301,7 +301,7 @@
         </template>
     </aside>
 
-    <div x-show="mobileQueuesOpen" x-cloak class="sd-overlay" @keydown.escape.window="closeMobileQueues()" @keydown.tab="trapFocus($event)">
+    <div x-show="mobileQueuesOpen" x-cloak class="sd-overlay" @keydown.tab="trapFocus($event)">
         <button class="sd-overlay-dismiss" type="button" @click="closeMobileQueues()" aria-label="Queue-Auswahl schließen"></button>
         <aside class="sd-drawer sd-mobile-queue-drawer" role="dialog" aria-modal="true" aria-labelledby="mobile-queue-title">
             <header><div><p>Service Desk</p><h2 id="mobile-queue-title">Ticket-Queue auswählen</h2></div><button type="button" @click="closeMobileQueues()" aria-label="Schließen"><i data-feather="x"></i></button></header>
@@ -317,7 +317,7 @@
         </aside>
     </div>
 
-    <div x-show="filterOpen" x-cloak class="sd-overlay" @keydown.escape.window="closeFilter()" @keydown.tab="trapFocus($event)">
+    <div x-show="filterOpen" x-cloak class="sd-overlay" @keydown.tab="trapFocus($event)">
         <button class="sd-overlay-dismiss" type="button" @click="closeFilter()" aria-label="Filter schließen"></button>
         <aside class="sd-drawer" role="dialog" aria-modal="true" aria-labelledby="filter-title">
             <header><div><p>Ansicht eingrenzen</p><h2 id="filter-title">Erweiterte Filter</h2></div><button type="button" @click="closeFilter()" aria-label="Schließen"><i data-feather="x"></i></button></header>
@@ -332,7 +332,7 @@
         </aside>
     </div>
 
-    <div x-show="createOpen" x-cloak class="sd-modal-layer" @keydown.escape.window="closeCreateTicket()" data-testid="ticket-modal-container">
+    <div x-show="createOpen" x-cloak class="sd-modal-layer" @keydown.tab="trapFocus($event)" data-testid="ticket-modal-container">
         <button class="sd-overlay-dismiss" type="button" @click="closeCreateTicket()" aria-label="Dialog schließen"></button>
         <section class="sd-modal sd-create-modal" role="dialog" aria-modal="true" aria-labelledby="create-title" data-testid="ticket-modal">
             <header><div><p>Service Desk</p><h2 id="create-title">Neues Ticket erstellen</h2></div><button type="button" @click="closeCreateTicket()" data-testid="ticket-modal-close" aria-label="Schließen"><i data-feather="x"></i></button></header>
@@ -367,10 +367,10 @@
         </section>
     </div>
 
-    <div x-show="assetPickerOpen" x-cloak class="sd-modal-layer" @keydown.escape.window="assetPickerOpen = false">
-        <button class="sd-overlay-dismiss" type="button" @click="assetPickerOpen = false" aria-label="Asset-Picker schließen"></button>
+    <div x-show="assetPickerOpen" x-cloak class="sd-modal-layer" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeAssetPicker()" aria-label="Asset-Picker schließen"></button>
         <section class="sd-modal sd-asset-modal" role="dialog" aria-modal="true" aria-labelledby="asset-title">
-            <header><div><p>Inventar durchsuchen</p><h2 id="asset-title">Assets verknüpfen</h2></div><button type="button" @click="assetPickerOpen = false" aria-label="Schließen"><i data-feather="x"></i></button></header>
+            <header><div><p>Inventar durchsuchen</p><h2 id="asset-title">Assets verknüpfen</h2></div><button type="button" @click="closeAssetPicker()" aria-label="Schließen"><i data-feather="x"></i></button></header>
             <div class="sd-asset-search-panel">
                 <label for="asset-search">Assets durchsuchen</label>
                 <div class="sd-asset-search">
@@ -381,23 +381,23 @@
                 <p aria-live="polite"><span x-show="assetLoading">Suche läuft …</span><span x-show="!assetLoading" x-text="`${assetOptions.length} Assets angezeigt`"></span></p>
             </div>
             <div class="sd-asset-table"><table><thead><tr><th></th><th>Asset</th><th>Typ</th><th>Hersteller</th><th>Standort</th><th>Seriennummer</th></tr></thead><tbody><template x-for="asset in assetOptions" :key="asset.id"><tr @click="toggleAsset(asset.id)"><td><input type="checkbox" :checked="assetSelection.includes(asset.id)" @click.stop="toggleAsset(asset.id)" :aria-label="`${asset.name} auswählen`"></td><td><strong x-text="asset.name"></strong></td><td x-text="asset.category_name || '—'"></td><td x-text="asset.manufacturer || '—'"></td><td x-text="(asset.locations || []).join(', ') || '—'"></td><td x-text="(asset.serial_numbers || []).join(', ') || '—'"></td></tr></template></tbody></table><p x-show="!assetLoading && !assetOptions.length" class="sd-empty-inline">Keine Assets gefunden.</p></div>
-            <footer><span><strong x-text="assetSelection.length"></strong> ausgewählt</span><div><button type="button" class="sd-button" @click="assetPickerOpen = false">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="applyAssetSelection()">Übernehmen</button></div></footer>
+            <footer><span><strong x-text="assetSelection.length"></strong> ausgewählt</span><div><button type="button" class="sd-button" @click="closeAssetPicker()">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="applyAssetSelection()">Übernehmen</button></div></footer>
         </section>
     </div>
 
-    <div x-show="saveViewOpen" x-cloak class="sd-modal-layer">
-        <button class="sd-overlay-dismiss" type="button" @click="saveViewOpen = false" aria-label="Dialog schließen"></button>
-        <section class="sd-modal sd-small-modal" role="dialog" aria-modal="true" aria-labelledby="save-view-title"><header><div><p>Filter & Sortierung</p><h2 id="save-view-title">Ansicht speichern</h2></div><button type="button" @click="saveViewOpen = false" aria-label="Schließen"><i data-feather="x"></i></button></header><div class="sd-modal-body"><label>Name<input type="text" x-model="newView.name" placeholder="z. B. Kritische Incidents"></label><label class="sd-checkbox"><input type="checkbox" x-model="newView.is_favorite"><span>Als Favorit anzeigen</span></label><label class="sd-checkbox"><input type="checkbox" x-model="newView.is_default"><span>Als Standardansicht verwenden</span></label></div><footer><button type="button" class="sd-button" @click="saveViewOpen = false">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="saveView()">Speichern</button></footer></section>
+    <div x-show="saveViewOpen" x-cloak class="sd-modal-layer" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeSaveView()" aria-label="Dialog schließen"></button>
+        <section class="sd-modal sd-small-modal" role="dialog" aria-modal="true" aria-labelledby="save-view-title"><header><div><p>Filter & Sortierung</p><h2 id="save-view-title">Ansicht speichern</h2></div><button type="button" @click="closeSaveView()" aria-label="Schließen"><i data-feather="x"></i></button></header><div class="sd-modal-body"><label>Name<input type="text" x-model="newView.name" placeholder="z. B. Kritische Incidents"></label><label class="sd-checkbox"><input type="checkbox" x-model="newView.is_favorite"><span>Als Favorit anzeigen</span></label><label class="sd-checkbox"><input type="checkbox" x-model="newView.is_default"><span>Als Standardansicht verwenden</span></label></div><footer><button type="button" class="sd-button" @click="closeSaveView()">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="saveView()">Speichern</button></footer></section>
     </div>
 
-    <div x-show="bulkDialog.open" x-cloak class="sd-modal-layer">
-        <button class="sd-overlay-dismiss" type="button" @click="bulkDialog.open = false" aria-label="Dialog schließen"></button>
-        <section class="sd-modal sd-small-modal" role="dialog" aria-modal="true"><header><div><p>Mehrfachbearbeitung</p><h2 x-text="bulkDialog.title"></h2></div><button type="button" @click="bulkDialog.open = false"><i data-feather="x"></i></button></header><div class="sd-modal-body"><label>Neuer Wert<select x-show="bulkDialog.field === 'status'" x-model="bulkDialog.value"><template x-for="item in statuses" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select><select x-show="bulkDialog.field === 'priority'" x-model="bulkDialog.value"><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select><input x-show="bulkDialog.field === 'assignee'" type="text" x-model="bulkDialog.value" placeholder="Name oder Team"></label></div><footer><button type="button" class="sd-button" @click="bulkDialog.open = false">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="applyBulk()">Auf <span x-text="selectedIds.length"></span> Tickets anwenden</button></footer></section>
+    <div x-show="bulkDialog.open" x-cloak class="sd-modal-layer" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeBulk()" aria-label="Dialog schließen"></button>
+        <section class="sd-modal sd-small-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-dialog-title"><header><div><p>Mehrfachbearbeitung</p><h2 id="bulk-dialog-title" x-text="bulkDialog.title"></h2></div><button type="button" @click="closeBulk()" aria-label="Schließen"><i data-feather="x"></i></button></header><div class="sd-modal-body"><label>Neuer Wert<select x-show="bulkDialog.field === 'status'" x-model="bulkDialog.value"><template x-for="item in statuses" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select><select x-show="bulkDialog.field === 'priority'" x-model="bulkDialog.value"><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select><input x-show="bulkDialog.field === 'assignee'" type="text" x-model="bulkDialog.value" placeholder="Name oder Team"></label></div><footer><button type="button" class="sd-button" @click="closeBulk()">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="applyBulk()">Auf <span x-text="selectedIds.length"></span> Tickets anwenden</button></footer></section>
     </div>
 
-    <div x-show="showShortcuts" x-cloak class="sd-modal-layer" @keydown.escape.window="showShortcuts = false">
-        <button class="sd-overlay-dismiss" type="button" @click="showShortcuts = false" aria-label="Dialog schließen"></button>
-        <section class="sd-modal sd-shortcuts" role="dialog" aria-modal="true"><header><div><p>Produktivität</p><h2>Tastaturkürzel</h2></div><button type="button" @click="showShortcuts = false"><i data-feather="x"></i></button></header><div class="sd-shortcut-grid"><span><kbd>/</kbd>Suche fokussieren</span><span><kbd>C</kbd>Ticket erstellen</span><span><kbd>J</kbd>Nächstes Ticket</span><span><kbd>K</kbd>Vorheriges Ticket</span><span><kbd>Enter</kbd>Ticket öffnen</span><span><kbd>R</kbd>Antworten</span><span><kbd>N</kbd>Interne Notiz</span><span><kbd>Esc</kbd>Dialog schließen</span></div></section>
+    <div x-show="showShortcuts" x-cloak class="sd-modal-layer" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeShortcuts()" aria-label="Dialog schließen"></button>
+        <section class="sd-modal sd-shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title"><header><div><p>Produktivität</p><h2 id="shortcuts-title">Tastaturkürzel</h2></div><button type="button" @click="closeShortcuts()" aria-label="Schließen"><i data-feather="x"></i></button></header><div class="sd-shortcut-grid"><span><kbd>/</kbd>Suche fokussieren</span><span><kbd>C</kbd>Ticket erstellen</span><span><kbd>J</kbd>Nächstes Ticket</span><span><kbd>K</kbd>Vorheriges Ticket</span><span><kbd>Enter</kbd>Ticket öffnen</span><span><kbd>R</kbd>Antworten</span><span><kbd>N</kbd>Interne Notiz</span><span><kbd>Esc</kbd>Dialog schließen</span></div></section>
     </div>
 
     <div class="sd-toast-region" aria-live="polite"><template x-for="toast in toasts" :key="toast.id"><div class="sd-toast" :class="toast.type"><span class="sd-icon-slot" x-html="iconSvg(toast.type === 'error' ? 'alert-triangle' : 'check-circle')"></span><span x-text="toast.message"></span></div></template></div>
