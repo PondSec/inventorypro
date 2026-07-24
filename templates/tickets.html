@@ -12,7 +12,7 @@
         window.inventoryUsername = {{ username | tojson }};
         window.initialTicketId = {{ initial_ticket_id | default(none) | tojson }};
     </script>
-    <link rel="stylesheet" href="/static/style.css?v=service-desk-20260724-2">
+    <link rel="stylesheet" href="/static/style.css?v=service-desk-20260724-3">
 </head>
 <body class="sd-body" @keydown.window="handleShortcut($event)">
     <a class="skip-link" href="#ticket-table">Zur Ticketliste springen</a>
@@ -330,6 +330,6 @@
     <div class="sd-toast-region" aria-live="polite"><template x-for="toast in toasts" :key="toast.id"><div class="sd-toast" :class="toast.type"><span class="sd-icon-slot" x-html="iconSvg(toast.type === 'error' ? 'alert-triangle' : 'check-circle')"></span><span x-text="toast.message"></span></div></template></div>
 
     <script src="/static/vendor/feather.min.js"></script>
-    <script src="/static/tickets.js?v=service-desk-20260724-2"></script>
+    <script src="/static/tickets.js?v=service-desk-20260724-3"></script>
 </body>
 </html>
