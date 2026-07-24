@@ -28,7 +28,7 @@
         <!-- Sidebar -->
         <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
             <div class="sidebar-header p-6 border-b border-slate-200">
-                <a href="https://inv.pondsec.com">
+                <a href="/">
                 <div class="logo flex items-center space-x-3">
                     <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg" data-brand-logo>
                         <i data-feather="cpu" data-brand-logo-icon class="w-5 h-5"></i>
@@ -224,7 +224,7 @@
 						});
 
 						if (response.ok) {
-							window.location.href = 'https://inv.pondsec.com/login';
+							window.location.href = '/login';
 						} else {
 							const data = await response.json();
 							alert('Logout failed: ' + (data.error || 'Unknown error'));
