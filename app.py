@@ -16,6 +16,7 @@ import shutil
 import time
 import subprocess
 import socket
+import stat
 import http.cookiejar
 import urllib.request
 import urllib.error
@@ -24,7 +25,7 @@ import ssl
 import threading
 import html
 from itertools import permutations
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from apscheduler.schedulers.background import BackgroundScheduler
 from cryptography.fernet import Fernet
 import pyotp
@@ -68,6 +69,9 @@ APP_INSTANCE_PATH = Path(app.instance_path)
 RUNTIME_CONFIG_PATH = APP_INSTANCE_PATH / "runtime_config.json"
 UPLOADS_DIR = Path(os.environ.get("INVENTORY_UPLOADS_DIR") or "uploads")
 MAX_IMPORT_BYTES = int(os.environ.get("INVENTORY_MAX_IMPORT_BYTES", 50 * 1024 * 1024))
+MAX_IMPORT_EXPANDED_BYTES = int(
+    os.environ.get("INVENTORY_MAX_IMPORT_EXPANDED_BYTES", MAX_IMPORT_BYTES * 4)
+)
 MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_BYTES))
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
 BLOCKED_ATTACHMENT_EXTENSIONS = {".exe", ".js", ".html", ".htm", ".bat", ".sh", ".ps1"}
@@ -2533,6 +2537,30 @@ def validate_import_file(file_path):
     if result.returncode != 0:
         return result.stderr.strip() or "Datei konnte nicht geprüft werden."
     return None
+
+def validate_import_archive(archive):
+    total_uncompressed = 0
+    upload_members = []
+    for info in archive.infolist():
+        member_name = info.filename
+        if not member_name or "\x00" in member_name or "\\" in member_name:
+            raise ValueError("ZIP-Archiv enthält einen ungültigen Pfad.")
+        member_path = PurePosixPath(member_name)
+        if member_path.is_absolute() or any(part in {"", ".", ".."} for part in member_path.parts):
+            raise ValueError("ZIP-Archiv enthält einen unsicheren Pfad.")
+        unix_mode = info.external_attr >> 16
+        if unix_mode and stat.S_ISLNK(unix_mode):
+            raise ValueError("Symbolische Links sind in Importarchiven nicht zulässig.")
+        total_uncompressed += max(0, info.file_size)
+        if total_uncompressed > MAX_IMPORT_EXPANDED_BYTES:
+            raise ValueError("Entpackter Inhalt überschreitet die zulässige Größe.")
+        if info.is_dir() or not member_path.parts or member_path.parts[0] != "uploads":
+            continue
+        relative_parts = member_path.parts[1:]
+        if not relative_parts:
+            continue
+        upload_members.append((info, Path(*relative_parts)))
+    return upload_members
 
 def export_tables(db, tables):
     export_data = {}
@@ -14657,6 +14685,10 @@ def import_data():
                 import_data_payload(db, payload, import_mode, tables)
         elif file_path.suffix == ".zip":
             with zipfile.ZipFile(file_path, "r") as archive:
+                try:
+                    upload_members = validate_import_archive(archive)
+                except ValueError as exc:
+                    return jsonify({"error": str(exc)}), 400
                 members = archive.namelist()
                 data_files = [name for name in members if name.endswith(".csv")]
                 if data_files:
@@ -14673,13 +14705,15 @@ def import_data():
                                 reader = csv.DictReader(StringIO(content))
                                 import_table_rows(db, table_name, list(reader), import_mode if import_mode != "replace" else "append")
                 db.commit()
-                if settings["importExport"]["includeUploads"] and any(name.startswith("uploads/") for name in members):
-                    for member in members:
-                        if member.startswith("uploads/") and not member.endswith("/"):
-                            target_path = UPLOADS_DIR / Path(member).relative_to("uploads")
-                            target_path.parent.mkdir(parents=True, exist_ok=True)
-                            with archive.open(member) as source, open(target_path, "wb") as target:
-                                shutil.copyfileobj(source, target)
+                if settings["importExport"]["includeUploads"] and upload_members:
+                    uploads_root = UPLOADS_DIR.resolve()
+                    for member_info, relative_path in upload_members:
+                        target_path = (uploads_root / relative_path).resolve()
+                        if not target_path.is_relative_to(uploads_root):
+                            return jsonify({"error": "ZIP-Archiv enthält einen unsicheren Upload-Pfad."}), 400
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+                        with archive.open(member_info) as source, open(target_path, "wb") as target:
+                            shutil.copyfileobj(source, target)
         elif file_path.suffix in {".db", ".sqlite"}:
             with db:
                 import_from_sqlite(db, file_path, import_mode, tables)
