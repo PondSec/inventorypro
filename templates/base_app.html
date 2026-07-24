@@ -7,13 +7,11 @@
     <title>{% block title %}Inventory Pro{% endblock %}</title>
     <script src="/static/theme.js?v=inventory-v3-20260724-1"></script>
     <script>
-        window.tailwind = window.tailwind || {};
-        window.tailwind.config = { darkMode: 'class' };
         window.inventoryPermissions = {{ permissions | tojson }};
         window.inventoryIsSuperuser = {{ is_superuser | tojson }};
         window.inventoryUsername = {{ username | tojson }};
     </script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/vendor/tailwind.min.css?v=3.4.17">
     <link rel="stylesheet" href="/static/style.css?v=inventory-v3-20260724-1">
     {% block extra_head %}{% endblock %}
     <script src="/static/vendor/alpinejs.min.js" defer></script>
