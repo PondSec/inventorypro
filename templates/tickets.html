@@ -167,7 +167,7 @@
     </div>
 
     <div x-show="selectedTicket" x-cloak class="sd-detail-backdrop" @click="closeTicket()"></div>
-    <aside x-show="selectedTicket" x-cloak x-transition:enter="sd-slide-enter" x-transition:enter-start="sd-slide-start" x-transition:leave="sd-slide-leave" x-transition:leave-end="sd-slide-start" class="sd-detail" aria-label="Ticketdetail">
+    <aside x-show="selectedTicket" x-cloak class="sd-detail" aria-label="Ticketdetail">
         <template x-if="selectedTicket">
             <div class="sd-detail-inner">
                 <header class="sd-detail-header">
