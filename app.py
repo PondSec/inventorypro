@@ -5013,20 +5013,6 @@ def init_db():
             pass
 
         seed_permissions(db)
-        ai_permission_rows = db.execute(
-            "SELECT id FROM permissions WHERE key IN ('ai.use', 'ai.manage', 'ai.approve')"
-        ).fetchall()
-        if ai_permission_rows:
-            ai_permission_ids = [row["id"] for row in ai_permission_rows]
-            placeholders = ",".join("?" for _ in ai_permission_ids)
-            db.execute(
-                f"DELETE FROM role_permissions WHERE permission_id IN ({placeholders})",
-                ai_permission_ids,
-            )
-            db.execute(
-                f"DELETE FROM permissions WHERE id IN ({placeholders})",
-                ai_permission_ids,
-            )
         seed_roles(db)
         ensure_default_roles(db)
         ensure_admin_user(db)
@@ -13144,7 +13130,6 @@ def list_permissions():
     rows = db.execute('''
         SELECT id, key, label, description, group_name
         FROM permissions
-        WHERE key NOT LIKE 'ai.%'
         ORDER BY group_name, label
     ''').fetchall()
     return jsonify([dict(row) for row in rows])
@@ -13189,7 +13174,6 @@ def manage_roles():
             FROM permissions p
             JOIN role_permissions rp ON rp.permission_id = p.id
             WHERE rp.role_id = ?
-              AND p.key NOT LIKE 'ai.%'
             ORDER BY p.label
         ''', (role["id"],)).fetchall()
         entry = dict(role)
