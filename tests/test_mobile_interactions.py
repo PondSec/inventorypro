@@ -311,6 +311,40 @@ class MobileInteractionTestCase(unittest.TestCase):
 
         context.close()
 
+    def test_mobile_asset_picker_actions_do_not_overlap(self):
+        context = self.browser.new_context(viewport={"width": 390, "height": 844})
+        page = context.new_page()
+        self.login(page)
+
+        page.goto(f"{self.base_url}/tickets?queue=all-open")
+        page.locator("[data-ticket-index]").first.click()
+        page.wait_for_selector(".sd-detail", state="visible")
+        page.get_by_role("button", name="Assets verknüpfen").click()
+
+        asset_search = page.get_by_role("searchbox", name="Assets durchsuchen")
+        self.assertTrue(asset_search.is_visible())
+        search_box = asset_search.bounding_box()
+        self.assertIsNotNone(search_box)
+        self.assertGreater(search_box["width"], 200)
+        self.assertLessEqual(search_box["x"] + search_box["width"], 390)
+
+        cancel_button = page.get_by_role("button", name="Abbrechen")
+        apply_button = page.get_by_role("button", name="Übernehmen")
+        cancel_box = cancel_button.bounding_box()
+        apply_box = apply_button.bounding_box()
+        self.assertIsNotNone(cancel_box)
+        self.assertIsNotNone(apply_box)
+        self.assertLessEqual(cancel_box["x"] + cancel_box["width"], apply_box["x"])
+        self.assertLessEqual(apply_box["x"] + apply_box["width"], 390)
+
+        page.get_by_role("button", name="Schließen", exact=True).click()
+        page.wait_for_selector(".sd-asset-modal", state="hidden")
+        page.get_by_role("button", name="Ticketdetail schließen").click()
+        page.wait_for_selector(".sd-detail", state="hidden")
+        self.assertFalse(page.evaluate("document.documentElement.classList.contains('sd-detail-open')"))
+
+        context.close()
+
 
 if __name__ == "__main__":
     unittest.main()
