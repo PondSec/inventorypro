@@ -31,8 +31,8 @@
                 <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                     <div class="flex flex-wrap items-center gap-4">
                         <div class="relative flex-1 min-w-[220px]">
-                            <label class="text-xs uppercase text-slate-400">Suche</label>
-                            <input type="text" x-model.debounce.300ms="searchQuery" @input="loadEntries" placeholder="Artikel durchsuchen..." class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:ring-emerald-500">
+                            <label for="knowledge-search" class="text-xs uppercase text-slate-400">Suche</label>
+                            <input id="knowledge-search" type="text" x-model.debounce.300ms="searchQuery" @input="loadEntries" placeholder="Artikel durchsuchen..." class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:ring-emerald-500">
                             <span class="absolute right-4 top-9 text-slate-400">
                                 <i data-feather="search" class="h-4 w-4"></i>
                             </span>
@@ -170,16 +170,16 @@
             </div>
             <div class="mt-4 grid gap-4">
                 <div>
-                    <label class="text-xs uppercase text-slate-400">Titel</label>
-                    <input type="text" x-model="entryForm.title" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <label for="knowledge-entry-title" class="text-xs uppercase text-slate-400">Titel</label>
+                    <input id="knowledge-entry-title" type="text" x-model="entryForm.title" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                 </div>
                 <div>
-                    <label class="text-xs uppercase text-slate-400">Kurzbeschreibung</label>
-                    <textarea rows="2" x-model="entryForm.summary" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
+                    <label for="knowledge-entry-summary" class="text-xs uppercase text-slate-400">Kurzbeschreibung</label>
+                    <textarea id="knowledge-entry-summary" rows="2" x-model="entryForm.summary" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
                 </div>
                 <div>
-                    <label class="text-xs uppercase text-slate-400">Kategorie</label>
-                    <select x-model="entryForm.category_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <label for="knowledge-entry-category" class="text-xs uppercase text-slate-400">Kategorie</label>
+                    <select id="knowledge-entry-category" x-model="entryForm.category_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                         <option value="">Ohne Kategorie</option>
                         <template x-for="category in categories" :key="category.id">
                             <option :value="category.id" x-text="category.name"></option>
@@ -187,12 +187,12 @@
                     </select>
                 </div>
                 <div>
-                    <label class="text-xs uppercase text-slate-400">Verknüpftes Ticket (optional)</label>
-                    <input type="number" min="1" x-model="entryForm.related_ticket_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <label for="knowledge-entry-ticket" class="text-xs uppercase text-slate-400">Verknüpftes Ticket (optional)</label>
+                    <input id="knowledge-entry-ticket" type="number" min="1" x-model="entryForm.related_ticket_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                 </div>
                 <div>
-                    <label class="text-xs uppercase text-slate-400">Inhalt / Lösung</label>
-                    <textarea rows="6" x-model="entryForm.content" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
+                    <label for="knowledge-entry-content" class="text-xs uppercase text-slate-400">Inhalt / Lösung</label>
+                    <textarea id="knowledge-entry-content" rows="6" x-model="entryForm.content" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
                 </div>
                 <p x-show="entryError" class="text-sm text-rose-500" x-text="entryError"></p>
             </div>
@@ -216,12 +216,12 @@
             </div>
             <div class="mt-4 grid gap-4">
                 <div>
-                    <label class="text-xs uppercase text-slate-400">Name</label>
-                    <input type="text" x-model="categoryForm.name" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <label for="knowledge-category-name" class="text-xs uppercase text-slate-400">Name</label>
+                    <input id="knowledge-category-name" type="text" x-model="categoryForm.name" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                 </div>
                 <div>
-                    <label class="text-xs uppercase text-slate-400">Beschreibung</label>
-                    <textarea rows="3" x-model="categoryForm.description" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
+                    <label for="knowledge-category-description" class="text-xs uppercase text-slate-400">Beschreibung</label>
+                    <textarea id="knowledge-category-description" rows="3" x-model="categoryForm.description" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
                 </div>
                 <p x-show="categoryError" class="text-sm text-rose-500" x-text="categoryError"></p>
             </div>
