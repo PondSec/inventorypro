@@ -7215,6 +7215,30 @@ def normalize_ticket_row(row):
     ticket["creator_display_name"] = ticket["created_by"] or "Unbekannt"
     return ticket
 
+def normalize_ticket_activity(row):
+    activity = dict(row)
+    try:
+        details = json.loads(activity.get("details") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        details = {}
+    action_labels = {
+        "create": "Ticket erstellt",
+        "update": "Ticket aktualisiert",
+        "bulk_update": "Mehrfachänderung",
+        "comment": "Kommentar hinzugefügt",
+        "watch": "Beobachter hinzugefügt",
+        "unwatch": "Beobachter entfernt",
+        "merge": "Ticket zusammengeführt",
+    }
+    activity["actor"] = activity.pop("username", None) or "System"
+    activity["label"] = action_labels.get(
+        activity.get("action"),
+        str(activity.get("action") or "Aktivität").replace("_", " ").title(),
+    )
+    activity["details"] = details
+    activity["changes"] = details.get("changes") if isinstance(details.get("changes"), list) else []
+    return activity
+
 def parse_date(value):
     if not value:
         return None
@@ -12500,6 +12524,16 @@ def ticket_detail(ticket_id):
             roadmap["steps"] = fetch_roadmap_steps(db, roadmap["id"])
         ticket['roadmap'] = roadmap
         ticket['review_relation'] = get_ticket_review_relation(db, ticket_id)
+        activities = db.execute(
+            '''
+            SELECT id, username, action, details, created_at
+            FROM activity_log
+            WHERE entity_type = 'ticket' AND entity_id = ?
+            ORDER BY created_at DESC, id DESC
+            ''',
+            (ticket_id,),
+        ).fetchall()
+        ticket['activity'] = [normalize_ticket_activity(row) for row in activities]
         return jsonify(ticket)
 
     if request.method == 'PUT':
@@ -12510,6 +12544,14 @@ def ticket_detail(ticket_id):
         data = request.get_json() or {}
         if "created_by" in data or "created_by_user_id" in data:
             return jsonify({"error": "Ticket-Ersteller kann nicht geändert werden"}), 400
+        expected_updated_at = str(data.get("updated_at") or "").strip()
+        if expected_updated_at and expected_updated_at != str(ticket.get("updated_at") or ""):
+            return jsonify({
+                "error": "Das Ticket wurde zwischenzeitlich geändert. Bitte aktuelle Daten laden und die Änderung erneut prüfen.",
+                "code": "ticket_update_conflict",
+                "ticket_id": ticket_id,
+                "latest_updated_at": ticket.get("updated_at"),
+            }), 409
         title = (data.get('title') or ticket['title']).strip()
         description = (data.get('description') or ticket['description']).strip()
         raw_category_id = data.get('category_id') if 'category_id' in data else ticket.get('category_id')
@@ -12610,20 +12652,55 @@ def ticket_detail(ticket_id):
             "requester_name": requester_name,
             "requester_email": requester_email,
         })
+        previous_asset_ids = [
+            row["asset_id"]
+            for row in db.execute(
+                "SELECT asset_id FROM ticket_assets WHERE ticket_id = ? ORDER BY asset_id",
+                (ticket_id,),
+            ).fetchall()
+        ]
+        if asset_ids is not None:
+            normalized_asset_ids = sorted({
+                asset_id
+                for asset_id in (normalize_optional_int(value) for value in asset_ids)
+                if asset_id is not None
+            })
+            if normalized_asset_ids != previous_asset_ids:
+                changes.append({
+                    "key": "asset_ids",
+                    "label": "Assets",
+                    "before": f"{len(previous_asset_ids)} verknüpft",
+                    "after": f"{len(normalized_asset_ids)} verknüpft",
+                })
+            asset_ids = normalized_asset_ids
 
-        db.execute('''
+        update_sql = '''
             UPDATE tickets
             SET title = ?, description = ?, category_id = ?, priority = ?, status = ?,
                 escalation_level = ?,
                 requester_name = ?, requester_email = ?, assignee = ?, assignee_email = ?,
                 due_date = ?, resolved_at = ?, resolution_action = ?, resolution_outcome = ?, resolution_notes = ?,
-                tags = ?, custom_fields = ?, updated_at = CURRENT_TIMESTAMP
+                tags = ?, custom_fields = ?, updated_at = STRFTIME('%Y-%m-%d %H:%M:%f', 'now')
             WHERE id = ?
-        ''', (
+        '''
+        update_params = [
             title, description, category_id, priority, status, escalation_level, requester_name, requester_email,
             assignee, assignee_email, due_date, resolved_at, resolution_action, resolution_outcome, resolution_notes,
             tags, custom_fields, ticket_id
-        ))
+        ]
+        if expected_updated_at:
+            update_sql += " AND updated_at = ?"
+            update_params.append(expected_updated_at)
+        update_cursor = db.execute(update_sql, update_params)
+        if update_cursor.rowcount != 1:
+            db.rollback()
+            latest_ticket = fetch_ticket(db, ticket_id)
+            return jsonify({
+                "error": "Das Ticket wurde zwischenzeitlich geändert. Bitte aktuelle Daten laden und die Änderung erneut prüfen.",
+                "code": "ticket_update_conflict",
+                "ticket_id": ticket_id,
+                "latest_updated_at": (latest_ticket or {}).get("updated_at"),
+            }), 409
         if asset_ids is not None:
             db.execute('DELETE FROM ticket_assets WHERE ticket_id = ?', (ticket_id,))
             for asset_id in asset_ids:
@@ -12647,7 +12724,10 @@ def ticket_detail(ticket_id):
                 updated_for_review,
                 actor=session.get("username"),
             )
-        log_activity(db, "update", "ticket", ticket_id, {"title": title})
+        log_activity(db, "update", "ticket", ticket_id, {
+            "title": title,
+            "changes": changes,
+        })
         if should_auto_create_roadmap(category_name):
             updated_ticket = {
                 "id": ticket_id,
@@ -12674,6 +12754,7 @@ def ticket_detail(ticket_id):
             "status": "updated",
             "review_ticket_id": review_ticket_id,
             "change_ticket_id": change_ticket_id,
+            "updated_at": (updated_ticket or {}).get("updated_at"),
         }), 200
 
     can_delete = user_can('tickets.delete')
@@ -12814,8 +12895,14 @@ def ticket_comments(ticket_id):
             INSERT INTO ticket_comments (ticket_id, author, body, is_internal)
             VALUES (?, ?, ?, ?)
         ''', (ticket_id, session.get('username'), body, is_internal))
-        db.execute('UPDATE tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (ticket_id,))
-        log_activity(db, "comment", "ticket", ticket_id)
+        db.execute(
+            "UPDATE tickets SET updated_at = STRFTIME('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?",
+            (ticket_id,),
+        )
+        log_activity(db, "comment", "ticket", ticket_id, {
+            "is_internal": bool(is_internal),
+            "preview": truncate_text(body, limit=180),
+        })
         db.commit()
         ticket = fetch_ticket(db, ticket_id)
         if ticket:
