@@ -297,7 +297,15 @@
         <button class="sd-overlay-dismiss" type="button" @click="assetPickerOpen = false" aria-label="Asset-Picker schließen"></button>
         <section class="sd-modal sd-asset-modal" role="dialog" aria-modal="true" aria-labelledby="asset-title">
             <header><div><p>Inventar durchsuchen</p><h2 id="asset-title">Assets verknüpfen</h2></div><button type="button" @click="assetPickerOpen = false" aria-label="Schließen"><i data-feather="x"></i></button></header>
-            <div class="sd-asset-search"><i data-feather="search"></i><input type="search" x-model="assetSearch" @input.debounce.350ms="loadAssetOptions()" placeholder="Name, Seriennummer, Hersteller oder Standort"></div>
+            <div class="sd-asset-search-panel">
+                <label for="asset-search">Assets durchsuchen</label>
+                <div class="sd-asset-search">
+                    <i data-feather="search" aria-hidden="true"></i>
+                    <input id="asset-search" x-ref="assetSearch" type="search" x-model="assetSearch" @input.debounce.350ms="loadAssetOptions()" placeholder="Name, Typ, Hersteller, Standort oder Seriennummer" autocomplete="off">
+                    <button x-show="assetSearch" type="button" @click="assetSearch = ''; loadAssetOptions(); $nextTick(() => $refs.assetSearch.focus())" aria-label="Asset-Suche leeren"><i data-feather="x" aria-hidden="true"></i></button>
+                </div>
+                <p aria-live="polite"><span x-show="assetLoading">Suche läuft …</span><span x-show="!assetLoading" x-text="`${assetOptions.length} Assets angezeigt`"></span></p>
+            </div>
             <div class="sd-asset-table"><table><thead><tr><th></th><th>Asset</th><th>Typ</th><th>Hersteller</th><th>Standort</th><th>Seriennummer</th></tr></thead><tbody><template x-for="asset in assetOptions" :key="asset.id"><tr @click="toggleAsset(asset.id)"><td><input type="checkbox" :checked="assetSelection.includes(asset.id)" @click.stop="toggleAsset(asset.id)" :aria-label="`${asset.name} auswählen`"></td><td><strong x-text="asset.name"></strong></td><td x-text="asset.category_name || '—'"></td><td x-text="asset.manufacturer || '—'"></td><td x-text="(asset.locations || []).join(', ') || '—'"></td><td x-text="(asset.serial_numbers || []).join(', ') || '—'"></td></tr></template></tbody></table><p x-show="!assetLoading && !assetOptions.length" class="sd-empty-inline">Keine Assets gefunden.</p></div>
             <footer><span><strong x-text="assetSelection.length"></strong> ausgewählt</span><div><button type="button" class="sd-button" @click="assetPickerOpen = false">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="applyAssetSelection()">Übernehmen</button></div></footer>
         </section>
