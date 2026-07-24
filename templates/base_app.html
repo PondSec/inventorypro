@@ -1,0 +1,97 @@
+{% from '_app_shell.html' import render_sidebar, render_breadcrumbs, render_page_tabs with context %}
+<!DOCTYPE html>
+<html lang="de" {% block html_attrs %}{% endblock %}>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Inventory Pro{% endblock %}</title>
+    <script src="/static/theme.js?v=inventory-v3-20260724-1"></script>
+    <script>
+        window.tailwind = window.tailwind || {};
+        window.tailwind.config = { darkMode: 'class' };
+        window.inventoryPermissions = {{ permissions | tojson }};
+        window.inventoryIsSuperuser = {{ is_superuser | tojson }};
+        window.inventoryUsername = {{ username | tojson }};
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/style.css?v=inventory-v3-20260724-1">
+    {% block extra_head %}{% endblock %}
+    <script src="/static/vendor/alpinejs.min.js" defer></script>
+</head>
+<body class="app-body{% block body_class %}{% endblock %}" data-current-username="{{ username or '' }}">
+    <div class="app-shell">
+        {{ render_sidebar(page_module | default('dashboard')) }}
+
+        <div class="app-main app-main--fixed">
+            <header class="app-header enterprise-topbar">
+                <div class="header-group">
+                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="icon-button inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                        <i data-feather="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div class="topbar-title-group">
+                        <p class="header-subtitle">{{ page_section_label | default('Workspace') }}</p>
+                        <h1 class="header-title">{{ page_title | default('Inventory Pro') }}</h1>
+                    </div>
+                </div>
+                <div class="topbar-actions">
+                    <span class="topbar-user-chip">
+                        <span class="topbar-user-chip__avatar">{{ (username or 'IP')[0:2] | upper }}</span>
+                        <span class="hidden lg:inline" data-current-username-label>{{ username }}</span>
+                    </span>
+                    {% block topbar_actions %}{% endblock %}
+                    <a href="/reset" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <i data-feather="lock" class="w-4 h-4"></i>
+                        <span class="sr-only sm:not-sr-only">Passwort</span>
+                    </a>
+                    <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <span data-theme-icon aria-hidden="true">🌙</span>
+                        <span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
+                    </button>
+                    <button type="button" onclick="logout()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <i data-feather="log-out" class="w-4 h-4"></i>
+                        <span class="sr-only sm:not-sr-only">Abmelden</span>
+                    </button>
+                </div>
+            </header>
+
+            <main class="app-content{% block app_content_class %}{% endblock %}" {% block app_content_attrs %}{% endblock %}>
+                <div class="page enterprise-page{% block page_class %}{% endblock %}">
+                    {{ render_breadcrumbs(page_breadcrumbs | default([])) }}
+
+                    {% if not hide_page_intro %}
+                    <section class="page-intro">
+                        <div class="page-intro__copy">
+                            {% if page_section_label %}
+                            <p class="page-intro__eyebrow">{{ page_section_label }}</p>
+                            {% endif %}
+                            <div class="page-intro__headline">
+                                <h2 class="page-title">{{ page_title | default('Inventory Pro') }}</h2>
+                                {% if page_status_badge %}
+                                <span class="page-status-badge">{{ page_status_badge }}</span>
+                                {% endif %}
+                            </div>
+                            {% if page_description %}
+                            <p class="page-intro__description">{{ page_description }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="page-intro__actions">
+                            {% block page_actions %}{% endblock %}
+                        </div>
+                    </section>
+                    {% endif %}
+
+                    {{ render_page_tabs(page_tabs | default([])) }}
+
+                    {% block content %}{% endblock %}
+                </div>
+            </main>
+        </div>
+    </div>
+
+    {% block overlays %}{% endblock %}
+
+    <script src="/static/vendor/feather.min.js?v=inventory-v3"></script>
+    {% block page_scripts %}{% endblock %}
+    <script src="/static/ui.js?v=inventory-v3"></script>
+</body>
+</html>
