@@ -71,7 +71,15 @@ const applyFallbackFeatherIcons = () => {
   return icons.length > 0;
 };
 
+const sanitizeFeatherBindings = () => {
+  document.querySelectorAll('i[data-feather]').forEach((icon) => {
+    icon.removeAttribute(':data-feather');
+    icon.removeAttribute('x-bind:data-feather');
+  });
+};
+
 const refreshFeatherIcons = () => {
+  sanitizeFeatherBindings();
   const usedFallbacks = applyFallbackFeatherIcons();
   if (window.feather && typeof window.feather.replace === 'function') {
     try {
