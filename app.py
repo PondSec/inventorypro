@@ -830,8 +830,12 @@ def get_db():
     db = getattr(g, '_database', None)
     if db is None:
         ensure_runtime_directories()
-        db = g._database = sqlite3.connect(DATABASE)
+        db = g._database = sqlite3.connect(DATABASE, timeout=10)
         db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys = ON")
+        db.execute("PRAGMA busy_timeout = 10000")
+        db.execute("PRAGMA journal_mode = WAL")
+        db.execute("PRAGMA synchronous = NORMAL")
     return db
 
 def parse_bool_env(value):
@@ -8393,6 +8397,31 @@ def get_asset_devices_info(db, asset_id):
     ''', (asset_id,)).fetchall()
     return [dict(row) for row in rows]
 
+def get_assets_devices_info(db, asset_ids):
+    normalized_ids = sorted({
+        asset_id
+        for asset_id in (normalize_optional_int(value) for value in asset_ids or [])
+        if asset_id is not None
+    })
+    grouped = {asset_id: [] for asset_id in normalized_ids}
+    if not normalized_ids:
+        return grouped
+    placeholders = ",".join("?" for _ in normalized_ids)
+    rows = db.execute(
+        f'''
+        SELECT ad.asset_id, d.serial_number, l.name AS location_name
+        FROM asset_devices ad
+        JOIN devices d ON d.id = ad.device_id
+        LEFT JOIN locations l ON l.id = d.location_id
+        WHERE ad.asset_id IN ({placeholders})
+        ORDER BY ad.asset_id, d.id
+        ''',
+        normalized_ids,
+    ).fetchall()
+    for row in rows:
+        grouped.setdefault(row["asset_id"], []).append(dict(row))
+    return grouped
+
 def build_asset_summary(db, asset_row, device_rows=None):
     asset = dict(asset_row)
     try:
@@ -8408,6 +8437,17 @@ def build_asset_summary(db, asset_row, device_rows=None):
     asset['manufacturer'] = extract_manufacturer(asset_specs)
     asset['warranty_status'] = warranty_status(asset.get("warranty_end"))
     return asset
+
+def build_asset_summaries(db, asset_rows):
+    rows = list(asset_rows)
+    device_rows_by_asset = get_assets_devices_info(
+        db,
+        [row["id"] for row in rows],
+    )
+    return [
+        build_asset_summary(db, row, device_rows=device_rows_by_asset.get(row["id"], []))
+        for row in rows
+    ]
 
 def fetch_asset_assignment_history(db, asset_id, limit=20):
     query = '''
@@ -8538,13 +8578,15 @@ def ensure_attachment_entity_access(db, entity_type, entity_id, access):
 
 def fetch_ticket_assets(db, ticket_id):
     rows = db.execute('''
-        SELECT a.*
+        SELECT a.*, ac.name AS category_name,
+               ac.binpacking_config AS category_binpacking_config
         FROM assets a
         JOIN ticket_assets ta ON ta.asset_id = a.id
+        LEFT JOIN asset_categories ac ON ac.id = a.category_id
         WHERE ta.ticket_id = ?
         ORDER BY a.name
     ''', (ticket_id,)).fetchall()
-    return [build_asset_summary(db, row) for row in rows]
+    return build_asset_summaries(db, rows)
 
 def merge_ticket_records(db, target_ticket, source_tickets, actor=None, note=None):
     merged_ticket_ids = []
@@ -9600,7 +9642,7 @@ def manage_assets():
         params.append(category_id)
     query += ' GROUP BY a.id ORDER BY a.created_at DESC'
     assets = db.execute(query, params).fetchall()
-    result = [build_asset_summary(db, row) for row in assets]
+    result = build_asset_summaries(db, assets)
     return jsonify(result)
 
 @app.route('/api/asset-entries/<int:asset_id>', methods=['GET', 'PUT', 'DELETE'])
@@ -12482,7 +12524,7 @@ def search_ticket_assets():
         [*params, per_page, (page - 1) * per_page],
     ).fetchall()
     return jsonify({
-        "items": [build_asset_summary(db, row) for row in rows],
+        "items": build_asset_summaries(db, rows),
         "page": page,
         "per_page": per_page,
         "total": total,
