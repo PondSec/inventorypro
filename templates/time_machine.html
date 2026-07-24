@@ -230,11 +230,11 @@
                             <p class="text-xs text-slate-500">Zeitpunkt, Layer und Vergleich steuern.</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-3">
-                            <input type="date" x-model="timelineDate" @change="loadState()" class="rounded-full border border-slate-200 px-3 py-2 text-sm">
+                            <input type="date" x-model="timelineDate" @change="loadState()" aria-label="Zeitpunkt der Timeline" class="rounded-full border border-slate-200 px-3 py-2 text-sm">
                             <button @click="setDateOffset(-6)" class="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">-6 Monate</button>
                             <button @click="setDateOffset(0)" class="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Heute</button>
                             <button @click="setDateOffset(3)" class="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">+3 Monate</button>
-                            <select x-model="selectedLayer" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs">
+                            <select x-model="selectedLayer" aria-label="Ebene der Timeline" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs">
                                 <option value="all">Alle Ebenen</option>
                                 <template x-for="layer in layers" :key="layer.key">
                                     <option :value="layer.key" x-text="layer.label"></option>
@@ -293,7 +293,7 @@
                         </div>
                         <div class="space-y-4">
                             <label class="block text-xs font-semibold text-slate-500">Branch auswählen</label>
-                            <select x-model="branch" @change="applyBranch()" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                            <select x-model="branch" @change="applyBranch()" aria-label="Simulationszweig" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                                 <template x-for="option in branchOptions" :key="option.value">
                                     <option :value="option.value" x-text="option.label"></option>
                                 </template>
@@ -303,7 +303,7 @@
                                 <p class="text-xs uppercase tracking-widest text-slate-400">What-if Regeln</p>
                                 <div class="space-y-2">
                                     <label class="block text-xs font-semibold text-slate-500">Ticket ignorieren</label>
-                                    <select x-model="branchTicketId" @change="applyBranch()" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                    <select x-model="branchTicketId" @change="applyBranch()" aria-label="In der Simulation ignoriertes Ticket" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
                                         <option value="">Kein Ticket</option>
                                         <template x-for="ticket in tickets" :key="ticket.id">
                                             <option :value="String(ticket.id)" x-text="`#${ticket.id} ${ticket.title}`"></option>
@@ -404,7 +404,7 @@
                         </div>
                         <div class="space-y-3">
                             <label class="block text-xs font-semibold text-slate-500">Vergleichsdatum</label>
-                            <input type="date" x-model="compareDate" @change="loadComparisonState()" :disabled="!compareEnabled" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                            <input type="date" x-model="compareDate" @change="loadComparisonState()" :disabled="!compareEnabled" aria-label="Vergleichsdatum" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                         </div>
                         <div class="grid gap-3 sm:grid-cols-2">
                             <template x-for="metric in comparisonMetrics" :key="metric.key">
