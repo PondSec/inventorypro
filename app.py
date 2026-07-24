@@ -6203,9 +6203,12 @@ def expected_request_origins():
 def enforce_same_origin_writes():
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return None
-    if (request.headers.get("Sec-Fetch-Site") or "").strip().lower() == "cross-site":
+    fetch_site = (request.headers.get("Sec-Fetch-Site") or "").strip().lower()
+    if fetch_site == "cross-site":
         return jsonify({"error": "Cross-Site-Anfrage abgewiesen."}), 403
     origin = request_origin()
+    if origin == "null" and fetch_site == "same-origin":
+        origin = ""
     if origin and origin not in expected_request_origins():
         return jsonify({"error": "Anfrageursprung ist nicht zulässig."}), 403
     return None
