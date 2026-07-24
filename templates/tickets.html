@@ -14,7 +14,7 @@
     </script>
     <link rel="stylesheet" href="/static/style.css?v=service-desk-20260725-4">
 </head>
-<body class="sd-body" @keydown.window="handleShortcut($event)">
+<body class="sd-body" :class="{ 'modal-open': createOpen || assetPickerOpen || saveViewOpen || bulkDialog.open || showShortcuts || filterOpen || mobileQueuesOpen }" @keydown.window="handleShortcut($event)">
     <a class="skip-link" href="#ticket-table">Zur Ticketliste springen</a>
 
     <div class="sd-shell">
