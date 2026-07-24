@@ -56,6 +56,20 @@ class SecurityBoundaryTestCase(unittest.TestCase):
         )
         self.assertNotEqual(allowed.status_code, 403)
 
+        opaque_same_origin = self.client.post(
+            "/login",
+            data={"username": "admin", "password": "invalid"},
+            headers={"Origin": "null", "Sec-Fetch-Site": "same-origin"},
+        )
+        self.assertNotEqual(opaque_same_origin.status_code, 403)
+
+        opaque_cross_site = self.client.post(
+            "/login",
+            data={"username": "admin", "password": "invalid"},
+            headers={"Origin": "null", "Sec-Fetch-Site": "cross-site"},
+        )
+        self.assertEqual(opaque_cross_site.status_code, 403)
+
     def test_import_archive_rejects_traversal_and_symlinks(self):
         traversal_buffer = io.BytesIO()
         with zipfile.ZipFile(traversal_buffer, "w") as archive:
