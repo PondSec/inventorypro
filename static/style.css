@@ -5337,12 +5337,12 @@ button.sd-mobile-queue-trigger {
     display: none;
   }
 
-  .sd-button-primary {
+  .sd-toolbar-actions > .sd-button-primary {
     width: 38px;
     padding: 0;
   }
 
-  .sd-button-primary span {
+  .sd-toolbar-actions > .sd-button-primary span {
     display: none;
   }
 
