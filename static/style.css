@@ -1894,12 +1894,17 @@ button {
 
 .sd-table-panel {
   position: relative;
-  min-height: calc(100dvh - 72px);
+  display: flex;
+  height: calc(100dvh - 72px);
+  min-height: 360px;
+  flex-direction: column;
   background: var(--color-surface);
 }
 
 .sd-table-scroll {
   width: 100%;
+  min-height: 0;
+  flex: 1;
   overflow: auto;
 }
 
@@ -1915,7 +1920,7 @@ button {
 .sd-ticket-table th {
   position: sticky;
   z-index: 10;
-  top: 72px;
+  top: 0;
   height: 38px;
   padding: 0 10px;
   border-bottom: 1px solid var(--color-border-strong);
@@ -1927,10 +1932,6 @@ button {
   text-align: left;
   text-transform: uppercase;
   white-space: nowrap;
-}
-
-.sd-filter-chips:not([style*="display: none"]) ~ .sd-table-panel .sd-ticket-table th {
-  top: 115px;
 }
 
 .sd-ticket-table th button {
@@ -2185,9 +2186,8 @@ button {
 }
 
 .sd-pagination {
-  position: sticky;
-  bottom: 0;
   display: flex;
+  flex: 0 0 auto;
   min-height: 48px;
   align-items: center;
   gap: 18px;
@@ -3179,7 +3179,7 @@ button {
   }
 
   .sd-ticket-table th {
-    top: 120px;
+    top: 0;
   }
 
   .sd-bulk-bar {
