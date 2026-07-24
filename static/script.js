@@ -7,13 +7,13 @@ document.addEventListener('alpine:init', () => {
         devices: [],
         filteredDevices: [],
         allDevices: [],
-        assetCategories: [],
         assets: [],
         vendors: [],
         purchaseOrders: [],
         assetEntryOptions: [],
         relationTypes: [],
         activeCategory: null,
+        workspaceView: 'overview',
         inventoryTab: 'devices',
         categoriesOpen: false,
         assetsOpen: false,
@@ -46,6 +46,14 @@ document.addEventListener('alpine:init', () => {
         deviceDetailOpen: false,
         selectedAsset: null,
         assetDetailOpen: false,
+        binpackingPreviewOpen: false,
+        binpackingPreviewLayerIndex: 0,
+        binpackingPreviewActiveStep: null,
+        binpackingPreviewCamera: 'iso',
+        binpackingRotationX: 66,
+        binpackingRotationZ: -38,
+        binpacking3dDragging: false,
+        binpacking3dDragStart: null,
         selectedAssetCategory: null,
         assetAssignmentHistory: [],
         assignmentModalOpen: false,
@@ -62,8 +70,12 @@ document.addEventListener('alpine:init', () => {
         },
         assetAttachments: [],
         assetAttachmentError: '',
+        assetFormErrors: {},
+        assetFormMessage: '',
         deviceTags: [],
         deviceNotes: [],
+        deviceFormErrors: {},
+        deviceFormMessage: '',
         maintenanceTasks: [],
         maintenanceAttachments: {},
         maintenanceAttachmentErrors: {},
@@ -109,11 +121,23 @@ document.addEventListener('alpine:init', () => {
             name: '',
             icon: 'package',
             description: '',
-            fields: []
-        },
-        currentAssetCategory: {
-            id: null,
-            name: ''
+            fields: [],
+            binpacking_config: {
+                enabled: false,
+                content_category_id: '',
+                allow_rotation: true,
+                clearance: '',
+                container_fields: {
+                    width: '',
+                    height: '',
+                    depth: ''
+                },
+                item_fields: {
+                    width: '',
+                    height: '',
+                    depth: ''
+                }
+            }
         },
         currentDevice: {
             id: null,
@@ -149,6 +173,7 @@ document.addEventListener('alpine:init', () => {
 
         // Initialization
         async init() {
+            this.initWorkspaceViewFromUrl();
             await this.loadCategories();
             await this.loadAssetCategories();
             await this.loadLocations();
@@ -175,10 +200,79 @@ document.addEventListener('alpine:init', () => {
             this.$watch('createdFrom', () => this.searchDevices());
             this.$watch('createdTo', () => this.searchDevices());
             this.$watch('specQuery', () => this.searchDevices());
-            if (window.feather) {
-                feather.replace();
-            }
+            this.refreshFeatherIcons();
             this.startLiveRefresh();
+        },
+
+        refreshFeatherIcons() {
+            const replaceIcons = () => {
+                if (typeof window.InventoryRefreshIcons === 'function') {
+                    window.InventoryRefreshIcons();
+                } else if (window.feather && typeof feather.replace === 'function') {
+                    feather.replace();
+                }
+            };
+            this.$nextTick(() => {
+                replaceIcons();
+                setTimeout(replaceIcons, 80);
+            });
+        },
+
+        initWorkspaceViewFromUrl() {
+            const params = new URLSearchParams(window.location.search || '');
+            const requestedView = params.get('view');
+            const allowedViews = ['overview', 'devices', 'assets', 'taxonomy'];
+            this.workspaceView = allowedViews.includes(requestedView) ? requestedView : 'overview';
+            this.inventoryTab = this.workspaceView === 'assets' ? 'assets' : 'devices';
+            if (this.workspaceView === 'taxonomy') {
+                this.inventoryTab = 'devices';
+            }
+        },
+
+        setWorkspaceView(view) {
+            const allowedViews = ['overview', 'devices', 'assets', 'taxonomy'];
+            if (!allowedViews.includes(view)) {
+                view = 'overview';
+            }
+            this.workspaceView = view;
+            if (view === 'assets') {
+                this.inventoryTab = 'assets';
+            } else if (view === 'devices') {
+                this.inventoryTab = 'devices';
+            }
+            if (view !== 'devices') {
+                this.filtersOpen = false;
+            }
+            const url = new URL(window.location.href);
+            if (view === 'overview') {
+                url.searchParams.delete('view');
+            } else {
+                url.searchParams.set('view', view);
+            }
+            window.history.replaceState({}, '', url);
+            this.refreshFeatherIcons();
+        },
+
+        workspaceTitle() {
+            const titles = {
+                overview: 'Inventar',
+                devices: this.activeCategory
+                    ? this.getCategoryName(this.activeCategory)
+                    : (this.locationFilter ? `Geräte in ${this.locationFilterName()}` : 'Geräte'),
+                assets: this.selectedAssetCategory ? this.selectedAssetCategory.name : 'Assets',
+                taxonomy: 'Struktur'
+            };
+            return titles[this.workspaceView] || 'Inventar';
+        },
+
+        workspaceDescription() {
+            const descriptions = {
+                overview: 'Überblick, nächste Aktionen und aktuelle Bewegung.',
+                devices: 'Geräte suchen, filtern und präzise pflegen.',
+                assets: 'Asset-Einträge, Komponenten, Zuweisungen und Lebenszyklus.',
+                taxonomy: 'Kategorien und Asset-Profile verwalten.'
+            };
+            return descriptions[this.workspaceView] || '';
         },
 
         can(permissionKey) {
@@ -302,6 +396,7 @@ document.addEventListener('alpine:init', () => {
             this.activeCategory = categoryId;
             if (categoryId) {
                 this.filtersOpen = false;
+                this.setWorkspaceView('devices');
             }
             const url = categoryId 
                 ? `/api/devices?category_id=${categoryId}`
@@ -445,7 +540,7 @@ document.addEventListener('alpine:init', () => {
             const locationId = params.get('location');
             if (!locationId || !this.locations.some(location => String(location.id) === String(locationId))) return;
 
-            this.inventoryTab = 'devices';
+            this.setWorkspaceView('devices');
             this.activeCategory = null;
             this.locationFilter = String(locationId);
             this.filtersOpen = true;
@@ -473,7 +568,7 @@ document.addEventListener('alpine:init', () => {
         async showAllDevices() {
             this.clearLocationFilter();
             await this.loadDevices();
-            this.inventoryTab = 'devices';
+            this.setWorkspaceView('devices');
         },
 
         searchDevices() {
@@ -566,10 +661,10 @@ document.addEventListener('alpine:init', () => {
             return this.filteredAssets();
         },
 
-        filteredAssetCategories() {
-            const query = (this.assetCategorySearchQuery || '').toLowerCase().trim();
+        filteredAssets() {
+            const query = (this.assetSearchQuery || '').toLowerCase().trim();
             if (!query) {
-                return this.assetCategories;
+                return this.assets;
             }
             return this.assets.filter(asset =>
                 (asset.name || '').toLowerCase().includes(query) ||
@@ -632,7 +727,7 @@ document.addEventListener('alpine:init', () => {
         },
 
 		editCategoryModal(category) {  // <-- Parameter korrekt entgegennehmen
-            const fieldsObject = JSON.parse(category.fields || '{}');
+            const fieldsObject = this.getCategoryFields(category.id) || {};
 			this.editingCategory = true;
 			this.currentCategory = {
 				id: category.id,
@@ -640,23 +735,14 @@ document.addEventListener('alpine:init', () => {
 				icon: category.icon,
                 description: category.description || '',
 				fields: Object.entries(fieldsObject).map(([fieldName, fieldConfig]) => {
-                    if (typeof fieldConfig === 'string') {
-                        return {
-                            id: crypto.randomUUID(),
-                            name: fieldName,
-                            type: fieldConfig,
-                            options: [],
-                            optionsText: ''
-                        };
-                    }
-
                     const options = Array.isArray(fieldConfig?.options) ? fieldConfig.options : [];
                     return {
                         id: crypto.randomUUID(),
                         name: fieldName,
                         type: fieldConfig?.type || 'text',
                         options,
-                        optionsText: options.join(', ')
+                        optionsText: options.join(', '),
+                        unit: fieldConfig?.unit || ''
                     };
                 })
 			};
@@ -675,12 +761,22 @@ document.addEventListener('alpine:init', () => {
                 name: '',
                 type: 'text',
                 options: [],
-                optionsText: ''
+                optionsText: '',
+                unit: ''
             });
         },
 
         removeCategoryField(fieldId) {
             this.currentCategory.fields = this.currentCategory.fields.filter(field => field.id !== fieldId);
+        },
+
+        moveCategoryField(fieldId, direction) {
+            const currentIndex = this.currentCategory.fields.findIndex(field => field.id === fieldId);
+            if (currentIndex < 0) return;
+            const targetIndex = currentIndex + direction;
+            if (targetIndex < 0 || targetIndex >= this.currentCategory.fields.length) return;
+            const [field] = this.currentCategory.fields.splice(currentIndex, 1);
+            this.currentCategory.fields.splice(targetIndex, 0, field);
         },
 
         filteredIconCatalog() {
@@ -709,6 +805,7 @@ document.addEventListener('alpine:init', () => {
                 for (const field of this.currentCategory.fields) {
                     const trimmedName = field.name.trim();
                     if (!trimmedName) continue;
+                    const unit = (field.unit || '').trim();
                     if (field.type === 'select') {
                         const options = (field.optionsText || '')
                             .split(',')
@@ -716,10 +813,15 @@ document.addEventListener('alpine:init', () => {
                             .filter(Boolean);
                         fields[trimmedName] = {
                             type: field.type,
-                            options
+                            options,
+                            unit: ''
                         };
                     } else {
-                        fields[trimmedName] = field.type;
+                        fields[trimmedName] = {
+                            type: field.type,
+                            options: [],
+                            unit
+                        };
                     }
                 }
 
@@ -789,6 +891,98 @@ document.addEventListener('alpine:init', () => {
         },
 
         // Asset Category Methods
+        defaultBinpackingConfig() {
+            return {
+                enabled: false,
+                content_category_id: '',
+                allow_rotation: true,
+                clearance: '',
+                container_fields: {
+                    width: '',
+                    height: '',
+                    depth: ''
+                },
+                item_fields: {
+                    width: '',
+                    height: '',
+                    depth: ''
+                }
+            };
+        },
+
+        readBinpackingConfig(rawConfig) {
+            const defaults = this.defaultBinpackingConfig();
+            let parsed = rawConfig;
+            if (typeof rawConfig === 'string') {
+                try {
+                    parsed = JSON.parse(rawConfig || '{}');
+                } catch (error) {
+                    console.error('Error parsing binpacking config:', error);
+                    return defaults;
+                }
+            }
+            if (!parsed || typeof parsed !== 'object') {
+                return defaults;
+            }
+
+            const normalizeMapping = (mapping) => ({
+                width: (mapping?.width || '').toString(),
+                height: (mapping?.height || '').toString(),
+                depth: (mapping?.depth || '').toString()
+            });
+
+            return {
+                enabled: !!parsed.enabled,
+                content_category_id: parsed.content_category_id ? String(parsed.content_category_id) : '',
+                allow_rotation: parsed.allow_rotation !== false,
+                clearance: parsed.clearance ?? '',
+                container_fields: normalizeMapping(parsed.container_fields),
+                item_fields: normalizeMapping(parsed.item_fields)
+            };
+        },
+
+        getCurrentAssetCategoryNumberFields() {
+            return (this.currentAssetCategory.fields || []).filter((field) => field.type === 'number');
+        },
+
+        getBinpackingTargetCategory() {
+            const targetId = this.currentAssetCategory?.binpacking_config?.content_category_id;
+            if (!targetId) {
+                return null;
+            }
+            return this.getAssetCategoryById(targetId);
+        },
+
+        getBinpackingTargetNumberFields() {
+            const targetCategory = this.getBinpackingTargetCategory();
+            if (!targetCategory) {
+                return [];
+            }
+            return this.getAssetCategoryFieldEntries(targetCategory.id).filter((field) => field.type === 'number');
+        },
+
+        buildAssetCategoryBinpackingPayload() {
+            const config = this.currentAssetCategory.binpacking_config || this.defaultBinpackingConfig();
+            if (!config.enabled) {
+                return { enabled: false };
+            }
+
+            const normalizeMapping = (mapping) => ({
+                width: (mapping?.width || '').toString().trim(),
+                height: (mapping?.height || '').toString().trim(),
+                depth: (mapping?.depth || '').toString().trim()
+            });
+
+            return {
+                enabled: true,
+                content_category_id: config.content_category_id ? Number(config.content_category_id) : null,
+                allow_rotation: config.allow_rotation !== false,
+                clearance: config.clearance === '' ? 0 : Number(config.clearance),
+                container_fields: normalizeMapping(config.container_fields),
+                item_fields: normalizeMapping(config.item_fields)
+            };
+        },
+
         openAddAssetCategoryModal() {
             this.editingAssetCategory = false;
             this.currentAssetCategory = {
@@ -796,7 +990,8 @@ document.addEventListener('alpine:init', () => {
                 name: '',
                 icon: 'package',
                 description: '',
-                fields: []
+                fields: [],
+                binpacking_config: this.defaultBinpackingConfig()
             };
             this.iconSearch = '';
             this.isAssetCategoryModalOpen = true;
@@ -818,9 +1013,11 @@ document.addEventListener('alpine:init', () => {
                         name: fieldName,
                         type: fieldConfig?.type || 'text',
                         options,
-                        optionsText: options.join(', ')
+                        optionsText: options.join(', '),
+                        unit: fieldConfig?.unit || ''
                     };
-                })
+                }),
+                binpacking_config: this.readBinpackingConfig(category.binpacking_config)
             };
             this.iconSearch = '';
             this.isAssetCategoryModalOpen = true;
@@ -837,12 +1034,22 @@ document.addEventListener('alpine:init', () => {
                 name: '',
                 type: 'text',
                 options: [],
-                optionsText: ''
+                optionsText: '',
+                unit: ''
             });
         },
 
         removeAssetCategoryField(fieldId) {
             this.currentAssetCategory.fields = this.currentAssetCategory.fields.filter(field => field.id !== fieldId);
+        },
+
+        moveAssetCategoryField(fieldId, direction) {
+            const currentIndex = this.currentAssetCategory.fields.findIndex(field => field.id === fieldId);
+            if (currentIndex < 0) return;
+            const targetIndex = currentIndex + direction;
+            if (targetIndex < 0 || targetIndex >= this.currentAssetCategory.fields.length) return;
+            const [field] = this.currentAssetCategory.fields.splice(currentIndex, 1);
+            this.currentAssetCategory.fields.splice(targetIndex, 0, field);
         },
 
         async saveAssetCategory() {
@@ -851,6 +1058,7 @@ document.addEventListener('alpine:init', () => {
                 for (const field of this.currentAssetCategory.fields) {
                     const trimmedName = field.name.trim();
                     if (!trimmedName) continue;
+                    const unit = (field.unit || '').trim();
                     if (field.type === 'select') {
                         const options = (field.optionsText || '')
                             .split(',')
@@ -858,10 +1066,15 @@ document.addEventListener('alpine:init', () => {
                             .filter(Boolean);
                         fields[trimmedName] = {
                             type: field.type,
-                            options
+                            options,
+                            unit: ''
                         };
                     } else {
-                        fields[trimmedName] = field.type;
+                        fields[trimmedName] = {
+                            type: field.type,
+                            options: [],
+                            unit
+                        };
                     }
                 }
 
@@ -869,7 +1082,8 @@ document.addEventListener('alpine:init', () => {
                     name: this.currentAssetCategory.name,
                     icon: this.currentAssetCategory.icon,
                     description: this.currentAssetCategory.description,
-                    fields
+                    fields,
+                    binpacking_config: this.buildAssetCategoryBinpackingPayload()
                 };
 
                 let response;
@@ -889,6 +1103,10 @@ document.addEventListener('alpine:init', () => {
 
                 if (!response.ok) {
                     const error = await response.json();
+                    if (error.field_errors) {
+                        const messages = Object.values(error.field_errors).join(' | ');
+                        throw new Error(messages || error.error || 'Asset-Kategorie konnte nicht gespeichert werden');
+                    }
                     throw new Error(error.error || 'Failed to save asset category');
                 }
 
@@ -929,6 +1147,18 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async selectAssetCategory(category) {
+            this.selectedAssetCategory = category;
+            this.setWorkspaceView('assets');
+            await this.loadAssets(category.id);
+        },
+
+        async clearAssetCategorySelection() {
+            this.selectedAssetCategory = null;
+            this.setWorkspaceView('assets');
+            await this.loadAssets();
+        },
+
         toggleCategoryMenu(categoryId) {
             this.categoryMenuOpen = this.categoryMenuOpen === categoryId ? null : categoryId;
             // Schließe das Geräte-Menü, wenn ein Kategorie-Menü geöffnet wird
@@ -938,21 +1168,31 @@ document.addEventListener('alpine:init', () => {
         },
 
         // Device Methods
-        openAddDeviceModal() {
+        async openAddDeviceModal() {
+            this.clearDeviceFormState();
+            if (this.categories.length === 0) {
+                await this.loadCategories();
+            }
+            if (this.allDevices.length === 0) {
+                await this.loadAllDevices();
+            }
+            const defaultCategoryId = this.activeCategory || this.categories[0]?.id || '';
             this.editingDevice = false;
             this.currentDevice = {
                 id: null,
                 name: '',
-                category_id: this.activeCategory,
+                category_id: defaultCategoryId,
                 serial_number: '',
                 location_id: '',
                 specs: {},
                 extraSpecs: []
             };
             this.isDeviceModalOpen = true;
+            this.handleDeviceCategoryChange();
         },
 
         openEditDeviceModal(device) {
+            this.clearDeviceFormState();
             const specs = JSON.parse(device.specs || '{}');
             const categoryFields = this.getCategoryFields(device.category_id) || {};
             const baseSpecs = {};
@@ -984,6 +1224,7 @@ document.addEventListener('alpine:init', () => {
 
         closeDeviceModal() {
             this.isDeviceModalOpen = false;
+            this.clearDeviceFormState();
         },
 
         addExtraSpec() {
@@ -998,14 +1239,136 @@ document.addEventListener('alpine:init', () => {
             this.currentDevice.extraSpecs = this.currentDevice.extraSpecs.filter(spec => spec.id !== specId);
         },
 
+        handleDeviceCategoryChange() {
+            const fieldNames = new Set(
+                this.getCategoryFieldEntries(this.currentDevice.category_id).map((field) => field.name)
+            );
+            const nextSpecs = {};
+            Object.entries(this.currentDevice.specs || {}).forEach(([key, value]) => {
+                if (fieldNames.has(key)) {
+                    nextSpecs[key] = value;
+                }
+            });
+            this.currentDevice.specs = nextSpecs;
+
+            if (!this.editingDevice && !String(this.currentDevice.name || '').trim() && !String(this.currentDevice.serial_number || '').trim()) {
+                this.applySuggestedDeviceIdentity();
+            }
+        },
+
+        getCategoryCounterPrefix(categoryId) {
+            const category = this.getCategoryById(categoryId);
+            const rawName = String(category?.name || 'Device')
+                .normalize('NFKD')
+                .replace(/[^\w\s-]/g, '')
+                .trim()
+                .replace(/\s+/g, '-');
+            return `${rawName || 'Device'}-`;
+        },
+
+        extractTrailingCounter(value) {
+            const normalized = String(value || '').trim();
+            if (!normalized) {
+                return null;
+            }
+            const match = normalized.match(/^(.*?)(\d+)\s*$/);
+            if (!match) {
+                return null;
+            }
+            return {
+                prefix: match[1] || '',
+                number: Number.parseInt(match[2], 10),
+                width: match[2].length,
+            };
+        },
+
+        buildCounterSuggestion(values, fallbackPrefix) {
+            const candidates = values
+                .map((value) => this.extractTrailingCounter(value))
+                .filter((candidate) => candidate && Number.isFinite(candidate.number));
+
+            if (!candidates.length) {
+                return `${fallbackPrefix}${String(1).padStart(3, '0')}`;
+            }
+
+            const best = candidates.reduce((currentBest, candidate) => {
+                if (!currentBest) {
+                    return candidate;
+                }
+                if (candidate.number > currentBest.number) {
+                    return candidate;
+                }
+                if (candidate.number === currentBest.number && candidate.width > currentBest.width) {
+                    return candidate;
+                }
+                return currentBest;
+            }, null);
+
+            const prefix = String(best?.prefix || '').trim() || fallbackPrefix;
+            const nextNumber = (best?.number || 0) + 1;
+            const width = Math.max(best?.width || 0, 3);
+            return `${prefix}${String(nextNumber).padStart(width, '0')}`;
+        },
+
+        getDeviceIdentitySuggestions() {
+            const categoryId = this.currentDevice.category_id || this.activeCategory;
+            if (!categoryId) {
+                return { name: '', serial_number: '' };
+            }
+
+            const devices = this.getDevicesForCategory(categoryId).filter((device) => {
+                return !this.currentDevice.id || String(device.id) !== String(this.currentDevice.id);
+            });
+            const fallbackPrefix = this.getCategoryCounterPrefix(categoryId);
+            const nameSuggestion = this.buildCounterSuggestion(
+                devices.map((device) => device.name).filter(Boolean),
+                fallbackPrefix
+            );
+            const serialSuggestion = this.buildCounterSuggestion(
+                devices.map((device) => device.serial_number).filter(Boolean),
+                fallbackPrefix
+            );
+
+            return {
+                name: nameSuggestion,
+                serial_number: serialSuggestion || nameSuggestion,
+            };
+        },
+
+        applySuggestedDeviceIdentity(force = false) {
+            if (this.editingDevice) {
+                return;
+            }
+            const suggestions = this.getDeviceIdentitySuggestions();
+            if (suggestions.name && (force || !String(this.currentDevice.name || '').trim())) {
+                this.currentDevice.name = suggestions.name;
+            }
+            if (suggestions.serial_number && (force || !String(this.currentDevice.serial_number || '').trim())) {
+                this.currentDevice.serial_number = suggestions.serial_number;
+            }
+        },
+
         async saveDevice() {
             try {
+                this.clearDeviceFormState();
                 const specs = { ...this.currentDevice.specs };
                 this.currentDevice.extraSpecs.forEach((spec) => {
                     const trimmedName = spec.name.trim();
                     if (!trimmedName) return;
                     specs[trimmedName] = spec.value;
                 });
+
+                if (!String(this.currentDevice.name || '').trim()) {
+                    this.deviceFormErrors = { name: 'Name ist erforderlich' };
+                    this.deviceFormMessage = 'Bitte die markierten Felder prüfen.';
+                    return;
+                }
+
+                if (!this.currentDevice.category_id) {
+                    this.deviceFormErrors = { category_id: 'Kategorie ist erforderlich' };
+                    this.deviceFormMessage = 'Bitte die markierten Felder prüfen.';
+                    return;
+                }
 
                 const deviceData = {
                     name: this.currentDevice.name,
@@ -1031,8 +1394,10 @@ document.addEventListener('alpine:init', () => {
                 }
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Failed to save device');
+                    const error = await this.readErrorPayload(response, 'Gerät konnte nicht gespeichert werden');
+                    this.deviceFormErrors = error.field_errors || {};
+                    this.deviceFormMessage = error.error || 'Gerät konnte nicht gespeichert werden';
+                    return;
                 }
 
                 await this.loadDevices(this.activeCategory);
@@ -1041,22 +1406,25 @@ document.addEventListener('alpine:init', () => {
                 await this.loadActivityFeed();
             } catch (error) {
                 console.error('Error saving device:', error);
-                alert('Error saving device: ' + error.message);
+                this.deviceFormMessage = error.message || 'Gerät konnte nicht gespeichert werden';
             }
         },
 
         async deleteDevice(deviceId) {
-            if (confirm('Are you sure you want to delete this device?')) {
+            if (confirm('Möchten Sie dieses Gerät wirklich löschen?')) {
                 const response = await fetch(`/api/devices/${deviceId}`, {
                     method: 'DELETE'
                 });
                 if (response.ok) {
                     await this.loadDevices(this.activeCategory);
                     await this.loadAllDevices();
+                    if (this.selectedDevice?.id === deviceId) {
+                        this.closeDeviceDetail();
+                    }
                     await this.loadActivityFeed();
                 } else {
                     const error = await response.json();
-                    alert('Error deleting device: ' + (error.error || 'Unknown error'));
+                    alert(error.error || 'Gerät konnte nicht gelöscht werden');
                 }
             }
         },
@@ -1430,90 +1798,13 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        // Asset Category Methods
-        openAddAssetCategoryModal() {
-            this.editingAssetCategory = false;
-            this.currentAssetCategory = { id: null, name: '' };
-            this.isAssetCategoryModalOpen = true;
-        },
-
-        editAssetCategoryModal(category) {
-            this.editingAssetCategory = true;
-            this.currentAssetCategory = { id: category.id, name: category.name };
-            this.isAssetCategoryModalOpen = true;
-        },
-
-        closeAssetCategoryModal() {
-            this.isAssetCategoryModalOpen = false;
-        },
-
-        async saveAssetCategory() {
-            try {
-                const payload = { name: this.currentAssetCategory.name };
-                let response;
-                if (this.editingAssetCategory) {
-                    response = await fetch(`/api/asset-categories/${this.currentAssetCategory.id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                } else {
-                    response = await fetch('/api/asset-categories', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                }
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Asset-Kategorie konnte nicht gespeichert werden');
-                }
-
-                await this.loadAssetCategories();
-                this.closeAssetCategoryModal();
-            } catch (error) {
-                console.error('Error saving asset category:', error);
-                alert('Error saving asset category: ' + error.message);
-            }
-        },
-
-        async deleteAssetCategory(categoryId) {
-            if (!confirm('Möchten Sie diese Asset-Kategorie wirklich löschen?')) {
-                return;
-            }
-            const response = await fetch(`/api/asset-categories/${categoryId}`, {
-                method: 'DELETE'
-            });
-            if (response.ok) {
-                if (this.selectedAssetCategory?.id === categoryId) {
-                    this.selectedAssetCategory = null;
-                    await this.loadAssets();
-                }
-                await this.loadAssetCategories();
-            } else {
-                const error = await response.json();
-                alert(error.error || 'Asset-Kategorie konnte nicht gelöscht werden');
-            }
-        },
-
-        async selectAssetCategory(category) {
-            this.selectedAssetCategory = category;
-            this.inventoryTab = 'assets';
-            await this.loadAssets(category.id);
-        },
-
-        async clearAssetCategorySelection() {
-            this.selectedAssetCategory = null;
-            await this.loadAssets();
-        },
-
         // Asset Entry Methods
         async openAddAssetModal() {
             if (this.assetCategories.length === 0) {
                 alert('Bitte zuerst eine Asset-Kategorie anlegen.');
                 return;
             }
+            this.clearAssetFormState();
             this.editingAsset = false;
             if (this.assetCategories.length === 0) {
                 await this.loadAssetCategories();
@@ -1560,6 +1851,7 @@ document.addEventListener('alpine:init', () => {
 
         async openEditAssetModal(asset) {
             try {
+                this.clearAssetFormState();
                 const response = await fetch(`/api/asset-entries/${asset.id}`);
                 if (!response.ok) {
                     throw new Error('Asset konnte nicht geladen werden');
@@ -1619,6 +1911,7 @@ document.addEventListener('alpine:init', () => {
 
         closeAssetModal() {
             this.isAssetModalOpen = false;
+            this.clearAssetFormState();
         },
 
         addAssetSpec() {
@@ -1647,12 +1940,25 @@ document.addEventListener('alpine:init', () => {
 
         async saveAsset() {
             try {
+                this.clearAssetFormState();
                 const specs = { ...this.currentAsset.specs };
                 this.currentAsset.extraSpecs.forEach((spec) => {
                     const trimmedName = spec.name.trim();
                     if (!trimmedName) return;
                     specs[trimmedName] = spec.value;
                 });
+
+                if (!String(this.currentAsset.name || '').trim()) {
+                    this.assetFormErrors = { name: 'Name ist erforderlich' };
+                    this.assetFormMessage = 'Bitte die markierten Felder prüfen.';
+                    return;
+                }
+
+                if (!this.currentAsset.category_id) {
+                    this.assetFormErrors = { category_id: 'Kategorie ist erforderlich' };
+                    this.assetFormMessage = 'Bitte die markierten Felder prüfen.';
+                    return;
+                }
 
                 const payload = {
                     name: this.currentAsset.name,
@@ -1696,8 +2002,10 @@ document.addEventListener('alpine:init', () => {
                 }
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Asset konnte nicht gespeichert werden');
+                    const error = await this.readErrorPayload(response, 'Asset konnte nicht gespeichert werden');
+                    this.assetFormErrors = error.field_errors || {};
+                    this.assetFormMessage = error.error || 'Asset konnte nicht gespeichert werden';
+                    return;
                 }
 
                 await this.loadAssets();
@@ -1706,7 +2014,7 @@ document.addEventListener('alpine:init', () => {
                 await this.loadActivityFeed();
             } catch (error) {
                 console.error('Error saving asset:', error);
-                alert('Error saving asset: ' + error.message);
+                this.assetFormMessage = error.message || 'Asset konnte nicht gespeichert werden';
             }
         },
 
@@ -1749,10 +2057,537 @@ document.addEventListener('alpine:init', () => {
 
         closeAssetDetail() {
             this.assetDetailOpen = false;
+            this.closeBinpackingPreview();
             this.selectedAsset = null;
             this.assetAssignmentHistory = [];
             this.assetAttachments = [];
             this.assetAttachmentError = '';
+        },
+
+        openBinpackingPreview(asset = null) {
+            const targetAsset = asset || this.selectedAsset;
+            const preview = targetAsset?.binpacking;
+            if (!preview?.enabled) {
+                return;
+            }
+            this.binpackingPreviewOpen = true;
+            this.binpackingPreviewLayerIndex = 0;
+            this.binpackingPreviewActiveStep = preview.steps?.[0]?.step || null;
+            this.setBinpackingCamera('iso');
+        },
+
+        closeBinpackingPreview() {
+            this.binpackingPreviewOpen = false;
+            this.binpackingPreviewLayerIndex = 0;
+            this.binpackingPreviewActiveStep = null;
+            this.binpacking3dDragging = false;
+            this.binpacking3dDragStart = null;
+        },
+
+        currentBinpackingPreview() {
+            return this.selectedAsset?.binpacking || null;
+        },
+
+        currentBinpackingLayer() {
+            const layers = this.currentBinpackingPreview()?.layers || [];
+            if (!layers.length) {
+                return null;
+            }
+            return layers[this.binpackingPreviewLayerIndex] || layers[0];
+        },
+
+        setBinpackingPreviewLayer(index) {
+            const layers = this.currentBinpackingPreview()?.layers || [];
+            if (!layers.length) {
+                return;
+            }
+            const normalizedIndex = Math.max(0, Math.min(index, layers.length - 1));
+            this.binpackingPreviewLayerIndex = normalizedIndex;
+            const firstStep = (layers[normalizedIndex]?.items || [])[0]?.step;
+            if (firstStep) {
+                this.binpackingPreviewActiveStep = firstStep;
+            }
+        },
+
+        focusBinpackingStep(step) {
+            const preview = this.currentBinpackingPreview();
+            const normalizedStep = Number(step?.step || step);
+            if (!preview || !normalizedStep) {
+                return;
+            }
+            this.binpackingPreviewActiveStep = normalizedStep;
+            const matchingLayerIndex = (preview.layers || []).findIndex((layer) =>
+                (layer.items || []).some((placement) => Number(placement.step) === normalizedStep)
+            );
+            if (matchingLayerIndex >= 0) {
+                this.binpackingPreviewLayerIndex = matchingLayerIndex;
+            }
+        },
+
+        isBinpackingStepActive(step) {
+            return Number(step?.step || step) === Number(this.binpackingPreviewActiveStep);
+        },
+
+        currentBinpackingActiveStep() {
+            const preview = this.currentBinpackingPreview();
+            if (!preview) {
+                return null;
+            }
+            return (
+                (preview.steps || []).find((step) => Number(step.step) === Number(this.binpackingPreviewActiveStep))
+                || preview.steps?.[0]
+                || null
+            );
+        },
+
+        currentBinpackingActivePlacement() {
+            const preview = this.currentBinpackingPreview();
+            if (!preview) {
+                return null;
+            }
+            return (
+                (preview.placements || []).find((placement) => Number(placement.step) === Number(this.binpackingPreviewActiveStep))
+                || preview.placements?.[0]
+                || null
+            );
+        },
+
+        binpackingPlacementByStep(step) {
+            const preview = this.currentBinpackingPreview();
+            const normalizedStep = Number(step?.step || step);
+            if (!preview || !normalizedStep) {
+                return null;
+            }
+            return (preview.placements || []).find((placement) => Number(placement.step) === normalizedStep) || null;
+        },
+
+        focusAdjacentBinpackingStep(direction = 1) {
+            const steps = this.currentBinpackingPreview()?.steps || [];
+            if (!steps.length) {
+                return;
+            }
+            const currentIndex = steps.findIndex((step) => Number(step.step) === Number(this.binpackingPreviewActiveStep));
+            const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+            const nextIndex = Math.max(0, Math.min(safeIndex + direction, steps.length - 1));
+            this.focusBinpackingStep(steps[nextIndex]);
+        },
+
+        setBinpackingCamera(camera = 'iso') {
+            const presets = {
+                iso: { x: 60, z: -38 },
+                front: { x: 60, z: 0 },
+                side: { x: 60, z: -90 },
+                top: { x: 0, z: -38 },
+            };
+            const nextPreset = presets[camera] || presets.iso;
+            this.binpackingPreviewCamera = camera;
+            this.binpackingRotationX = nextPreset.x;
+            this.binpackingRotationZ = nextPreset.z;
+        },
+
+        binpackingSceneViewBox() {
+            return '0 0 1000 620';
+        },
+
+        startBinpacking3dDrag(event) {
+            this.binpacking3dDragging = true;
+            this.binpacking3dDragStart = {
+                x: event.clientX,
+                y: event.clientY,
+                rotationZ: this.binpackingRotationZ,
+            };
+            event.currentTarget?.setPointerCapture?.(event.pointerId);
+        },
+
+        dragBinpacking3dView(event) {
+            if (!this.binpacking3dDragging || !this.binpacking3dDragStart) {
+                return;
+            }
+            const deltaX = event.clientX - this.binpacking3dDragStart.x;
+            this.binpackingPreviewCamera = 'custom';
+            this.binpackingRotationZ = this.binpacking3dDragStart.rotationZ + (deltaX * 0.18);
+        },
+
+        endBinpacking3dDrag(event) {
+            if (this.binpacking3dDragging) {
+                event.currentTarget?.releasePointerCapture?.(event.pointerId);
+            }
+            this.binpacking3dDragging = false;
+            this.binpacking3dDragStart = null;
+        },
+
+        binpackingSceneProjector(preview) {
+            const container = preview?.container || {};
+            const width = Math.max(Number(container.width) || 1, 1);
+            const depth = Math.max(Number(container.depth) || 1, 1);
+            const height = Math.max(Number(container.height) || 1, 1);
+            const viewWidth = 1000;
+            const viewHeight = 620;
+            const padding = 72;
+            const yaw = (Number(this.binpackingRotationZ) || -38) * (Math.PI / 180);
+            const topView = this.binpackingPreviewCamera === 'top';
+            const rawPoint = (point) => {
+                const x = Number(point.x) || 0;
+                const y = Number(point.y) || 0;
+                const z = Number(point.z) || 0;
+                if (topView) {
+                    return { x, y, depth: y + (z * 0.02), z };
+                }
+                const centeredX = x - (width / 2);
+                const centeredY = y - (depth / 2);
+                const rotatedX = (centeredX * Math.cos(yaw)) - (centeredY * Math.sin(yaw));
+                const rotatedY = (centeredX * Math.sin(yaw)) + (centeredY * Math.cos(yaw));
+                return {
+                    x: rotatedX,
+                    y: (rotatedY * 0.48) - (z * 0.88),
+                    depth: rotatedY + (z * 0.05),
+                    z,
+                };
+            };
+            const vertices = [
+                { x: 0, y: 0, z: 0 },
+                { x: width, y: 0, z: 0 },
+                { x: width, y: depth, z: 0 },
+                { x: 0, y: depth, z: 0 },
+                { x: 0, y: 0, z: height },
+                { x: width, y: 0, z: height },
+                { x: width, y: depth, z: height },
+                { x: 0, y: depth, z: height },
+            ].map(rawPoint);
+            const minX = Math.min(...vertices.map((point) => point.x));
+            const maxX = Math.max(...vertices.map((point) => point.x));
+            const minY = Math.min(...vertices.map((point) => point.y));
+            const maxY = Math.max(...vertices.map((point) => point.y));
+            const scale = Math.min(
+                (viewWidth - (padding * 2)) / Math.max(maxX - minX, 1),
+                (viewHeight - (padding * 2)) / Math.max(maxY - minY, 1)
+            );
+            const offsetX = (viewWidth / 2) - (((minX + maxX) / 2) * scale);
+            const offsetY = (viewHeight / 2) - (((minY + maxY) / 2) * scale);
+            return {
+                width,
+                depth,
+                height,
+                topView,
+                project(point) {
+                    const raw = rawPoint(point);
+                    return {
+                        x: offsetX + (raw.x * scale),
+                        y: offsetY + (raw.y * scale),
+                        depth: raw.depth,
+                        z: Number(point.z) || 0,
+                    };
+                },
+            };
+        },
+
+        binpackingScenePointString(points) {
+            return points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+        },
+
+        binpackingShadeColor(color, factor = 1) {
+            const hex = String(color || '#2563eb').replace('#', '');
+            const normalized = hex.length === 3
+                ? hex.split('').map((character) => character + character).join('')
+                : hex.padEnd(6, '0').slice(0, 6);
+            const values = [0, 2, 4].map((index) => parseInt(normalized.slice(index, index + 2), 16));
+            const shaded = values.map((value) => {
+                if (factor >= 1) {
+                    return Math.round(value + ((255 - value) * (factor - 1)));
+                }
+                return Math.round(value * factor);
+            });
+            return `rgb(${shaded.map((value) => Math.max(0, Math.min(255, value))).join(', ')})`;
+        },
+
+        escapeSvgAttribute(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        },
+
+        escapeSvgText(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        },
+
+        binpackingSceneFaces(preview) {
+            if (!preview?.container) {
+                return [];
+            }
+            const projector = this.binpackingSceneProjector(preview);
+            const width = projector.width;
+            const depth = projector.depth;
+            const height = projector.height;
+            const yaw = (Number(this.binpackingRotationZ) || -38) * (Math.PI / 180);
+            const visibleX = Math.cos(yaw) >= 0 ? width : 0;
+            const visibleY = Math.sin(yaw) >= 0 ? depth : 0;
+            const projectFace = (points) => points.map((point) => projector.project(point));
+            const buildFace = ({ key, points, fill, stroke, type = 'box', step = null, assetName = '', active = false, depthBias = 0 }) => {
+                const projected = projectFace(points);
+                const averageDepth = projected.reduce((sum, point) => sum + point.depth, 0) / projected.length;
+                return {
+                    key,
+                    points: this.binpackingScenePointString(projected),
+                    fill,
+                    stroke,
+                    type,
+                    step,
+                    assetName,
+                    active,
+                    depth: averageDepth + depthBias,
+                    className: [
+                        'binpacking-scene__face',
+                        type === 'storage' ? 'is-storage' : '',
+                        active ? 'is-active' : '',
+                    ].filter(Boolean).join(' '),
+                };
+            };
+            const faces = [
+                buildFace({
+                    key: 'storage-floor',
+                    type: 'storage',
+                    points: [
+                        { x: 0, y: 0, z: 0 },
+                        { x: width, y: 0, z: 0 },
+                        { x: width, y: depth, z: 0 },
+                        { x: 0, y: depth, z: 0 },
+                    ],
+                    fill: 'rgba(248, 250, 252, 0.96)',
+                    stroke: 'rgba(15, 23, 42, 0.18)',
+                    depthBias: -100,
+                }),
+            ];
+
+            if (!projector.topView) {
+                faces.push(
+                    buildFace({
+                        key: 'storage-wall-y',
+                        type: 'storage',
+                        points: [
+                            { x: 0, y: visibleY, z: 0 },
+                            { x: width, y: visibleY, z: 0 },
+                            { x: width, y: visibleY, z: height },
+                            { x: 0, y: visibleY, z: height },
+                        ],
+                        fill: 'rgba(226, 232, 240, 0.28)',
+                        stroke: 'rgba(15, 23, 42, 0.12)',
+                        depthBias: -98,
+                    }),
+                    buildFace({
+                        key: 'storage-wall-x',
+                        type: 'storage',
+                        points: [
+                            { x: visibleX, y: 0, z: 0 },
+                            { x: visibleX, y: depth, z: 0 },
+                            { x: visibleX, y: depth, z: height },
+                            { x: visibleX, y: 0, z: height },
+                        ],
+                        fill: 'rgba(236, 253, 245, 0.32)',
+                        stroke: 'rgba(15, 23, 42, 0.12)',
+                        depthBias: -97,
+                    })
+                );
+            }
+
+            (preview.placements || []).forEach((placement) => {
+                const x0 = Number(placement.x) || 0;
+                const y0 = Number(placement.y) || 0;
+                const z0 = Number(placement.z) || 0;
+                const x1 = x0 + (Number(placement.width) || 0);
+                const y1 = y0 + (Number(placement.depth) || 0);
+                const z1 = z0 + (Number(placement.height) || 0);
+                const color = placement.color || '#2563eb';
+                const active = this.isBinpackingStepActive(placement);
+                const opacityFactor = active ? 1 : 0.82;
+                const facesForBox = projector.topView
+                    ? [
+                        {
+                            name: 'top',
+                            points: [
+                                { x: x0, y: y0, z: z1 },
+                                { x: x1, y: y0, z: z1 },
+                                { x: x1, y: y1, z: z1 },
+                                { x: x0, y: y1, z: z1 },
+                            ],
+                            shade: 1.08,
+                            depthBias: 2,
+                        },
+                    ]
+                    : [
+                        {
+                            name: 'side-y',
+                            points: [
+                                { x: x0, y: visibleY === depth ? y1 : y0, z: z0 },
+                                { x: x1, y: visibleY === depth ? y1 : y0, z: z0 },
+                                { x: x1, y: visibleY === depth ? y1 : y0, z: z1 },
+                                { x: x0, y: visibleY === depth ? y1 : y0, z: z1 },
+                            ],
+                            shade: 0.7,
+                            depthBias: 1,
+                        },
+                        {
+                            name: 'side-x',
+                            points: [
+                                { x: visibleX === width ? x1 : x0, y: y0, z: z0 },
+                                { x: visibleX === width ? x1 : x0, y: y1, z: z0 },
+                                { x: visibleX === width ? x1 : x0, y: y1, z: z1 },
+                                { x: visibleX === width ? x1 : x0, y: y0, z: z1 },
+                            ],
+                            shade: 0.82,
+                            depthBias: 1.5,
+                        },
+                        {
+                            name: 'top',
+                            points: [
+                                { x: x0, y: y0, z: z1 },
+                                { x: x1, y: y0, z: z1 },
+                                { x: x1, y: y1, z: z1 },
+                                { x: x0, y: y1, z: z1 },
+                            ],
+                            shade: 1.08,
+                            depthBias: 2,
+                        },
+                    ];
+                facesForBox.forEach((face) => {
+                    faces.push(buildFace({
+                        key: `box-${placement.asset_id}-${face.name}`,
+                        type: 'box',
+                        step: placement.step,
+                        assetName: placement.asset_name,
+                        active,
+                        points: face.points,
+                        fill: this.binpackingShadeColor(color, face.shade * opacityFactor),
+                        stroke: active ? '#0f172a' : 'rgba(255, 255, 255, 0.64)',
+                        depthBias: face.depthBias,
+                    }));
+                });
+            });
+
+            return faces.sort((a, b) => a.depth - b.depth);
+        },
+
+        binpackingSceneEdges(preview) {
+            if (!preview?.container) {
+                return [];
+            }
+            const projector = this.binpackingSceneProjector(preview);
+            const width = projector.width;
+            const depth = projector.depth;
+            const height = projector.height;
+            const points = {
+                a: { x: 0, y: 0, z: 0 },
+                b: { x: width, y: 0, z: 0 },
+                c: { x: width, y: depth, z: 0 },
+                d: { x: 0, y: depth, z: 0 },
+                e: { x: 0, y: 0, z: height },
+                f: { x: width, y: 0, z: height },
+                g: { x: width, y: depth, z: height },
+                h: { x: 0, y: depth, z: height },
+            };
+            return [
+                ['a', 'b'], ['b', 'c'], ['c', 'd'], ['d', 'a'],
+                ['e', 'f'], ['f', 'g'], ['g', 'h'], ['h', 'e'],
+                ['a', 'e'], ['b', 'f'], ['c', 'g'], ['d', 'h'],
+            ].map(([from, to], index) => {
+                const start = projector.project(points[from]);
+                const end = projector.project(points[to]);
+                return {
+                    key: `edge-${index}`,
+                    x1: start.x,
+                    y1: start.y,
+                    x2: end.x,
+                    y2: end.y,
+                };
+            });
+        },
+
+        binpackingSceneLabels(preview) {
+            if (!preview?.container) {
+                return [];
+            }
+            const projector = this.binpackingSceneProjector(preview);
+            return (preview.placements || []).map((placement) => {
+                const point = projector.project({
+                    x: (Number(placement.x) || 0) + ((Number(placement.width) || 0) / 2),
+                    y: (Number(placement.y) || 0) + ((Number(placement.depth) || 0) / 2),
+                    z: (Number(placement.z) || 0) + (Number(placement.height) || 0),
+                });
+                const active = this.isBinpackingStepActive(placement);
+                return {
+                    key: `label-${placement.asset_id}`,
+                    x: point.x,
+                    y: point.y - 12,
+                    step: placement.step,
+                    assetName: placement.asset_name,
+                    color: placement.color || '#2563eb',
+                    active,
+                    className: [
+                        'binpacking-scene__label',
+                        active ? 'is-active' : '',
+                    ].filter(Boolean).join(' '),
+                };
+            }).sort((a, b) => Number(a.active) - Number(b.active));
+        },
+
+        binpackingSceneMarkup(preview) {
+            if (!preview?.container) {
+                return '<rect class="binpacking-scene__backdrop" x="0" y="0" width="1000" height="620" rx="28"></rect>';
+            }
+            const edges = this.binpackingSceneEdges(preview).map((edge) => (
+                `<line x1="${edge.x1.toFixed(1)}" y1="${edge.y1.toFixed(1)}" x2="${edge.x2.toFixed(1)}" y2="${edge.y2.toFixed(1)}"></line>`
+            )).join('');
+            const faces = this.binpackingSceneFaces(preview).map((face) => {
+                const stepAttribute = face.step ? ` data-binpacking-step="${this.escapeSvgAttribute(face.step)}"` : '';
+                const tabIndex = face.step ? '0' : '-1';
+                const role = face.step ? 'button' : 'presentation';
+                const label = face.step
+                    ? `${face.assetName}, Schritt ${face.step}`
+                    : 'Regalbegrenzung';
+                return (
+                    `<polygon${stepAttribute} points="${this.escapeSvgAttribute(face.points)}" fill="${this.escapeSvgAttribute(face.fill)}" stroke="${this.escapeSvgAttribute(face.stroke)}" class="${this.escapeSvgAttribute(face.className)}" tabindex="${tabIndex}" role="${role}" aria-label="${this.escapeSvgAttribute(label)}"></polygon>`
+                );
+            }).join('');
+            const labels = this.binpackingSceneLabels(preview).map((label) => {
+                const name = label.active
+                    ? `<text x="${(label.x + 22).toFixed(1)}" y="${(label.y + 5).toFixed(1)}" class="binpacking-scene__name">${this.escapeSvgText(label.assetName)}</text>`
+                    : '';
+                return (
+                    `<g class="${this.escapeSvgAttribute(label.className)}" data-binpacking-step="${this.escapeSvgAttribute(label.step)}" role="button" tabindex="0" aria-label="${this.escapeSvgAttribute(`${label.assetName}, Schritt ${label.step}`)}">`
+                    + `<circle cx="${label.x.toFixed(1)}" cy="${label.y.toFixed(1)}" r="15" fill="${this.escapeSvgAttribute(label.color)}"></circle>`
+                    + `<text x="${label.x.toFixed(1)}" y="${(label.y + 4).toFixed(1)}" text-anchor="middle">${this.escapeSvgText(label.step)}</text>`
+                    + name
+                    + '</g>'
+                );
+            }).join('');
+            return (
+                '<rect class="binpacking-scene__backdrop" x="0" y="0" width="1000" height="620" rx="28"></rect>'
+                + `<g class="binpacking-scene__edges" aria-hidden="true">${edges}</g>`
+                + faces
+                + labels
+            );
+        },
+
+        handleBinpackingSceneEvent(event) {
+            const target = event.target?.closest?.('[data-binpacking-step]');
+            const step = Number(target?.dataset?.binpackingStep);
+            if (!step) {
+                return;
+            }
+            this.focusBinpackingStep(step);
+        },
+
+        currentBinpackingLayerSteps() {
+            const layer = this.currentBinpackingLayer();
+            const preview = this.currentBinpackingPreview();
+            if (!layer || !preview) {
+                return [];
+            }
+            return (preview.steps || []).filter((step) => Number(step.layer_index) === Number(layer.index));
         },
 
         // Helper Methods
@@ -1771,58 +2606,75 @@ document.addEventListener('alpine:init', () => {
             return this.assetCategories.find(c => String(c.id) === String(categoryId)) || null;
         },
 
-        getCategoryFields(categoryId) {
-            const category = this.getCategoryById(categoryId);
-            if (!category) return null;
-            let parsed;
-            try {
-                parsed = JSON.parse(category.fields || '{}');
-            } catch (error) {
-                console.error('Error parsing category fields:', error);
+        normalizeFieldConfig(fieldConfig) {
+            if (typeof fieldConfig === 'string') {
+                return { type: fieldConfig, options: [], unit: '' };
+            }
+            return {
+                type: fieldConfig?.type || 'text',
+                options: Array.isArray(fieldConfig?.options) ? fieldConfig.options : [],
+                unit: fieldConfig?.unit || ''
+            };
+        },
+
+        readFieldDefinitions(rawFields, contextLabel) {
+            let parsed = rawFields;
+            if (typeof rawFields === 'string') {
+                try {
+                    parsed = JSON.parse(rawFields || '{}');
+                } catch (error) {
+                    console.error(`Error parsing ${contextLabel} fields:`, error);
+                    return null;
+                }
+            }
+            if (!parsed || typeof parsed !== 'object') {
                 return null;
             }
 
             return Object.fromEntries(
-                Object.entries(parsed).map(([fieldName, fieldConfig]) => {
-                    if (typeof fieldConfig === 'string') {
-                        return [fieldName, { type: fieldConfig, options: [] }];
-                    }
-                    return [
-                        fieldName,
-                        {
-                            type: fieldConfig?.type || 'text',
-                            options: Array.isArray(fieldConfig?.options) ? fieldConfig.options : []
-                        }
-                    ];
+                Object.entries(parsed || {}).map(([fieldName, fieldConfig]) => {
+                    return [fieldName, this.normalizeFieldConfig(fieldConfig)];
                 })
             );
+        },
+
+        getCategoryFields(categoryId) {
+            const category = this.getCategoryById(categoryId);
+            if (!category) return null;
+            return this.readFieldDefinitions(category.fields, 'category');
         },
 
         getAssetCategoryFields(categoryId) {
             const category = this.getAssetCategoryById(categoryId);
             if (!category) return null;
-            let parsed;
-            try {
-                parsed = JSON.parse(category.fields || '{}');
-            } catch (error) {
-                console.error('Error parsing asset category fields:', error);
-                return null;
-            }
+            return this.readFieldDefinitions(category.fields, 'asset category');
+        },
 
-            return Object.fromEntries(
-                Object.entries(parsed).map(([fieldName, fieldConfig]) => {
-                    if (typeof fieldConfig === 'string') {
-                        return [fieldName, { type: fieldConfig, options: [] }];
-                    }
-                    return [
-                        fieldName,
-                        {
-                            type: fieldConfig?.type || 'text',
-                            options: Array.isArray(fieldConfig?.options) ? fieldConfig.options : []
-                        }
-                    ];
-                })
-            );
+        getCategoryFieldEntries(categoryId) {
+            const fields = this.getCategoryFields(categoryId) || {};
+            return Object.entries(fields).map(([name, config]) => ({
+                name,
+                ...config,
+                unit: this.getFieldUnit(name, config)
+            }));
+        },
+
+        getAssetCategoryFieldEntries(categoryId) {
+            const fields = this.getAssetCategoryFields(categoryId) || {};
+            return Object.entries(fields).map(([name, config]) => ({
+                name,
+                ...config,
+                unit: this.getFieldUnit(name, config)
+            }));
+        },
+
+        extractUnitFromFieldName(fieldName) {
+            const match = String(fieldName || '').match(/\(([^)]+)\)\s*$/);
+            return match ? match[1].trim() : '';
+        },
+
+        getFieldUnit(fieldName, fieldConfig) {
+            return (fieldConfig?.unit || '').trim() || this.extractUnitFromFieldName(fieldName);
         },
 
         splitAssetSpecsByCategory(categoryId, specs) {
@@ -1851,7 +2703,60 @@ document.addEventListener('alpine:init', () => {
             if (typeof value === 'boolean') {
                 return value ? 'Ja' : 'Nein';
             }
+            if (Array.isArray(value)) {
+                const items = value
+                    .map(item => this.formatSpecValue(item))
+                    .filter(item => item && item !== '-');
+                return items.length ? items.join(', ') : '-';
+            }
+            if (typeof value === 'object') {
+                const items = Object.values(value || {})
+                    .map(item => this.formatSpecValue(item))
+                    .filter(item => item && item !== '-');
+                return items.length ? items.join(', ') : '-';
+            }
             return value;
+        },
+
+        formatSpecDisplayValue(value, fieldConfig, fieldName) {
+            const normalized = this.formatSpecValue(value);
+            if (normalized === '-') {
+                return normalized;
+            }
+            const unit = this.getFieldUnit(fieldName, fieldConfig);
+            if (!unit || fieldConfig?.type === 'checkbox') {
+                return normalized;
+            }
+            return `${normalized} ${unit}`.trim();
+        },
+
+        buildSpecEntries(specs, fieldEntries) {
+            const specObject = specs && typeof specs === 'object' ? specs : {};
+            const orderedEntries = [];
+            const seenKeys = new Set();
+
+            fieldEntries.forEach((field) => {
+                if (!Object.prototype.hasOwnProperty.call(specObject, field.name)) {
+                    return;
+                }
+                seenKeys.add(field.name);
+                orderedEntries.push({
+                    key: field.name,
+                    value: this.formatSpecDisplayValue(specObject[field.name], field, field.name)
+                });
+            });
+
+            Object.entries(specObject).forEach(([key, value]) => {
+                if (seenKeys.has(key)) {
+                    return;
+                }
+                orderedEntries.push({
+                    key,
+                    value: this.formatSpecValue(value)
+                });
+            });
+
+            return orderedEntries;
         },
 
         getDeviceSpecEntries(device) {
@@ -1863,10 +2768,158 @@ document.addEventListener('alpine:init', () => {
                 console.error('Error parsing device specs:', error);
                 return [];
             }
-            return Object.entries(parsed).map(([key, value]) => ({
-                key,
-                value: this.formatSpecValue(value)
-            }));
+            return this.buildSpecEntries(parsed, this.getCategoryFieldEntries(device.category_id));
+        },
+
+        getAssetSpecEntries(asset) {
+            if (!asset) return [];
+            const specs = asset.specs && typeof asset.specs === 'object' ? asset.specs : {};
+            return this.buildSpecEntries(specs, this.getAssetCategoryFieldEntries(asset.category_id));
+        },
+
+        formatDimensionValue(value) {
+            if (value === null || value === undefined || value === '') {
+                return '-';
+            }
+            const numeric = Number(value);
+            if (Number.isNaN(numeric)) {
+                return value;
+            }
+            return Number.isInteger(numeric) ? `${numeric}` : numeric.toFixed(1);
+        },
+
+        formatDimensionTriplet(dimensions) {
+            if (!dimensions) {
+                return '-';
+            }
+            return [
+                this.formatDimensionValue(dimensions.width),
+                this.formatDimensionValue(dimensions.height),
+                this.formatDimensionValue(dimensions.depth)
+            ].join(' × ');
+        },
+
+        binpackingCompletionPercent(preview) {
+            const placed = Number(preview?.placed_count) || 0;
+            const total = Number(preview?.total_count) || 0;
+            if (!total) {
+                return 0;
+            }
+            return Math.max(0, Math.min(100, Math.round((placed / total) * 100)));
+        },
+
+        binpackingProjectionStyle(container, projection = 'topdown') {
+            const width = Math.max(Number(container?.width) || 1, 1);
+            const depth = Math.max(Number(container?.depth) || 1, 1);
+            const height = Math.max(Number(container?.height) || 1, 1);
+            if (projection === 'elevation') {
+                return `aspect-ratio: ${width} / ${height};`;
+            }
+            return `aspect-ratio: ${width} / ${depth};`;
+        },
+
+        binpackingPlacementStyle(placement, container, projection = 'topdown') {
+            const containerWidth = Math.max(Number(container?.width) || 1, 1);
+            const containerDepth = Math.max(Number(container?.depth) || 1, 1);
+            const containerHeight = Math.max(Number(container?.height) || 1, 1);
+            const left = (Number(placement?.x) / containerWidth) * 100;
+            const width = Math.max((Number(placement?.width) / containerWidth) * 100, 8);
+            let top = (Number(placement?.y) / containerDepth) * 100;
+            let height = Math.max((Number(placement?.depth) / containerDepth) * 100, 12);
+            const color = placement?.color || '#2563eb';
+            if (projection === 'elevation') {
+                top = 100 - (((Number(placement?.z) + Number(placement?.height)) / containerHeight) * 100);
+                height = Math.max((Number(placement?.height) / containerHeight) * 100, 12);
+            }
+            return [
+                `left:${left}%`,
+                `top:${top}%`,
+                `width:${width}%`,
+                `height:${height}%`,
+                `--placement-color:${color}`,
+                `background:${color}`,
+                `border-color:${color}`
+            ].join(';');
+        },
+
+        binpackingPreviewPlacementStyle(placement, container, projection = 'topdown') {
+            const baseStyle = this.binpackingPlacementStyle(placement, container, projection);
+            const activeStep = Number(this.binpackingPreviewActiveStep);
+            const isActive = !activeStep || Number(placement?.step) === activeStep;
+            return [
+                baseStyle,
+                `opacity:${isActive ? 1 : 0.24}`,
+                `transform:scale(${isActive ? 1.01 : 0.985})`,
+                `z-index:${isActive ? 4 : 1}`,
+                `border-width:${isActive ? 2 : 1}px`,
+                `box-shadow:${isActive ? '0 28px 48px -28px rgba(15,23,42,0.82)' : '0 12px 26px -24px rgba(15,23,42,0.45)'}`
+            ].join(';');
+        },
+
+        binpackingLayerLabel(layer, index) {
+            if (!layer) {
+                return `Ebene ${index + 1}`;
+            }
+            const start = this.formatDimensionValue(layer.z);
+            const height = this.formatDimensionValue(layer.height);
+            return `Ebene ${index + 1} · Start ${start} · Höhe ${height}`;
+        },
+
+        binpackingPlacementBadgeStyle(placement) {
+            const color = placement?.color || '#2563eb';
+            return `background:${color}; border-color:${color};`;
+        },
+
+        binpackingStepSummary(step) {
+            if (!step) return '';
+            return `${step.zone_label} · ${step.dimensions_label}`;
+        },
+
+        binpackingStepInstruction(step) {
+            if (!step) return '';
+            return `${step.asset_name} auf Ebene ${step.layer_index} ${step.zone_label} platzieren. Maße: ${step.dimensions_label}.`;
+        },
+
+        async readErrorPayload(response, fallbackMessage) {
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                try {
+                    return await response.json();
+                } catch (error) {
+                    return { error: fallbackMessage };
+                }
+            }
+            const text = await response.text();
+            if (text && /<!doctype|<html/i.test(text)) {
+                return { error: fallbackMessage };
+            }
+            return { error: text || fallbackMessage };
+        },
+
+        clearAssetFormState() {
+            this.assetFormErrors = {};
+            this.assetFormMessage = '';
+        },
+
+        clearDeviceFormState() {
+            this.deviceFormErrors = {};
+            this.deviceFormMessage = '';
+        },
+
+        getDeviceFieldError(fieldName) {
+            return this.deviceFormErrors[fieldName] || '';
+        },
+
+        getDeviceSpecFieldError(fieldName) {
+            return this.deviceFormErrors[`specs.${fieldName}`] || '';
+        },
+
+        getAssetFieldError(fieldName) {
+            return this.assetFormErrors[fieldName] || '';
+        },
+
+        getAssetSpecFieldError(fieldName) {
+            return this.assetFormErrors[`specs.${fieldName}`] || '';
         },
 
         getDevicesForCategory(categoryId) {
