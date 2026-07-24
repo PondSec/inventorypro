@@ -6,7 +6,7 @@
         'danger': 'bg-rose-100 text-rose-700',
         'info': 'bg-blue-100 text-blue-700'
     } %}
-    <a href="{{ href }}" class="sidebar-link{% if active %} active{% endif %}" {% if external %}target="_blank" rel="noreferrer"{% endif %} {% if active %}aria-current="page"{% endif %}>
+    <a href="{{ href }}" class="sidebar-link{% if active %} active{% endif %}" aria-label="{{ label }}" {% if external %}target="_blank" rel="noreferrer"{% endif %} {% if active %}aria-current="page"{% endif %}>
         <span>
             <span class="sidebar-link-icon"><i data-feather="{{ icon }}" class="w-4 h-4"></i></span>
             <span class="sidebar-text">{{ label }}</span>
@@ -20,9 +20,9 @@
 {% macro render_sidebar(current_module='dashboard') -%}
     {% set current_path = request.path %}
     {% set inventory_view = request.args.get('view', 'overview') %}
-    <aside class="app-sidebar sidebar enterprise-sidebar">
+    <aside class="app-sidebar sidebar enterprise-sidebar" aria-label="Hauptnavigation">
         <div class="sidebar-header enterprise-sidebar__header">
-            <a href="/" class="flex items-center gap-3">
+            <a href="/" class="flex items-center gap-3" aria-label="Inventory Pro Startseite">
                 <span class="sidebar-logo" data-brand-logo>
                     <i data-feather="cpu" data-brand-logo-icon class="w-5 h-5"></i>
                 </span>
@@ -157,7 +157,7 @@
     {% if items %}
     <div class="page-tabbar">
         {% for item in items %}
-        <a href="{{ item.href }}" class="page-tab{% if item.active %} active{% endif %}">
+        <a href="{{ item.href }}" class="page-tab{% if item.active %} active{% endif %}" aria-label="{{ item.label }}" {% if item.active %}aria-current="page"{% endif %}>
             {% if item.icon %}
             <i data-feather="{{ item.icon }}" class="w-4 h-4"></i>
             {% endif %}
