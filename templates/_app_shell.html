@@ -1,0 +1,169 @@
+{% macro render_nav_link(href, label, icon, active=False, badge=None, badge_tone='neutral', external=False) -%}
+    {% set badge_classes = {
+        'neutral': 'bg-slate-100 text-slate-600',
+        'success': 'bg-emerald-100 text-emerald-700',
+        'warning': 'bg-amber-100 text-amber-700',
+        'danger': 'bg-rose-100 text-rose-700',
+        'info': 'bg-blue-100 text-blue-700'
+    } %}
+    <a href="{{ href }}" class="sidebar-link{% if active %} active{% endif %}" {% if external %}target="_blank" rel="noreferrer"{% endif %} {% if active %}aria-current="page"{% endif %}>
+        <span>
+            <span class="sidebar-link-icon"><i data-feather="{{ icon }}" class="w-4 h-4"></i></span>
+            <span class="sidebar-text">{{ label }}</span>
+        </span>
+        {% if badge %}
+        <span class="sidebar-link-meta {{ badge_classes.get(badge_tone, badge_classes['neutral']) }}">{{ badge }}</span>
+        {% endif %}
+    </a>
+{%- endmacro %}
+
+{% macro render_sidebar(current_module='dashboard') -%}
+    {% set current_path = request.path %}
+    {% set inventory_view = request.args.get('view', 'overview') %}
+    <aside class="app-sidebar sidebar enterprise-sidebar">
+        <div class="sidebar-header enterprise-sidebar__header">
+            <a href="/" class="flex items-center gap-3">
+                <span class="sidebar-logo" data-brand-logo>
+                    <i data-feather="cpu" data-brand-logo-icon class="w-5 h-5"></i>
+                </span>
+                <div class="sidebar-meta">
+                    <p class="sidebar-title sidebar-text" data-brand-name>Inventory Pro</p>
+                    <p class="sidebar-subtitle sidebar-text" data-brand-tagline>Inventarisierung</p>
+                </div>
+            </a>
+        </div>
+
+        <div class="sidebar-content sidebar-scroll scrollbar-hide">
+            <div class="sidebar-card shell-status-card sidebar-compact-hidden">
+                <p class="shell-status-card__eyebrow">Aktive Sitzung</p>
+                <p class="shell-status-card__title">{{ username }}</p>
+                <div class="shell-status-card__meta">
+                    <span class="shell-status-pill">
+                        <i data-feather="shield" class="w-3 h-3"></i>
+                        Rechte aktiv
+                    </span>
+                    <span class="shell-status-pill">
+                        <i data-feather="calendar" class="w-3 h-3"></i>
+                        {{ now().strftime('%d.%m.%Y') if now is defined else '' }}
+                    </span>
+                </div>
+            </div>
+
+            <div class="sidebar-panel">
+                <p class="sidebar-panel-title">Asset Operations</p>
+                <div class="mt-3 space-y-1">
+                    {{ render_nav_link('/?view=overview', 'Dashboard', 'home', current_path == '/' and inventory_view == 'overview') }}
+                    {{ render_nav_link('/?view=devices', 'Geräte', 'monitor', current_path == '/' and inventory_view == 'devices') }}
+                    {{ render_nav_link('/?view=assets', 'Assets', 'package', current_path == '/' and inventory_view == 'assets') }}
+                    {% if 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}
+                    {{ render_nav_link('/?view=taxonomy', 'Kategorien', 'layers', current_path == '/' and inventory_view == 'taxonomy') }}
+                    {% endif %}
+                    {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                    {{ render_nav_link('/locations', 'Standorte', 'map-pin', current_path == '/locations') }}
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="sidebar-panel">
+                <p class="sidebar-panel-title">Service & Workflow</p>
+                <div class="mt-3 space-y-1">
+                    {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                    {{ render_nav_link('/tickets', 'Ticketsystem', 'life-buoy', current_path == '/tickets') }}
+                    {% endif %}
+                    {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
+                    {{ render_nav_link('/knowledge', 'Wissensbasis', 'book-open', current_path == '/knowledge') }}
+                    {% endif %}
+                    {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                    {{ render_nav_link('/roadmap', 'Roadmap', 'git-merge', current_path == '/roadmap') }}
+                    {% endif %}
+                    {% if 'procurement.view' in permissions or 'procurement.manage' in permissions %}
+                    {{ render_nav_link('/procurement', 'Beschaffung', 'shopping-cart', current_path == '/procurement') }}
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
+            <div class="sidebar-panel">
+                <p class="sidebar-panel-title">Analyse & Plattform</p>
+                <div class="mt-3 space-y-1">
+                    {% if 'stats.view' in permissions %}
+                    {{ render_nav_link('/stats', 'Statistiken', 'bar-chart-2', current_path == '/stats') }}
+                    {% endif %}
+                    {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                    {{ render_nav_link('/dependencies', 'Abhängigkeiten', 'share-2', current_path == '/dependencies') }}
+                    {% endif %}
+                    {% if 'timemachine.view' in permissions %}
+                    {{ render_nav_link('/time-machine', 'Zeitmaschine', 'clock', current_path == '/time-machine') }}
+                    {% endif %}
+                    {% if 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
+                    {{ render_nav_link('/health', 'Health', 'activity', current_path == '/health') }}
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="sidebar-panel">
+                <div class="flex items-center justify-between gap-3">
+                    <p class="sidebar-panel-title">Verknüpfte Instanzen</p>
+                    <a href="/settings?section=server#inventory-links" class="text-[11px] font-semibold text-slate-500 hover:text-slate-700">Verwalten</a>
+                </div>
+                <div class="mt-3 space-y-1">
+                    {% if inventory_links %}
+                    {% for link in inventory_links %}
+                    {{ render_nav_link('/inventory-links/' ~ link.id ~ '/portal', link.displayName, 'link-2', current_path == '/inventory-links/' ~ link.id ~ '/portal', badge=link.healthStatus, badge_tone='success' if link.healthStatus == 'ok' else 'warning' if link.healthStatus == 'unauthorized' else 'danger') }}
+                    {% endfor %}
+                    {% else %}
+                    {{ render_nav_link('/settings?section=server#inventory-links', 'Link hinzufügen', 'plus-circle', False) }}
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if 'users.manage' in permissions or 'server_settings.manage' in permissions %}
+            <div class="sidebar-panel">
+                <p class="sidebar-panel-title">Administration</p>
+                <div class="mt-3 space-y-1">
+                    {% if 'users.manage' in permissions %}
+                    {{ render_nav_link('/users', 'Benutzer & Rollen', 'users', current_path == '/users') }}
+                    {% endif %}
+                    {% if 'server_settings.manage' in permissions %}
+                    {{ render_nav_link('/settings', 'Einstellungen', 'settings', current_path == '/settings' or current_path == '/settings/terminal') }}
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </aside>
+{%- endmacro %}
+
+{% macro render_breadcrumbs(items=[]) -%}
+    {% if items %}
+    <nav aria-label="Breadcrumb" class="breadcrumb-nav">
+        <ol class="breadcrumb-list">
+            {% for item in items %}
+            <li class="breadcrumb-item">
+                {% if item.href %}
+                <a href="{{ item.href }}" class="breadcrumb-link">{{ item.label }}</a>
+                {% else %}
+                <span class="breadcrumb-current">{{ item.label }}</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ol>
+    </nav>
+    {% endif %}
+{%- endmacro %}
+
+{% macro render_page_tabs(items=[]) -%}
+    {% if items %}
+    <div class="page-tabbar">
+        {% for item in items %}
+        <a href="{{ item.href }}" class="page-tab{% if item.active %} active{% endif %}">
+            {% if item.icon %}
+            <i data-feather="{{ item.icon }}" class="w-4 h-4"></i>
+            {% endif %}
+            <span>{{ item.label }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+{%- endmacro %}
