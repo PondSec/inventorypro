@@ -16,6 +16,7 @@ document.addEventListener('alpine:init', () => {
         detailLoading: false,
         assetLoading: false,
         saving: false,
+        deletingTickets: false,
         error: '',
         createError: '',
         queuesCollapsed: false,
@@ -140,6 +141,15 @@ document.addEventListener('alpine:init', () => {
 
         canUpdateTicket() {
             return this.can('tickets.update') || this.can('tickets.update_own');
+        },
+
+        canDeleteSelection() {
+            if (!this.selectedIds.length) return false;
+            if (this.can('tickets.delete')) return true;
+            if (!this.can('tickets.delete_own')) return false;
+            const selectedTickets = this.tickets.filter(ticket => this.selectedIds.includes(ticket.id));
+            return selectedTickets.length === this.selectedIds.length
+                && selectedTickets.every(ticket => ticket.created_by === this.currentUsername);
         },
 
         async api(url, options = {}) {
@@ -594,6 +604,29 @@ document.addEventListener('alpine:init', () => {
                 this.showToast(`${count} Tickets aktualisiert.`);
             } catch (error) {
                 this.showToast(error.message, 'error');
+            }
+        },
+
+        async deleteSelected() {
+            if (!this.canDeleteSelection() || this.deletingTickets) return;
+            const ticketIds = [...this.selectedIds];
+            const message = ticketIds.length === 1
+                ? 'Das ausgewählte Ticket endgültig löschen?'
+                : `${ticketIds.length} ausgewählte Tickets endgültig löschen?`;
+            if (!window.confirm(`${message}\n\nKommentare und Verknüpfungen werden ebenfalls entfernt.`)) return;
+
+            this.deletingTickets = true;
+            try {
+                await Promise.all(ticketIds.map(ticketId => this.api(`/api/tickets/${ticketId}`, { method: 'DELETE' })));
+                if (this.selectedTicket && ticketIds.includes(this.selectedTicket.id)) this.closeTicket();
+                this.selectedIds = [];
+                await Promise.all([this.loadTickets(), this.loadQueueCounts()]);
+                this.showToast(ticketIds.length === 1 ? 'Ticket gelöscht.' : `${ticketIds.length} Tickets gelöscht.`);
+            } catch (error) {
+                await Promise.all([this.loadTickets(), this.loadQueueCounts()]);
+                this.showToast(error.message, 'error');
+            } finally {
+                this.deletingTickets = false;
             }
         },
 
