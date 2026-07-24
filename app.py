@@ -23,6 +23,7 @@ import urllib.parse
 import ssl
 import threading
 import html
+from itertools import permutations
 from pathlib import Path
 from apscheduler.schedulers.background import BackgroundScheduler
 from cryptography.fernet import Fernet
@@ -52,6 +53,24 @@ MAX_IMPORT_BYTES = int(os.environ.get("INVENTORY_MAX_IMPORT_BYTES", 50 * 1024 * 
 MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_BYTES))
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
 BLOCKED_ATTACHMENT_EXTENSIONS = {".exe", ".js", ".html", ".htm", ".bat", ".sh", ".ps1"}
+BINPACKING_DIMENSIONS = ("width", "height", "depth")
+BINPACKING_DEFAULT_RELATION_TYPES = ("enthält", "gelagert in")
+BINPACKING_SORT_STRATEGIES = (
+    ("volume_desc", "Volumenpriorität"),
+    ("footprint_desc", "Stellfläche zuerst"),
+    ("height_desc", "Höhenpriorität"),
+    ("longest_edge_desc", "Längste Kante zuerst"),
+)
+BINPACKING_PREVIEW_COLORS = (
+    "#2563eb",
+    "#0f766e",
+    "#7c3aed",
+    "#ea580c",
+    "#0891b2",
+    "#be123c",
+    "#4f46e5",
+    "#15803d",
+)
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_REQUESTS = 10
 INVENTORY_LINK_PROXY_TIMEOUT_SECONDS = int(os.environ.get("INVENTORY_LINK_PROXY_TIMEOUT_SECONDS", 20))
@@ -560,7 +579,7 @@ DEFAULT_CUSTOMIZATION = {
     "schemaVersion": 1,
     "branding": {
         "name": "Inventory Pro",
-        "tagline": "Smart Asset Hub",
+        "tagline": "Inventarisierung",
         "logoDataUrl": "",
     },
     "baseTokens": {
@@ -2939,6 +2958,137 @@ def inject_inventory_links():
         links = []
     return {"inventory_links": links}
 
+
+@app.context_processor
+def inject_app_shell_defaults():
+    try:
+        access = get_user_access(get_db())
+        permissions = access.get("permissions") or set()
+        is_superuser = bool(access.get("is_superuser"))
+    except Exception:
+        permissions = set()
+        is_superuser = False
+
+    endpoint = request.endpoint or ""
+    path = request.path or "/"
+    section = (request.args.get("section") or "server").strip() or "server"
+
+    page_defaults = {
+        "page_module": "dashboard",
+        "page_section_label": "Workspace",
+        "page_title": "Inventory Pro",
+        "page_description": "Workspace für Inventar, Service und Betrieb.",
+        "page_breadcrumbs": [],
+        "now": datetime.now
+    }
+
+    defaults_by_endpoint = {
+        "index": {
+            "page_module": "dashboard",
+            "page_section_label": "Inventory",
+            "page_title": "Inventar",
+            "page_description": "Geräte, Assets und Kategorien zentral verwalten.",
+            "hide_page_intro": True
+        },
+        "locations_page": {
+            "page_module": "locations",
+            "page_section_label": "Standorte",
+            "page_title": "Standorte verwalten",
+            "page_description": "Lager, Etagen und Abteilungen zentral pflegen."
+        },
+        "tickets_page": {
+            "page_module": "tickets",
+            "page_section_label": "Helpdesk",
+            "page_title": "Ticket-System",
+            "page_description": "SLA, Prioritäten und Workflows im Blick behalten."
+        },
+        "knowledge_page": {
+            "page_module": "knowledge",
+            "page_section_label": "Knowledge Hub",
+            "page_title": "Wissensbasis",
+            "page_description": "Antworten schnell finden und direkt mit Tickets verknüpfen."
+        },
+        "roadmap_page": {
+            "page_module": "roadmap",
+            "page_section_label": "Roadmap",
+            "page_title": "Planung & Milestones",
+            "page_description": "Initiativen, Verantwortliche und Zieltermine strukturiert steuern."
+        },
+        "procurement_page": {
+            "page_module": "procurement",
+            "page_section_label": "Beschaffung",
+            "page_title": "Beschaffung & Lieferanten",
+            "page_description": "Bestellungen, Anbieter und Vertragsbeziehungen datenorientiert verwalten."
+        },
+        "dependencies_page": {
+            "page_module": "dependencies",
+            "page_section_label": "Abhängigkeiten",
+            "page_title": "Dependency-Graph",
+            "page_description": "Systembeziehungen und Ausfallrisiken transparent nachvollziehen."
+        },
+        "time_machine_page": {
+            "page_module": "time-machine",
+            "page_section_label": "Historie",
+            "page_title": "Zeitmaschine",
+            "page_description": "Änderungen, Zustandsverläufe und Rückverfolgung zentral auswerten."
+        },
+        "health_page": {
+            "page_module": "health",
+            "page_section_label": "Health",
+            "page_title": "Betriebsstatus",
+            "page_description": "Checks, Warnungen und Plattformzustand in einer operativen Sicht."
+        },
+        "users_page": {
+            "page_module": "users",
+            "page_section_label": "Administration",
+            "page_title": "Benutzer & Rollen",
+            "page_description": "Konten, Rechte und Verzeichnisanbindungen professionell steuern."
+        },
+        "server_settings_page": {
+            "page_module": "settings",
+            "page_section_label": "Administration",
+            "page_title": "Einstellungen",
+            "page_description": "Plattform, Sicherheit und Integrationen zentral konfigurieren."
+        },
+        "terminal_settings_page": {
+            "page_module": "settings",
+            "page_section_label": "Administration",
+            "page_title": "Terminal & Fernwartung",
+            "page_description": "Kontrollierte Diagnose- und Wartungszugriffe professionell absichern."
+        },
+        "stats": {
+            "page_module": "stats",
+            "page_section_label": "Analyse",
+            "page_title": "Statistiken & Reports",
+            "page_description": "Kennzahlen, Nutzungsmuster und Trends datenbasiert auswerten."
+        }
+    }
+    page_defaults.update(defaults_by_endpoint.get(endpoint, {}))
+
+    if path.startswith("/inventory-links/"):
+        page_defaults.update({
+            "page_module": "inventory-links",
+            "page_section_label": "Verknüpfte Instanzen",
+            "page_title": "Linked Inventory",
+            "page_description": "Zwischen verbundenen Inventory-Pro-Instanzen sicher wechseln."
+        })
+
+    if endpoint in {"server_settings_page", "terminal_settings_page"}:
+        settings_tabs = [
+            {"href": "/settings?section=server", "label": "Server", "icon": "server", "active": endpoint == "server_settings_page" and section == "server"},
+            {"href": "/settings?section=branding", "label": "Branding", "icon": "image", "active": endpoint == "server_settings_page" and section == "branding"},
+            {"href": "/settings?section=notifications", "label": "Benachrichtigungen", "icon": "bell", "active": endpoint == "server_settings_page" and section == "notifications"},
+            {"href": "/settings?section=security", "label": "Sicherheit", "icon": "shield", "active": endpoint == "server_settings_page" and section == "security"},
+            {"href": "/settings?section=server#inventory-links", "label": "Inventory Links", "icon": "link-2", "active": endpoint == "server_settings_page" and section == "server"}
+        ]
+        if is_superuser or "terminal.view" in permissions:
+            settings_tabs.append(
+                {"href": "/settings/terminal", "label": "Terminal", "icon": "terminal", "active": endpoint == "terminal_settings_page"}
+            )
+        page_defaults["page_tabs"] = settings_tabs
+
+    return page_defaults
+
 def user_can(permission_key):
     access = get_user_access(get_db())
     return access["is_superuser"] or permission_key in access["permissions"]
@@ -2990,10 +3140,28 @@ def is_ticket_owner(ticket, access):
     if not ticket or not access.get("user"):
         return False
     user_id = access["user"]["id"]
-    username = access["user"]["username"]
+    username = str(access["user"]["username"] or "").strip().casefold()
     if ticket.get("created_by_user_id"):
         return ticket.get("created_by_user_id") == user_id
-    return ticket.get("created_by") == username
+    created_by = str(ticket.get("created_by") or "").strip().casefold()
+    requester_name = str(ticket.get("requester_name") or "").strip().casefold()
+    return username in {created_by, requester_name}
+
+def annotate_ticket_access(ticket, access):
+    if not ticket:
+        return ticket
+    owner = is_ticket_owner(ticket, access)
+    permissions = access.get("permissions") or set()
+    is_superuser = bool(access.get("is_superuser"))
+    ticket["is_owner"] = owner
+    ticket["access"] = {
+        "can_view": bool(ensure_ticket_access(ticket, access)),
+        "can_update": bool(is_superuser or "tickets.update" in permissions or ("tickets.update_own" in permissions and owner)),
+        "can_delete": bool(is_superuser or "tickets.delete" in permissions or ("tickets.delete_own" in permissions and owner)),
+        "can_comment": bool(is_superuser or "tickets.comment" in permissions or ("tickets.comment_own" in permissions and owner)),
+        "can_watch": bool(is_superuser or "tickets.watch" in permissions or ("tickets.watch_own" in permissions and owner)),
+    }
+    return ticket
 
 def ensure_ticket_access(ticket, access, require_owner_permission=False):
     if access["is_superuser"]:
@@ -3118,6 +3286,7 @@ def init_db():
                 icon TEXT,
                 description TEXT,
                 fields TEXT,
+                binpacking_config TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -3184,6 +3353,11 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+
+        try:
+            c.execute('ALTER TABLE asset_categories ADD COLUMN binpacking_config TEXT')
+        except sqlite3.OperationalError:
+            pass
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS assets (
@@ -4824,7 +4998,9 @@ def init_db():
             ("nutzt", "Asset nutzt ein anderes Asset"),
             ("verbunden mit", "Direkte technische Verbindung"),
             ("gehört zu", "Asset ist Teil eines größeren Systems"),
-            ("ersetzt", "Asset ersetzt ein anderes")
+            ("ersetzt", "Asset ersetzt ein anderes"),
+            ("enthält", "Storage-Asset enthält andere Assets"),
+            ("gelagert in", "Asset ist in einem Storage-Asset eingelagert"),
         ]
         c.executemany('''
             INSERT OR IGNORE INTO asset_relation_types (name, description)
@@ -6814,6 +6990,12 @@ def normalize_ticket_row(row):
         ticket['custom_fields'] = json.loads(ticket.get('custom_fields') or '[]')
     except json.JSONDecodeError:
         ticket['custom_fields'] = []
+    requester_name = str(ticket.get("requester_name") or "").strip()
+    created_by = str(ticket.get("created_by") or "").strip()
+    ticket["requester_name"] = requester_name or created_by
+    ticket["created_by"] = created_by or requester_name
+    ticket["requester_display_name"] = ticket["requester_name"] or "Unbekannt"
+    ticket["creator_display_name"] = ticket["created_by"] or "Unbekannt"
     return ticket
 
 def parse_date(value):
@@ -6861,6 +7043,24 @@ def normalize_optional_int(value):
         return int(value.strip())
     return None
 
+def format_binpacking_value(value):
+    if value is None or value == "":
+        return "-"
+    numeric = parse_float(value)
+    if numeric is None:
+        return str(value)
+    if float(numeric).is_integer():
+        return str(int(numeric))
+    return f"{numeric:.1f}"
+
+def format_binpacking_triplet(dimensions):
+    if not dimensions:
+        return "-"
+    return " × ".join(
+        format_binpacking_value(dimensions.get(axis))
+        for axis in BINPACKING_DIMENSIONS
+    )
+
 def ensure_fk_exists(db, table, value, label):
     if value is None:
         return None
@@ -6868,6 +7068,858 @@ def ensure_fk_exists(db, table, value, label):
     if not row:
         return f"{label} nicht gefunden"
     return None
+
+ALLOWED_DYNAMIC_FIELD_TYPES = {"text", "number", "date", "select", "checkbox"}
+
+def normalize_boolean(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "ja", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "nein", "off"}:
+            return False
+    return False
+
+def normalize_optional_iso_date(value):
+    if value is None:
+        return None, None
+    if isinstance(value, str):
+        raw = value.strip()
+    else:
+        raw = str(value).strip()
+    if not raw:
+        return None, None
+    try:
+        normalized = datetime.strptime(raw, "%Y-%m-%d").strftime("%Y-%m-%d")
+        return normalized, None
+    except ValueError:
+        return None, "Datum muss im Format JJJJ-MM-TT vorliegen"
+
+def parse_optional_int_field(value, label, min_value=None):
+    if value is None or value == "":
+        return None, None
+    parsed = normalize_optional_int(value)
+    if parsed is None:
+        return None, f"{label} muss eine ganze Zahl sein"
+    if min_value is not None and parsed < min_value:
+        return None, f"{label} muss mindestens {min_value} sein"
+    return parsed, None
+
+def parse_optional_float_field(value, label, min_value=None):
+    if value is None or value == "":
+        return None, None
+    parsed = parse_float(value)
+    if parsed is None:
+        return None, f"{label} muss eine Zahl sein"
+    if min_value is not None and parsed < min_value:
+        return None, f"{label} muss mindestens {min_value} sein"
+    return parsed, None
+
+def normalize_field_definition(name, field_config):
+    if not isinstance(name, str):
+        return None
+    field_name = name.strip()
+    if not field_name:
+        return None
+
+    if isinstance(field_config, str):
+        field_type = field_config.strip().lower() or "text"
+        options = []
+        unit = ""
+    elif isinstance(field_config, dict):
+        field_type = str(field_config.get("type") or "text").strip().lower()
+        raw_options = field_config.get("options") or []
+        options = [str(option).strip() for option in raw_options if str(option).strip()]
+        unit = str(field_config.get("unit") or "").strip()
+    else:
+        field_type = "text"
+        options = []
+        unit = ""
+
+    if field_type not in ALLOWED_DYNAMIC_FIELD_TYPES:
+        field_type = "text"
+    if field_type != "select":
+        options = []
+    if field_type in {"checkbox", "date", "select"}:
+        unit = ""
+
+    return field_name, {
+        "type": field_type,
+        "options": options,
+        "unit": unit,
+    }
+
+def normalize_field_definitions(raw_fields):
+    normalized = {}
+    if isinstance(raw_fields, dict):
+        iterator = raw_fields.items()
+    elif isinstance(raw_fields, list):
+        iterator = (
+            ((field or {}).get("name"), field)
+            for field in raw_fields
+            if isinstance(field, dict)
+        )
+    else:
+        return normalized
+
+    for raw_name, raw_config in iterator:
+        normalized_field = normalize_field_definition(raw_name, raw_config)
+        if not normalized_field:
+            continue
+        field_name, field_config = normalized_field
+        normalized[field_name] = field_config
+    return normalized
+
+def parse_field_definitions(raw_json):
+    try:
+        parsed = json.loads(raw_json or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        parsed = {}
+    return normalize_field_definitions(parsed)
+
+def validate_dynamic_specs(specs, field_definitions):
+    normalized_specs = {}
+    field_errors = {}
+    if specs is None:
+        return normalized_specs, field_errors
+    if not isinstance(specs, dict):
+        return normalized_specs, {"specs": "Spezifikationen müssen als Objekt übergeben werden"}
+
+    for raw_key, raw_value in specs.items():
+        field_name = str(raw_key or "").strip()
+        if not field_name:
+            continue
+
+        config = field_definitions.get(field_name, {"type": "text", "options": [], "unit": ""})
+        field_type = config.get("type") or "text"
+        error_key = f"specs.{field_name}"
+
+        if field_type == "checkbox":
+            normalized_specs[field_name] = normalize_boolean(raw_value)
+            continue
+
+        if raw_value is None:
+            continue
+
+        value = raw_value.strip() if isinstance(raw_value, str) else raw_value
+        if value == "":
+            continue
+
+        if field_type == "number":
+            parsed = parse_float(str(value).replace(",", ".")) if isinstance(value, str) else parse_float(value)
+            if parsed is None:
+                field_errors[error_key] = "Bitte eine gültige Zahl eingeben"
+                continue
+            normalized_specs[field_name] = int(parsed) if float(parsed).is_integer() else parsed
+            continue
+
+        if field_type == "date":
+            normalized_date, date_error = normalize_optional_iso_date(value)
+            if date_error:
+                field_errors[error_key] = date_error
+                continue
+            if normalized_date:
+                normalized_specs[field_name] = normalized_date
+            continue
+
+        if field_type == "select":
+            selected_value = str(value).strip()
+            options = config.get("options") or []
+            if options and selected_value not in options:
+                field_errors[error_key] = "Bitte einen gültigen Wert aus der Liste wählen"
+                continue
+            normalized_specs[field_name] = selected_value
+            continue
+
+        normalized_specs[field_name] = str(value).strip()
+
+    return normalized_specs, field_errors
+
+def read_json_object(raw_value, default=None):
+    fallback = {} if default is None else default
+    if isinstance(raw_value, dict):
+        return raw_value
+    try:
+        parsed = json.loads(raw_value or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return fallback
+    return parsed if isinstance(parsed, dict) else fallback
+
+def normalize_binpacking_dimension_mapping(raw_mapping):
+    mapping = raw_mapping if isinstance(raw_mapping, dict) else {}
+    return {
+        axis: str(mapping.get(axis) or "").strip()
+        for axis in BINPACKING_DIMENSIONS
+    }
+
+def parse_binpacking_config(raw_config):
+    config = read_json_object(raw_config)
+    relation_types = config.get("relation_types") or BINPACKING_DEFAULT_RELATION_TYPES
+    normalized_relation_types = []
+    for name in relation_types:
+        label = str(name or "").strip()
+        if label and label not in normalized_relation_types:
+            normalized_relation_types.append(label)
+
+    clearance = parse_float(config.get("clearance")) or 0
+    return {
+        "enabled": normalize_boolean(config.get("enabled")),
+        "content_category_id": normalize_optional_int(config.get("content_category_id")),
+        "allow_rotation": normalize_boolean(config.get("allow_rotation", True)),
+        "clearance": max(clearance, 0),
+        "container_fields": normalize_binpacking_dimension_mapping(config.get("container_fields")),
+        "item_fields": normalize_binpacking_dimension_mapping(config.get("item_fields")),
+        "relation_types": normalized_relation_types or list(BINPACKING_DEFAULT_RELATION_TYPES),
+    }
+
+def validate_binpacking_config(db, raw_config):
+    config = parse_binpacking_config(raw_config)
+    field_errors = {}
+
+    if not config["enabled"]:
+        return config, field_errors
+
+    category_error = ensure_fk_exists(db, "asset_categories", config["content_category_id"], "Inhaltskategorie")
+    if category_error:
+        field_errors["binpacking_config.content_category_id"] = category_error or "Inhaltskategorie ist erforderlich"
+
+    for axis, label in (("width", "Breite"), ("height", "Höhe"), ("depth", "Tiefe")):
+        if not config["container_fields"].get(axis):
+            field_errors[f"binpacking_config.container_fields.{axis}"] = f"Storage-{label} muss zugeordnet werden"
+        if not config["item_fields"].get(axis):
+            field_errors[f"binpacking_config.item_fields.{axis}"] = f"Inhalts-{label} muss zugeordnet werden"
+
+    return config, field_errors
+
+def parse_numeric_dimension(specs, field_name):
+    if not field_name:
+        return None
+    specs_object = specs if isinstance(specs, dict) else {}
+    raw_value = specs_object.get(field_name)
+    if isinstance(raw_value, str):
+        raw_value = raw_value.replace(",", ".").strip()
+    return parse_float(raw_value)
+
+def resolve_dimension_triplet(specs, mapping, clearance=0):
+    values = {}
+    missing_fields = []
+    invalid_fields = []
+
+    for axis in BINPACKING_DIMENSIONS:
+        field_name = str((mapping or {}).get(axis) or "").strip()
+        if not field_name:
+            missing_fields.append({"axis": axis, "field": ""})
+            continue
+
+        parsed_value = parse_numeric_dimension(specs, field_name)
+        if parsed_value is None:
+            missing_fields.append({"axis": axis, "field": field_name})
+            continue
+        if parsed_value <= 0:
+            invalid_fields.append({"axis": axis, "field": field_name, "value": parsed_value})
+            continue
+        values[axis] = parsed_value
+
+    if clearance:
+        for axis in BINPACKING_DIMENSIONS:
+            if axis in values:
+                values[axis] = max(values[axis] - (clearance * 2), 0)
+                if values[axis] <= 0:
+                    invalid_fields.append({"axis": axis, "field": (mapping or {}).get(axis) or "", "value": values[axis]})
+
+    return values, missing_fields, invalid_fields
+
+def enumerate_item_orientations(dimensions, allow_rotation):
+    base = [
+        dimensions.get("width"),
+        dimensions.get("height"),
+        dimensions.get("depth"),
+    ]
+    if any(value is None for value in base):
+        return []
+    if not allow_rotation:
+        return [{
+            "width": base[0],
+            "height": base[1],
+            "depth": base[2],
+            "label": f"{base[0]} × {base[1]} × {base[2]}",
+        }]
+
+    variants = []
+    seen = set()
+    for width, height, depth in permutations(base):
+        signature = (width, height, depth)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        variants.append({
+            "width": width,
+            "height": height,
+            "depth": depth,
+            "label": f"{width} × {height} × {depth}",
+        })
+    return variants
+
+def choose_binpacking_orientation(free_box, item, allow_rotation):
+    best_choice = None
+    best_score = None
+    for orientation in enumerate_item_orientations(item["dimensions"], allow_rotation):
+        if (
+            orientation["width"] > free_box["width"]
+            or orientation["height"] > free_box["height"]
+            or orientation["depth"] > free_box["depth"]
+        ):
+            continue
+        width_gap = free_box["width"] - orientation["width"]
+        depth_gap = free_box["depth"] - orientation["depth"]
+        height_gap = free_box["height"] - orientation["height"]
+        leftover_volume = (
+            free_box["width"] * free_box["height"] * free_box["depth"]
+            - orientation["width"] * orientation["height"] * orientation["depth"]
+        )
+        face_mismatch = sum(
+            1 for gap in (width_gap, depth_gap, height_gap)
+            if gap > 0.001
+        )
+        footprint_gap = width_gap + depth_gap
+        height_bias = free_box["z"] + orientation["height"]
+        score = (
+            leftover_volume,
+            face_mismatch,
+            max(width_gap, depth_gap, height_gap),
+            height_gap,
+            footprint_gap,
+            abs(width_gap - depth_gap),
+            height_bias,
+            free_box["z"],
+            free_box["y"],
+            free_box["x"],
+        )
+        if best_score is None or score < best_score:
+            best_score = score
+            best_choice = orientation
+    return best_choice
+
+def get_binpacking_box_volume(box):
+    return max(box.get("width", 0), 0) * max(box.get("height", 0), 0) * max(box.get("depth", 0), 0)
+
+def binpacking_box_contains(outer_box, inner_box, epsilon=0.001):
+    return (
+        inner_box["x"] >= outer_box["x"] - epsilon
+        and inner_box["y"] >= outer_box["y"] - epsilon
+        and inner_box["z"] >= outer_box["z"] - epsilon
+        and inner_box["x"] + inner_box["width"] <= outer_box["x"] + outer_box["width"] + epsilon
+        and inner_box["y"] + inner_box["depth"] <= outer_box["y"] + outer_box["depth"] + epsilon
+        and inner_box["z"] + inner_box["height"] <= outer_box["z"] + outer_box["height"] + epsilon
+    )
+
+def prune_binpacking_free_boxes(free_boxes):
+    usable_boxes = [
+        box for box in free_boxes
+        if box["width"] > 0 and box["height"] > 0 and box["depth"] > 0
+    ]
+    pruned = []
+    for index, box in enumerate(usable_boxes):
+        is_contained = False
+        for other_index, other_box in enumerate(usable_boxes):
+            if index == other_index:
+                continue
+            if get_binpacking_box_volume(other_box) <= get_binpacking_box_volume(box):
+                continue
+            if binpacking_box_contains(other_box, box):
+                is_contained = True
+                break
+        if not is_contained:
+            pruned.append(box)
+    return sorted(
+        pruned,
+        key=lambda box: (
+            box["z"],
+            box["y"],
+            box["x"],
+            get_binpacking_box_volume(box),
+        ),
+    )
+
+def split_binpacking_box(free_box, orientation):
+    boxes = []
+    width_left = free_box["width"] - orientation["width"]
+    depth_left = free_box["depth"] - orientation["depth"]
+    height_left = free_box["height"] - orientation["height"]
+
+    if width_left > 0:
+        boxes.append({
+            "x": free_box["x"] + orientation["width"],
+            "y": free_box["y"],
+            "z": free_box["z"],
+            "width": width_left,
+            "depth": free_box["depth"],
+            "height": free_box["height"],
+        })
+    if depth_left > 0:
+        boxes.append({
+            "x": free_box["x"],
+            "y": free_box["y"] + orientation["depth"],
+            "z": free_box["z"],
+            "width": orientation["width"],
+            "depth": depth_left,
+            "height": free_box["height"],
+        })
+    if height_left > 0:
+        boxes.append({
+            "x": free_box["x"],
+            "y": free_box["y"],
+            "z": free_box["z"] + orientation["height"],
+            "width": orientation["width"],
+            "depth": orientation["depth"],
+            "height": height_left,
+        })
+    return boxes
+
+def build_binpacking_layers(placements):
+    grouped = {}
+    for placement in placements:
+        layer_key = placement["z"]
+        grouped.setdefault(layer_key, []).append(placement)
+
+    layers = []
+    for layer_start in sorted(grouped.keys()):
+        items = sorted(grouped[layer_start], key=lambda entry: (entry["y"], entry["x"], entry["asset_name"]))
+        layer_height = max(item["height"] for item in items) if items else 0
+        layers.append({
+            "z": layer_start,
+            "height": layer_height,
+            "items": items,
+        })
+    return layers
+
+def build_binpacking_item_sort_key(item, strategy_key):
+    dimensions = item["dimensions"]
+    volume = dimensions["width"] * dimensions["height"] * dimensions["depth"]
+    footprint = dimensions["width"] * dimensions["depth"]
+    longest_edge = max(dimensions["width"], dimensions["height"], dimensions["depth"])
+    if strategy_key == "footprint_desc":
+        return (-footprint, -volume, -dimensions["height"], item["name"].lower())
+    if strategy_key == "height_desc":
+        return (-dimensions["height"], -footprint, -volume, item["name"].lower())
+    if strategy_key == "longest_edge_desc":
+        return (-longest_edge, -footprint, -volume, item["name"].lower())
+    return (-volume, -footprint, -dimensions["height"], item["name"].lower())
+
+def evaluate_binpacking_candidate(placements, free_boxes):
+    placed_volume = sum(
+        placement["width"] * placement["height"] * placement["depth"]
+        for placement in placements
+    )
+    used_height = max((placement["z"] + placement["height"] for placement in placements), default=0)
+    used_width = max((placement["x"] + placement["width"] for placement in placements), default=0)
+    used_depth = max((placement["y"] + placement["depth"] for placement in placements), default=0)
+    layer_count = len({placement["z"] for placement in placements})
+    largest_free_box_volume = max((
+        box["width"] * box["height"] * box["depth"]
+        for box in free_boxes
+    ), default=0)
+    return {
+        "placed_volume": placed_volume,
+        "used_height": used_height,
+        "used_width": used_width,
+        "used_depth": used_depth,
+        "layer_count": layer_count,
+        "fragmentation": len(free_boxes),
+        "largest_free_box_volume": largest_free_box_volume,
+    }
+
+def pack_assets_into_storage_variant(container_dimensions, items, allow_rotation, strategy_key, strategy_label):
+    free_boxes = [{
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "width": container_dimensions["width"],
+        "depth": container_dimensions["depth"],
+        "height": container_dimensions["height"],
+    }]
+    placements = []
+    unplaced = []
+    palette_size = len(BINPACKING_PREVIEW_COLORS)
+
+    sorted_items = sorted(items, key=lambda entry: build_binpacking_item_sort_key(entry, strategy_key))
+
+    for item_index, item in enumerate(sorted_items):
+        selected_index = None
+        selected_orientation = None
+        selected_score = None
+
+        for box_index, free_box in enumerate(free_boxes):
+            orientation = choose_binpacking_orientation(free_box, item, allow_rotation)
+            if not orientation:
+                continue
+            resulting_boxes = [
+                box for box in split_binpacking_box(free_box, orientation)
+                if box["width"] > 0 and box["height"] > 0 and box["depth"] > 0
+            ]
+            largest_result_box_volume = max((
+                box["width"] * box["height"] * box["depth"]
+                for box in resulting_boxes
+            ), default=0)
+            leftover_volume = get_binpacking_box_volume(free_box) - (
+                orientation["width"] * orientation["height"] * orientation["depth"]
+            )
+            width_gap = free_box["width"] - orientation["width"]
+            depth_gap = free_box["depth"] - orientation["depth"]
+            height_gap = free_box["height"] - orientation["height"]
+            footprint_gap = (free_box["width"] * free_box["depth"]) - (
+                orientation["width"] * orientation["depth"]
+            )
+            height_after = free_box["z"] + orientation["height"]
+            score = (
+                leftover_volume,
+                sum(1 for gap in (width_gap, depth_gap, height_gap) if gap > 0.001),
+                height_after,
+                footprint_gap,
+                max(width_gap, depth_gap, height_gap),
+                height_gap,
+                len(resulting_boxes),
+                -largest_result_box_volume,
+                free_box["z"],
+                free_box["y"],
+                free_box["x"],
+            )
+            if selected_score is None or score < selected_score:
+                selected_score = score
+                selected_index = box_index
+                selected_orientation = orientation
+
+        if selected_index is None or not selected_orientation:
+            unplaced.append(item)
+            continue
+
+        free_box = free_boxes.pop(selected_index)
+        placement = {
+            "asset_id": item["id"],
+            "asset_name": item["name"],
+            "x": free_box["x"],
+            "y": free_box["y"],
+            "z": free_box["z"],
+            "width": selected_orientation["width"],
+            "height": selected_orientation["height"],
+            "depth": selected_orientation["depth"],
+            "orientation_label": selected_orientation["label"],
+            "original_dimensions": item["dimensions"],
+            "color": BINPACKING_PREVIEW_COLORS[item_index % palette_size],
+        }
+        placements.append(placement)
+        free_boxes.extend(split_binpacking_box(free_box, selected_orientation))
+        free_boxes = prune_binpacking_free_boxes(free_boxes)
+
+    metrics = evaluate_binpacking_candidate(placements, free_boxes)
+    return placements, unplaced, {
+        **metrics,
+        "strategy_key": strategy_key,
+        "strategy_label": strategy_label,
+        "algorithm_label": "3D Best-Fit Decreasing",
+    }
+
+def pack_assets_into_storage(container_dimensions, items, allow_rotation):
+    best_result = None
+    best_score = None
+
+    for strategy_key, strategy_label in BINPACKING_SORT_STRATEGIES:
+        placements, unplaced, metadata = pack_assets_into_storage_variant(
+            container_dimensions,
+            items,
+            allow_rotation,
+            strategy_key,
+            strategy_label,
+        )
+        score = (
+            -len(placements),
+            -metadata["placed_volume"],
+            len(unplaced),
+            metadata["layer_count"],
+            metadata["used_height"],
+            metadata["fragmentation"],
+            -metadata["largest_free_box_volume"],
+        )
+        if best_score is None or score < best_score:
+            best_score = score
+            best_result = (placements, unplaced, metadata)
+
+    if best_result is None:
+        return [], [], {
+            "placed_volume": 0,
+            "used_height": 0,
+            "used_width": 0,
+            "used_depth": 0,
+            "layer_count": 0,
+            "fragmentation": 0,
+            "largest_free_box_volume": 0,
+            "strategy_key": BINPACKING_SORT_STRATEGIES[0][0],
+            "strategy_label": BINPACKING_SORT_STRATEGIES[0][1],
+            "algorithm_label": "3D Best-Fit Decreasing",
+        }
+    return best_result
+
+def describe_binpacking_zone(placement, container_dimensions):
+    def zone_label(center_value, total_value, low, mid, high):
+        if total_value <= 0:
+            return mid
+        relative = center_value / total_value
+        if relative < 0.34:
+            return low
+        if relative > 0.66:
+            return high
+        return mid
+
+    x_center = placement["x"] + (placement["width"] / 2)
+    y_center = placement["y"] + (placement["depth"] / 2)
+    z_center = placement["z"] + (placement["height"] / 2)
+    return " / ".join([
+        zone_label(x_center, container_dimensions["width"], "links", "mittig", "rechts"),
+        zone_label(y_center, container_dimensions["depth"], "vorne", "mittig", "hinten"),
+        zone_label(z_center, container_dimensions["height"], "unten", "mittig", "oben"),
+    ])
+
+def enrich_binpacking_layers(container_dimensions, layers):
+    container_base_area = (container_dimensions["width"] * container_dimensions["depth"]) or 0
+    step_number = 1
+    steps = []
+
+    for layer_index, layer in enumerate(layers, start=1):
+        layer_items = layer.get("items") or []
+        layer_base_area = sum(item["width"] * item["depth"] for item in layer_items)
+        layer_volume = sum(item["width"] * item["depth"] * item["height"] for item in layer_items)
+        layer_container_volume = container_base_area * layer["height"] if layer["height"] else 0
+        layer["index"] = layer_index
+        layer["footprint_percent"] = round((layer_base_area / container_base_area) * 100, 1) if container_base_area else 0
+        layer["occupancy_percent"] = round((layer_volume / layer_container_volume) * 100, 1) if layer_container_volume else 0
+
+        for placement in layer_items:
+            placement["step"] = step_number
+            placement["layer_index"] = layer_index
+            placement["zone_label"] = describe_binpacking_zone(placement, container_dimensions)
+            steps.append({
+                "step": step_number,
+                "asset_id": placement["asset_id"],
+                "asset_name": placement["asset_name"],
+                "layer_index": layer_index,
+                "zone_label": placement["zone_label"],
+                "orientation_label": placement["orientation_label"],
+                "dimensions_label": format_binpacking_triplet({
+                    "width": placement["width"],
+                    "height": placement["height"],
+                    "depth": placement["depth"],
+                }),
+                "coordinate_label": f"X {format_binpacking_value(placement['x'])} · Y {format_binpacking_value(placement['y'])} · Z {format_binpacking_value(placement['z'])}",
+            })
+            step_number += 1
+    return steps
+
+def build_asset_binpacking_preview(db, asset):
+    config = parse_binpacking_config(asset.get("category_binpacking_config"))
+    if not config.get("enabled"):
+        return None
+
+    container_dimensions, container_missing, container_invalid = resolve_dimension_triplet(
+        asset.get("specs") or {},
+        config.get("container_fields"),
+        config.get("clearance") or 0,
+    )
+    content_category_id = config.get("content_category_id")
+    content_category = db.execute(
+        "SELECT id, name FROM asset_categories WHERE id = ?",
+        (content_category_id,),
+    ).fetchone() if content_category_id else None
+
+    if container_missing or container_invalid:
+        return {
+            "enabled": True,
+            "content_category_id": content_category_id,
+            "content_category_name": content_category["name"] if content_category else "",
+            "container": container_dimensions,
+            "status": "incomplete",
+            "message": "Für die Vorschau fehlen gültige Storage-Maße im Asset.",
+            "missing_container_fields": container_missing,
+            "invalid_container_fields": container_invalid,
+            "layers": [],
+            "placements": [],
+            "placed_count": 0,
+            "total_count": 0,
+            "unplaced_assets": [],
+            "invalid_assets": [],
+            "relation_types": config.get("relation_types") or list(BINPACKING_DEFAULT_RELATION_TYPES),
+        }
+
+    relation_type_names = [name.lower() for name in (config.get("relation_types") or BINPACKING_DEFAULT_RELATION_TYPES)]
+    placeholders = ",".join("?" for _ in relation_type_names)
+    relation_filter = f" AND LOWER(COALESCE(rt.name, '')) IN ({placeholders})" if relation_type_names else ""
+    query = f'''
+        SELECT DISTINCT candidate.id, candidate.name, candidate.specs
+        FROM asset_relations ar
+        LEFT JOIN asset_relation_types rt ON rt.id = ar.relation_type_id
+        JOIN assets candidate
+            ON (
+                (ar.asset_id = ? AND candidate.id = ar.related_asset_id)
+                OR (ar.related_asset_id = ? AND candidate.id = ar.asset_id)
+            )
+        WHERE candidate.category_id = ?
+        {relation_filter}
+        ORDER BY candidate.name COLLATE NOCASE, candidate.id
+    '''
+    params = [asset["id"], asset["id"], content_category_id]
+    params.extend(relation_type_names)
+    candidate_rows = db.execute(query, params).fetchall() if content_category_id else []
+
+    items = []
+    invalid_assets = []
+    for row in candidate_rows:
+        candidate = dict(row)
+        candidate_specs = read_json_object(candidate.get("specs"))
+        dimensions, missing_fields, invalid_fields = resolve_dimension_triplet(
+            candidate_specs,
+            config.get("item_fields"),
+            0,
+        )
+        if missing_fields or invalid_fields:
+            invalid_assets.append({
+                "id": candidate["id"],
+                "name": candidate["name"],
+                "missing_fields": missing_fields,
+                "invalid_fields": invalid_fields,
+            })
+            continue
+        items.append({
+            "id": candidate["id"],
+            "name": candidate["name"],
+            "dimensions": dimensions,
+        })
+
+    placements, unplaced_assets, packing_metadata = pack_assets_into_storage(
+        container_dimensions,
+        items,
+        config.get("allow_rotation", True),
+    )
+    container_volume = (
+        container_dimensions["width"]
+        * container_dimensions["height"]
+        * container_dimensions["depth"]
+    )
+    placed_volume = sum(
+        placement["width"] * placement["height"] * placement["depth"]
+        for placement in placements
+    )
+    layers = build_binpacking_layers(placements)
+    steps = enrich_binpacking_layers(container_dimensions, layers)
+    all_assets_placed = bool(items) and not unplaced_assets
+    plan_status = "empty"
+    plan_status_label = "Keine Inhalte"
+    if items:
+        plan_status = "complete" if all_assets_placed else "partial"
+        plan_status_label = "Vollständig" if all_assets_placed else "Teilweise geplant"
+    used_height_percent = round((packing_metadata["used_height"] / container_dimensions["height"]) * 100, 1) if container_dimensions["height"] else 0
+    message = "Noch keine verknüpften Inhalte für diese Storage-Kategorie vorhanden."
+    if items:
+        if all_assets_placed:
+            message = "Alle Inhalte passen in das Storage-Asset. Folge den Schritten von oben nach unten."
+        else:
+            message = (
+                f"{len(placements)} von {len(items)} Inhalten wurden eingeplant. "
+                "Die Restliste zeigt, was nicht in dieses Storage-Asset passt."
+            )
+
+    return {
+        "enabled": True,
+        "status": "ready",
+        "content_category_id": content_category_id,
+        "content_category_name": content_category["name"] if content_category else "",
+        "allow_rotation": config.get("allow_rotation", True),
+        "packing_strategy": packing_metadata["strategy_key"],
+        "packing_strategy_label": packing_metadata["strategy_label"],
+        "algorithm_label": packing_metadata.get("algorithm_label") or "3D Best-Fit Decreasing",
+        "plan_status": plan_status,
+        "plan_status_label": plan_status_label,
+        "container": {
+            **container_dimensions,
+            "volume": container_volume,
+        },
+        "placements": placements,
+        "layers": layers,
+        "steps": steps,
+        "placed_count": len(placements),
+        "total_count": len(items),
+        "unplaced_count": len(unplaced_assets),
+        "invalid_count": len(invalid_assets),
+        "layer_count": len(layers),
+        "step_count": len(steps),
+        "next_step": steps[0] if steps else None,
+        "used_height": packing_metadata["used_height"],
+        "used_height_percent": used_height_percent,
+        "used_volume": placed_volume,
+        "free_volume": max(container_volume - placed_volume, 0),
+        "invalid_assets": invalid_assets,
+        "unplaced_assets": [
+            {
+                "id": item["id"],
+                "name": item["name"],
+                "dimensions": item["dimensions"],
+            }
+            for item in unplaced_assets
+        ],
+        "efficiency_percent": round((placed_volume / container_volume) * 100, 1) if container_volume else 0,
+        "relation_types": config.get("relation_types") or list(BINPACKING_DEFAULT_RELATION_TYPES),
+        "message": message,
+    }
+
+def validation_error_response(message, field_errors=None, status=400):
+    payload = {"error": message}
+    if field_errors:
+        payload["field_errors"] = field_errors
+    return jsonify(payload), status
+
+def validate_device_payload(db, payload):
+    data = payload or {}
+    field_errors = {}
+
+    name = str(data.get("name") or "").strip()
+    if not name:
+        field_errors["name"] = "Name ist erforderlich"
+
+    category_id, category_error = parse_optional_int_field(data.get("category_id"), "Kategorie", min_value=1)
+    category_row = None
+    if category_error:
+        field_errors["category_id"] = category_error
+    elif category_id is None:
+        field_errors["category_id"] = "Kategorie ist erforderlich"
+    else:
+        category_row = db.execute(
+            "SELECT id, fields FROM categories WHERE id = ?",
+            (category_id,),
+        ).fetchone()
+        if not category_row:
+            field_errors["category_id"] = "Kategorie ist ungültig"
+
+    location_id, location_error = parse_optional_int_field(data.get("location_id"), "Standort", min_value=1)
+    if location_error:
+        field_errors["location_id"] = location_error
+    elif location_id is not None:
+        location_row = db.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
+        if not location_row:
+            field_errors["location_id"] = "Standort ist ungültig"
+
+    field_definitions = parse_field_definitions(category_row["fields"]) if category_row else {}
+    specs, spec_errors = validate_dynamic_specs(data.get("specs") or {}, field_definitions)
+    field_errors.update(spec_errors)
+
+    return {
+        "name": name,
+        "category_id": category_id,
+        "serial_number": str(data.get("serial_number") or "").strip(),
+        "location_id": location_id,
+        "specs": specs,
+    }, field_errors
 
 def is_closed_status(status):
     return (status or "").strip().lower() in {"closed", "resolved", "done"}
@@ -7107,6 +8159,7 @@ def build_asset_summary(db, asset_row, device_rows=None):
     except json.JSONDecodeError:
         asset_specs = {}
     asset['specs'] = asset_specs
+    asset['binpacking_config'] = parse_binpacking_config(asset.get("category_binpacking_config"))
     device_rows = device_rows if device_rows is not None else get_asset_devices_info(db, asset["id"])
     serials, locations = summarize_device_info(device_rows)
     asset['serial_numbers'] = serials
@@ -7251,6 +8304,113 @@ def fetch_ticket_assets(db, ticket_id):
         ORDER BY a.name
     ''', (ticket_id,)).fetchall()
     return [build_asset_summary(db, row) for row in rows]
+
+def merge_ticket_records(db, target_ticket, source_tickets, actor=None, note=None):
+    merged_ticket_ids = []
+    merged_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    actor_name = actor or session.get('username') or "System"
+
+    for source_ticket in source_tickets:
+        if not source_ticket or source_ticket["id"] == target_ticket["id"]:
+            continue
+
+        merged_ticket_ids.append(source_ticket["id"])
+        resolution_outcome = f"Mit Ticket #{target_ticket['id']} zusammengeführt"
+        resolution_notes = note or ""
+        merge_summary = [
+            f"Zusammengeführt aus Ticket #{source_ticket['id']}: {source_ticket.get('title') or 'Ohne Titel'}",
+        ]
+        if source_ticket.get("description"):
+            merge_summary.extend(["", source_ticket["description"]])
+        if note:
+            merge_summary.extend(["", f"Hinweis: {note}"])
+        db.execute('''
+            INSERT INTO ticket_comments (ticket_id, author, body, is_internal)
+            VALUES (?, ?, ?, 1)
+        ''', (
+            target_ticket["id"],
+            actor_name,
+            "\n".join(merge_summary).strip(),
+        ))
+
+        source_comments = db.execute('''
+            SELECT author, body, is_internal, created_at
+            FROM ticket_comments
+            WHERE ticket_id = ?
+            ORDER BY created_at ASC, id ASC
+        ''', (source_ticket["id"],)).fetchall()
+        for comment in source_comments:
+            copied_body = (
+                f"[Übernommen aus Ticket #{source_ticket['id']} von {comment['author'] or 'System'}"
+                f" am {comment['created_at'] or 'unbekannt'}]\n{comment['body'] or ''}"
+            ).strip()
+            db.execute('''
+                INSERT INTO ticket_comments (ticket_id, author, body, is_internal)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                target_ticket["id"],
+                actor_name,
+                copied_body,
+                comment["is_internal"] or 0,
+            ))
+
+        watcher_rows = db.execute(
+            'SELECT email FROM ticket_watchers WHERE ticket_id = ?',
+            (source_ticket["id"],),
+        ).fetchall()
+        for watcher in watcher_rows:
+            db.execute('''
+                INSERT OR IGNORE INTO ticket_watchers (ticket_id, email)
+                VALUES (?, ?)
+            ''', (target_ticket["id"], watcher["email"]))
+
+        asset_rows = db.execute(
+            'SELECT asset_id FROM ticket_assets WHERE ticket_id = ?',
+            (source_ticket["id"],),
+        ).fetchall()
+        for asset_row in asset_rows:
+            db.execute('''
+                INSERT OR IGNORE INTO ticket_assets (ticket_id, asset_id)
+                VALUES (?, ?)
+            ''', (target_ticket["id"], asset_row["asset_id"]))
+
+        db.execute('''
+            UPDATE tickets
+            SET status = ?, resolved_at = ?, resolution_action = ?, resolution_outcome = ?,
+                resolution_notes = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (
+            "closed",
+            merged_at,
+            "merged",
+            resolution_outcome,
+            resolution_notes,
+            source_ticket["id"],
+        ))
+        db.execute('''
+            INSERT INTO ticket_comments (ticket_id, author, body, is_internal)
+            VALUES (?, ?, ?, 1)
+        ''', (
+            source_ticket["id"],
+            actor_name,
+            f"Dieses Ticket wurde mit Ticket #{target_ticket['id']} zusammengeführt.",
+        ))
+        log_activity(db, "merge", "ticket", source_ticket["id"], {
+            "target_ticket_id": target_ticket["id"],
+            "title": source_ticket.get("title"),
+        })
+
+    if merged_ticket_ids:
+        db.execute(
+            'UPDATE tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            (target_ticket["id"],),
+        )
+        log_activity(db, "merge", "ticket", target_ticket["id"], {
+            "merged_ticket_ids": merged_ticket_ids,
+            "title": target_ticket.get("title"),
+        })
+
+    return merged_ticket_ids
 
 def get_ad_settings(db):
     settings = db.execute('SELECT * FROM ad_settings WHERE id = 1').fetchone()
@@ -7739,11 +8899,13 @@ def handle_category(category_id):
 
     if request.method == 'PUT':
         try:
-            data = request.get_json()
-            name = data['name'].strip()
+            data = request.get_json(silent=True) or {}
+            name = (data.get('name') or '').strip()
+            if not name:
+                return validation_error_response("Name ist erforderlich", {"name": "Name ist erforderlich"})
             icon = data.get('icon', 'default').strip()
             description = (data.get('description') or '').strip()
-            fields = json.dumps(data['fields'])
+            fields = json.dumps(normalize_field_definitions(data.get('fields')))
 
             result = db.execute('''
                 UPDATE categories 
@@ -7788,15 +8950,20 @@ def handle_categories():
     if request.method == 'POST':
         if not user_can('categories.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
+        name = (data.get('name') or '').strip()
+        if not name:
+            return validation_error_response("Name ist erforderlich", {"name": "Name ist erforderlich"})
+        fields = normalize_field_definitions(data.get('fields'))
         try:
-            db.execute('''
+            cursor = db.execute('''
                 INSERT INTO categories (name, icon, description, fields)
                 VALUES (?, ?, ?, ?)
-            ''', (data['name'], data.get('icon', 'cpu'), (data.get('description') or '').strip(), json.dumps(data['fields'])))
-            log_activity(db, "create", "category", details={"name": data['name']})
+            ''', (name, data.get('icon', 'cpu'), (data.get('description') or '').strip(), json.dumps(fields)))
+            category_id = cursor.lastrowid
+            log_activity(db, "create", "category", category_id, {"name": name})
             db.commit()
-            return jsonify({"status": "success"}), 201
+            return jsonify({"status": "success", "id": category_id}), 201
         except sqlite3.IntegrityError:
             return jsonify({"error": "Kategorie existiert bereits"}), 400
     
@@ -7814,17 +8981,22 @@ def handle_asset_category(category_id):
 
     if request.method == 'PUT':
         try:
-            data = request.get_json()
-            name = data['name'].strip()
+            data = request.get_json(silent=True) or {}
+            name = (data.get('name') or '').strip()
+            if not name:
+                return validation_error_response("Name ist erforderlich", {"name": "Name ist erforderlich"})
             icon = data.get('icon', 'package').strip()
             description = (data.get('description') or '').strip()
-            fields = json.dumps(data['fields'])
+            fields = json.dumps(normalize_field_definitions(data.get('fields')))
+            binpacking_config, config_errors = validate_binpacking_config(db, data.get("binpacking_config"))
+            if config_errors:
+                return validation_error_response("Bitte die Binpacking-Konfiguration prüfen", config_errors)
 
             result = db.execute('''
                 UPDATE asset_categories
-                SET name = ?, icon = ?, description = ?, fields = ?
+                SET name = ?, icon = ?, description = ?, fields = ?, binpacking_config = ?
                 WHERE id = ?
-            ''', (name, icon, description, fields, category_id))
+            ''', (name, icon, description, fields, json.dumps(binpacking_config), category_id))
 
             if result.rowcount == 0:
                 return jsonify({"error": "Asset-Kategorie nicht gefunden"}), 404
@@ -7852,20 +9024,29 @@ def handle_asset_categories():
     if request.method == 'POST':
         if not user_can('asset_categories.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
+        name = (data.get('name') or '').strip()
+        if not name:
+            return validation_error_response("Name ist erforderlich", {"name": "Name ist erforderlich"})
+        fields = normalize_field_definitions(data.get('fields'))
+        binpacking_config, config_errors = validate_binpacking_config(db, data.get("binpacking_config"))
+        if config_errors:
+            return validation_error_response("Bitte die Binpacking-Konfiguration prüfen", config_errors)
         try:
-            db.execute('''
-                INSERT INTO asset_categories (name, icon, description, fields)
-                VALUES (?, ?, ?, ?)
+            cursor = db.execute('''
+                INSERT INTO asset_categories (name, icon, description, fields, binpacking_config)
+                VALUES (?, ?, ?, ?, ?)
             ''', (
-                data['name'],
+                name,
                 data.get('icon', 'package'),
                 (data.get('description') or '').strip(),
-                json.dumps(data['fields'])
+                json.dumps(fields),
+                json.dumps(binpacking_config),
             ))
-            log_activity(db, "create", "asset_category", details={"name": data['name']})
+            category_id = cursor.lastrowid
+            log_activity(db, "create", "asset_category", category_id, {"name": name})
             db.commit()
-            return jsonify({"status": "success"}), 201
+            return jsonify({"status": "success", "id": category_id}), 201
         except sqlite3.IntegrityError:
             return jsonify({"error": "Asset-Kategorie existiert bereits"}), 400
 
@@ -7889,28 +9070,33 @@ def handle_device(device_id):
 
     if request.method == 'PUT':
         try:
-            data = request.get_json()
-            name = data['name'].strip()
-            serial_number = data.get('serial_number', '').strip()
-            specs = json.dumps(data.get('specs', {}))
-            category_id = data.get('category_id')
-            location_id = data.get('location_id')
+            data = request.get_json(silent=True) or {}
+            device_data, field_errors = validate_device_payload(db, data)
+            if field_errors:
+                return validation_error_response("Bitte die markierten Felder prüfen", field_errors)
 
             result = db.execute('''
                 UPDATE devices 
                 SET name = ?, serial_number = ?, specs = ?, category_id = ?, location_id = ?
                 WHERE id = ?
-            ''', (name, serial_number, specs, category_id, location_id, device_id))
+            ''', (
+                device_data["name"],
+                device_data["serial_number"],
+                json.dumps(device_data["specs"]),
+                device_data["category_id"],
+                device_data["location_id"],
+                device_id,
+            ))
 
             if result.rowcount == 0:
                 return jsonify({"error": "Gerät nicht gefunden"}), 404
 
-            log_activity(db, "update", "device", device_id, {"name": name})
+            log_activity(db, "update", "device", device_id, {"name": device_data["name"]})
             db.commit()
             return jsonify({"status": "updated"}), 200
 
-        except (KeyError, TypeError, ValueError) as e:
-            return jsonify({"error": f"Ungültige Daten: {str(e)}"}), 400
+        except sqlite3.Error as e:
+            return jsonify({"error": f"Datenbankfehler: {str(e)}"}), 500
 
     elif request.method == 'DELETE':
         db.execute('DELETE FROM asset_devices WHERE device_id = ?', (device_id,))
@@ -7935,29 +9121,28 @@ def handle_devices():
     if not user_can('devices.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
     try:
-        data = request.get_json()
-        required_fields = ['name', 'category_id']
-        if not all(field in data for field in required_fields):
-            return jsonify({"error": "Fehlende erforderliche Felder"}), 400
+        data = request.get_json(silent=True) or {}
+        device_data, field_errors = validate_device_payload(db, data)
+        if field_errors:
+            return validation_error_response("Bitte die markierten Felder prüfen", field_errors)
 
-        db.execute('''
+        cursor = db.execute('''
             INSERT INTO devices (name, category_id, serial_number, location_id, specs)
             VALUES (?, ?, ?, ?, ?)
         ''', (
-            data['name'].strip(),
-            data['category_id'],
-            data.get('serial_number', '').strip(),
-            data.get('location_id'),
-            json.dumps(data.get('specs', {}))
+            device_data["name"],
+            device_data["category_id"],
+            device_data["serial_number"],
+            device_data["location_id"],
+            json.dumps(device_data["specs"])
         ))
-        log_activity(db, "create", "device", details={"name": data['name']})
+        device_id = cursor.lastrowid
+        log_activity(db, "create", "device", device_id, {"name": device_data["name"]})
         db.commit()
-        return jsonify({"status": "created"}), 201
+        return jsonify({"status": "created", "id": device_id}), 201
 
     except sqlite3.Error as e:
         return jsonify({"error": f"Datenbankfehler: {str(e)}"}), 500
-    except Exception as e:
-        return jsonify({"error": f"Serverfehler: {str(e)}"}), 500
 
 @app.route('/api/devices', methods=['GET'])
 @login_required
@@ -7994,64 +9179,99 @@ def get_devices():
     return jsonify([dict(row) for row in devices])
 
 @app.route('/api/assets', methods=['GET', 'POST'])
-@app.route('/api/asset-categories', methods=['GET', 'POST'])
+@app.route('/api/asset-entries', methods=['GET', 'POST'])
 @login_required
-def manage_asset_categories():
+def manage_assets():
     db = get_db()
     if request.method == 'POST':
         if not user_can('assets.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json() or {}
+
+        data = request.get_json(silent=True) or {}
+        field_errors = {}
+
         name = (data.get('name') or '').strip()
-        category_id = data.get('category_id') or None
+        category_id = normalize_optional_int(data.get('category_id'))
         notes = (data.get('notes') or '').strip()
-        specs = json.dumps(data.get('specs', {}))
-        acquisition_date = (data.get('acquisition_date') or '').strip() or None
-        commissioning_date = (data.get('commissioning_date') or '').strip() or None
-        warranty_end = (data.get('warranty_end') or '').strip() or None
-        depreciation_months = data.get('depreciation_months')
-        vendor_id = normalize_optional_int(data.get('vendor_id'))
-        purchase_order_id = normalize_optional_int(data.get('purchase_order_id'))
-        purchase_cost = parse_float(data.get('purchase_cost'))
         currency = (data.get('currency') or '').strip() or None
         cost_center = (data.get('cost_center') or '').strip() or None
         invoice_number = (data.get('invoice_number') or '').strip() or None
-        retirement_date = (data.get('retirement_date') or '').strip() or None
         retirement_reason = (data.get('retirement_reason') or '').strip()
+        vendor_id = normalize_optional_int(data.get('vendor_id'))
+        purchase_order_id = normalize_optional_int(data.get('purchase_order_id'))
         device_ids = data.get('device_ids') or []
         device_items = data.get('device_items') or []
         relations = data.get('relations') or []
+
         if not name:
-            return jsonify({"error": "Name ist erforderlich"}), 400
-        if not category_id:
-            return jsonify({"error": "Kategorie ist erforderlich"}), 400
-        category_row = db.execute(
-            'SELECT id FROM asset_categories WHERE id = ?',
-            (category_id,),
-        ).fetchone()
-        if not category_row:
-            return jsonify({"error": "Kategorie nicht gefunden"}), 404
+            field_errors['name'] = "Name ist erforderlich"
+        if category_id is None:
+            field_errors['category_id'] = "Kategorie ist erforderlich"
+
+        category_row = None
+        field_definitions = {}
+        if category_id is not None:
+            category_row = db.execute(
+                'SELECT id, fields FROM asset_categories WHERE id = ?',
+                (category_id,),
+            ).fetchone()
+            if not category_row:
+                field_errors['category_id'] = "Kategorie nicht gefunden"
+            else:
+                field_definitions = parse_field_definitions(category_row["fields"])
+
+        acquisition_date, acquisition_error = normalize_optional_iso_date(data.get('acquisition_date'))
+        commissioning_date, commissioning_error = normalize_optional_iso_date(data.get('commissioning_date'))
+        warranty_end, warranty_error = normalize_optional_iso_date(data.get('warranty_end'))
+        retirement_date, retirement_error = normalize_optional_iso_date(data.get('retirement_date'))
+        depreciation_months, depreciation_error = parse_optional_int_field(data.get('depreciation_months'), "Abschreibungszeitraum", 0)
+        purchase_cost, purchase_cost_error = parse_optional_float_field(data.get('purchase_cost'), "Kaufpreis", 0)
+
+        if acquisition_error:
+            field_errors['acquisition_date'] = acquisition_error
+        if commissioning_error:
+            field_errors['commissioning_date'] = commissioning_error
+        if warranty_error:
+            field_errors['warranty_end'] = warranty_error
+        if retirement_error:
+            field_errors['retirement_date'] = retirement_error
+        if depreciation_error:
+            field_errors['depreciation_months'] = depreciation_error
+        if purchase_cost_error:
+            field_errors['purchase_cost'] = purchase_cost_error
+
+        specs, spec_errors = validate_dynamic_specs(data.get('specs') or {}, field_definitions)
+        field_errors.update(spec_errors)
+
         fk_error = ensure_fk_exists(db, "vendors", vendor_id, "Lieferant")
         if fk_error:
-            return jsonify({"error": fk_error}), 400
+            field_errors['vendor_id'] = fk_error
         fk_error = ensure_fk_exists(db, "purchase_orders", purchase_order_id, "Bestellung")
         if fk_error:
-            return jsonify({"error": fk_error}), 400
+            field_errors['purchase_order_id'] = fk_error
 
         if device_items:
             device_ids = [item.get("device_id") for item in device_items if item.get("device_id")]
 
         device_ids, invalid_ids = normalize_device_ids(device_ids)
         if invalid_ids:
-            return jsonify({"error": "Ungültige Geräte-IDs"}), 400
+            field_errors['device_ids'] = "Ungültige Geräte-IDs"
 
         missing_ids = find_missing_device_ids(db, device_ids)
         if missing_ids:
-            return jsonify({"error": "Ungültige Geräte-IDs"}), 400
+            field_errors['device_ids'] = "Ungültige Geräte-IDs"
+
+        if field_errors:
+            return validation_error_response("Bitte die markierten Felder prüfen", field_errors)
 
         conflicts = find_device_assignment_conflicts(db, device_ids)
         if conflicts:
-            return jsonify({"error": "Geräte sind bereits anderen Asset-Einträgen zugewiesen"}), 409
+            return validation_error_response(
+                "Geräte sind bereits anderen Asset-Einträgen zugewiesen",
+                {"device_ids": "Mindestens ein Gerät ist bereits einem anderen Asset zugeordnet"},
+                status=409,
+            )
+
         try:
             cursor = db.execute('''
                 INSERT INTO assets (
@@ -8064,7 +9284,7 @@ def manage_asset_categories():
                 name,
                 category_id,
                 notes,
-                specs,
+                json.dumps(specs),
                 acquisition_date,
                 commissioning_date,
                 warranty_end,
@@ -8081,15 +9301,15 @@ def manage_asset_categories():
             asset_id = cursor.lastrowid
             if device_items:
                 for item in device_items:
-                    device_id = item.get("device_id")
+                    device_id = normalize_optional_int(item.get("device_id"))
                     if not device_id:
                         continue
-                    quantity = item.get("quantity") or 1
+                    quantity, _ = parse_optional_int_field(item.get("quantity"), "Menge", 1)
                     notes_item = (item.get("notes") or "").strip() or None
                     db.execute('''
                         INSERT INTO asset_devices (asset_id, device_id, quantity, notes)
                         VALUES (?, ?, ?, ?)
-                    ''', (asset_id, device_id, quantity, notes_item))
+                    ''', (asset_id, device_id, quantity or 1, notes_item))
             else:
                 for device_id in device_ids:
                     db.execute('''
@@ -8098,8 +9318,8 @@ def manage_asset_categories():
                     ''', (asset_id, device_id))
             mark_devices_as_used(db, device_ids)
             for relation in relations:
-                related_asset_id = relation.get("related_asset_id")
-                relation_type_id = relation.get("relation_type_id")
+                related_asset_id = normalize_optional_int(relation.get("related_asset_id"))
+                relation_type_id = normalize_optional_int(relation.get("relation_type_id"))
                 if not related_asset_id or related_asset_id == asset_id:
                     continue
                 db.execute('''
@@ -8116,8 +9336,15 @@ def manage_asset_categories():
 
     if not (user_can('assets.view') or user_can('assets.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
+
+    raw_category_id = request.args.get('category_id')
+    category_id = normalize_optional_int(raw_category_id)
+    if raw_category_id not in (None, "") and category_id is None:
+        return validation_error_response("Kategorie ungültig", {"category_id": "Kategorie ist ungültig"})
+
     query = '''
         SELECT a.*, ac.name as category_name, ac.icon as category_icon, ac.description as category_description,
+               ac.binpacking_config as category_binpacking_config,
                v.name as vendor_name, po.po_number as purchase_order_number,
                COUNT(ad.device_id) as device_count
         FROM assets a
@@ -8141,6 +9368,7 @@ def asset_entry_detail(asset_id):
     db = get_db()
     asset_row = db.execute('''
         SELECT a.*, ac.name as category_name, ac.icon as category_icon, ac.description as category_description,
+               ac.binpacking_config as category_binpacking_config,
                v.name as vendor_name, po.po_number as purchase_order_number
         FROM assets a
         LEFT JOIN asset_categories ac ON a.category_id = ac.id
@@ -8188,6 +9416,7 @@ def asset_entry_detail(asset_id):
             item["direction"] = "outgoing" if item["asset_id"] == asset_id else "incoming"
             relations.append(item)
         asset["relations"] = relations
+        asset["binpacking"] = build_asset_binpacking_preview(db, asset)
         open_ticket_rows = db.execute('''
             SELECT t.id, t.title, t.status, t.priority, t.created_at
             FROM tickets t
@@ -8201,53 +9430,80 @@ def asset_entry_detail(asset_id):
     if request.method == 'PUT':
         if not user_can('assets.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
+        field_errors = {}
         name = (data.get('name') or '').strip()
-        category_id = data.get('category_id') or None
+        category_id = normalize_optional_int(data.get('category_id'))
         notes = (data.get('notes') or '').strip()
-        specs = json.dumps(data.get('specs', {}))
-        acquisition_date = (data.get('acquisition_date') or '').strip() or None
-        commissioning_date = (data.get('commissioning_date') or '').strip() or None
-        warranty_end = (data.get('warranty_end') or '').strip() or None
-        depreciation_months = data.get('depreciation_months')
         vendor_id = normalize_optional_int(data.get('vendor_id'))
         purchase_order_id = normalize_optional_int(data.get('purchase_order_id'))
-        purchase_cost = parse_float(data.get('purchase_cost'))
         currency = (data.get('currency') or '').strip() or None
         cost_center = (data.get('cost_center') or '').strip() or None
         invoice_number = (data.get('invoice_number') or '').strip() or None
-        retirement_date = (data.get('retirement_date') or '').strip() or None
         retirement_reason = (data.get('retirement_reason') or '').strip()
         device_ids = data.get('device_ids') or []
         device_items = data.get('device_items') or []
         relations = data.get('relations') or []
         if not name:
-            return jsonify({"error": "Name ist erforderlich"}), 400
-        if not category_id:
-            return jsonify({"error": "Kategorie ist erforderlich"}), 400
+            field_errors['name'] = "Name ist erforderlich"
+        if category_id is None:
+            field_errors['category_id'] = "Kategorie ist erforderlich"
         category_row = db.execute(
-            'SELECT id FROM asset_categories WHERE id = ?',
+            'SELECT id, fields FROM asset_categories WHERE id = ?',
             (category_id,),
         ).fetchone()
-        if not category_row:
-            return jsonify({"error": "Kategorie nicht gefunden"}), 404
+        if category_id is not None and not category_row:
+            field_errors['category_id'] = "Kategorie nicht gefunden"
+
+        acquisition_date, acquisition_error = normalize_optional_iso_date(data.get('acquisition_date'))
+        commissioning_date, commissioning_error = normalize_optional_iso_date(data.get('commissioning_date'))
+        warranty_end, warranty_error = normalize_optional_iso_date(data.get('warranty_end'))
+        retirement_date, retirement_error = normalize_optional_iso_date(data.get('retirement_date'))
+        depreciation_months, depreciation_error = parse_optional_int_field(data.get('depreciation_months'), "Abschreibungszeitraum", 0)
+        purchase_cost, purchase_cost_error = parse_optional_float_field(data.get('purchase_cost'), "Kaufpreis", 0)
+
+        if acquisition_error:
+            field_errors['acquisition_date'] = acquisition_error
+        if commissioning_error:
+            field_errors['commissioning_date'] = commissioning_error
+        if warranty_error:
+            field_errors['warranty_end'] = warranty_error
+        if retirement_error:
+            field_errors['retirement_date'] = retirement_error
+        if depreciation_error:
+            field_errors['depreciation_months'] = depreciation_error
+        if purchase_cost_error:
+            field_errors['purchase_cost'] = purchase_cost_error
+
+        specs, spec_errors = validate_dynamic_specs(
+            data.get('specs') or {},
+            parse_field_definitions(category_row["fields"]) if category_row else {},
+        )
+        field_errors.update(spec_errors)
+
         fk_error = ensure_fk_exists(db, "vendors", vendor_id, "Lieferant")
         if fk_error:
-            return jsonify({"error": fk_error}), 400
+            field_errors['vendor_id'] = fk_error
         fk_error = ensure_fk_exists(db, "purchase_orders", purchase_order_id, "Bestellung")
         if fk_error:
-            return jsonify({"error": fk_error}), 400
+            field_errors['purchase_order_id'] = fk_error
         if device_items:
             device_ids = [item.get("device_id") for item in device_items if item.get("device_id")]
         device_ids, invalid_ids = normalize_device_ids(device_ids)
         if invalid_ids:
-            return jsonify({"error": "Ungültige Geräte-IDs"}), 400
+            field_errors['device_ids'] = "Ungültige Geräte-IDs"
         missing_ids = find_missing_device_ids(db, device_ids)
         if missing_ids:
-            return jsonify({"error": "Ungültige Geräte-IDs"}), 400
+            field_errors['device_ids'] = "Ungültige Geräte-IDs"
+        if field_errors:
+            return validation_error_response("Bitte die markierten Felder prüfen", field_errors)
         conflicts = find_device_assignment_conflicts(db, device_ids, asset_id=asset_id)
         if conflicts:
-            return jsonify({"error": "Geräte sind bereits anderen Asset-Einträgen zugewiesen"}), 409
+            return validation_error_response(
+                "Geräte sind bereits anderen Asset-Einträgen zugewiesen",
+                {"device_ids": "Mindestens ein Gerät ist bereits einem anderen Asset zugeordnet"},
+                status=409,
+            )
         db.execute('''
             UPDATE assets
             SET name = ?, category_id = ?, notes = ?, specs = ?, acquisition_date = ?, commissioning_date = ?,
@@ -8258,7 +9514,7 @@ def asset_entry_detail(asset_id):
             name,
             category_id,
             notes,
-            specs,
+            json.dumps(specs),
             acquisition_date,
             commissioning_date,
             warranty_end,
@@ -8281,15 +9537,15 @@ def asset_entry_detail(asset_id):
         db.execute('DELETE FROM asset_devices WHERE asset_id = ?', (asset_id,))
         if device_items:
             for item in device_items:
-                device_id = item.get("device_id")
+                device_id = normalize_optional_int(item.get("device_id"))
                 if not device_id:
                     continue
-                quantity = item.get("quantity") or 1
+                quantity, _ = parse_optional_int_field(item.get("quantity"), "Menge", 1)
                 notes_item = (item.get("notes") or "").strip() or None
                 db.execute('''
                     INSERT INTO asset_devices (asset_id, device_id, quantity, notes)
                     VALUES (?, ?, ?, ?)
-                ''', (asset_id, device_id, quantity, notes_item))
+                ''', (asset_id, device_id, quantity or 1, notes_item))
         else:
             for device_id in device_ids:
                 db.execute('''
@@ -8302,8 +9558,8 @@ def asset_entry_detail(asset_id):
         mark_devices_as_in_stock_if_unassigned(db, removed_ids)
         db.execute('DELETE FROM asset_relations WHERE asset_id = ?', (asset_id,))
         for relation in relations:
-            related_asset_id = relation.get("related_asset_id")
-            relation_type_id = relation.get("relation_type_id")
+            related_asset_id = normalize_optional_int(relation.get("related_asset_id"))
+            relation_type_id = normalize_optional_int(relation.get("relation_type_id"))
             if not related_asset_id or related_asset_id == asset_id:
                 continue
             db.execute('''
@@ -10469,8 +11725,10 @@ def tickets():
         priority = (data.get('priority') or 'normal').strip()
         status = (data.get('status') or 'open').strip()
         escalation_level = int(data.get('escalation_level') or 0)
-        requester_name = (session.get('username') or '').strip()
-        requester_email = normalize_email(access["user"].get("email") if access.get("user") else "")
+        current_user = access.get("user") or {}
+        current_username = str(current_user.get("username") or session.get('username') or '').strip()
+        requester_name = current_username
+        requester_email = normalize_email(current_user.get("email") or "")
         assignee = (data.get('assignee') or '').strip()
         assignee_email = (data.get('assignee_email') or '').strip()
         due_date = (data.get('due_date') or '').strip()
@@ -10490,9 +11748,14 @@ def tickets():
         custom_fields = json.dumps(data.get('custom_fields') or [])
         asset_ids = data.get('asset_ids') or []
         resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
-        if not title or not description:
-            return jsonify({"error": "Titel und Beschreibung sind erforderlich"}), 400
-        creator_id = access["user"]["id"] if access.get("user") else get_current_user_id(db)
+        field_errors = {}
+        if not title:
+            field_errors["title"] = "Titel ist erforderlich"
+        if not description:
+            field_errors["description"] = "Beschreibung ist erforderlich"
+        if field_errors:
+            return validation_error_response("Bitte Ticketangaben prüfen", field_errors)
+        creator_id = current_user.get("id") or get_current_user_id(db)
         category_name = None
         if category_id:
             category_row = db.execute('SELECT name FROM ticket_categories WHERE id = ?', (category_id,)).fetchone()
@@ -10506,7 +11769,7 @@ def tickets():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             title, description, category_id, priority, status, requester_name, requester_email,
-            creator_id, session.get('username'), assignee, assignee_email, due_date, escalation_level,
+            creator_id, current_username, assignee, assignee_email, due_date, escalation_level,
             resolved_at, resolution_action, resolution_outcome, resolution_notes, tags, custom_fields
         ))
         ticket_id = cursor.lastrowid
@@ -10525,19 +11788,19 @@ def tickets():
             "requester_name": requester_name,
             "requester_email": requester_email,
             "created_by_user_id": creator_id,
-            "created_by": session.get('username'),
+            "created_by": current_username,
             "assignee": assignee,
             "assignee_email": assignee_email,
             "due_date": due_date
         }
         if should_auto_create_roadmap(category_name):
-            create_roadmap_for_ticket(db, new_ticket, category_name, created_by=session.get('username'))
+            create_roadmap_for_ticket(db, new_ticket, category_name, created_by=current_username)
         log_activity(db, "create", "ticket", ticket_id, {"title": title})
         db.commit()
         ticket = fetch_ticket(db, ticket_id)
         if ticket:
             ticket = normalize_ticket_row(ticket)
-            trigger_ticket_notifications(db, "created", ticket, actor=session.get('username'))
+            trigger_ticket_notifications(db, "created", ticket, actor=current_username)
         return jsonify({"status": "created", "id": ticket_id}), 201
 
     if not (user_can('tickets.view_all') or user_can('tickets.view_own')):
@@ -10643,7 +11906,8 @@ def tickets():
         })
 
     rows = db.execute(query, params).fetchall()
-    return jsonify([normalize_ticket_row(row) for row in rows])
+    tickets = [annotate_ticket_access(normalize_ticket_row(row), access) for row in rows]
+    return jsonify(tickets)
 
 @app.route('/api/tickets/queues', methods=['GET'])
 @login_required
@@ -10798,7 +12062,7 @@ def ticket_detail(ticket_id):
         return jsonify({"error": "Keine Berechtigung"}), 403
 
     if request.method == 'GET':
-        ticket = normalize_ticket_row(ticket)
+        ticket = annotate_ticket_access(normalize_ticket_row(ticket), access)
         comments = db.execute('''
             SELECT id, author, body, is_internal, created_at
             FROM ticket_comments
@@ -10844,6 +12108,13 @@ def ticket_detail(ticket_id):
         resolution_action = (data.get('resolution_action') or ticket.get('resolution_action') or '').strip()
         resolution_outcome = (data.get('resolution_outcome') or ticket.get('resolution_outcome') or '').strip()
         resolution_notes = (data.get('resolution_notes') or ticket.get('resolution_notes') or '').strip()
+        field_errors = {}
+        if not title:
+            field_errors["title"] = "Titel ist erforderlich"
+        if not description:
+            field_errors["description"] = "Beschreibung ist erforderlich"
+        if field_errors:
+            return validation_error_response("Bitte Ticketangaben prüfen", field_errors)
         tags = json.dumps(data.get('tags') or json.loads(ticket.get('tags') or '[]'))
         custom_fields = json.dumps(data.get('custom_fields') or json.loads(ticket.get('custom_fields') or '[]'))
         asset_ids = data.get('asset_ids')
@@ -10927,6 +12198,90 @@ def ticket_detail(ticket_id):
     log_activity(db, "delete", "ticket", ticket_id)
     db.commit()
     return jsonify({"status": "deleted"}), 200
+
+@app.route('/api/tickets/merge', methods=['POST'])
+@login_required
+def merge_tickets():
+    db = get_db()
+    access = get_user_access(db)
+    if not user_can('tickets.update'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+
+    data = request.get_json(silent=True) or {}
+    target_ticket_id = normalize_optional_int(data.get('target_ticket_id'))
+    raw_source_ids = data.get('source_ticket_ids') or []
+    note = (data.get('note') or '').strip()
+
+    if not isinstance(raw_source_ids, list):
+        return validation_error_response(
+            "Bitte mindestens zwei Tickets auswählen",
+            {"source_ticket_ids": "Ungültige Ticket-Auswahl"},
+        )
+
+    ticket_ids = []
+    invalid_ids = []
+    for raw_ticket_id in raw_source_ids:
+        parsed_id = normalize_optional_int(raw_ticket_id)
+        if parsed_id is None:
+            invalid_ids.append(raw_ticket_id)
+            continue
+        ticket_ids.append(parsed_id)
+    ticket_ids = list(dict.fromkeys(ticket_ids))
+
+    if invalid_ids:
+        return validation_error_response(
+            "Bitte mindestens zwei Tickets auswählen",
+            {"source_ticket_ids": "Mindestens eine Ticket-ID ist ungültig"},
+        )
+    if target_ticket_id is None:
+        return validation_error_response(
+            "Ziel-Ticket fehlt",
+            {"target_ticket_id": "Bitte ein Ziel-Ticket wählen"},
+        )
+    if target_ticket_id not in ticket_ids:
+        ticket_ids.insert(0, target_ticket_id)
+        ticket_ids = list(dict.fromkeys(ticket_ids))
+    if len(ticket_ids) < 2:
+        return validation_error_response(
+            "Bitte mindestens zwei Tickets auswählen",
+            {"source_ticket_ids": "Zum Zusammenführen werden mindestens zwei Tickets benötigt"},
+        )
+
+    target_ticket = fetch_ticket(db, target_ticket_id)
+    if not target_ticket:
+        return jsonify({"error": "Ziel-Ticket nicht gefunden"}), 404
+    if not ensure_ticket_access(target_ticket, access):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+
+    source_tickets = []
+    for ticket_id in ticket_ids:
+        ticket = fetch_ticket(db, ticket_id)
+        if not ticket:
+            return jsonify({"error": f"Ticket #{ticket_id} nicht gefunden"}), 404
+        if not ensure_ticket_access(ticket, access):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        if ticket_id != target_ticket_id:
+            source_tickets.append(ticket)
+
+    merged_ticket_ids = merge_ticket_records(
+        db,
+        target_ticket,
+        source_tickets,
+        actor=session.get('username'),
+        note=note,
+    )
+    if not merged_ticket_ids:
+        return validation_error_response(
+            "Bitte mindestens zwei unterschiedliche Tickets auswählen",
+            {"source_ticket_ids": "Keine zusammenführbaren Tickets ausgewählt"},
+        )
+
+    db.commit()
+    return jsonify({
+        "status": "merged",
+        "target_ticket_id": target_ticket_id,
+        "merged_ticket_ids": merged_ticket_ids,
+    }), 200
 
 @app.route('/api/tickets/<int:ticket_id>/comments', methods=['GET', 'POST'])
 @login_required
@@ -11789,6 +13144,7 @@ def list_permissions():
     rows = db.execute('''
         SELECT id, key, label, description, group_name
         FROM permissions
+        WHERE key NOT LIKE 'ai.%'
         ORDER BY group_name, label
     ''').fetchall()
     return jsonify([dict(row) for row in rows])
@@ -11833,6 +13189,7 @@ def manage_roles():
             FROM permissions p
             JOIN role_permissions rp ON rp.permission_id = p.id
             WHERE rp.role_id = ?
+              AND p.key NOT LIKE 'ai.%'
             ORDER BY p.label
         ''', (role["id"],)).fetchall()
         entry = dict(role)
