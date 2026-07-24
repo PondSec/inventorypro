@@ -9,12 +9,14 @@ document.addEventListener('alpine:init', () => {
         attachments: [],
         assetOptions: [],
         assetSelection: [],
+        reviewableChanges: [],
         userPermissions: window.inventoryPermissions || [],
         isSuperuser: window.inventoryIsSuperuser || false,
         currentUsername: window.inventoryUsername || '',
         loading: true,
         detailLoading: false,
         assetLoading: false,
+        reviewChangesLoading: false,
         saving: false,
         deletingTickets: false,
         error: '',
@@ -29,6 +31,7 @@ document.addEventListener('alpine:init', () => {
         detailTab: 'conversation',
         assetPickerTarget: 'create',
         assetSearch: '',
+        changeSearch: '',
         iconRefreshTimer: null,
         keyboardIndex: -1,
         newComment: '',
@@ -49,7 +52,8 @@ document.addEventListener('alpine:init', () => {
             priority: 'normal',
             assignee: '',
             due_date: '',
-            asset_ids: []
+            asset_ids: [],
+            change_ticket_id: ''
         },
         bulkDialog: { open: false, field: '', value: '', title: '' },
         queues: [
@@ -134,6 +138,18 @@ document.addEventListener('alpine:init', () => {
             return Math.min(this.pagination.page * this.pagination.per_page, this.pagination.total);
         },
 
+        get newTicketCategoryName() {
+            return this.categoryLabel(this.newTicket.category_id);
+        },
+
+        get creatingReview() {
+            return this.newTicketCategoryName.toLowerCase() === 'review';
+        },
+
+        get creatingChange() {
+            return this.newTicketCategoryName.toLowerCase() === 'change';
+        },
+
         can(permission) {
             return this.isSuperuser || this.userPermissions.includes(permission);
         },
@@ -163,6 +179,8 @@ document.addEventListener('alpine:init', () => {
                 const message = payload?.error || `Anfrage fehlgeschlagen (${response.status})`;
                 const apiError = new Error(message);
                 apiError.status = response.status;
+                apiError.code = payload?.code;
+                apiError.payload = payload;
                 throw apiError;
             }
             return payload;
@@ -205,6 +223,20 @@ document.addEventListener('alpine:init', () => {
                 this.categories = await this.api('/api/ticket-categories');
             } catch (error) {
                 this.showToast(error.message, 'error');
+            }
+        },
+
+        async loadReviewableChanges() {
+            this.reviewChangesLoading = true;
+            try {
+                const params = new URLSearchParams();
+                if (this.changeSearch.trim()) params.set('search', this.changeSearch.trim());
+                this.reviewableChanges = await this.api(`/api/tickets/reviewable-changes?${params}`);
+            } catch (error) {
+                this.reviewableChanges = [];
+                this.showToast(error.message, 'error');
+            } finally {
+                this.reviewChangesLoading = false;
             }
         },
 
@@ -408,7 +440,10 @@ document.addEventListener('alpine:init', () => {
                 due_date: ticket.due_date,
                 tags: ticket.tags,
                 custom_fields: ticket.custom_fields,
-                asset_ids: ticket.asset_ids || []
+                asset_ids: ticket.asset_ids || [],
+                change_ticket_id: ticket.review_relation?.role === 'review'
+                    ? ticket.review_relation.change_ticket_id
+                    : null
             };
             payload[field] = value;
             try {
@@ -421,6 +456,9 @@ document.addEventListener('alpine:init', () => {
                 await Promise.all([this.loadTickets(), this.loadQueueCounts()]);
             } catch (error) {
                 this.showToast(error.message, 'error');
+                if (error.code === 'change_review_required' && error.payload?.review_ticket_id) {
+                    this.showToast(`Zuerst Review #${error.payload.review_ticket_id} abschließen.`, 'error');
+                }
                 await this.loadTicket(ticket.id, false);
             }
         },
@@ -478,8 +516,9 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        openCreateTicket() {
+        async openCreateTicket() {
             this.createError = '';
+            if (!this.newTicket.category_id) await this.ticketTypeChanged();
             this.createOpen = true;
             this.$nextTick(() => {
                 this.$refs.createTitle?.focus();
@@ -492,9 +531,37 @@ document.addEventListener('alpine:init', () => {
             this.createOpen = false;
         },
 
+        async ticketTypeChanged() {
+            const categoryNames = {
+                incident: 'Incident',
+                service_request: 'Service Request',
+                change: 'Change',
+                review: 'Review',
+                improvement: 'Verbesserungen',
+                inquiry: 'Allgemein'
+            };
+            const categoryName = categoryNames[this.newTicket.type];
+            const category = this.categories.find(
+                item => item.name.toLowerCase() === String(categoryName || '').toLowerCase()
+            );
+            if (category) this.newTicket.category_id = category.id;
+            await this.ticketCategoryChanged();
+        },
+
+        async ticketCategoryChanged() {
+            this.newTicket.change_ticket_id = '';
+            this.changeSearch = '';
+            this.reviewableChanges = [];
+            if (this.creatingReview) await this.loadReviewableChanges();
+        },
+
         async createTicket() {
             if (!this.newTicket.title.trim() || !this.newTicket.description.trim()) {
                 this.createError = 'Titel und Beschreibung sind erforderlich.';
+                return;
+            }
+            if (this.creatingReview && !this.newTicket.change_ticket_id) {
+                this.createError = 'Für ein Review muss ein zugehöriger Change ausgewählt werden.';
                 return;
             }
             this.saving = true;
@@ -517,12 +584,19 @@ document.addEventListener('alpine:init', () => {
                     priority: 'normal',
                     assignee: '',
                     due_date: '',
-                    asset_ids: []
+                    asset_ids: [],
+                    change_ticket_id: ''
                 };
                 this.createOpen = false;
                 await Promise.all([this.loadTickets(), this.loadQueueCounts()]);
                 await this.loadTicket(ticketId, true);
-                this.showToast(`Ticket #${ticketId} erstellt.`);
+                if (result.review_ticket_id) {
+                    this.showToast(`Change #${ticketId} und Review #${result.review_ticket_id} erstellt.`);
+                } else if (result.change_ticket_id) {
+                    this.showToast(`Review #${ticketId} mit Change #${result.change_ticket_id} verknüpft.`);
+                } else {
+                    this.showToast(`Ticket #${ticketId} erstellt.`);
+                }
             } catch (error) {
                 this.createError = error.message;
             } finally {
@@ -740,6 +814,27 @@ document.addEventListener('alpine:init', () => {
 
         categoryLabel(id) {
             return this.categories.find(category => Number(category.id) === Number(id))?.name || 'Ohne Kategorie';
+        },
+
+        isClosedStatus(value) {
+            return ['closed', 'resolved', 'done'].includes(String(value || '').toLowerCase());
+        },
+
+        statusOptionDisabled(value) {
+            if (!this.selectedTicket || !this.isClosedStatus(value)) return false;
+            if (this.categoryLabel(this.selectedTicket.category_id).toLowerCase() !== 'change') return false;
+            return !this.selectedTicket.review_relation?.approved;
+        },
+
+        reviewGateLabel(ticket = this.selectedTicket) {
+            const relation = ticket?.review_relation;
+            if (!relation) return 'Kein Review verknüpft';
+            if (relation.role === 'review') {
+                return `Change #${relation.change_ticket_id}`;
+            }
+            return relation.approved
+                ? `Review #${relation.review_ticket_id} freigegeben`
+                : `Review #${relation.review_ticket_id} ausstehend`;
         },
 
         isOverdue(ticket) {
