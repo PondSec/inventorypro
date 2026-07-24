@@ -2910,13 +2910,23 @@ def ensure_default_roles(db):
         ''', (user["id"], default_role["id"]))
 
 def store_initial_admin_credentials(username, password):
-    credentials_path = Path(
+    requested_path = Path(
         INITIAL_ADMIN_CREDENTIALS_PATH
         or APP_INSTANCE_PATH / "initial_admin_credentials.txt"
     )
-    credentials_path.parent.mkdir(parents=True, exist_ok=True)
+    requested_path.parent.mkdir(parents=True, exist_ok=True)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    file_descriptor = os.open(credentials_path, flags, 0o600)
+    credentials_path = requested_path
+    for attempt in range(9):
+        try:
+            file_descriptor = os.open(credentials_path, flags, 0o600)
+            break
+        except FileExistsError:
+            if attempt == 8:
+                raise
+            credentials_path = requested_path.with_name(
+                f"{requested_path.stem}-{secrets.token_hex(4)}{requested_path.suffix}"
+            )
     with os.fdopen(file_descriptor, "w", encoding="utf-8") as credentials_file:
         credentials_file.write(f"Benutzername: {username}\n")
         credentials_file.write(f"Passwort: {password}\n")
