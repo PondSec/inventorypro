@@ -40,12 +40,12 @@
                 <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                     <div class="flex flex-wrap items-center gap-4">
                         <div class="w-full sm:flex-1 sm:min-w-[220px]">
-                            <label class="text-xs uppercase text-slate-400">Suche</label>
-                            <input type="text" x-model="filters.search" @input.debounce.300ms="applyFilters" placeholder="Roadmap, Ticket, Owner" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm">
+                            <label for="roadmap-search" class="text-xs uppercase text-slate-400">Suche</label>
+                            <input id="roadmap-search" type="text" x-model="filters.search" @input.debounce.300ms="applyFilters" placeholder="Roadmap, Ticket, Owner" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm">
                         </div>
                         <div class="w-full sm:min-w-[160px]">
-                            <label class="text-xs uppercase text-slate-400">Status</label>
-                            <select x-model="filters.status" @change="applyFilters" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                            <label for="roadmap-status" class="text-xs uppercase text-slate-400">Status</label>
+                            <select id="roadmap-status" x-model="filters.status" @change="applyFilters" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                                 <option value="">Alle</option>
                                 <template x-for="status in roadmapStatuses" :key="status">
                                     <option :value="status" x-text="roadmapStatusLabels[status] || status"></option>
@@ -53,12 +53,12 @@
                             </select>
                         </div>
                         <div class="w-full sm:min-w-[180px]">
-                            <label class="text-xs uppercase text-slate-400">Owner</label>
-                            <input type="text" x-model="filters.owner" @input.debounce.300ms="applyFilters" placeholder="Team oder Person" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm">
+                            <label for="roadmap-owner" class="text-xs uppercase text-slate-400">Owner</label>
+                            <input id="roadmap-owner" type="text" x-model="filters.owner" @input.debounce.300ms="applyFilters" placeholder="Team oder Person" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm">
                         </div>
                         <div class="w-full sm:min-w-[180px]">
-                            <label class="text-xs uppercase text-slate-400">Zeitraum</label>
-                            <input type="month" x-model="filters.month" @change="applyFilters" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                            <label for="roadmap-month" class="text-xs uppercase text-slate-400">Zeitraum</label>
+                            <input id="roadmap-month" type="month" x-model="filters.month" @change="applyFilters" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                         </div>
                     </div>
                 </section>
@@ -271,21 +271,21 @@
                 </button>
             </div>
             <div class="mt-4 grid gap-3">
-                <input type="text" x-model="newRoadmap.title" placeholder="Titel" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                <textarea x-model="newRoadmap.objective" rows="3" placeholder="Ziel / Outcome" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm"></textarea>
+                <input type="text" x-model="newRoadmap.title" placeholder="Titel" aria-label="Titel der Roadmap" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                <textarea x-model="newRoadmap.objective" rows="3" placeholder="Ziel / Outcome" aria-label="Ziel oder erwartetes Ergebnis der Roadmap" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm"></textarea>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <input type="text" x-model="newRoadmap.owner" placeholder="Owner" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                    <select x-model="newRoadmap.status" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                    <input type="text" x-model="newRoadmap.owner" placeholder="Owner" aria-label="Verantwortliche Person oder Team" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                    <select x-model="newRoadmap.status" aria-label="Status der Roadmap" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                         <template x-for="status in roadmapStatuses" :key="status">
                             <option :value="status" x-text="roadmapStatusLabels[status] || status"></option>
                         </template>
                     </select>
                 </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <input type="date" x-model="newRoadmap.start_date" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                    <input type="date" x-model="newRoadmap.target_date" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                    <input type="date" x-model="newRoadmap.start_date" aria-label="Startdatum der Roadmap" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                    <input type="date" x-model="newRoadmap.target_date" aria-label="Zieldatum der Roadmap" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                 </div>
-                <input type="number" x-model="newRoadmap.ticket_id" placeholder="Ticket-ID (optional)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                <input type="number" x-model="newRoadmap.ticket_id" placeholder="Ticket-ID (optional)" aria-label="Verknüpfte Ticket-ID" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                 <button @click="createRoadmap" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Roadmap speichern</button>
                 <p class="text-xs text-rose-500" x-text="roadmapError"></p>
             </div>
