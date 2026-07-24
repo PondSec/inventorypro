@@ -15,7 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
 COPY app.py ./app.py
 COPY docker_wsgi.py ./docker_wsgi.py
-COPY pondsec_ai ./pondsec_ai
 COPY static ./static
 COPY templates ./templates
 COPY LICENSE ./LICENSE
