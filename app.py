@@ -12103,8 +12103,51 @@ def tickets():
         filters.append(owner_filter)
         params.extend([access["user"]["id"], access["user"]["username"]])
     if search:
-        filters.append('(t.title LIKE ? OR t.description LIKE ? OR t.requester_name LIKE ?)')
-        params.extend([f'%{search}%', f'%{search}%', f'%{search}%'])
+        search_term = search.lstrip("#").strip()
+        like_search = f'%{search_term}%'
+        search_filters = [
+            "t.title LIKE ?",
+            "t.description LIKE ?",
+            "t.requester_name LIKE ?",
+            "t.requester_email LIKE ?",
+            "t.created_by LIKE ?",
+            "t.assignee LIKE ?",
+            "t.assignee_email LIKE ?",
+            "c.name LIKE ?",
+            '''
+            EXISTS (
+                SELECT 1
+                FROM ticket_assets ta
+                JOIN assets a ON a.id = ta.asset_id
+                LEFT JOIN asset_categories ac ON ac.id = a.category_id
+                WHERE ta.ticket_id = t.id
+                  AND (
+                    a.name LIKE ?
+                    OR a.notes LIKE ?
+                    OR a.specs LIKE ?
+                    OR ac.name LIKE ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM asset_devices ad
+                        JOIN devices d ON d.id = ad.device_id
+                        LEFT JOIN locations l ON l.id = d.location_id
+                        WHERE ad.asset_id = a.id
+                          AND (
+                            d.name LIKE ?
+                            OR d.serial_number LIKE ?
+                            OR d.specs LIKE ?
+                            OR l.name LIKE ?
+                          )
+                    )
+                  )
+            )
+            ''',
+        ]
+        params.extend([like_search] * 16)
+        if search_term.isdigit():
+            search_filters.insert(0, "t.id = ?")
+            params.insert(len(params) - 16, int(search_term))
+        filters.append(f"({' OR '.join(search_filters)})")
 
     sort_columns = {
         'id': 't.id',
