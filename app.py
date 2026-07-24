@@ -68,6 +68,7 @@ SETTINGS_SCHEMA_VERSION = 1
 APP_INSTANCE_PATH = Path(app.instance_path)
 RUNTIME_CONFIG_PATH = APP_INSTANCE_PATH / "runtime_config.json"
 UPLOADS_DIR = Path(os.environ.get("INVENTORY_UPLOADS_DIR") or "uploads")
+INITIAL_ADMIN_CREDENTIALS_PATH = os.environ.get("INVENTORY_INITIAL_ADMIN_CREDENTIALS_PATH")
 MAX_IMPORT_BYTES = int(os.environ.get("INVENTORY_MAX_IMPORT_BYTES", 50 * 1024 * 1024))
 MAX_IMPORT_EXPANDED_BYTES = int(
     os.environ.get("INVENTORY_MAX_IMPORT_EXPANDED_BYTES", MAX_IMPORT_BYTES * 4)
@@ -2908,6 +2909,21 @@ def ensure_default_roles(db):
             VALUES (?, ?)
         ''', (user["id"], default_role["id"]))
 
+def store_initial_admin_credentials(username, password):
+    credentials_path = Path(
+        INITIAL_ADMIN_CREDENTIALS_PATH
+        or APP_INSTANCE_PATH / "initial_admin_credentials.txt"
+    )
+    credentials_path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    file_descriptor = os.open(credentials_path, flags, 0o600)
+    with os.fdopen(file_descriptor, "w", encoding="utf-8") as credentials_file:
+        credentials_file.write(f"Benutzername: {username}\n")
+        credentials_file.write(f"Passwort: {password}\n")
+        credentials_file.write("Passwortwechsel beim ersten Login erforderlich.\n")
+    os.chmod(credentials_path, 0o600)
+    return credentials_path
+
 def ensure_admin_user(db):
     admin_exists = db.execute('''
         SELECT 1
@@ -2935,14 +2951,18 @@ def ensure_admin_user(db):
     )
     assign_user_role(db, cursor.lastrowid, "Admin")
 
-    print("\n[!] ADMIN-KONTO ERSTELLT (kein Admin vorhanden):")
-    print(f"    Benutzername: {username}")
     if configured_password:
-        print("    Passwort:    via INVENTORY_INITIAL_ADMIN_PASSWORD gesetzt")
-        print("    Hinweis:     Zugangsdaten wurden aus Umgebungsvariablen übernommen.\n")
+        app.logger.warning(
+            "Initiales Administratorkonto %s wurde aus geschützter Umgebungskonfiguration erstellt.",
+            username,
+        )
     else:
-        print(f"    Passwort:    {password}")
-        print("    WICHTIG: Passwort nach dem ersten Login ändern!\n")
+        credentials_path = store_initial_admin_credentials(username, password)
+        app.logger.warning(
+            "Initiales Administratorkonto %s erstellt. Einmalige Zugangsdaten liegen geschützt unter %s.",
+            username,
+            credentials_path,
+        )
 
 def get_user_access(db):
     if hasattr(g, 'user_access'):
