@@ -1428,6 +1428,18 @@ button {
   stroke-width: 1.8;
 }
 
+.sd-icon-slot {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.sd-icon-slot > svg {
+  display: block;
+}
+
 .sd-shell {
   display: grid;
   grid-template-columns: var(--sd-global-width) var(--sd-queue-width) minmax(0, 1fr);
