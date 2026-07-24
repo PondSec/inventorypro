@@ -143,7 +143,7 @@ class MobileInteractionTestCase(unittest.TestCase):
         rows = page.locator(f"{table_selector} tbody tr")
         if rows.count() == 0:
             return
-        cells = rows.first().locator("td")
+        cells = rows.first.locator("td")
         for index in range(cells.count()):
             label = cells.nth(index).get_attribute("data-label")
             self.assertTrue(label)
