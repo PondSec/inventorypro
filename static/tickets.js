@@ -103,7 +103,10 @@ document.addEventListener('alpine:init', () => {
             window.addEventListener('offline', () => this.showToast('Du bist offline. Änderungen können nicht gespeichert werden.', 'error'));
             await Promise.all([this.loadCategories(), this.loadQueueCounts(), this.loadSavedViews()]);
             await this.loadTickets();
-            if (window.initialTicketId) await this.loadTicket(window.initialTicketId, false);
+            if (window.initialTicketId) {
+                await this.loadTicket(window.initialTicketId, false);
+                this.syncUrl();
+            }
             this.refreshIcons();
         },
 
