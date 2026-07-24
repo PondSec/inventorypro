@@ -231,7 +231,30 @@
 
                         <div x-show="detailTab === 'activity'" class="sd-tab-section">
                             <header><div><h3>Aktivitäten</h3><p>Nachvollziehbare Änderungen am Ticket</p></div></header>
-                            <p class="sd-empty-inline">Systemaktivitäten werden im zentralen Audit-Protokoll aufgezeichnet.</p>
+                            <ol class="sd-activity-timeline" aria-label="Ticketverlauf">
+                                <template x-for="activity in selectedTicket.activity || []" :key="activity.id">
+                                    <li>
+                                        <span class="sd-activity-icon sd-icon-slot" x-html="iconSvg(activityIcon(activity.action))"></span>
+                                        <div>
+                                            <header>
+                                                <strong x-text="activity.label"></strong>
+                                                <time :datetime="activity.created_at" x-text="formatDateTime(activity.created_at)"></time>
+                                            </header>
+                                            <p>Durch <span x-text="activity.actor"></span></p>
+                                            <p x-show="activitySummary(activity)" x-text="activitySummary(activity)"></p>
+                                            <dl x-show="activity.changes?.length">
+                                                <template x-for="change in activity.changes || []" :key="`${activity.id}-${change.key}`">
+                                                    <div>
+                                                        <dt x-text="change.label"></dt>
+                                                        <dd><span x-text="change.before"></span><i data-feather="arrow-right" aria-hidden="true"></i><strong x-text="change.after"></strong></dd>
+                                                    </div>
+                                                </template>
+                                            </dl>
+                                        </div>
+                                    </li>
+                                </template>
+                            </ol>
+                            <p x-show="!(selectedTicket.activity || []).length" class="sd-empty-inline">Noch keine protokollierten Aktivitäten.</p>
                         </div>
                     </section>
 
