@@ -7,5 +7,6 @@ venv/
 .env
 inventory.db
 instance/runtime_config.json
+instance/initial_admin_credentials.txt
 uploads/
 backups/
