@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Pro · Service Desk</title>
-    <script src="/static/theme.js"></script>
+    <script src="/static/theme.js?v=inventory-v3-20260724-1"></script>
     <script src="/static/vendor/alpinejs.min.js" defer></script>
     <script>
         window.inventoryPermissions = {{ permissions | tojson }};
@@ -239,9 +239,9 @@
                         <button type="button" class="sd-metadata-toggle" @click="metadataCollapsed = !metadataCollapsed" :aria-label="metadataCollapsed ? 'Metadaten einblenden' : 'Metadaten ausblenden'"><span class="sd-icon-slot" x-html="iconSvg(metadataCollapsed ? 'chevron-left' : 'chevron-right')"></span></button>
                         <div x-show="!metadataCollapsed">
                             <section><h3>Ticketdetails</h3>
-                                <label>Status<select x-model="selectedTicket.status" @change="updateTicketField('status', selectedTicket.status)" :disabled="!canUpdateTicket()"><template x-for="item in statuses" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
-                                <label>Priorität<select x-model="selectedTicket.priority" @change="updateTicketField('priority', selectedTicket.priority)" :disabled="!canUpdateTicket()"><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
-                                <label>Kategorie<select x-model="selectedTicket.category_id" @change="updateTicketField('category_id', selectedTicket.category_id)" :disabled="!canUpdateTicket()"><option value="">Keine Kategorie</option><template x-for="category in categories" :key="category.id"><option :value="category.id" x-text="category.name"></option></template></select></label>
+                                <label>Status<select x-model="selectedTicket.status" x-effect="$nextTick(() => { $el.value = selectedTicket.status || 'open' })" @change="updateTicketField('status', selectedTicket.status)" :disabled="!canUpdateTicket()"><template x-for="item in statuses" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
+                                <label>Priorität<select x-model="selectedTicket.priority" x-effect="$nextTick(() => { $el.value = selectedTicket.priority || 'normal' })" @change="updateTicketField('priority', selectedTicket.priority)" :disabled="!canUpdateTicket()"><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
+                                <label>Kategorie<select x-model="selectedTicket.category_id" x-effect="$nextTick(() => { $el.value = selectedTicket.category_id || '' })" @change="updateTicketField('category_id', selectedTicket.category_id)" :disabled="!canUpdateTicket()"><option value="">Keine Kategorie</option><template x-for="category in categories" :key="category.id"><option :value="category.id" x-text="category.name"></option></template></select></label>
                             </section>
                             <section><h3>Personen</h3>
                                 <label>Anfragender<input type="text" :value="selectedTicket.requester_name || selectedTicket.created_by" disabled></label>
@@ -330,6 +330,6 @@
     <div class="sd-toast-region" aria-live="polite"><template x-for="toast in toasts" :key="toast.id"><div class="sd-toast" :class="toast.type"><span class="sd-icon-slot" x-html="iconSvg(toast.type === 'error' ? 'alert-triangle' : 'check-circle')"></span><span x-text="toast.message"></span></div></template></div>
 
     <script src="/static/vendor/feather.min.js"></script>
-    <script src="/static/tickets.js?v=service-desk-20260724-3"></script>
+    <script src="/static/tickets.js?v=service-desk-20260724-4"></script>
 </body>
 </html>
