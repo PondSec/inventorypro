@@ -375,7 +375,7 @@
                 <label for="asset-search">Assets durchsuchen</label>
                 <div class="sd-asset-search">
                     <i data-feather="search" aria-hidden="true"></i>
-                    <input id="asset-search" x-ref="assetSearch" type="search" x-model="assetSearch" @input.debounce.350ms="loadAssetOptions()" placeholder="Name, Typ, Hersteller, Standort oder Seriennummer" autocomplete="off">
+                    <input id="asset-search" x-ref="assetSearch" type="search" x-model="assetSearch" @input.debounce.350ms="loadAssetOptions()" aria-label="Assets durchsuchen" placeholder="Name, Typ, Hersteller, Standort oder Seriennummer" autocomplete="off">
                     <button x-show="assetSearch" type="button" @click="assetSearch = ''; loadAssetOptions(); $nextTick(() => $refs.assetSearch.focus())" aria-label="Asset-Suche leeren"><i data-feather="x" aria-hidden="true"></i></button>
                 </div>
                 <p aria-live="polite"><span x-show="assetLoading">Suche läuft …</span><span x-show="!assetLoading" x-text="`${assetOptions.length} Assets angezeigt`"></span></p>
