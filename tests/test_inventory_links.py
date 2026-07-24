@@ -232,8 +232,11 @@ class InventoryLinksTestCase(unittest.TestCase):
             self.assertIn("fetch('/api/inventory-links/rewrite-link/proxy/api/devices')", html_text)
             self.assertIn("window.location = '/api/inventory-links/rewrite-link/proxy/tickets'", html_text)
             self.assertNotIn("Content-Security-Policy", html_text)
-            self.assertIsNone(html_response.headers.get("X-Frame-Options"))
-            self.assertIsNone(html_response.headers.get("Content-Security-Policy"))
+            self.assertEqual(html_response.headers.get("X-Frame-Options"), "SAMEORIGIN")
+            self.assertIn(
+                "frame-ancestors 'self'",
+                html_response.headers.get("Content-Security-Policy", ""),
+            )
 
             js_response = self.client.get("/api/inventory-links/rewrite-link/proxy/static/app.js")
             self.assertEqual(js_response.status_code, 200)
