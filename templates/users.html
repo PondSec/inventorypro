@@ -18,8 +18,8 @@
             <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div class="flex flex-wrap items-center justify-between gap-4">
                     <div class="relative flex-1 min-w-[220px]">
-                        <label class="text-xs uppercase text-slate-400">Suche</label>
-                        <input type="text" x-model="userSearch" placeholder="Benutzer oder Rolle" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                        <label for="user-search" class="text-xs uppercase text-slate-400">Suche</label>
+                        <input id="user-search" type="text" x-model="userSearch" placeholder="Benutzer oder Rolle" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
                         <span class="absolute right-4 top-9 text-slate-400">
                             <i data-feather="search" class="h-4 w-4"></i>
                         </span>
@@ -37,11 +37,11 @@
                     <h3 class="text-lg font-semibold text-slate-900">Neuen Benutzer anlegen</h3>
                     <p class="text-sm text-slate-500">Erstelle ein Konto für neue Teammitglieder.</p>
                     <form class="mt-4 space-y-3" @submit.prevent="createUser()">
-                        <input type="text" x-model="newUser.username" placeholder="Benutzername"
+                        <input type="text" x-model="newUser.username" placeholder="Benutzername" aria-label="Benutzername"
                                class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
-                        <input type="email" x-model="newUser.email" placeholder="E-Mail (optional)"
+                        <input type="email" x-model="newUser.email" placeholder="E-Mail (optional)" aria-label="E-Mail-Adresse"
                                class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
-                        <input type="password" x-model="newUser.password" placeholder="Startpasswort"
+                        <input type="password" x-model="newUser.password" placeholder="Startpasswort" aria-label="Startpasswort"
                                class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
                         <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4" x-show="can('roles.assign')">
                             <p class="text-xs uppercase tracking-wide text-slate-400">Rollen</p>
@@ -139,9 +139,9 @@
                     <h3 class="text-lg font-semibold text-slate-900">Neue Rolle</h3>
                     <p class="text-sm text-slate-500">Lege eine individuelle Rolle mit passenden Berechtigungen an.</p>
                     <form class="mt-4 space-y-3" @submit.prevent="createRole()">
-                        <input type="text" x-model="newRole.name" placeholder="Rollenname"
+                        <input type="text" x-model="newRole.name" placeholder="Rollenname" aria-label="Name der neuen Rolle"
                                class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
-                        <textarea x-model="newRole.description" rows="3" placeholder="Beschreibung"
+                        <textarea x-model="newRole.description" rows="3" placeholder="Beschreibung" aria-label="Beschreibung der neuen Rolle"
                                   class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
                         <button type="submit" class="w-full rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-500">
                             Rolle erstellen
@@ -206,23 +206,23 @@
                             <p class="text-xs text-slate-500">Melde dich einmalig mit einem AD-Benutzer an. Base DN wird automatisch erkannt.</p>
                         </div>
                         <div>
-                            <label class="text-sm font-semibold text-slate-700">Server-URL</label>
-                            <input type="text" x-model="adQuick.server_url" placeholder="ldap://ad.firma.local"
+                            <label for="ad-quick-server" class="text-sm font-semibold text-slate-700">Server-URL</label>
+                            <input id="ad-quick-server" type="text" x-model="adQuick.server_url" placeholder="ldap://ad.firma.local"
                                    class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
                         </div>
                         <div>
-                            <label class="text-sm font-semibold text-slate-700">Domain (optional)</label>
-                            <input type="text" x-model="adQuick.domain" placeholder="firma.local"
+                            <label for="ad-quick-domain" class="text-sm font-semibold text-slate-700">Domain (optional)</label>
+                            <input id="ad-quick-domain" type="text" x-model="adQuick.domain" placeholder="firma.local"
                                    class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
                         </div>
                         <div>
-                            <label class="text-sm font-semibold text-slate-700">AD-Benutzername</label>
-                            <input type="text" x-model="adQuick.username" placeholder="Supporter"
+                            <label for="ad-quick-username" class="text-sm font-semibold text-slate-700">AD-Benutzername</label>
+                            <input id="ad-quick-username" type="text" x-model="adQuick.username" placeholder="Supporter"
                                    class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
                         </div>
                         <div>
-                            <label class="text-sm font-semibold text-slate-700">AD-Passwort</label>
-                            <input type="password" x-model="adQuick.password" placeholder="Passwort"
+                            <label for="ad-quick-password" class="text-sm font-semibold text-slate-700">AD-Passwort</label>
+                            <input id="ad-quick-password" type="password" x-model="adQuick.password" placeholder="Passwort"
                                    class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
                         </div>
                         <div class="flex items-center gap-3 lg:col-span-2">
@@ -244,36 +244,36 @@
 
                     <form class="mt-4 grid gap-4 lg:grid-cols-2" @submit.prevent="connectAd()">
                         <div>
-                            <label class="text-sm font-semibold text-slate-700">Server-URL</label>
-                            <input type="text" x-model="adSettings.server_url" placeholder="ldap://ad.firma.local"
+                            <label for="ad-server" class="text-sm font-semibold text-slate-700">Server-URL</label>
+                            <input id="ad-server" type="text" x-model="adSettings.server_url" placeholder="ldap://ad.firma.local"
                                    class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
                         </div>
                         <div>
-                            <label class="text-sm font-semibold text-slate-700">Base DN</label>
-                            <input type="text" x-model="adSettings.base_dn" placeholder="DC=firma,DC=local"
+                            <label for="ad-base-dn" class="text-sm font-semibold text-slate-700">Base DN</label>
+                            <input id="ad-base-dn" type="text" x-model="adSettings.base_dn" placeholder="DC=firma,DC=local"
                                    class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" required>
                         </div>
                         <div>
-                            <label class="text-sm font-semibold text-slate-700">Bind DN (optional)</label>
-                            <input type="text" x-model="adSettings.bind_dn" placeholder="CN=ldap-bind,OU=Service,DC=firma,DC=local"
+                            <label for="ad-bind-dn" class="text-sm font-semibold text-slate-700">Bind DN (optional)</label>
+                            <input id="ad-bind-dn" type="text" x-model="adSettings.bind_dn" placeholder="CN=ldap-bind,OU=Service,DC=firma,DC=local"
                                    class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
                         </div>
                         <div>
-                            <label class="text-sm font-semibold text-slate-700">Bind Passwort (optional)</label>
-                            <input type="password" x-model="adSettings.bind_password" placeholder="Nur bei Änderung neu eingeben"
+                            <label for="ad-bind-password" class="text-sm font-semibold text-slate-700">Bind Passwort (optional)</label>
+                            <input id="ad-bind-password" type="password" x-model="adSettings.bind_password" placeholder="Nur bei Änderung neu eingeben"
                                    class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <p class="mt-1 text-xs text-slate-400" x-show="adSettings.has_bind_password && !adSettings.bind_password">
                                 Gespeichertes Passwort bleibt erhalten.
                             </p>
                         </div>
                         <div>
-                            <label class="text-sm font-semibold text-slate-700">Benutzer-Attribut</label>
-                            <input type="text" x-model="adSettings.user_attribute" placeholder="sAMAccountName"
+                            <label for="ad-user-attribute" class="text-sm font-semibold text-slate-700">Benutzer-Attribut</label>
+                            <input id="ad-user-attribute" type="text" x-model="adSettings.user_attribute" placeholder="sAMAccountName"
                                    class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
                         </div>
                         <div>
-                            <label class="text-sm font-semibold text-slate-700">Domain (optional)</label>
-                            <input type="text" x-model="adSettings.domain" placeholder="firma.local"
+                            <label for="ad-domain" class="text-sm font-semibold text-slate-700">Domain (optional)</label>
+                            <input id="ad-domain" type="text" x-model="adSettings.domain" placeholder="firma.local"
                                    class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
                         </div>
                         <div class="flex items-center gap-3">
@@ -308,7 +308,7 @@
                 </button>
             </div>
             <p class="text-sm text-slate-500 mb-4" x-text="resetUser ? `Neues Passwort für ${resetUser.username}` : ''"></p>
-            <input type="password" x-model="resetPassword" placeholder="Neues Passwort"
+            <input type="password" x-model="resetPassword" placeholder="Neues Passwort" aria-label="Neues Passwort"
                    class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
             <div class="mt-4 flex justify-end gap-2">
                 <button @click="resetModalOpen = false" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
@@ -326,8 +326,8 @@
                 </button>
             </div>
             <p class="text-sm text-slate-500 mb-4" x-text="emailUser ? `E-Mail für ${emailUser.username}` : ''"></p>
-            <label class="text-xs uppercase tracking-wide text-slate-400">E-Mail</label>
-            <input type="email" x-model="emailValue" placeholder="name@firma.de"
+            <label for="user-email-value" class="text-xs uppercase tracking-wide text-slate-400">E-Mail</label>
+            <input id="user-email-value" type="email" x-model="emailValue" placeholder="name@firma.de"
                    class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
             <p class="mt-2 text-xs text-rose-500" x-text="emailError" x-show="emailError"></p>
             <p class="mt-2 text-xs text-emerald-600" x-text="emailSuccess" x-show="emailSuccess"></p>
@@ -347,9 +347,9 @@
                 </button>
             </div>
             <div class="space-y-4">
-                <input type="text" x-model="roleForm.name" placeholder="Rollenname"
+                <input type="text" x-model="roleForm.name" placeholder="Rollenname" aria-label="Rollenname"
                        class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
-                <textarea x-model="roleForm.description" rows="3" placeholder="Beschreibung"
+                <textarea x-model="roleForm.description" rows="3" placeholder="Beschreibung" aria-label="Rollenbeschreibung"
                           class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
                 <div class="space-y-4">
                     <template x-for="(group, groupName) in permissionGroups" :key="groupName">
