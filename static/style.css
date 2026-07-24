@@ -2964,12 +2964,18 @@ button {
 
 .sd-asset-modal {
   width: min(1040px, calc(100vw - 40px));
+  height: min(760px, calc(100dvh - 40px));
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 .sd-asset-search-panel {
+  position: relative;
+  z-index: 2;
   display: grid;
   gap: 6px;
-  padding: 14px 16px 2px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .sd-asset-search-panel > label {
@@ -3047,9 +3053,9 @@ button {
 }
 
 .sd-asset-table {
-  min-height: 300px;
+  min-height: 0;
   overflow: auto;
-  padding: 12px 16px 16px;
+  padding: 0 16px 16px;
 }
 
 .sd-asset-table table {
