@@ -112,7 +112,8 @@
     <div class="sd-toast-region" aria-live="polite"><template x-for="toast in toasts" :key="toast.id"><div class="sd-toast" :class="toast.type"><i :data-feather="toast.type === 'error' ? 'alert-triangle' : 'check-circle'"></i><span x-text="toast.message"></span></div></template></div>
 
     <script src="/static/vendor/feather.min.js"></script>
+    <script src="/static/ui.js"></script>
     <script src="/static/ticket-admin.js"></script>
-    <script>document.addEventListener('DOMContentLoaded', () => window.feather?.replace());</script>
+    <script>document.addEventListener('DOMContentLoaded', () => window.InventoryRefreshIcons?.());</script>
 </body>
 </html>
