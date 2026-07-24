@@ -118,6 +118,15 @@ class SecurityBoundaryTestCase(unittest.TestCase):
         self.assertIn("Protected-Initial-Secret", credentials_path.read_text(encoding="utf-8"))
         self.assertNotIn("Protected-Initial-Secret", output.getvalue())
 
+        rotated_path = inventory_app.store_initial_admin_credentials(
+            "replacement-admin",
+            "Replacement-Secret",
+        )
+        self.assertNotEqual(rotated_path, credentials_path)
+        self.assertTrue(credentials_path.exists())
+        self.assertEqual(stat.S_IMODE(rotated_path.stat().st_mode), 0o600)
+        self.assertIn("Replacement-Secret", rotated_path.read_text(encoding="utf-8"))
+
     def test_password_reset_errors_do_not_enumerate_accounts(self):
         unknown = self.client.post(
             "/reset",
