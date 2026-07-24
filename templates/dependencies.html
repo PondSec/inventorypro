@@ -77,14 +77,6 @@
                             </span>
                         </a>
                         {% endif %}
-                        {% if 'ai.use' in permissions or 'ai.manage' in permissions %}
-                        <a href="/ai/activity" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="message-circle" class="w-4 h-4"></i></span>
-                                PondSec AI
-                            </span>
-                        </a>
-                        {% endif %}
                     </div>
                 </div>
 
@@ -198,7 +190,6 @@
                         <p class="text-xs text-slate-400">Angemeldet als</p>
                         <p class="text-sm font-semibold text-slate-800">{{ username }}</p>
                     </div>
-                    {% include 'pondsec_ai_button.html' %}
                     <form action="/logout" method="post">
                         <button type="submit" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-800">
                             <i data-feather="log-out" class="h-4 w-4"></i>
@@ -879,6 +870,5 @@
     </script>
     <script src="/static/ui.js"></script>
    <script src="/static/theme.js"></script>
-    {% include 'pondsec_ai_drawer.html' %}
 </body>
 </html>
