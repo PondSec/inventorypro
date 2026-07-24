@@ -371,9 +371,62 @@ document.addEventListener('alpine:init', () => {
             this.draftFilters = { search: this.filters.search, status: '', priority: '', category_id: '', assignee: '', mine: false };
         },
 
+        openMobileQueues() {
+            this.rememberFocus();
+            this.mobileQueuesOpen = true;
+            this.focusDialog();
+            this.refreshIcons();
+        },
+
+        closeMobileQueues() {
+            if (!this.mobileQueuesOpen) return;
+            this.mobileQueuesOpen = false;
+            this.restoreFocus();
+        },
+
+        openFilter() {
+            this.draftFilters = { ...this.filters };
+            this.rememberFocus();
+            this.filterOpen = true;
+            this.focusDialog();
+            this.refreshIcons();
+        },
+
+        closeFilter() {
+            if (!this.filterOpen) return;
+            this.filterOpen = false;
+            this.restoreFocus();
+        },
+
+        openSaveView() {
+            this.rememberFocus();
+            this.saveViewOpen = true;
+            this.focusDialog();
+            this.refreshIcons();
+        },
+
+        closeSaveView() {
+            if (!this.saveViewOpen) return;
+            this.saveViewOpen = false;
+            this.restoreFocus();
+        },
+
+        openShortcuts() {
+            this.rememberFocus();
+            this.showShortcuts = true;
+            this.focusDialog();
+            this.refreshIcons();
+        },
+
+        closeShortcuts() {
+            if (!this.showShortcuts) return;
+            this.showShortcuts = false;
+            this.restoreFocus();
+        },
+
         applyFilters() {
             this.filters = { ...this.draftFilters, search: this.filters.search };
-            this.filterOpen = false;
+            this.closeFilter();
             this.pagination.page = 1;
             this.loadTickets();
         },
@@ -414,7 +467,7 @@ document.addEventListener('alpine:init', () => {
                         sort_direction: this.sort.direction
                     })
                 });
-                this.saveViewOpen = false;
+                this.closeSaveView();
                 this.newView = { name: '', is_favorite: false, is_default: false };
                 await this.loadSavedViews();
                 this.showToast('Ansicht gespeichert.');
@@ -572,6 +625,7 @@ document.addEventListener('alpine:init', () => {
         async openCreateTicket() {
             this.createError = '';
             if (!this.newTicket.category_id) await this.ticketTypeChanged();
+            this.rememberFocus();
             this.createOpen = true;
             this.$nextTick(() => {
                 this.$refs.createTitle?.focus();
@@ -582,6 +636,7 @@ document.addEventListener('alpine:init', () => {
         closeCreateTicket() {
             if ((this.newTicket.title || this.newTicket.description) && !window.confirm('Entwurf verwerfen?')) return;
             this.createOpen = false;
+            this.restoreFocus();
         },
 
         async ticketTypeChanged() {
@@ -641,6 +696,7 @@ document.addEventListener('alpine:init', () => {
                     change_ticket_id: ''
                 };
                 this.createOpen = false;
+                this.restoreFocus();
                 await Promise.all([this.loadTickets(), this.loadQueueCounts()]);
                 await this.loadTicket(ticketId, true);
                 if (result.review_ticket_id) {
@@ -658,6 +714,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async openAssetPicker(target) {
+            this.rememberFocus();
             this.assetPickerTarget = target;
             this.assetSearch = '';
             this.assetSelection = target === 'detail'
@@ -665,6 +722,13 @@ document.addEventListener('alpine:init', () => {
                 : [...this.newTicket.asset_ids];
             this.assetPickerOpen = true;
             await this.loadAssetOptions();
+            this.$nextTick(() => this.$refs.assetSearch?.focus());
+        },
+
+        closeAssetPicker() {
+            if (!this.assetPickerOpen) return;
+            this.assetPickerOpen = false;
+            this.restoreFocus();
         },
 
         async loadAssetOptions() {
@@ -691,12 +755,12 @@ document.addEventListener('alpine:init', () => {
         async applyAssetSelection() {
             if (this.assetPickerTarget === 'create') {
                 this.newTicket.asset_ids = [...this.assetSelection];
-                this.assetPickerOpen = false;
+                this.closeAssetPicker();
                 return;
             }
             if (!this.selectedTicket) return;
             this.selectedTicket.asset_ids = [...this.assetSelection];
-            this.assetPickerOpen = false;
+            this.closeAssetPicker();
             await this.updateTicketField('asset_ids', this.assetSelection);
             await this.loadTicket(this.selectedTicket.id, false);
         },
@@ -712,8 +776,16 @@ document.addEventListener('alpine:init', () => {
         openBulk(field) {
             const labels = { assignee: 'Tickets zuweisen', status: 'Status ändern', priority: 'Priorität ändern' };
             const defaults = { assignee: '', status: 'in_progress', priority: 'normal' };
+            this.rememberFocus();
             this.bulkDialog = { open: true, field, value: defaults[field], title: labels[field] };
+            this.focusDialog();
             this.refreshIcons();
+        },
+
+        closeBulk() {
+            if (!this.bulkDialog.open) return;
+            this.bulkDialog.open = false;
+            this.restoreFocus();
         },
 
         async applyBulk() {
@@ -728,7 +800,7 @@ document.addEventListener('alpine:init', () => {
                     })
                 });
                 const count = this.selectedIds.length;
-                this.bulkDialog.open = false;
+                this.closeBulk();
                 this.selectedIds = [];
                 await Promise.all([this.loadTickets(), this.loadQueueCounts()]);
                 this.showToast(`${count} Tickets aktualisiert.`);
@@ -789,10 +861,13 @@ document.addEventListener('alpine:init', () => {
             const target = event.target;
             const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName) || target?.isContentEditable;
             if (event.key === 'Escape') {
-                if (this.showShortcuts) this.showShortcuts = false;
-                else if (this.assetPickerOpen) this.assetPickerOpen = false;
-                else if (this.createOpen) this.createOpen = false;
-                else if (this.filterOpen) this.filterOpen = false;
+                if (this.showShortcuts) this.closeShortcuts();
+                else if (this.assetPickerOpen) this.closeAssetPicker();
+                else if (this.createOpen) this.closeCreateTicket();
+                else if (this.filterOpen) this.closeFilter();
+                else if (this.saveViewOpen) this.closeSaveView();
+                else if (this.bulkDialog.open) this.closeBulk();
+                else if (this.mobileQueuesOpen) this.closeMobileQueues();
                 else if (this.selectedTicket) this.closeTicket();
                 return;
             }
@@ -805,8 +880,7 @@ document.addEventListener('alpine:init', () => {
                 this.openCreateTicket();
             } else if (event.key === '?') {
                 event.preventDefault();
-                this.showShortcuts = true;
-                this.refreshIcons();
+                this.openShortcuts();
             } else if (event.key.toLowerCase() === 'j') {
                 this.moveKeyboardSelection(1);
             } else if (event.key.toLowerCase() === 'k') {
