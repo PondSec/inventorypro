@@ -4499,6 +4499,107 @@ textarea {
   font-size: 11px;
 }
 
+.sd-activity-timeline {
+  display: grid;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sd-activity-timeline > li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  padding: 0 0 20px;
+}
+
+.sd-activity-timeline > li:not(:last-child)::before {
+  position: absolute;
+  top: 30px;
+  bottom: 0;
+  left: 15px;
+  width: 1px;
+  background: var(--color-border);
+  content: "";
+}
+
+.sd-activity-icon {
+  z-index: 1;
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-accent-strong);
+}
+
+.sd-activity-timeline li > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-surface);
+}
+
+.sd-activity-timeline header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sd-activity-timeline header time,
+.sd-activity-timeline p {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.sd-activity-timeline p {
+  margin: 4px 0 0;
+  line-height: 1.45;
+}
+
+.sd-activity-timeline dl {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.sd-activity-timeline dl > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.35fr) minmax(0, 1fr);
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+.sd-activity-timeline dt {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.sd-activity-timeline dd {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.sd-activity-timeline dd svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}
+
 .sd-file-list {
   display: grid;
 }
