@@ -2954,15 +2954,41 @@ button {
   width: min(1040px, calc(100vw - 40px));
 }
 
+.sd-asset-search-panel {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px 2px;
+}
+
+.sd-asset-search-panel > label {
+  color: var(--color-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .sd-asset-search {
   display: flex;
+  min-height: 42px;
   align-items: center;
   gap: 9px;
-  margin: 14px 16px 0;
-  padding: 0 11px;
+  margin: 0;
+  padding: 0 12px;
   border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: var(--color-surface-muted);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 5%);
+}
+
+.sd-asset-search:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.sd-asset-search > svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
 }
 
 .sd-asset-search input {
@@ -2970,6 +2996,42 @@ button {
   height: 38px;
   border: 0;
   background: transparent;
+  color: var(--color-text);
+  font-size: 13px;
+  outline: 0;
+}
+
+.sd-asset-search input::placeholder {
+  color: var(--color-text-subtle);
+}
+
+.sd-asset-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.sd-asset-search button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.sd-asset-search button:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.sd-asset-search-panel > p {
+  min-height: 15px;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 10px;
 }
 
 .sd-asset-table {
