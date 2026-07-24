@@ -438,6 +438,7 @@ document.addEventListener('alpine:init', () => {
                 assignee: ticket.assignee,
                 assignee_email: ticket.assignee_email,
                 due_date: ticket.due_date,
+                updated_at: ticket.updated_at,
                 tags: ticket.tags,
                 custom_fields: ticket.custom_fields,
                 asset_ids: ticket.asset_ids || [],
@@ -447,17 +448,24 @@ document.addEventListener('alpine:init', () => {
             };
             payload[field] = value;
             try {
-                await this.api(`/api/tickets/${ticket.id}`, {
+                const result = await this.api(`/api/tickets/${ticket.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
+                ticket.updated_at = result.updated_at || ticket.updated_at;
+                const activeDetailTab = this.detailTab;
+                this.selectedTicket = await this.api(`/api/tickets/${ticket.id}`);
+                this.detailTab = activeDetailTab;
                 this.showToast('Ticket aktualisiert.');
                 await Promise.all([this.loadTickets(), this.loadQueueCounts()]);
             } catch (error) {
                 this.showToast(error.message, 'error');
                 if (error.code === 'change_review_required' && error.payload?.review_ticket_id) {
                     this.showToast(`Zuerst Review #${error.payload.review_ticket_id} abschließen.`, 'error');
+                }
+                if (error.code === 'ticket_update_conflict') {
+                    this.showToast('Der aktuelle Ticketstand wurde geladen. Bitte Änderung erneut prüfen.', 'error');
                 }
                 await this.loadTicket(ticket.id, false);
             }
@@ -837,6 +845,29 @@ document.addEventListener('alpine:init', () => {
                 : `Review #${relation.review_ticket_id} ausstehend`;
         },
 
+        activityIcon(action) {
+            return {
+                create: 'plus-circle',
+                update: 'edit-3',
+                bulk_update: 'layers',
+                comment: 'message-circle',
+                watch: 'eye',
+                unwatch: 'eye-off',
+                merge: 'git-merge'
+            }[action] || 'activity';
+        },
+
+        activitySummary(activity) {
+            const details = activity?.details || {};
+            if (details.preview) {
+                return `${details.is_internal ? 'Interne Notiz' : 'Kommentar'}: ${details.preview}`;
+            }
+            if (details.email) return `E-Mail: ${details.email}`;
+            if (details.title) return details.title;
+            if (details.merged_into) return `Zusammengeführt in Ticket #${details.merged_into}`;
+            return '';
+        },
+
         isOverdue(ticket) {
             if (!ticket.due_date || ['closed', 'resolved'].includes(ticket.status)) return false;
             return new Date(`${ticket.due_date}T23:59:59`) < new Date();
@@ -901,6 +932,7 @@ document.addEventListener('alpine:init', () => {
             if (!this.selectedTicket) return 0;
             if (key === 'conversation') return (this.selectedTicket.comments || []).length;
             if (key === 'attachments') return this.attachments.length;
+            if (key === 'activity') return (this.selectedTicket.activity || []).length;
             return 0;
         },
 
