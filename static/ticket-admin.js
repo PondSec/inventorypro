@@ -24,6 +24,7 @@ document.addEventListener('alpine:init', () => {
         },
         toasts: [],
         toastSequence: 0,
+        iconRefreshTimer: null,
         navigation: [
             { key: 'general', label: 'Allgemein', icon: 'sliders', description: 'Standardwerte und grundlegendes Verhalten.', enabled: true, available: true },
             { key: 'categories', label: 'Kategorien', icon: 'folder', description: 'Kategorien, Beschreibungen und Standard-SLAs.', enabled: true, available: true },
@@ -230,7 +231,10 @@ document.addEventListener('alpine:init', () => {
         },
 
         refreshIcons() {
-            this.$nextTick(() => window.feather?.replace({ width: 16, height: 16 }));
+            window.clearTimeout(this.iconRefreshTimer);
+            this.iconRefreshTimer = window.setTimeout(() => {
+                this.$nextTick(() => window.InventoryRefreshIcons?.());
+            }, 16);
         }
     }));
 });
