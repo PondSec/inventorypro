@@ -72,14 +72,15 @@
                     <div><h1 x-text="activeQueueLabel"></h1><span x-text="loading ? 'Lädt …' : `${pagination.total} Tickets`"></span></div>
                 </div>
                 <div class="sd-toolbar-actions">
+                    <button type="button" class="sd-button sd-mobile-queue-trigger" @click="openMobileQueues()" aria-label="Ticket-Queue auswählen"><i data-feather="menu"></i><span>Queue</span></button>
                     <label class="sd-search">
                         <i data-feather="search"></i>
                         <span class="sr-only">Tickets durchsuchen</span>
                         <input x-ref="search" type="search" x-model="filters.search" @input.debounce.350ms="searchChanged()" placeholder="ID, Titel, Benutzer, Asset …">
                         <kbd>/</kbd>
                     </label>
-                    <button type="button" class="sd-button" @click="filterOpen = true"><i data-feather="filter"></i><span>Filter</span><small x-show="activeFilterCount" x-text="activeFilterCount"></small></button>
-                    <button type="button" class="sd-icon-button" @click="saveViewOpen = true" aria-label="Ansicht speichern" title="Ansicht speichern"><i data-feather="bookmark"></i></button>
+                    <button type="button" class="sd-button sd-filter-trigger" @click="openFilter()" aria-label="Ticketliste filtern"><i data-feather="filter"></i><span>Filter</span><small x-show="activeFilterCount" x-text="activeFilterCount"></small></button>
+                    <button type="button" class="sd-icon-button" @click="openSaveView()" aria-label="Ansicht speichern" title="Ansicht speichern"><i data-feather="bookmark"></i></button>
                     <button type="button" class="sd-icon-button" @click="loadTickets()" aria-label="Aktualisieren" title="Aktualisieren"><i data-feather="refresh-cw"></i></button>
                     <button x-show="can('tickets.create')" type="button" class="sd-button sd-button-primary" @click="openCreateTicket()" data-testid="open-ticket-modal" aria-label="Neues Ticket erstellen"><i data-feather="plus"></i><span>Ticket</span></button>
                 </div>
@@ -300,10 +301,26 @@
         </template>
     </aside>
 
-    <div x-show="filterOpen" x-cloak class="sd-overlay" @keydown.escape.window="filterOpen = false">
-        <button class="sd-overlay-dismiss" type="button" @click="filterOpen = false" aria-label="Filter schließen"></button>
+    <div x-show="mobileQueuesOpen" x-cloak class="sd-overlay" @keydown.escape.window="closeMobileQueues()" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeMobileQueues()" aria-label="Queue-Auswahl schließen"></button>
+        <aside class="sd-drawer sd-mobile-queue-drawer" role="dialog" aria-modal="true" aria-labelledby="mobile-queue-title">
+            <header><div><p>Service Desk</p><h2 id="mobile-queue-title">Ticket-Queue auswählen</h2></div><button type="button" @click="closeMobileQueues()" aria-label="Schließen"><i data-feather="x"></i></button></header>
+            <nav class="sd-mobile-queue-list" aria-label="Ticket-Queues">
+                <template x-for="queue in queues" :key="queue.key">
+                    <button type="button" @click="selectQueue(queue); closeMobileQueues()" :class="{ active: activeQueue === queue.key }" :aria-current="activeQueue === queue.key ? 'page' : null">
+                        <span class="sd-icon-slot" x-html="iconSvg(queue.icon)"></span>
+                        <span x-text="queue.label"></span>
+                        <small x-show="queueCounts[queue.key] !== undefined" x-text="queueCounts[queue.key]"></small>
+                    </button>
+                </template>
+            </nav>
+        </aside>
+    </div>
+
+    <div x-show="filterOpen" x-cloak class="sd-overlay" @keydown.escape.window="closeFilter()" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeFilter()" aria-label="Filter schließen"></button>
         <aside class="sd-drawer" role="dialog" aria-modal="true" aria-labelledby="filter-title">
-            <header><div><p>Ansicht eingrenzen</p><h2 id="filter-title">Erweiterte Filter</h2></div><button type="button" @click="filterOpen = false" aria-label="Schließen"><i data-feather="x"></i></button></header>
+            <header><div><p>Ansicht eingrenzen</p><h2 id="filter-title">Erweiterte Filter</h2></div><button type="button" @click="closeFilter()" aria-label="Schließen"><i data-feather="x"></i></button></header>
             <div class="sd-drawer-body">
                 <label>Status<select x-model="draftFilters.status"><option value="">Alle Status</option><template x-for="item in statuses" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
                 <label>Priorität<select x-model="draftFilters.priority"><option value="">Alle Prioritäten</option><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
