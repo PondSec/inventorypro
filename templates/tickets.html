@@ -24,17 +24,17 @@
                 <span class="sd-brand-copy"><strong data-brand-name>Inventory Pro</strong><small>Smart Asset Hub</small></span>
             </a>
             <nav class="sd-global-links">
-                <a href="/"><i data-feather="grid"></i><span>Übersicht</span></a>
-                <a href="/locations"><i data-feather="map-pin"></i><span>Standorte</span></a>
-                <a href="/tickets" class="active" aria-current="page"><i data-feather="life-buoy"></i><span>Service Desk</span></a>
-                <a href="/knowledge"><i data-feather="book-open"></i><span>Wissen</span></a>
-                <a href="/roadmap"><i data-feather="git-merge"></i><span>Roadmap</span></a>
-                <a href="/dependencies"><i data-feather="share-2"></i><span>Abhängigkeiten</span></a>
+                <a href="/" aria-label="Übersicht"><i data-feather="grid"></i><span>Übersicht</span></a>
+                <a href="/locations" aria-label="Standorte"><i data-feather="map-pin"></i><span>Standorte</span></a>
+                <a href="/tickets" class="active" aria-current="page" aria-label="Service Desk"><i data-feather="life-buoy"></i><span>Service Desk</span></a>
+                <a href="/knowledge" aria-label="Wissen"><i data-feather="book-open"></i><span>Wissen</span></a>
+                <a href="/roadmap" aria-label="Roadmap"><i data-feather="git-merge"></i><span>Roadmap</span></a>
+                <a href="/dependencies" aria-label="Abhängigkeiten"><i data-feather="share-2"></i><span>Abhängigkeiten</span></a>
             </nav>
             <div class="sd-global-footer">
-                <a x-show="canManageTickets()" href="/admin/tickets/categories"><i data-feather="settings"></i><span>Ticket-Admin</span></a>
-                <button type="button" @click="showShortcuts = true"><i data-feather="command"></i><span>Kürzel</span></button>
-                <form action="/logout" method="post"><button type="submit"><i data-feather="log-out"></i><span>Abmelden</span></button></form>
+                <a x-show="canManageTickets()" href="/admin/tickets/categories" aria-label="Ticket-Administration"><i data-feather="settings"></i><span>Ticket-Admin</span></a>
+                <button type="button" @click="showShortcuts = true" aria-label="Tastaturkürzel"><i data-feather="command"></i><span>Kürzel</span></button>
+                <form action="/logout" method="post"><button type="submit" aria-label="Abmelden"><i data-feather="log-out"></i><span>Abmelden</span></button></form>
             </div>
         </aside>
 
@@ -47,7 +47,7 @@
             </div>
             <nav>
                 <template x-for="queue in queues" :key="queue.key">
-                    <button type="button" @click="selectQueue(queue)" :class="{ active: activeQueue === queue.key }" :title="queue.label">
+                    <button type="button" @click="selectQueue(queue)" :class="{ active: activeQueue === queue.key }" :title="queue.label" :aria-label="queue.label" :aria-current="activeQueue === queue.key ? 'page' : null">
                         <span class="sd-icon-slot" x-html="iconSvg(queue.icon)"></span>
                         <span x-show="!queuesCollapsed" x-text="queue.label"></span>
                         <small x-show="!queuesCollapsed && queueCounts[queue.key] !== undefined" x-text="queueCounts[queue.key]"></small>
@@ -57,7 +57,7 @@
             <section x-show="!queuesCollapsed && savedViews.length" class="sd-saved-views">
                 <h2>Gespeicherte Ansichten</h2>
                 <template x-for="view in savedViews" :key="view.id">
-                    <button type="button" @click="applySavedView(view)">
+                    <button type="button" @click="applySavedView(view)" :aria-label="`Gespeicherte Ansicht ${view.name} öffnen`">
                         <span class="sd-icon-slot" x-html="iconSvg(view.is_favorite ? 'star' : 'bookmark')"></span>
                         <span x-text="view.name"></span>
                     </button>
