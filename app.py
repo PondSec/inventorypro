@@ -6226,7 +6226,6 @@ def enforce_same_origin_writes():
 @app.after_request
 def apply_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
@@ -6234,11 +6233,16 @@ def apply_security_headers(response):
         "Permissions-Policy",
         "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     )
+    frame_ancestors = "'self'" if request.endpoint == "inventory_link_proxy" else "'none'"
+    response.headers.setdefault(
+        "X-Frame-Options",
+        "SAMEORIGIN" if request.endpoint == "inventory_link_proxy" else "DENY",
+    )
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; "
         "base-uri 'self'; "
-        "frame-ancestors 'none'; "
+        f"frame-ancestors {frame_ancestors}; "
         "form-action 'self'; "
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
         "style-src 'self' 'unsafe-inline'; "
