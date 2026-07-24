@@ -10484,6 +10484,29 @@ def update_location(location_id):
 
     if not user_can('locations.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    location = db.execute('SELECT id, name FROM locations WHERE id = ?', (location_id,)).fetchone()
+    if not location:
+        return jsonify({"error": "Standort nicht gefunden"}), 404
+    device_count = db.execute(
+        'SELECT COUNT(*) FROM devices WHERE location_id = ?',
+        (location_id,),
+    ).fetchone()[0]
+    assignment_count = db.execute(
+        'SELECT COUNT(*) FROM asset_assignments WHERE location_id = ?',
+        (location_id,),
+    ).fetchone()[0]
+    if device_count or assignment_count:
+        return jsonify({
+            "error": (
+                f"Standort „{location['name']}“ wird noch verwendet. "
+                "Ordne Geräte und Asset-Zuweisungen vor dem Löschen einem anderen Standort zu."
+            ),
+            "code": "location_in_use",
+            "references": {
+                "devices": device_count,
+                "asset_assignments": assignment_count,
+            },
+        }), 409
     result = db.execute('DELETE FROM locations WHERE id = ?', (location_id,))
     if result.rowcount == 0:
         return jsonify({"error": "Standort nicht gefunden"}), 404
