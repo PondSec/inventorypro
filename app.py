@@ -3453,6 +3453,31 @@ def init_db():
         ''')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS saved_ticket_views (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                filters_json TEXT NOT NULL DEFAULT '{}',
+                columns_json TEXT NOT NULL DEFAULT '[]',
+                sort_by TEXT NOT NULL DEFAULT 'updated_at',
+                sort_direction TEXT NOT NULL DEFAULT 'desc',
+                is_favorite INTEGER NOT NULL DEFAULT 0,
+                is_default INTEGER NOT NULL DEFAULT 0,
+                is_team_shared INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, name),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_tickets_status_updated ON tickets(status, updated_at DESC)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_tickets_priority_updated ON tickets(priority, updated_at DESC)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_tickets_assignee_updated ON tickets(assignee, updated_at DESC)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_tickets_due_date ON tickets(due_date)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_ticket_assets_ticket ON ticket_assets(ticket_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_ticket_comments_ticket_created ON ticket_comments(ticket_id, created_at)')
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS knowledge_categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
@@ -7642,6 +7667,38 @@ def tickets_page():
     access = get_user_access(get_db())
     return render_template('tickets.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
+@app.route('/tickets/<int:ticket_id>')
+@login_required
+@require_permissions('tickets.view_all', 'tickets.view_own')
+def ticket_workspace_page(ticket_id):
+    ticket = fetch_ticket(get_db(), ticket_id)
+    access = get_user_access(get_db())
+    if not ticket:
+        return Response("Ticket nicht gefunden", status=404, content_type="text/plain; charset=utf-8")
+    if not ensure_ticket_access(ticket, access):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    return render_template(
+        'tickets.html',
+        username=session.get('username'),
+        permissions=sorted(access["permissions"]),
+        is_superuser=access["is_superuser"],
+        initial_ticket_id=ticket_id,
+    )
+
+@app.route('/admin/tickets')
+@app.route('/admin/tickets/<section>')
+@login_required
+@require_permissions('ticket_categories.manage', 'ticket_alerts.manage', 'notifications.manage')
+def ticket_admin_page(section='general'):
+    access = get_user_access(get_db())
+    return render_template(
+        'ticket_admin.html',
+        username=session.get('username'),
+        permissions=sorted(access["permissions"]),
+        is_superuser=access["is_superuser"],
+        section=section,
+    )
+
 @app.route('/knowledge')
 @login_required
 @require_permissions('knowledge.view', 'knowledge.manage')
@@ -10533,18 +10590,210 @@ def tickets():
         filters.append('(t.title LIKE ? OR t.description LIKE ? OR t.requester_name LIKE ?)')
         params.extend([f'%{search}%', f'%{search}%', f'%{search}%'])
 
-    query = '''
-        SELECT t.*, c.name as category_name, c.color as category_color
+    sort_columns = {
+        'id': 't.id',
+        'status': 't.status',
+        'priority': 't.priority',
+        'title': 't.title',
+        'requester': 't.requester_name',
+        'assignee': 't.assignee',
+        'category': 'c.name',
+        'created_at': 't.created_at',
+        'updated_at': 't.updated_at',
+        'due_date': 't.due_date',
+    }
+    sort_by = request.args.get('sort', 'updated_at')
+    sort_direction = 'ASC' if request.args.get('direction', 'desc').lower() == 'asc' else 'DESC'
+    queue = request.args.get('queue')
+    if queue == 'unassigned':
+        filters.append("(t.assignee IS NULL OR TRIM(t.assignee) = '')")
+        filters.append("t.status NOT IN ('closed', 'resolved')")
+    elif queue == 'mine':
+        filters.append('LOWER(COALESCE(t.assignee, "")) = LOWER(?)')
+        params.append(access["user"]["username"])
+        filters.append("t.status NOT IN ('closed', 'resolved')")
+    elif queue == 'overdue':
+        filters.append("t.due_date IS NOT NULL AND t.due_date != '' AND date(t.due_date) < date('now')")
+        filters.append("t.status NOT IN ('closed', 'resolved')")
+    elif queue == 'due-today':
+        filters.append("date(t.due_date) = date('now')")
+    elif queue == 'escalated':
+        filters.append('COALESCE(t.escalation_level, 0) > 0')
+    elif queue == 'waiting':
+        filters.append("t.status IN ('waiting', 'waiting_customer', 'waiting_internal')")
+    elif queue == 'recently-closed':
+        filters.append("t.status IN ('closed', 'resolved')")
+        filters.append("datetime(COALESCE(t.resolved_at, t.updated_at)) >= datetime('now', '-7 days')")
+
+    base_from = '''
         FROM tickets t
         LEFT JOIN ticket_categories c ON t.category_id = c.id
     '''
-    if filters:
-        query += ' WHERE ' + ' AND '.join(filters)
-    query += ' ORDER BY t.updated_at DESC, t.created_at DESC'
+    where_clause = (' WHERE ' + ' AND '.join(filters)) if filters else ''
+    query = '''
+        SELECT t.*, c.name as category_name, c.color as category_color,
+               (SELECT COUNT(*) FROM ticket_assets ta WHERE ta.ticket_id = t.id) AS asset_count
+    ''' + base_from + where_clause
+    query += f' ORDER BY {sort_columns.get(sort_by, "t.updated_at")} {sort_direction}, t.id DESC'
+
+    paginate = 'page' in request.args or 'per_page' in request.args
+    if paginate:
+        page = max(1, request.args.get('page', 1, type=int))
+        per_page = min(100, max(10, request.args.get('per_page', 25, type=int)))
+        total = db.execute('SELECT COUNT(*) ' + base_from + where_clause, params).fetchone()[0]
+        query += ' LIMIT ? OFFSET ?'
+        rows = db.execute(query, [*params, per_page, (page - 1) * per_page]).fetchall()
+        return jsonify({
+            "items": [normalize_ticket_row(row) for row in rows],
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "pages": max(1, (total + per_page - 1) // per_page),
+        })
 
     rows = db.execute(query, params).fetchall()
-    tickets = [normalize_ticket_row(row) for row in rows]
-    return jsonify(tickets)
+    return jsonify([normalize_ticket_row(row) for row in rows])
+
+@app.route('/api/tickets/queues', methods=['GET'])
+@login_required
+@require_permissions('tickets.view_all', 'tickets.view_own')
+def ticket_queue_counts():
+    db = get_db()
+    access = get_user_access(db)
+    scope = ''
+    params = []
+    if not access["is_superuser"] and 'tickets.view_all' not in access["permissions"]:
+        scope = ' AND (created_by_user_id = ? OR (created_by_user_id IS NULL AND created_by = ?))'
+        params = [access["user"]["id"], access["user"]["username"]]
+    username = access["user"]["username"]
+    definitions = {
+        "my-work": ("status NOT IN ('closed', 'resolved') AND (LOWER(COALESCE(assignee, '')) = LOWER(?) OR created_by_user_id = ?)", [username, access["user"]["id"]]),
+        "unassigned": ("status NOT IN ('closed', 'resolved') AND (assignee IS NULL OR TRIM(assignee) = '')", []),
+        "mine": ("status NOT IN ('closed', 'resolved') AND LOWER(COALESCE(assignee, '')) = LOWER(?)", [username]),
+        "all-open": ("status NOT IN ('closed', 'resolved')", []),
+        "waiting": ("status IN ('waiting', 'waiting_customer', 'waiting_internal')", []),
+        "overdue": ("status NOT IN ('closed', 'resolved') AND due_date != '' AND date(due_date) < date('now')", []),
+        "escalated": ("COALESCE(escalation_level, 0) > 0", []),
+        "due-today": ("date(due_date) = date('now')", []),
+        "recently-closed": ("status IN ('closed', 'resolved') AND datetime(COALESCE(resolved_at, updated_at)) >= datetime('now', '-7 days')", []),
+    }
+    counts = {}
+    for key, (condition, condition_params) in definitions.items():
+        counts[key] = db.execute(
+            f'SELECT COUNT(*) FROM tickets WHERE {condition}{scope}',
+            [*condition_params, *params],
+        ).fetchone()[0]
+    return jsonify(counts)
+
+@app.route('/api/tickets/bulk', methods=['PATCH'])
+@login_required
+@require_permission('tickets.update')
+def bulk_update_tickets():
+    db = get_db()
+    data = request.get_json() or {}
+    ticket_ids = sorted({int(value) for value in data.get('ticket_ids', []) if str(value).isdigit()})
+    allowed = {'status', 'priority', 'assignee', 'category_id', 'due_date', 'escalation_level'}
+    changes = {key: value for key, value in (data.get('changes') or {}).items() if key in allowed}
+    if not ticket_ids or not changes:
+        return jsonify({"error": "Tickets und Änderungen sind erforderlich"}), 400
+    assignments = ', '.join(f'{key} = ?' for key in changes)
+    placeholders = ','.join('?' for _ in ticket_ids)
+    db.execute(
+        f'UPDATE tickets SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})',
+        [*changes.values(), *ticket_ids],
+    )
+    for ticket_id in ticket_ids:
+        log_activity(db, 'bulk_update', 'ticket', ticket_id, changes)
+    db.commit()
+    return jsonify({"status": "updated", "count": len(ticket_ids)})
+
+@app.route('/api/ticket-views', methods=['GET', 'POST'])
+@login_required
+@require_permissions('tickets.view_all', 'tickets.view_own')
+def saved_ticket_views():
+    db = get_db()
+    user_id = get_current_user_id(db)
+    if request.method == 'GET':
+        rows = db.execute(
+            'SELECT * FROM saved_ticket_views WHERE user_id = ? OR is_team_shared = 1 ORDER BY is_favorite DESC, name',
+            (user_id,),
+        ).fetchall()
+        return jsonify([{
+            **dict(row),
+            "filters": safe_json_load(row["filters_json"], {}),
+            "columns": safe_json_load(row["columns_json"], []),
+        } for row in rows])
+    data = request.get_json() or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({"error": "Name ist erforderlich"}), 400
+    if data.get('is_default'):
+        db.execute('UPDATE saved_ticket_views SET is_default = 0 WHERE user_id = ?', (user_id,))
+    cursor = db.execute('''
+        INSERT INTO saved_ticket_views (
+            user_id, name, filters_json, columns_json, sort_by, sort_direction,
+            is_favorite, is_default, is_team_shared
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        user_id, name, json.dumps(data.get('filters') or {}), json.dumps(data.get('columns') or []),
+        data.get('sort_by') or 'updated_at', data.get('sort_direction') or 'desc',
+        1 if data.get('is_favorite') else 0, 1 if data.get('is_default') else 0,
+        1 if data.get('is_team_shared') and user_can('tickets.update') else 0,
+    ))
+    db.commit()
+    return jsonify({"status": "created", "id": cursor.lastrowid}), 201
+
+@app.route('/api/ticket-views/<int:view_id>', methods=['DELETE'])
+@login_required
+@require_permissions('tickets.view_all', 'tickets.view_own')
+def delete_saved_ticket_view(view_id):
+    db = get_db()
+    cursor = db.execute(
+        'DELETE FROM saved_ticket_views WHERE id = ? AND user_id = ?',
+        (view_id, get_current_user_id(db)),
+    )
+    db.commit()
+    return jsonify({"status": "deleted", "count": cursor.rowcount})
+
+@app.route('/api/ticket-assets/search', methods=['GET'])
+@login_required
+@require_permissions('tickets.view_all', 'tickets.view_own', 'tickets.create')
+def search_ticket_assets():
+    db = get_db()
+    search = (request.args.get('search') or '').strip()
+    page = max(1, request.args.get('page', 1, type=int))
+    per_page = min(50, max(10, request.args.get('per_page', 20, type=int)))
+    filters, params = [], []
+    if search:
+        filters.append('''(
+            a.name LIKE ? OR a.specs LIKE ? OR EXISTS (
+                SELECT 1
+                FROM asset_devices ad
+                JOIN devices d ON d.id = ad.device_id
+                LEFT JOIN locations l ON l.id = d.location_id
+                WHERE ad.asset_id = a.id
+                  AND (d.name LIKE ? OR d.serial_number LIKE ? OR l.name LIKE ?)
+            )
+        )''')
+        params.extend([f'%{search}%'] * 5)
+    where_clause = (' WHERE ' + ' AND '.join(filters)) if filters else ''
+    base = '''
+        FROM assets a
+        LEFT JOIN asset_categories c ON c.id = a.category_id
+    '''
+    total = db.execute('SELECT COUNT(*) ' + base + where_clause, params).fetchone()[0]
+    rows = db.execute(
+        '''SELECT a.*, c.name AS category_name
+        ''' + base + where_clause + ' ORDER BY a.name LIMIT ? OFFSET ?',
+        [*params, per_page, (page - 1) * per_page],
+    ).fetchall()
+    return jsonify({
+        "items": [build_asset_summary(db, row) for row in rows],
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "pages": max(1, (total + per_page - 1) // per_page),
+    })
 
 @app.route('/api/tickets/<int:ticket_id>', methods=['GET', 'PUT', 'DELETE'])
 @login_required
