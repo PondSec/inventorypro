@@ -154,6 +154,7 @@ document.addEventListener('alpine:init', () => {
             await this.loadLocations();
             await this.loadAllDevices();
             await this.loadDevices();
+            this.applyInitialDeviceFilters();
             await this.loadAssetCategories();
             await this.loadAssets();
             await this.loadRelationTypes();
@@ -439,6 +440,42 @@ document.addEventListener('alpine:init', () => {
         },
 
         // Search and Sort
+        applyInitialDeviceFilters() {
+            const params = new URLSearchParams(window.location.search);
+            const locationId = params.get('location');
+            if (!locationId || !this.locations.some(location => String(location.id) === String(locationId))) return;
+
+            this.inventoryTab = 'devices';
+            this.activeCategory = null;
+            this.locationFilter = String(locationId);
+            this.filtersOpen = true;
+            this.searchDevices();
+            this.$nextTick(() => {
+                window.requestAnimationFrame(() => {
+                    document.getElementById('device-inventory')?.scrollIntoView({ block: 'start' });
+                });
+            });
+        },
+
+        locationFilterName() {
+            if (!this.locationFilter) return '';
+            return this.locations.find(location => String(location.id) === String(this.locationFilter))?.name || '';
+        },
+
+        clearLocationFilter() {
+            this.locationFilter = '';
+            const url = new URL(window.location.href);
+            url.searchParams.delete('location');
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+            this.searchDevices();
+        },
+
+        async showAllDevices() {
+            this.clearLocationFilter();
+            await this.loadDevices();
+            this.inventoryTab = 'devices';
+        },
+
         searchDevices() {
             const matchesCreatedRange = (deviceDate) => {
                 if (!deviceDate) return !this.createdFrom && !this.createdTo;
@@ -543,7 +580,7 @@ document.addEventListener('alpine:init', () => {
         resetDeviceFilters() {
             this.searchQuery = '';
             this.ownerQuery = '';
-            this.locationFilter = '';
+            this.clearLocationFilter();
             this.categoryFilter = '';
             this.createdFrom = '';
             this.createdTo = '';
