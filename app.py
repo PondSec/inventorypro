@@ -125,7 +125,6 @@ INVENTORY_LINK_PROXY_REWRITE_PATH_PREFIXES = (
     "health",
     "users",
     "settings",
-    "ai",
     "inventory-links",
 )
 INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT = os.environ.get("INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS", "1").lower() not in {"0", "false", "no"}
