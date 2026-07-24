@@ -3457,6 +3457,10 @@ textarea {
   gap: 7px;
 }
 
+button.sd-mobile-queue-trigger {
+  display: none;
+}
+
 .sd-search {
   display: flex;
   width: clamp(250px, 30vw, 520px);
@@ -4698,6 +4702,51 @@ textarea {
   padding: 18px;
 }
 
+.sd-mobile-queue-list {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.sd-mobile-queue-list button {
+  display: grid;
+  min-height: 44px;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  text-align: left;
+}
+
+.sd-mobile-queue-list button:hover {
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.sd-mobile-queue-list button.active {
+  border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-weight: 700;
+}
+
+.sd-mobile-queue-list small {
+  min-width: 26px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 10px;
+  text-align: center;
+}
+
 .sd-checkbox {
   display: flex !important;
   align-items: center;
@@ -5123,6 +5172,10 @@ textarea {
     display: none;
   }
 
+  button.sd-mobile-queue-trigger {
+    display: inline-flex;
+  }
+
   .sd-main {
     grid-column: 2;
   }
@@ -5268,7 +5321,19 @@ textarea {
 
   .sd-search kbd,
   .sd-toolbar-actions > .sd-icon-button,
-  .sd-toolbar-actions > .sd-button:not(.sd-button-primary) {
+  .sd-toolbar-actions > .sd-button:not(.sd-button-primary):not(.sd-mobile-queue-trigger):not(.sd-filter-trigger) {
+    display: none;
+  }
+
+  .sd-toolbar-actions > .sd-mobile-queue-trigger,
+  .sd-toolbar-actions > .sd-filter-trigger {
+    display: inline-flex;
+    width: 38px;
+    padding: 0;
+  }
+
+  .sd-toolbar-actions > .sd-mobile-queue-trigger span,
+  .sd-toolbar-actions > .sd-filter-trigger span {
     display: none;
   }
 
