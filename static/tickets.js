@@ -243,6 +243,12 @@ document.addEventListener('alpine:init', () => {
             return this.sort.direction === 'asc' ? 'ascending' : 'descending';
         },
 
+        iconSvg(name, size = 16) {
+            const icon = window.feather?.icons?.[name];
+            if (!icon) return '';
+            return icon.toSvg({ width: size, height: size, 'aria-hidden': 'true' });
+        },
+
         goToPage(page) {
             if (page < 1 || page > this.pagination.pages || page === this.pagination.page) return;
             this.pagination.page = page;
