@@ -10605,7 +10605,13 @@ def tickets():
     sort_by = request.args.get('sort', 'updated_at')
     sort_direction = 'ASC' if request.args.get('direction', 'desc').lower() == 'asc' else 'DESC'
     queue = request.args.get('queue')
-    if queue == 'unassigned':
+    if queue == 'my-work':
+        filters.append('(LOWER(COALESCE(t.assignee, "")) = LOWER(?) OR t.created_by_user_id = ?)')
+        params.extend([access["user"]["username"], access["user"]["id"]])
+        filters.append("t.status NOT IN ('closed', 'resolved')")
+    elif queue == 'all-open':
+        filters.append("t.status NOT IN ('closed', 'resolved')")
+    elif queue == 'unassigned':
         filters.append("(t.assignee IS NULL OR TRIM(t.assignee) = '')")
         filters.append("t.status NOT IN ('closed', 'resolved')")
     elif queue == 'mine':
@@ -10620,7 +10626,7 @@ def tickets():
     elif queue == 'escalated':
         filters.append('COALESCE(t.escalation_level, 0) > 0')
     elif queue == 'waiting':
-        filters.append("t.status IN ('waiting', 'waiting_customer', 'waiting_internal')")
+        filters.append("t.status IN ('pending', 'waiting', 'waiting_customer', 'waiting_internal')")
     elif queue == 'recently-closed':
         filters.append("t.status IN ('closed', 'resolved')")
         filters.append("datetime(COALESCE(t.resolved_at, t.updated_at)) >= datetime('now', '-7 days')")
@@ -10671,7 +10677,7 @@ def ticket_queue_counts():
         "unassigned": ("status NOT IN ('closed', 'resolved') AND (assignee IS NULL OR TRIM(assignee) = '')", []),
         "mine": ("status NOT IN ('closed', 'resolved') AND LOWER(COALESCE(assignee, '')) = LOWER(?)", [username]),
         "all-open": ("status NOT IN ('closed', 'resolved')", []),
-        "waiting": ("status IN ('waiting', 'waiting_customer', 'waiting_internal')", []),
+        "waiting": ("status IN ('pending', 'waiting', 'waiting_customer', 'waiting_internal')", []),
         "overdue": ("status NOT IN ('closed', 'resolved') AND due_date != '' AND date(due_date) < date('now')", []),
         "escalated": ("COALESCE(escalation_level, 0) > 0", []),
         "due-today": ("date(due_date) = date('now')", []),
