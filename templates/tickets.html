@@ -5,15 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Pro · Service Desk</title>
     <script src="/static/theme.js"></script>
-    <script>tailwind.config = { darkMode: 'class' };</script>
-    <script src="https://cdn.tailwindcss.com"></script>
     <script src="/static/vendor/alpinejs.min.js" defer></script>
     <script>
         window.inventoryPermissions = {{ permissions | tojson }};
         window.inventoryIsSuperuser = {{ is_superuser | tojson }};
         window.inventoryUsername = {{ username | tojson }};
         window.initialTicketId = {{ initial_ticket_id | default(none) | tojson }};
-        window.PONDSEC_AI_CONTEXT = { type: "tickets" };
     </script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -325,7 +322,5 @@
 
     <script src="/static/vendor/feather.min.js"></script>
     <script src="/static/tickets.js"></script>
-    {% include 'pondsec_ai_button.html' %}
-    {% include 'pondsec_ai_drawer.html' %}
 </body>
 </html>
