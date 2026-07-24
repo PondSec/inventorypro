@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - {{ link.displayName }}</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/vendor/feather.min.js" defer></script>
+    <style>
+        .linked-portal-stage {
+            position: relative;
+            min-height: 78vh;
+            border-radius: 28px;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at top right, rgba(59, 130, 246, 0.18), transparent 26%),
+                radial-gradient(circle at bottom left, rgba(20, 184, 166, 0.18), transparent 24%),
+                #0f172a;
+        }
+
+        .linked-portal-frame {
+            display: block;
+            width: 100%;
+            min-height: 78vh;
+            border: 0;
+            background: #ffffff;
+        }
+
+        .linked-portal-overlay {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.76);
+            z-index: 20;
+            padding: 24px;
+        }
+
+        .linked-portal-auth-card {
+            width: min(440px, 100%);
+            border-radius: 24px;
+            background: #ffffff;
+            padding: 28px;
+            box-shadow: 0 28px 70px rgba(15, 23, 42, 0.28);
+        }
+
+        .linked-portal-auth-card input {
+            width: 100%;
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+            padding: 12px 14px;
+            font-size: 14px;
+            margin-top: 6px;
+            margin-bottom: 14px;
+        }
+
+        .linked-portal-auth-card input:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+
+        .linked-portal-auth-error {
+            min-height: 18px;
+        }
+    </style>
+</head>
+<body class="app-body">
+    <div class="app-shell">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-lg">
+            <div class="p-6 border-b border-slate-200 sidebar-header">
+                <a href="/" class="flex items-center gap-3">
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-teal-500 text-white shadow-lg">
+                        <i data-feather="git-branch" class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <p class="text-lg font-semibold text-slate-900 sidebar-text">Inventory Pro</p>
+                        <p class="text-xs text-slate-500 sidebar-text">Linked Inventory View</p>
+                    </div>
+                </a>
+            </div>
+
+            <nav class="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-8rem)] sidebar-scroll scrollbar-hide">
+                <div class="sidebar-card sidebar-compact-hidden">
+                    <p class="text-xs uppercase tracking-widest text-slate-400 sidebar-text">Aktiver Kontext</p>
+                    <p class="text-lg font-semibold text-slate-900 sidebar-text">{{ link.displayName }}</p>
+                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 sidebar-text">
+                        <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1">
+                            <i data-feather="globe" class="w-3 h-3"></i>
+                            {% if link.allowPrivateNetwork %}WAN oder LAN{% else %}WAN only{% endif %}
+                        </span>
+                        <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1">
+                            <i data-feather="shield" class="w-3 h-3"></i>
+                            {{ link.authMode }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Kontext wechseln</p>
+                    <div class="mt-3 space-y-1">
+                        <a href="/" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="home" class="w-4 h-4"></i></span>
+                                Mein Inventory
+                            </span>
+                        </a>
+                        <a href="/settings?section=server#inventory-links" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="settings" class="w-4 h-4"></i></span>
+                                Verbindungen verwalten
+                            </span>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Verknüpfte Instanzen</p>
+                    <div class="mt-3 space-y-1">
+                        {% for item in inventory_links %}
+                        <a href="/inventory-links/{{ item.id }}/portal" class="sidebar-link {% if item.id == active_link_id %}active{% endif %}">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="link-2" class="w-4 h-4"></i></span>
+                                {{ item.displayName }}
+                            </span>
+                            {% if item.healthStatus %}
+                            <span class="text-xs font-semibold rounded-full px-2 py-0.5 {% if item.healthStatus == 'ok' %}bg-emerald-100 text-emerald-700{% elif item.healthStatus == 'unauthorized' %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+                                {{ item.healthStatus }}
+                            </span>
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Zielinstanz</p>
+                    <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
+                        <p class="font-semibold text-slate-700 break-all">{{ link.baseUrl }}</p>
+                        <p class="mt-2">Alle Ansichten darunter laden Kategorien, Geräte, Assets, Tickets und weitere Daten direkt aus dieser verknüpften Instanz.</p>
+                    </div>
+                </div>
+            </nav>
+        </aside>
+
+        <div class="main-content app-main app-main--fixed">
+            <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
+                <div class="flex items-center gap-4">
+                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="icon-button inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                        <i data-feather="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Linked Inventory</p>
+                        <h1 class="text-2xl font-semibold text-slate-900">{{ link.displayName }}</h1>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <a href="/" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                        <i data-feather="corner-left-up" class="w-4 h-4"></i>
+                        <span>Zurück zu meinem Inventory</span>
+                    </a>
+                    <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <span data-theme-icon aria-hidden="true">🌙</span>
+                        <span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
+                    </button>
+                    <button onclick="logout()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <i data-feather="log-out" class="w-4 h-4"></i>
+                        <span class="sr-only sm:not-sr-only">Abmelden</span>
+                    </button>
+                </div>
+            </header>
+
+            <main class="app-content">
+                <div class="page space-y-6">
+                    <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <div class="flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                                <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Remote Kontext</p>
+                                <h2 class="mt-2 text-2xl font-semibold text-slate-900">{{ link.displayName }}</h2>
+                                <p class="mt-2 max-w-3xl text-sm text-slate-500">
+                                    Die Oberfläche unten läuft vollständig im Kontext der verknüpften Instanz. Navigation, Tickets, Assets, Kategorien und weitere Einträge bleiben innerhalb dieser Verbindung, bis du links wieder in dein eigenes Inventory wechselst.
+                                </p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                <span class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                                    <i data-feather="link-2" class="h-3 w-3"></i>
+                                    {{ link.baseUrl }}
+                                </span>
+                                <span class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                                    <i data-feather="shield" class="h-3 w-3"></i>
+                                    {{ link.authMode }}
+                                </span>
+                                {% if link.healthStatus %}
+                                <span class="inline-flex items-center gap-2 rounded-full px-3 py-1 font-semibold {% if link.healthStatus == 'ok' %}bg-emerald-100 text-emerald-700{% elif link.healthStatus == 'unauthorized' %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+                                    <i data-feather="activity" class="h-3 w-3"></i>
+                                    {{ link.healthStatus }}
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div class="linked-portal-stage">
+                            <div class="linked-portal-overlay" id="portal-auth">
+                                <div class="linked-portal-auth-card">
+                                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Authentifizierung</p>
+                                    <h3 class="mt-2 text-xl font-semibold text-slate-900">Verbindung zu {{ link.displayName }} herstellen</h3>
+                                    <p class="mt-2 text-sm text-slate-500">Bitte melde dich an der Zielinstanz an, damit die verknüpfte Ansicht geladen werden kann.</p>
+                                    <form id="portal-auth-form" class="mt-5">
+                                        <label for="portal-auth-user" class="text-xs font-semibold text-slate-600">Benutzername</label>
+                                        <input id="portal-auth-user" type="text" autocomplete="username" required>
+                                        <label for="portal-auth-pass" class="text-xs font-semibold text-slate-600">Passwort</label>
+                                        <input id="portal-auth-pass" type="password" autocomplete="current-password" required>
+                                        <div class="flex items-center justify-between gap-3">
+                                            <span class="linked-portal-auth-error text-xs text-rose-600" id="portal-auth-error" role="alert" aria-live="polite"></span>
+                                            <button type="submit" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800">
+                                                <i data-feather="unlock" class="h-4 w-4"></i>
+                                                Verbinden
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+
+                            <iframe
+                                title="Linked Inventory Portal"
+                                class="linked-portal-frame"
+                                referrerpolicy="no-referrer"
+                                id="portal-frame"
+                                data-link-id="{{ link.id }}"
+                                data-auth-mode="{{ link.authMode }}"
+                            ></iframe>
+                        </div>
+                    </section>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        async function logout() {
+            try {
+                const response = await fetch('/logout', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (response.ok) {
+                    window.location.href = '/login';
+                    return;
+                }
+
+                const data = await response.json();
+                alert('Logout fehlgeschlagen: ' + (data.error || 'Unbekannter Fehler'));
+            } catch (error) {
+                alert('Netzwerkfehler: ' + error.message);
+            }
+        }
+
+        (function () {
+            const frame = document.getElementById('portal-frame');
+            const overlay = document.getElementById('portal-auth');
+            const form = document.getElementById('portal-auth-form');
+            const errorBox = document.getElementById('portal-auth-error');
+            const linkId = frame.dataset.linkId;
+            const authMode = frame.dataset.authMode;
+
+            function showOverlay(message) {
+                overlay.style.display = 'flex';
+                errorBox.textContent = message || '';
+            }
+
+            function hideOverlay() {
+                overlay.style.display = 'none';
+                errorBox.textContent = '';
+            }
+
+            function setFrameSource() {
+                frame.src = `/api/inventory-links/${linkId}/proxy/`;
+            }
+
+            async function ensureAuth() {
+                if (authMode !== 'login') {
+                    hideOverlay();
+                    setFrameSource();
+                    return;
+                }
+                try {
+                    const response = await fetch(`/api/inventory-links/${linkId}/auth/status`);
+                    const result = await response.json();
+                    if (!response.ok) {
+                        throw new Error(result.error || 'Authentifizierungsstatus konnte nicht geladen werden.');
+                    }
+                    if (result.authenticated) {
+                        hideOverlay();
+                        setFrameSource();
+                        return;
+                    }
+                    showOverlay();
+                } catch (error) {
+                    showOverlay(error.message);
+                }
+            }
+
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                errorBox.textContent = '';
+                const username = document.getElementById('portal-auth-user').value.trim();
+                const password = document.getElementById('portal-auth-pass').value;
+
+                try {
+                    const response = await fetch(`/api/inventory-links/${linkId}/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    const result = await response.json();
+                    if (!response.ok) {
+                        throw new Error(result.error || 'Login fehlgeschlagen.');
+                    }
+                    hideOverlay();
+                    setFrameSource();
+                } catch (error) {
+                    showOverlay(error.message);
+                }
+            });
+
+            document.addEventListener('DOMContentLoaded', () => {
+                if (window.feather && typeof window.feather.replace === 'function') {
+                    window.feather.replace();
+                }
+                ensureAuth();
+            });
+        })();
+    </script>
+    <script src="/static/ui.js"></script>
+</body>
+</html>

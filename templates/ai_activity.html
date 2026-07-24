@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - PondSec AI Aktivität</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        window.inventoryPermissions = {{ permissions | tojson }};
+        window.inventoryIsSuperuser = {{ is_superuser | tojson }};
+    </script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app-body">
+    <div class="app-shell">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
+                <a href="/" class="flex items-center gap-3">
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg">
+                        <i data-feather="cpu" class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <p class="text-lg font-semibold text-slate-900">Inventory Pro</p>
+                        <p class="text-xs text-slate-500">Smart Asset Hub</p>
+                    </div>
+                </a>
+            </div>
+            <nav class="p-4 space-y-4 sidebar-scroll">
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Hauptbereiche</p>
+                    <div class="mt-3 space-y-1">
+                        <a href="/" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="home" class="w-4 h-4"></i></span>
+                                Dashboard
+                            </span>
+                        </a>
+                        {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                        <a href="/tickets" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="life-buoy" class="w-4 h-4"></i></span>
+                                Ticketsystem
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'procurement.view' in permissions or 'procurement.manage' in permissions %}
+                        <a href="/procurement" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="shopping-cart" class="w-4 h-4"></i></span>
+                                Beschaffung
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'ai.use' in permissions or 'ai.manage' in permissions %}
+                        <a href="/ai/activity" class="sidebar-link active">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="message-circle" class="w-4 h-4"></i></span>
+                                PondSec AI
+                            </span>
+                        </a>
+                        <a href="/ai/alerts" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="alert-triangle" class="w-4 h-4"></i></span>
+                                Alerts
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Inventory Links</p>
+                    <div class="mt-3 space-y-1">
+                        {% if inventory_links %}
+                        {% for link in inventory_links %}
+                        <a href="/inventory-links/{{ link.id }}/portal" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="link-2" class="w-4 h-4"></i></span>
+                                {{ link.displayName }}
+                            </span>
+                            {% if link.healthStatus %}
+                            <span class="text-xs font-semibold rounded-full px-2 py-0.5 {% if link.healthStatus == 'ok' %}bg-emerald-100 text-emerald-700{% elif link.healthStatus == 'unauthorized' %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+                                {{ link.healthStatus }}
+                            </span>
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                        {% else %}
+                        <a href="/settings?section=server#inventory-links" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="plus-circle" class="w-4 h-4"></i></span>
+                                Link hinzufügen
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if 'ai.manage' in permissions or is_superuser %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Administration</p>
+                    <div class="mt-3 space-y-1">
+                        <a href="/ai/settings" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="settings" class="w-4 h-4"></i></span>
+                                AI Settings
+                            </span>
+                        </a>
+                    </div>
+                </div>
+                {% endif %}
+            </nav>
+        </aside>
+
+        <div class="app-main app-main--fixed">
+            <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
+                <div class="flex items-center gap-4">
+                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="icon-button inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                        <i data-feather="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">PondSec AI</p>
+                        <h1 class="text-2xl font-semibold text-slate-900">Aktivität</h1>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <span class="hidden text-sm text-slate-500 sm:inline">Angemeldet als {{ username }}</span>
+                    {% include 'pondsec_ai_button.html' %}
+                    <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <span data-theme-icon aria-hidden="true">🌙</span>
+                        <span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
+                    </button>
+                    <button onclick="logout()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <i data-feather="log-out" class="w-4 h-4"></i>
+                        <span class="sr-only sm:not-sr-only">Abmelden</span>
+                    </button>
+                </div>
+            </header>
+
+            <main class="app-content flex-1 overflow-auto p-8 pt-24 space-y-8 scrollbar-hide">
+                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Agent Log</p>
+                            <h2 class="text-2xl font-semibold text-slate-900">Letzte Aktionen</h2>
+                        </div>
+                    </div>
+                    <div class="mt-6 overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <thead>
+                                <tr class="text-left text-xs uppercase tracking-widest text-slate-400">
+                                    <th class="py-2 pr-4">Zeit</th>
+                                    <th class="py-2 pr-4">Status</th>
+                                    <th class="py-2 pr-4">Risiko</th>
+                                    <th class="py-2 pr-4">Summary</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-slate-700">
+                                {% for action in actions %}
+                                <tr class="border-t border-slate-100">
+                                    <td class="py-3 pr-4">{{ action.created_at }}</td>
+                                    <td class="py-3 pr-4">{{ action.status }}</td>
+                                    <td class="py-3 pr-4">{{ action.risk_level }}</td>
+                                    <td class="py-3 pr-4">{{ action.summary_text }}</td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" class="py-4 text-sm text-slate-500">Noch keine Aktionen protokolliert.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script src="/static/vendor/feather.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            feather.replace();
+        });
+
+        async function logout() {
+            try {
+                const response = await fetch('/logout', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (response.ok) {
+                    window.location.href = '/login';
+                } else {
+                    const data = await response.json();
+                    alert('Logout failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Network error: ' + error.message);
+            }
+        }
+    </script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
+    {% include 'pondsec_ai_drawer.html' %}
+</body>
+</html>

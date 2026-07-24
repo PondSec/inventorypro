@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - Statistiken</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 18px 30px -12px rgba(15, 23, 42, 0.25);
+        }
+        .progress-bar {
+            height: 6px;
+            border-radius: 999px;
+        }
+        .glass-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.65));
+            backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="app-body">
+    <div class="app-shell">
+        <!-- Sidebar -->
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
+                <a href="https://inv.pondsec.com">
+                <div class="logo flex items-center space-x-3">
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg" data-brand-logo>
+                        <i data-feather="cpu" data-brand-logo-icon class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <p class="text-lg font-semibold text-slate-900 sidebar-text" data-brand-name>Inventory Pro</p>
+                        <p class="text-xs text-slate-500 sidebar-text" data-brand-tagline>Smart Asset Hub</p>
+                    </div>
+                </div>
+                </a>
+            </div>
+            <nav class="p-4 space-y-4 sidebar-scroll sidebar-primary-links">
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Hauptbereiche</p>
+                    <div class="mt-3 space-y-1">
+                        <a href="/" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="home" class="w-4 h-4"></i></span>
+                                Dashboard
+                            </span>
+                        </a>
+                        {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                        <a href="/locations" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="map-pin" class="w-4 h-4"></i></span>
+                                Standorte
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                        <a href="/tickets" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="life-buoy" class="w-4 h-4"></i></span>
+                                Ticketsystem
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
+                        <a href="/knowledge" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="book-open" class="w-4 h-4"></i></span>
+                                Wissensbasis
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                        <a href="/roadmap" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="git-merge" class="w-4 h-4"></i></span>
+                                Roadmap
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'procurement.view' in permissions or 'procurement.manage' in permissions %}
+                        <a href="/procurement" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="shopping-cart" class="w-4 h-4"></i></span>
+                                Beschaffung
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'ai.use' in permissions or 'ai.manage' in permissions %}
+                        <a href="/ai/activity" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="message-circle" class="w-4 h-4"></i></span>
+                                PondSec AI
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Inventory Links</p>
+                    <div class="mt-3 space-y-1">
+                        {% if inventory_links %}
+                        {% for link in inventory_links %}
+                        <a href="/inventory-links/{{ link.id }}/portal" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="link-2" class="w-4 h-4"></i></span>
+                                {{ link.displayName }}
+                            </span>
+                            {% if link.healthStatus %}
+                            <span class="text-xs font-semibold rounded-full px-2 py-0.5 {% if link.healthStatus == 'ok' %}bg-emerald-100 text-emerald-700{% elif link.healthStatus == 'unauthorized' %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+                                {{ link.healthStatus }}
+                            </span>
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                        {% else %}
+                        <a href="/settings?section=server#inventory-links" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="plus-circle" class="w-4 h-4"></i></span>
+                                Link hinzufügen
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Auswertung</p>
+                    <div class="mt-3 space-y-1">
+                        {% if 'stats.view' in permissions %}
+                        <a href="/stats" class="sidebar-link active">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="bar-chart-2" class="w-4 h-4"></i></span>
+                                Statistiken
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                        <a href="/dependencies" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="share-2" class="w-4 h-4"></i></span>
+                                Dependency-Graph
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'timemachine.view' in permissions %}
+                        <a href="/time-machine" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="clock" class="w-4 h-4"></i></span>
+                                Zeitmaschine
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
+                        <a href="/health" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="activity" class="w-4 h-4"></i></span>
+                                Health
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if 'users.manage' in permissions or 'server_settings.manage' in permissions %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Administration</p>
+                    <div class="mt-3 space-y-1">
+                        {% if 'users.manage' in permissions %}
+                        <a href="/users" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="users" class="w-4 h-4"></i></span>
+                                Benutzer
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'server_settings.manage' in permissions %}
+                        <a href="/settings" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="settings" class="w-4 h-4"></i></span>
+                                Einstellungen
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </nav>
+        </aside>
+		
+        <div class="app-main app-main--fixed">
+		<header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
+			<!-- Linke Seite: Titel -->
+            <div class="flex items-center gap-4">
+                <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="icon-button inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                    <i data-feather="menu" class="w-4 h-4"></i>
+                </button>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Analytics</p>
+                    <h1 class="text-2xl font-semibold text-slate-900">Bestandsstatistiken</h1>
+                </div>
+            </div>
+
+			<!-- Rechte Seite: Button-Gruppe -->
+			<div class="flex items-center gap-2 sm:gap-3">
+              {% include 'pondsec_ai_button.html' %}
+			  <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+				<span data-theme-icon aria-hidden="true">🌙</span>
+				<span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
+			  </button>
+			  <!-- Logout Button -->
+			  <button onclick="logout()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+				<i data-feather="log-out" class="w-4 h-4"></i>
+				<span class="sr-only sm:not-sr-only">Abmelden</span>
+			  </button>
+			</div>
+
+			<!-- Logout Script -->
+			<script>
+				async function logout() {
+					try {
+						const response = await fetch('/logout', {
+							method: 'POST',
+							credentials: 'same-origin',
+							headers: { 'Content-Type': 'application/json' }
+						});
+
+						if (response.ok) {
+							window.location.href = 'https://inv.pondsec.com/login';
+						} else {
+							const data = await response.json();
+							alert('Logout failed: ' + (data.error || 'Unknown error'));
+						}
+					} catch (error) {
+						alert('Network error: ' + error.message);
+					}
+				}
+			</script>
+		</header>
+		
+        <!-- Main Content -->
+        <div class="app-content flex-1 overflow-auto p-8 pt-24 space-y-8 scrollbar-hide">
+            <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Analytics</p>
+                        <h1 class="text-2xl font-semibold text-slate-900">Bestandsstatistiken</h1>
+                        <p class="mt-1 text-sm text-slate-500">KPIs, Trends und Qualitätsmetriken für den Bestand.</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p class="text-xs uppercase text-slate-400">Geräte</p>
+                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ total_devices }}</p>
+                            <p class="text-xs text-slate-500">Gesamtbestand</p>
+                        </div>
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p class="text-xs uppercase text-slate-400">Kategorien</p>
+                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ total_categories }}</p>
+                            <p class="text-xs text-slate-500">Aktive Bereiche</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <p class="text-sm font-semibold text-slate-900">Filter</p>
+                        <p class="text-xs text-slate-500">Zeitraum und Fokus definieren.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <select class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs">
+                            <option>Letzte 7 Tage</option>
+                            <option selected>Letzte 30 Tage</option>
+                            <option>Quartal</option>
+                            <option>Jahr</option>
+                        </select>
+                        <select class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs">
+                            <option>Alle Kategorien</option>
+                        </select>
+                        <button class="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Export</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- KPI Überblick -->
+			<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+				<div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Gesamtgeräte</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ total_devices }}</p>
+                            <p class="text-xs text-slate-500">{{ devices_recent_30 }} neu in 30 Tagen</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-blue-50 p-3 text-blue-600">
+                            <i data-feather="box" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+				
+				<div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Kategorien</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ total_categories }}</p>
+                            <p class="text-xs text-slate-500">{{ total_locations }} Standorte aktiv</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-indigo-50 p-3 text-indigo-600">
+                            <i data-feather="layers" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+				
+				<div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Wartung offen</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ open_maintenance }}</p>
+                            <p class="text-xs text-slate-500">{{ overdue_maintenance }} überfällig</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-rose-50 p-3 text-rose-600">
+                            <i data-feather="tool" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+				
+				<div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Letzte 7 Tage</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ devices_recent_7 }}</p>
+                            <p class="text-xs text-slate-500">Neue Geräte</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-emerald-50 p-3 text-emerald-600">
+                            <i data-feather="trending-up" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+
+                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Gerätestatus</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ status_data['Verwendet'] }}</p>
+                            <p class="text-xs text-slate-500">{{ status_data['Lager'] }} im Lager</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-emerald-50 p-3 text-emerald-600">
+                            <i data-feather="check-circle" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+
+                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Dokumentation</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ tag_coverage }}%</p>
+                            <p class="text-xs text-slate-500">{{ note_coverage }}% mit Notizen</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-sky-50 p-3 text-sky-600">
+                            <i data-feather="file-text" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+
+                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Wartung gesamt</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ total_maintenance }}</p>
+                            <p class="text-xs text-slate-500">{{ done_maintenance }} erledigt</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-purple-50 p-3 text-purple-600">
+                            <i data-feather="clipboard" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+
+                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-500">Fällige Wartung</h3>
+                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ due_soon_maintenance }}</p>
+                            <p class="text-xs text-slate-500">Nächste 7 Tage</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-amber-50 p-3 text-amber-600">
+                            <i data-feather="calendar" class="h-5 w-5"></i>
+                        </span>
+                    </div>
+				</div>
+			</div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="glass-card p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Gerätezugang (6 Monate)</h2>
+                            <p class="text-sm text-slate-500">Neu angelegte Geräte im Zeitverlauf.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="activity" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <canvas id="growthChart" height="280"></canvas>
+                </div>
+
+                <div class="glass-card p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Verteilung nach Kategorien</h2>
+                            <p class="text-sm text-slate-500">Welche Bereiche aktuell dominieren.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="pie-chart" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <canvas id="categoryChart" height="280"></canvas>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Gerätestatus</h2>
+                            <p class="text-sm text-slate-500">Aktueller Status aller Geräte.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="check-square" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <canvas id="statusChart" height="280"></canvas>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Standorte</h2>
+                            <p class="text-sm text-slate-500">Verteilung der Geräte nach Standort.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="map-pin" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <canvas id="locationChart" height="280"></canvas>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Gerätealter</h2>
+                            <p class="text-sm text-slate-500">Wie lange Geräte schon im Bestand sind.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="clock" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <canvas id="ageChart" height="280"></canvas>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Standortlücken</h2>
+                            <p class="text-sm text-slate-500">Geräte ohne Standortzuordnung.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="alert-circle" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div class="rounded-2xl bg-rose-50 px-4 py-3">
+                            <p class="text-xs uppercase tracking-widest text-rose-400">Ohne Standort</p>
+                            <p class="mt-2 text-3xl font-semibold text-rose-600">{{ unknown_location_count }}</p>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex items-center justify-between text-xs text-slate-500">
+                                <span>Abdeckung</span>
+                                <span>{{ (100 - (unknown_location_count * 100 // (total_devices or 1))) }}%</span>
+                            </div>
+                            <div class="mt-2 h-2 rounded-full bg-slate-100">
+                                <div class="h-2 rounded-full bg-rose-400" style="width: {{ (unknown_location_count * 100 // (total_devices or 1)) }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Top Kategorien</h2>
+                            <p class="text-sm text-slate-500">Kategorien mit dem größten Bestand.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="award" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for category in top_categories %}
+                        <div class="flex items-center rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <span class="text-sm font-semibold text-slate-700">{{ category['name'] }}</span>
+                            <span class="ml-auto text-sm font-semibold text-slate-900">{{ category['device_count'] }}</span>
+                        </div>
+                        {% endfor %}
+                        {% if top_categories|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Kategorien vorhanden.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Aktivität (7 Tage)</h2>
+                            <p class="text-sm text-slate-500">Meistgenutzte Aktionen im System.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="zap" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for item in activity_summary %}
+                        <div class="flex items-center rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <span class="text-sm font-semibold text-slate-700">{{ item['action'] }}</span>
+                            <span class="ml-auto text-sm font-semibold text-slate-900">{{ item['total'] }}</span>
+                        </div>
+                        {% endfor %}
+                        {% if activity_summary|length == 0 %}
+                        <p class="text-sm text-slate-500">Keine Aktivitäten in den letzten 7 Tagen.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <div class="xl:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Proaktive Hinweise</h2>
+                            <p class="text-sm text-slate-500">Erklärbare Empfehlungen auf Basis von Regeln & Historie.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-amber-50 p-2 text-amber-600">
+                            <i data-feather="alert-triangle" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-4">
+                        {% for insight in proactive_insights %}
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <span class="text-sm font-semibold text-slate-900">{{ insight.title }}</span>
+                                <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold
+                                    {% if insight.severity == 'critical' %}bg-rose-100 text-rose-700
+                                    {% elif insight.severity == 'warning' %}bg-amber-100 text-amber-700
+                                    {% else %}bg-emerald-100 text-emerald-700{% endif %}">
+                                    {% if insight.severity == 'critical' %}Kritisch{% elif insight.severity == 'warning' %}Warnung{% else %}Info{% endif %}
+                                </span>
+                            </div>
+                            <p class="mt-2 text-sm text-slate-600">{{ insight.description }}</p>
+                            <p class="mt-2 text-xs text-slate-500">Begründung: {{ insight.evidence }}</p>
+                        </div>
+                        {% endfor %}
+                        {% if proactive_insights|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Hinweise – Datenbasis wird aufgebaut.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Asset- & Ticket-KPIs</h2>
+                            <p class="text-sm text-slate-500">Lebenszyklus- und Helpdesk-Status.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-indigo-50 p-2 text-indigo-600">
+                            <i data-feather="trending-up" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-4">
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <p class="text-xs uppercase tracking-widest text-slate-400">Assets aktiv</p>
+                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ active_assets }}</p>
+                            <p class="text-xs text-slate-500">{{ retired_assets }} ausgemustert</p>
+                        </div>
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <p class="text-xs uppercase tracking-widest text-slate-400">Tickets offen</p>
+                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ ticket_open }}</p>
+                            <p class="text-xs text-slate-500">{{ ticket_total }} insgesamt</p>
+                        </div>
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <p class="text-xs uppercase tracking-widest text-slate-400">Ø Lösungszeit</p>
+                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ avg_resolution_hours }}h</p>
+                            <p class="text-xs text-slate-500">{{ ticket_closed }} abgeschlossen</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Ticket-Typen & Eskalationen</h2>
+                            <p class="text-sm text-slate-500">Verteilung nach Kategorie und Eskalationslevel.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="layers" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for item in ticket_type_breakdown %}
+                        <div class="flex items-center rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <span class="text-sm font-semibold text-slate-700">{{ item['name'] }}</span>
+                            <span class="ml-auto text-sm font-semibold text-slate-900">{{ item['total'] }}</span>
+                        </div>
+                        {% endfor %}
+                        {% if ticket_type_breakdown|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Ticketdaten vorhanden.</p>
+                        {% endif %}
+                    </div>
+                    <div class="mt-6 space-y-2">
+                        <p class="text-xs uppercase tracking-widest text-slate-400">Eskalation</p>
+                        <div class="flex flex-wrap gap-2">
+                            {% for item in escalation_breakdown %}
+                            <span class="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600">
+                                Level {{ item['level'] }} · {{ item['total'] }}
+                            </span>
+                            {% endfor %}
+                            {% if escalation_breakdown|length == 0 %}
+                            <span class="text-sm text-slate-500">Keine Eskalationsdaten.</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Erfolgsquote je Maßnahme</h2>
+                            <p class="text-sm text-slate-500">Welche Schritte aktuell am besten funktionieren.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-emerald-50 p-2 text-emerald-600">
+                            <i data-feather="check-circle" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for action in action_success_rates %}
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm font-semibold text-slate-700">{{ action['action'] }}</span>
+                                <span class="text-sm font-semibold text-slate-900">{{ action['rate'] }}%</span>
+                            </div>
+                            <div class="mt-2 h-2 rounded-full bg-slate-200">
+                                <div class="h-2 rounded-full bg-emerald-400" style="width: {{ action['rate'] }}%"></div>
+                            </div>
+                            <p class="mt-1 text-xs text-slate-500">{{ action['success'] }} von {{ action['total'] }} erfolgreich</p>
+                        </div>
+                        {% endfor %}
+                        {% if action_success_rates|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Maßnahmen dokumentiert.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Asset-Tickethistorie</h2>
+                            <p class="text-sm text-slate-500">Assets mit auffälliger Ticketlast und Lebenszyklusdaten.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="activity" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for asset in asset_ticket_stats %}
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm font-semibold text-slate-700">{{ asset['name'] }}</span>
+                                <span class="text-sm font-semibold text-slate-900">{{ asset['ticket_count'] }} Tickets</span>
+                            </div>
+                            <p class="mt-1 text-xs text-slate-500">
+                                Zugewiesen an {{ asset['assigned_user'] }} · Alter {{ asset['age_months'] or 'n/a' }} Monate · Garantie {{ asset['warranty_status'] }}
+                            </p>
+                        </div>
+                        {% endfor %}
+                        {% if asset_ticket_stats|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Asset-Tickets verknüpft.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-900">Benutzerverhalten</h2>
+                            <p class="text-sm text-slate-500">Wer meldet was und mit welcher Komplexität.</p>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                            <i data-feather="users" class="h-4 w-4"></i>
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        {% for user in user_behavior_stats %}
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm font-semibold text-slate-700">{{ user['reporter'] }}</span>
+                                <span class="text-sm font-semibold text-slate-900">{{ user['tickets'] }} Tickets</span>
+                            </div>
+                            <p class="mt-1 text-xs text-slate-500">
+                                Ø Kommentare {{ user['avg_comments'] }} · Ø Priorität {{ user['avg_priority'] }}
+                            </p>
+                        </div>
+                        {% endfor %}
+                        {% if user_behavior_stats|length == 0 %}
+                        <p class="text-sm text-slate-500">Noch keine Nutzerstatistiken verfügbar.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+			<!-- Letzte Geräte -->
+			<div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+				<div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-xl font-semibold text-slate-900">Zuletzt hinzugefügt</h2>
+                        <p class="text-sm text-slate-500">Neueste Geräte mit Owner-Status.</p>
+                    </div>
+                    <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
+                        <i data-feather="clock" class="h-4 w-4"></i>
+                    </span>
+                </div>
+				<div class="table-responsive scrollbar-hide">
+                    <table class="min-w-full text-sm responsive-table">
+                        <thead class="text-left text-slate-500">
+                            <tr class="border-b border-slate-200">
+                                <th class="py-3 font-semibold">Name</th>
+                                <th class="py-3 font-semibold">Kategorie</th>
+                                <th class="py-3 font-semibold">Besitzer</th>
+                                <th class="py-3 font-semibold">Datum</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            {% for device in recent_devices %}
+                            <tr class="hover:bg-slate-50">
+                                <td class="py-3 font-semibold text-slate-900">{{ device['name'] }}</td>
+                                <td class="py-3 text-slate-600">{{ device['category_name'] }}</td>
+                                <td class="py-3 text-slate-600">{{ device['serial_number'] or '-' }}</td>
+                                <td class="py-3 text-slate-600">{{ device['created_at'][:10] }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+			</div>
+        </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const statsData = {
+                categories: {{ categories|tojson|default([]) }},
+                statusData: {{ status_data|tojson|default({}) }},
+                locations: {{ locations|tojson|default([]) }},
+                unknownLocationCount: {{ unknown_location_count|default(0) }},
+                devicesByMonth: {{ devices_by_month|tojson|default([]) }},
+                ageBuckets: {{ age_buckets|tojson|default({}) }}
+            };
+
+            const palette = [
+                '#3B82F6', '#10B981', '#6366F1', '#F59E0B',
+                '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6',
+                '#0EA5E9', '#22C55E'
+            ];
+
+            new Chart(document.getElementById('growthChart'), {
+                type: 'line',
+                data: {
+                    labels: statsData.devicesByMonth.map(item => item.month),
+                    datasets: [{
+                        label: 'Neue Geräte',
+                        data: statsData.devicesByMonth.map(item => item.count),
+                        borderColor: '#6366F1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.2)',
+                        tension: 0.35,
+                        fill: true
+                    }]
+                },
+                options: {
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+
+            new Chart(document.getElementById('categoryChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: statsData.categories.map(item => item.name),
+                    datasets: [{
+                        data: statsData.categories.map(item => item.device_count),
+                        backgroundColor: palette,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+
+            new Chart(document.getElementById('statusChart'), {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(statsData.statusData),
+                    datasets: [{
+                        label: 'Geräte',
+                        data: Object.values(statsData.statusData),
+                        backgroundColor: ['#10B981', '#F59E0B', '#EF4444', '#94A3B8']
+                    }]
+                },
+                options: {
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            const locationLabels = statsData.locations.map(item => item.name);
+            const locationCounts = statsData.locations.map(item => item.device_count);
+            if (statsData.unknownLocationCount > 0) {
+                locationLabels.push('Unbekannt');
+                locationCounts.push(statsData.unknownLocationCount);
+            }
+            new Chart(document.getElementById('locationChart'), {
+                type: 'bar',
+                data: {
+                    labels: locationLabels,
+                    datasets: [{
+                        label: 'Geräte',
+                        data: locationCounts,
+                        backgroundColor: '#38BDF8'
+                    }]
+                },
+                options: {
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            new Chart(document.getElementById('ageChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(statsData.ageBuckets),
+                    datasets: [{
+                        data: Object.values(statsData.ageBuckets),
+                        backgroundColor: ['#22C55E', '#38BDF8', '#A855F7', '#F59E0B', '#EF4444']
+                    }]
+                },
+                options: {
+                    plugins: { legend: { position: 'bottom' } }
+                }
+            });
+        });
+    </script>
+	
+	<script src="/static/vendor/feather.min.js"></script>
+		<script>
+		document.addEventListener('DOMContentLoaded', function() {
+			feather.replace();
+		});
+	</script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
+    {% include 'pondsec_ai_drawer.html' %}
+</body>
+</html>

@@ -1,0 +1,2387 @@
+<!DOCTYPE html>
+<html lang="de" x-data="serverSettingsApp()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - Einstellungen</title>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/vendor/alpinejs.min.js" defer></script>
+    <script>
+        window.inventoryPermissions = {{ permissions | tojson }};
+        window.inventoryIsSuperuser = {{ is_superuser | tojson }};
+        window.inventoryInitialSection = {{ (initial_section or 'server') | tojson }};
+    </script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app-body">
+    <div class="app-shell">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
+                <a href="/">
+                    <div class="logo flex items-center space-x-3">
+                        <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg" data-brand-logo>
+                            <i data-feather="cpu" data-brand-logo-icon class="w-5 h-5"></i>
+                        </span>
+                        <div>
+                            <p class="text-lg font-semibold text-slate-900 sidebar-text" data-brand-name>Inventory Pro</p>
+                            <p class="text-xs text-slate-500 sidebar-text" data-brand-tagline>Smart Asset Hub</p>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            <nav class="p-4 space-y-4 sidebar-scroll sidebar-primary-links">
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Hauptbereiche</p>
+                    <div class="mt-3 space-y-1">
+                        <a href="/" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="home" class="w-4 h-4"></i></span>
+                                Dashboard
+                            </span>
+                        </a>
+                        {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                        <a href="/locations" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="map-pin" class="w-4 h-4"></i></span>
+                                Standorte
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                        <a href="/tickets" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="life-buoy" class="w-4 h-4"></i></span>
+                                Ticketsystem
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
+                        <a href="/knowledge" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="book-open" class="w-4 h-4"></i></span>
+                                Wissensbasis
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                        <a href="/roadmap" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="git-merge" class="w-4 h-4"></i></span>
+                                Roadmap
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'procurement.view' in permissions or 'procurement.manage' in permissions %}
+                        <a href="/procurement" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="shopping-cart" class="w-4 h-4"></i></span>
+                                Beschaffung
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'ai.use' in permissions or 'ai.manage' in permissions %}
+                        <a href="/ai/activity" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="message-circle" class="w-4 h-4"></i></span>
+                                PondSec AI
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Inventory Links</p>
+                    <div class="mt-3 space-y-1">
+                        {% if inventory_links %}
+                        {% for link in inventory_links %}
+                        <a href="/inventory-links/{{ link.id }}/portal" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="link-2" class="w-4 h-4"></i></span>
+                                {{ link.displayName }}
+                            </span>
+                            {% if link.healthStatus %}
+                            <span class="text-xs font-semibold rounded-full px-2 py-0.5 {% if link.healthStatus == 'ok' %}bg-emerald-100 text-emerald-700{% elif link.healthStatus == 'unauthorized' %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+                                {{ link.healthStatus }}
+                            </span>
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                        {% else %}
+                        <a href="/settings?section=server#inventory-links" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="plus-circle" class="w-4 h-4"></i></span>
+                                Link hinzufügen
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Auswertung</p>
+                    <div class="mt-3 space-y-1">
+                        {% if 'stats.view' in permissions %}
+                        <a href="/stats" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="bar-chart-2" class="w-4 h-4"></i></span>
+                                Statistiken
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                        <a href="/dependencies" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="share-2" class="w-4 h-4"></i></span>
+                                Dependency-Graph
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'timemachine.view' in permissions %}
+                        <a href="/time-machine" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="clock" class="w-4 h-4"></i></span>
+                                Zeitmaschine
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
+                        <a href="/health" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="activity" class="w-4 h-4"></i></span>
+                                Health
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if 'users.manage' in permissions or 'server_settings.manage' in permissions %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Administration</p>
+                    <div class="mt-3 space-y-1">
+                        {% if 'users.manage' in permissions %}
+                        <a href="/users" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="users" class="w-4 h-4"></i></span>
+                                Benutzer
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'server_settings.manage' in permissions %}
+                        <a href="/settings" class="sidebar-link active">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="settings" class="w-4 h-4"></i></span>
+                                Einstellungen
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </nav>
+        </aside>
+
+        <div class="app-main app-main--fixed">
+            <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
+                <div class="flex items-center gap-4">
+                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="icon-button inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                        <i data-feather="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Admin</p>
+                        <h1 class="text-2xl font-semibold text-slate-900">Einstellungen</h1>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <span class="hidden text-sm text-slate-500 sm:inline">Angemeldet als {{ username }}</span>
+                    {% include 'pondsec_ai_button.html' %}
+                    <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <span data-theme-icon aria-hidden="true">🌙</span>
+                        <span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
+                    </button>
+                    <button onclick="logout()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <i data-feather="log-out" class="w-4 h-4"></i>
+                        <span class="sr-only sm:not-sr-only">Abmelden</span>
+                    </button>
+                </div>
+            </header>
+
+            <main class="app-content px-8 pt-[120px] pb-10" x-cloak>
+                <div class="max-w-6xl space-y-6">
+                    <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div>
+                                <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Einstellungen</p>
+                                <h2 class="text-2xl font-semibold text-slate-900">Steuere Server, Layout und Branding aus einem Bereich</h2>
+                                <p class="mt-2 text-sm text-slate-500">Wechsle zwischen Servereinstellungen und dem neuen Customize-Modul, um die Oberfläche vollständig zu individualisieren.</p>
+                            </div>
+                            <div class="flex flex-wrap gap-3">
+                                <button type="button" @click="activeSection = 'server'" :class="activeSection === 'server' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 text-slate-600'" class="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition">
+                                    <i data-feather="server" class="h-4 w-4"></i>
+                                    Servereinstellungen
+                                </button>
+                                <button type="button" @click="activeSection = 'customize'" :class="activeSection === 'customize' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 text-slate-600'" class="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition">
+                                    <i data-feather="sliders" class="h-4 w-4"></i>
+                                    Customize
+                                </button>
+                                <button type="button" x-show="canViewTerminal" @click="activeSection = 'terminal'" :class="activeSection === 'terminal' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 text-slate-600'" class="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition">
+                                    <i data-feather="terminal" class="h-4 w-4"></i>
+                                    Terminal
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <section x-show="activeSection === 'server'" x-transition>
+                        <div class="mb-6 rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4 text-sm text-indigo-700">
+                            <div class="flex items-start gap-3">
+                                <span class="icon-button inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm">
+                                    <i data-feather="info" class="h-4 w-4"></i>
+                                </span>
+                                <div>
+                                    <p class="font-semibold">Hinweis</p>
+                                    <p class="text-sm text-indigo-700/90">Änderungen an Host, Port oder Debug-Modus werden erst nach einem Neustart des Servers aktiv.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-6 flex flex-wrap items-center gap-3" x-show="meta.pendingRestart || (meta.warnings && meta.warnings.length)">
+                            <span x-show="meta.pendingRestart" class="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                                <i data-feather="alert-triangle" class="h-3 w-3"></i>
+                                Neustart erforderlich
+                            </span>
+                            <template x-for="warning in meta.warnings" :key="warning">
+                                <span class="inline-flex items-center gap-2 rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">
+                                    <i data-feather="alert-circle" class="h-3 w-3"></i>
+                                    <span x-text="warning"></span>
+                                </span>
+                            </template>
+                        </div>
+
+                        <form @submit.prevent="saveSettings" class="space-y-6">
+                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                        <i data-feather="server" class="h-5 w-5"></i>
+                                    </span>
+                                    <div>
+                                        <h2 class="text-xl font-semibold text-slate-900">Serverkonfiguration</h2>
+                                        <p class="text-sm text-slate-500">Passe die grundlegenden Runtime-Einstellungen der Anwendung an.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-6 md:grid-cols-2">
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Host</label>
+                                        <input type="text" x-model="settings.server.host" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="0.0.0.0">
+                                        <p class="text-xs text-slate-400">IP-Adresse oder Hostname für den Flask-Server.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Port</label>
+                                        <input type="number" min="1" max="65535" x-model.number="settings.server.port" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="5000">
+                                        <p class="text-xs text-slate-400">Port, unter dem der Server erreichbar sein soll.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.server.debug" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Debug-Modus aktivieren</p>
+                                            <p class="text-xs text-slate-500">Aktiviert ausführliche Logs und Fehlerseiten (nur für Entwicklung).</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.proFeaturesEnabled" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Pro-Features aktiv</p>
+                                            <p class="text-xs text-slate-500">Steuert, ob erweiterte Module in der UI verfügbar sind.</p>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                        <i data-feather="database" class="h-5 w-5"></i>
+                                    </span>
+                                    <div>
+                                        <h2 class="text-xl font-semibold text-slate-900">Datenbank-Backups</h2>
+                                        <p class="text-sm text-slate-500">Definiere, wann und wie Sicherungen erstellt und aufbewahrt werden.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.backup.enabled" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Automatische Backups aktivieren</p>
+                                            <p class="text-xs text-slate-500">Schaltet den geplanten Backup-Workflow frei.</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.backup.compress" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Backups komprimieren</p>
+                                            <p class="text-xs text-slate-500">Spart Speicherplatz durch komprimierte Archive.</p>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="mt-6 grid gap-6 md:grid-cols-3">
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Rhythmus</label>
+                                        <select x-model="settings.backup.schedule" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                            <option value="daily">Täglich</option>
+                                            <option value="custom">Benutzerdefiniert</option>
+                                        </select>
+                                        <p class="text-xs text-slate-400">Nutze „Benutzerdefiniert“ für externe Scheduler.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Backup-Zeit</label>
+                                        <input type="time" x-model="settings.backup.time" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">24h-Format (z. B. 02:00).</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Aufbewahrung (Tage)</label>
+                                        <input type="number" min="1" max="3650" x-model.number="settings.backup.retentionDays" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">Wie lange Backups behalten werden.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-6 md:grid-cols-2">
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Backup-Verzeichnis</label>
+                                        <input type="text" x-model="settings.backup.directory" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="/var/backups/inventorypro">
+                                        <p class="text-xs text-slate-400">Pfad oder Storage-Target für Sicherungen.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Benachrichtigungs-E-Mail</label>
+                                        <input type="email" x-model="settings.backup.notifyEmail" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="ops@firma.de">
+                                        <p class="text-xs text-slate-400">Optional für Backup-Statusberichte.</p>
+                                    </div>
+                                </div>
+
+                                <label class="mt-6 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                    <input type="checkbox" x-model="settings.backup.encrypt" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                    <div>
+                                        <p class="text-sm font-semibold text-slate-700">Backups verschlüsseln</p>
+                                        <p class="text-xs text-slate-500">Für sensible Daten in externen Storage-Umgebungen.</p>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                        <i data-feather="download" class="h-5 w-5"></i>
+                                    </span>
+                                    <div>
+                                        <h2 class="text-xl font-semibold text-slate-900">Import & Export</h2>
+                                        <p class="text-sm text-slate-500">Kontrolliere, welche Daten exportiert oder importiert werden dürfen.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.importExport.exportAllowed" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Export erlauben</p>
+                                            <p class="text-xs text-slate-500">Aktiviert Datenbank- und Berichtsexporte.</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.importExport.importAllowed" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Import erlauben</p>
+                                            <p class="text-xs text-slate-500">Freigabe für Datenimport von externen Quellen.</p>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="mt-6 grid gap-6 md:grid-cols-3">
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Export-Format</label>
+                                        <select x-model="settings.importExport.exportFormat" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                            <option value="sqlite">SQLite</option>
+                                            <option value="csv">CSV</option>
+                                            <option value="json">JSON</option>
+                                        </select>
+                                        <p class="text-xs text-slate-400">Format für geplante Exporte.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Import-Modus</label>
+                                        <select x-model="settings.importExport.importMode" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                            <option value="merge">Zusammenführen</option>
+                                            <option value="replace">Ersetzen</option>
+                                            <option value="append">Anfügen</option>
+                                        </select>
+                                        <p class="text-xs text-slate-400">Wie neue Daten in die DB fließen.</p>
+                                    </div>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:col-span-1">
+                                        <input type="checkbox" x-model="settings.importExport.includeUploads" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Uploads einbeziehen</p>
+                                            <p class="text-xs text-slate-500">Anhänge und Medien mit exportieren.</p>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                        <i data-feather="shield" class="h-5 w-5"></i>
+                                    </span>
+                                    <div>
+                                        <h2 class="text-xl font-semibold text-slate-900">Sicherheit & Zugriff</h2>
+                                        <p class="text-sm text-slate-500">Passe Policies für Sessions, Logins und IP-Zugriffe an.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.security.forceHttps" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">HTTPS erzwingen</p>
+                                            <p class="text-xs text-slate-500">Erfordert sichere Verbindungen am Gateway.</p>
+                                            <span class="mt-2 inline-flex rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600">Infra erforderlich</span>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.security.requireMfa" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">MFA verpflichtend</p>
+                                            <p class="text-xs text-slate-500">Erfordert 2FA für alle Admin-Konten.</p>
+                                            <span class="mt-2 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700" x-show="meta.enforcedCapabilities.requireMfa && meta.enforcedCapabilities.requireMfa.enforced">Enforced</span>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="mt-6 grid gap-6 md:grid-cols-3">
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Session-Timeout (Min.)</label>
+                                        <input type="number" min="5" max="1440" x-model.number="settings.security.sessionTimeoutMinutes" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">Automatisches Logout bei Inaktivität.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Max. Fehlversuche</label>
+                                        <input type="number" min="1" max="20" x-model.number="settings.security.maxFailedAttempts" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">Nach wie vielen Fehlern gesperrt wird.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Sperrzeit (Min.)</label>
+                                        <input type="number" min="1" max="240" x-model.number="settings.security.lockoutMinutes" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">Dauer der Sperre nach Fehlversuchen.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-6 md:grid-cols-2">
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">IP-Whitelist</label>
+                                        <input type="text" x-model="ipWhitelistInput" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="10.0.0.0/24, 192.168.0.10">
+                                        <p class="text-xs text-slate-400">Kommagetrennte CIDR- oder IP-Liste.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Mindest-Passwortlänge</label>
+                                        <input type="number" min="6" max="64" x-model.number="settings.security.minPasswordLength" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">Empfohlen sind 10+ Zeichen.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-700">
+                                    Hinweis: Diese Einstellungen definieren Richtlinien. Die tatsächliche Umsetzung (z. B. Backup-Jobs, Importprozesse, Gateway-Regeln) erfolgt über deinen Infrastruktur-Stack.
+                                </div>
+                            </div>
+
+                            <div id="inventory-links" class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                        <i data-feather="link-2" class="h-5 w-5"></i>
+                                    </span>
+                                    <div>
+                                        <h2 class="text-xl font-semibold text-slate-900">Inventory-Verbindungen</h2>
+                                        <p class="text-sm text-slate-500">Verbinde mehrere Inventory-Pro-Instanzen über WAN oder LAN und wechsle anschließend vollständig in deren Oberfläche.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-6 lg:grid-cols-2">
+                                    <div class="space-y-4">
+                                        <template x-for="link in inventoryLinks" :key="link.id">
+                                            <div class="rounded-2xl border border-slate-200 p-4">
+                                                <div class="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <p class="text-sm font-semibold text-slate-900" x-text="link.displayName"></p>
+                                                        <p class="text-xs text-slate-500" x-text="link.baseUrl"></p>
+                                                        <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                                            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600" x-text="link.authMode"></span>
+                                                            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600" x-text="link.verifyTls ? 'TLS geprüft' : 'TLS off'"></span>
+                                                            <template x-if="link.healthStatus">
+                                                                <span class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                                                                      :class="link.healthStatus === 'ok' ? 'bg-emerald-100 text-emerald-700' : (link.healthStatus === 'unauthorized' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700')"
+                                                                      x-text="link.healthStatus"></span>
+                                                            </template>
+                                                        </div>
+                                                    </div>
+                                                    <div class="flex flex-col gap-2">
+                                                        <a :href="`/inventory-links/${link.id}/portal`" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50">Öffnen</a>
+                                                        <button type="button" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50" @click="editInventoryLink(link)">Bearbeiten</button>
+                                                        <button type="button" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50" @click="deleteInventoryLink(link)">Entfernen</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <div x-show="inventoryLinks.length === 0" class="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                                            Noch keine Verbindung. Gib rechts nur Name, URL und optional Zugangsdaten an.
+                                        </div>
+                                    </div>
+
+                                    <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <div class="flex items-center justify-between">
+                                            <p class="text-sm font-semibold text-slate-700" x-text="editingInventoryLinkId ? 'Verbindung bearbeiten' : 'Neue Verbindung anlegen'"></p>
+                                            <button type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700" @click="resetInventoryLinkForm">Zurücksetzen</button>
+                                        </div>
+                                        <div class="mt-4 space-y-3">
+                                            <div class="space-y-1">
+                                                <label class="text-xs font-semibold text-slate-600">Name der Instanz</label>
+                                                <input type="text" x-model="inventoryLinkForm.displayName" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="HQ Inventory">
+                                            </div>
+                                            <div class="space-y-1">
+                                                <label class="text-xs font-semibold text-slate-600">Ziel-URL</label>
+                                                <input type="text" x-model="inventoryLinkForm.baseUrl" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="https://inv.pondsec.com">
+                                                <p class="text-[11px] text-slate-400">Gib die vollständige Adresse der Zielinstanz ein.</p>
+                                            </div>
+                                            <div class="space-y-1">
+                                                <label class="text-xs font-semibold text-slate-600">Zugangsdaten (optional)</label>
+                                                <input type="password" x-model="inventoryLinkForm.secret" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Benutzername:Passwort oder API-Key">
+                                                <p class="text-[11px] text-slate-400">Automatisch erkannt: <span class="font-semibold">Benutzername:Passwort</span> → Login, sonst API-Key. Leer lassen, um beim Öffnen nach Zugangsdaten zu fragen.</p>
+                                                <p class="text-[11px] text-slate-400">Secrets werden serverseitig verschlüsselt gespeichert.</p>
+                                            </div>
+                                            <details class="rounded-2xl border border-slate-200 bg-white p-3">
+                                                <summary class="cursor-pointer text-xs font-semibold text-slate-700">Erweiterte Optionen</summary>
+                                                <div class="mt-3 space-y-3">
+                                                    <div class="space-y-1">
+                                                        <label class="text-xs font-semibold text-slate-600">Zugriffsmethode</label>
+                                                        <select x-model="inventoryLinkForm.authModeChoice" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                                            <option value="auto">Automatisch (empfohlen)</option>
+                                                            <option value="login">Login (Benutzer)</option>
+                                                            <option value="apiKey">API Key</option>
+                                                            <option value="bearerToken">Bearer Token</option>
+                                                            <option value="basic">Basic</option>
+                                                            <option value="none">Ohne Auth</option>
+                                                        </select>
+                                                    </div>
+                                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                                                        <input type="checkbox" x-model="inventoryLinkForm.verifyTls" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                                        <div>
+                                                            <p class="text-xs font-semibold text-slate-700">TLS Zertifikate prüfen</p>
+                                                            <p class="text-[11px] text-slate-400">Deaktivieren nur für selbstsignierte HTTPS-Ziele.</p>
+                                                        </div>
+                                                    </label>
+                                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                                                        <input type="checkbox" x-model="inventoryLinkForm.allowPrivateNetwork" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                                        <div>
+                                                            <p class="text-xs font-semibold text-slate-700">Private Netzwerke zulassen</p>
+                                                            <p class="text-[11px] text-slate-400">Erlaubt RFC1918 (LAN), blockiert weiterhin Loopback & Metadata.</p>
+                                                        </div>
+                                                    </label>
+                                                </div>
+                                            </details>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button type="button" class="rounded-2xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white" @click="saveInventoryLink" :disabled="inventoryLinkSaving">
+                                                    <span x-show="!inventoryLinkSaving">Speichern</span>
+                                                    <span x-show="inventoryLinkSaving">Speichert...</span>
+                                                </button>
+                                                <button type="button" class="rounded-2xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50" @click="testInventoryLink" :disabled="inventoryLinkTesting">
+                                                    <span x-show="!inventoryLinkTesting">Verbindung testen</span>
+                                                    <span x-show="inventoryLinkTesting">Teste...</span>
+                                                </button>
+                                            </div>
+                                            <div x-show="inventoryLinkMessage" class="rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-600" x-text="inventoryLinkMessage"></div>
+                                            <div x-show="inventoryLinkError" class="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-600" x-text="inventoryLinkError"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                        <i data-feather="terminal" class="h-5 w-5"></i>
+                                    </span>
+                                    <div>
+                                        <h2 class="text-xl font-semibold text-slate-900">Terminal Modul</h2>
+                                        <p class="text-sm text-slate-500">Schalte die Maintenance Console frei und begrenze den Zugriff.</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.terminal.enabled" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Terminal aktivieren</p>
+                                            <p class="text-xs text-slate-500">Standard in Produktion deaktiviert.</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.terminal.requireReauth" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Re-Auth erzwingen</p>
+                                            <p class="text-xs text-slate-500">Passwort & ggf. OTP vor Session-Start.</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.terminal.allowDbWrite" class="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">DB-Write erlauben</p>
+                                            <p class="text-xs text-slate-500">Nur mit terminal.db_write erlaubt.</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.terminal.allowServiceRestart" class="mt-1 h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Service-Restart erlauben</p>
+                                            <p class="text-xs text-slate-500">Nur für definierte Allowlist.</p>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="mt-6 grid gap-6 md:grid-cols-2">
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Terminal IP-Allowlist</label>
+                                        <input type="text" x-model="terminalAllowlistInput" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="10.0.0.0/24, 192.168.0.10">
+                                        <p class="text-xs text-slate-400">Optional zusätzliche Einschränkung nur für Terminal.</p>
+                                    </div>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.terminal.breakGlassMode" class="mt-1 h-4 w-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-rose-700">Break-Glass Mode</p>
+                                            <p class="text-xs text-rose-600">Hebt DB-Schutzregeln auf (hohes Risiko).</p>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-3">
+                                <button type="submit" :disabled="saving || !hasChanges()" class="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70">
+                                    <span x-show="!saving">Einstellungen speichern</span>
+                                    <span x-show="saving">Speichert...</span>
+                                </button>
+                                <button type="button" @click="fetchSettings" class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50">
+                                    <i data-feather="refresh-cw" class="h-4 w-4"></i>
+                                    Neu laden
+                                </button>
+                                <span x-show="errorMessage" class="text-sm text-rose-600" x-text="errorMessage"></span>
+                                <span x-show="successMessage" class="text-sm text-emerald-600" x-text="successMessage"></span>
+                            </div>
+                        </form>
+                    </section>
+                    <section x-show="activeSection === 'customize'" x-transition @input.debounce.300ms="trackChange">
+                        <div class="rounded-3xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-700">
+                            <div class="flex items-start gap-3">
+                                <span class="icon-button inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white text-emerald-600 shadow-sm">
+                                    <i data-feather="sparkles" class="h-4 w-4"></i>
+                                </span>
+                                <div>
+                                    <p class="font-semibold">Customize Studio</p>
+                                    <p class="text-sm text-emerald-700/90">Konfiguriere Tokens, Komponenten und Verhalten. Änderungen werden live in der Vorschau gerendert und serverseitig versioniert gespeichert.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                            <div class="space-y-6">
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="image" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Branding</h2>
+                                            <p class="text-sm text-slate-500">Name, Tagline und Logo für Kopfbereich und Login.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Firmenname</label>
+                                            <input type="text" x-model="customization.branding.name" class="input-field" placeholder="Dein Firmenname">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Tagline</label>
+                                            <input type="text" x-model="customization.branding.tagline" class="input-field" placeholder="Kurzbeschreibung">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6">
+                                        <label class="text-sm font-semibold text-slate-700">Logo hochladen</label>
+                                        <div class="mt-2 flex flex-col gap-4 md:flex-row md:items-center">
+                                            <input type="file" accept="image/*" @change="handleLogoUpload" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                                            <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                                                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100">
+                                                    <template x-if="customization.branding.logoDataUrl">
+                                                        <img :src="customization.branding.logoDataUrl" alt="Logo" class="h-10 w-10 rounded-2xl object-cover">
+                                                    </template>
+                                                    <template x-if="!customization.branding.logoDataUrl">
+                                                        <i data-feather="image" class="h-4 w-4 text-slate-400"></i>
+                                                    </template>
+                                                </span>
+                                                <span x-text="customization.branding.logoDataUrl ? 'Logo geladen' : 'Noch kein Logo'"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="palette" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Theme Tokens</h2>
+                                            <p class="text-sm text-slate-500">Grundfarben und States für die gesamte UI.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Primary</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.primary" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Secondary</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.secondary" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Accent</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.accent" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Background</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Surface</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.surface" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Text</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.text" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Border</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.border" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Focus Ring</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.focus" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Success</label>
+                                            <input type="color" x-model="customization.baseTokens.colors.success" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Hover-Intensität</label>
+                                            <input type="range" min="0.8" max="1" step="0.02" x-model.number="customization.baseTokens.states.hover" class="w-full">
+                                            <p class="text-xs text-slate-400">Skaliert Hover-Zustände für Farben.</p>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Disabled-Intensität</label>
+                                            <input type="range" min="0.4" max="0.9" step="0.05" x-model.number="customization.baseTokens.states.disabled" class="w-full">
+                                            <p class="text-xs text-slate-400">Legt Opacity für deaktivierte Controls fest.</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="type" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Typografie</h2>
+                                            <p class="text-sm text-slate-500">Font-Family, Größen und Gewichtungen.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Font Family</label>
+                                            <input type="text" x-model="customization.baseTokens.typography.fontFamily" class="input-field" placeholder="Inter, system-ui">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Basisgröße</label>
+                                            <input type="text" x-model="customization.baseTokens.typography.fontSizes.base" class="input-field" placeholder="15px">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">XS</label>
+                                            <input type="text" x-model="customization.baseTokens.typography.fontSizes.xs" class="input-field">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">SM</label>
+                                            <input type="text" x-model="customization.baseTokens.typography.fontSizes.sm" class="input-field">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">LG</label>
+                                            <input type="text" x-model="customization.baseTokens.typography.fontSizes.lg" class="input-field">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="maximize-2" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Spacing & Layout</h2>
+                                            <p class="text-sm text-slate-500">Radius, Dichte, Container und Tabellenmodus.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Radius MD</label>
+                                            <input type="range" min="6" max="24" step="1" x-model.number="customization.baseTokens.spacing.radius.md" class="w-full">
+                                            <p class="text-xs text-slate-400" x-text="customization.baseTokens.spacing.radius.md + 'px'"></p>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Dichte</label>
+                                            <input type="range" min="0.8" max="1.3" step="0.05" x-model.number="customization.layoutPrefs.density" class="w-full">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Containerbreite</label>
+                                            <input type="number" min="960" max="1600" step="20" x-model.number="customization.layoutPrefs.containerWidth" class="input-field">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Sidebar</label>
+                                            <input type="number" min="220" max="360" step="10" x-model.number="customization.layoutPrefs.sidebarWidth" class="input-field">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Tabellen-Dichte</label>
+                                            <select x-model="customization.layoutPrefs.tableDensity" class="select-field">
+                                                <option value="compact">Compact</option>
+                                                <option value="normal">Normal</option>
+                                                <option value="comfortable">Comfortable</option>
+                                            </select>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Zeilenhöhe</label>
+                                            <input type="number" min="32" max="64" step="2" x-model.number="customization.layoutPrefs.rowHeight" class="input-field">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="square" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Komponenten-Overrides</h2>
+                                            <p class="text-sm text-slate-500">Buttons, Inputs, Cards, Tables.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Primary Button</label>
+                                            <input type="color" x-model="customization.componentOverrides.button.primary.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Primary Text</label>
+                                            <input type="color" x-model="customization.componentOverrides.button.primary.text" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Input Background</label>
+                                            <input type="color" x-model="customization.componentOverrides.input.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Input Border</label>
+                                            <input type="color" x-model="customization.componentOverrides.input.border" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Card BG</label>
+                                            <input type="color" x-model="customization.componentOverrides.card.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Table Header</label>
+                                            <input type="color" x-model="customization.componentOverrides.table.headerBg" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Badge BG</label>
+                                            <input type="color" x-model="customization.componentOverrides.badge.background" class="h-12 w-full rounded-2xl border border-slate-200 bg-white">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="sliders" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Feature Preferences</h2>
+                                            <p class="text-sm text-slate-500">Optionale UI-Defaults pro Nutzer.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Icon-Set</label>
+                                            <select x-model="customization.featurePrefs.iconSet" class="select-field">
+                                                <option value="feather">Feather</option>
+                                                <option value="heroicons">Heroicons</option>
+                                                <option value="phosphor">Phosphor</option>
+                                            </select>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Zebra Striping</label>
+                                            <select x-model="customization.layoutPrefs.zebraStriping" class="select-field">
+                                                <option :value="true">Aktiv</option>
+                                                <option :value="false">Aus</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="space-y-6">
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="eye" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Live Preview</h2>
+                                            <p class="text-sm text-slate-500">Tokens wirken sofort auf Buttons, Inputs und Tabellen.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 space-y-4 rounded-3xl border border-slate-200 p-5" :style="{ background: customization.baseTokens.colors.background }">
+                                        <div class="flex items-center justify-between gap-3">
+                                            <div class="flex items-center gap-3">
+                                                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm">
+                                                    <template x-if="customization.branding.logoDataUrl">
+                                                        <img :src="customization.branding.logoDataUrl" alt="Logo" class="h-10 w-10 rounded-2xl object-cover">
+                                                    </template>
+                                                    <template x-if="!customization.branding.logoDataUrl">
+                                                        <i data-feather="cpu" class="h-4 w-4 text-slate-500"></i>
+                                                    </template>
+                                                </span>
+                                                <div>
+                                                    <p class="text-sm font-semibold" x-text="customization.branding.name"></p>
+                                                    <p class="text-xs text-slate-500" x-text="customization.branding.tagline"></p>
+                                                </div>
+                                            </div>
+                                            <span class="ui-badge">Live</span>
+                                        </div>
+
+                                        <div class="grid gap-3 md:grid-cols-2">
+                                            <input type="text" class="input-field" placeholder="Suche nach Assets">
+                                            <select class="select-field">
+                                                <option>Filter wählen</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="flex flex-wrap gap-3">
+                                            <button type="button" class="btn-primary">Primary</button>
+                                            <button type="button" class="btn-secondary">Secondary</button>
+                                        </div>
+
+                                        <div class="table-responsive">
+                                        <table class="ui-table responsive-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Asset</th>
+                                                    <th>Status</th>
+                                                    <th>Owner</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>Scanner 12</td>
+                                                    <td><span class="ui-badge">Active</span></td>
+                                                    <td>Ada</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Notebook 44</td>
+                                                    <td><span class="ui-badge">Repair</span></td>
+                                                    <td>Team Ops</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700" x-show="contrastWarnings.length">
+                                        <p class="font-semibold">Kontrast-Warnung</p>
+                                        <ul class="mt-2 list-disc space-y-1 pl-4">
+                                            <template x-for="warning in contrastWarnings" :key="warning">
+                                                <li x-text="warning"></li>
+                                            </template>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="archive" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Import / Export</h2>
+                                            <p class="text-sm text-slate-500">JSON-Dateien austauschen oder Presets laden.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-4 flex flex-wrap gap-2">
+                                        <button type="button" @click="exportCustomization" class="btn-secondary">Exportieren</button>
+                                        <button type="button" @click="$refs.importFile.click()" class="btn-secondary">Importieren</button>
+                                        <select x-model="selectedPreset" @change="applyPreset" class="select-field max-w-xs">
+                                            <option value="">Preset wählen…</option>
+                                            <template x-for="preset in presets" :key="preset.id">
+                                                <option :value="preset.id" x-text="preset.label"></option>
+                                            </template>
+                                        </select>
+                                        <input type="file" accept="application/json" x-ref="importFile" @change="importCustomization" class="hidden">
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div>
+                                            <h2 class="text-lg font-semibold text-slate-900">Anpassungen sichern</h2>
+                                            <p class="text-sm text-slate-500">Server ist die Quelle der Wahrheit, lokale Overrides sind optional.</p>
+                                        </div>
+                                        <div class="flex flex-wrap gap-2">
+                                            <button type="button" @click="undoChange" class="btn-secondary">Undo</button>
+                                            <button type="button" @click="redoChange" class="btn-secondary">Redo</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-4 flex flex-wrap items-center gap-3">
+                                        <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                            <input type="checkbox" x-model="saveLocalOnly" class="rounded border-slate-300 text-emerald-600">
+                                            Nur lokal speichern (Override)
+                                        </label>
+                                        <button type="button" @click="saveCustomization" class="btn-primary">Speichern</button>
+                                        <button type="button" @click="resetCustomization" class="btn-secondary">Alles zurücksetzen</button>
+                                        <button type="button" @click="resetSection('tokens')" class="btn-secondary">Tokens reset</button>
+                                        <button type="button" @click="resetSection('components')" class="btn-secondary">Components reset</button>
+                                    </div>
+                                    <p class="mt-3 text-xs text-emerald-600" x-show="customizeMessage" x-text="customizeMessage"></p>
+                                    <p class="mt-2 text-xs text-rose-600" x-show="customizeError" x-text="customizeError"></p>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="clock" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Versionen & Rollback</h2>
+                                            <p class="text-sm text-slate-500">Letzte Revisionen mit Rollback.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-4 space-y-3" x-show="customizationHistory.length">
+                                        <template x-for="revision in customizationHistory" :key="revision.id">
+                                            <div class="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                                                <div>
+                                                    <p class="font-semibold text-slate-800" x-text="revision.label"></p>
+                                                    <p class="text-xs text-slate-500" x-text="revision.meta"></p>
+                                                </div>
+                                                <button type="button" class="btn-secondary" @click="rollbackRevision(revision.id)">Rollback</button>
+                                            </div>
+                                        </template>
+                                    </div>
+                                    <p class="mt-3 text-xs text-slate-500" x-show="!customizationHistory.length">Noch keine Revisionen gespeichert.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section x-show="activeSection === 'terminal'" x-transition>
+                        <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                                <div>
+                                    <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Maintenance Console</p>
+                                    <h2 class="text-2xl font-semibold text-slate-900">Terminal</h2>
+                                    <p class="mt-2 text-sm text-slate-500">Gesicherte Recipes für Diagnose, Services, Logs und Datenbankpflege.</p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-3">
+                                    <span :class="terminalStatusClass()" class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold">
+                                        <i data-feather="shield" class="h-3 w-3"></i>
+                                        <span x-text="terminalStatusLabel()"></span>
+                                    </span>
+                                    <button type="button" @click="startTerminalSession" :disabled="terminalBusy || !canUseTerminal || !settings.terminal.enabled || terminalSessionActive()" class="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60">
+                                        <i data-feather="play" class="h-4 w-4"></i>
+                                        Start Session
+                                    </button>
+                                    <button type="button" @click="stopTerminalSession" x-show="terminalSessionActive()" :disabled="terminalBusy" class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                                        <i data-feather="stop-circle" class="h-4 w-4"></i>
+                                        Stop Session
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,2fr)_minmax(0,0.9fr)]">
+                            <div class="space-y-4">
+                                <div class="ui-card p-5">
+                                    <div class="flex items-center justify-between">
+                                        <h3 class="text-sm font-semibold text-slate-900">Tools / Recipes</h3>
+                                        <span class="text-xs text-slate-400">Whitelist</span>
+                                    </div>
+                                    <div class="mt-4 space-y-4 text-sm">
+                                        <div>
+                                            <p class="text-xs uppercase tracking-wide text-slate-400">Diagnostics</p>
+                                            <div class="mt-2 space-y-1">
+                                                <button type="button" @click="terminalTab = 'diagnostics'" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-slate-600 hover:bg-slate-50">Ping / DNS / Port / HTTP</button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs uppercase tracking-wide text-slate-400">Services</p>
+                                            <div class="mt-2 space-y-1">
+                                                <button type="button" @click="terminalTab = 'services'" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-slate-600 hover:bg-slate-50">Status & Restart</button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs uppercase tracking-wide text-slate-400">Logs</p>
+                                            <div class="mt-2 space-y-1">
+                                                <button type="button" @click="terminalTab = 'logs'" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-slate-600 hover:bg-slate-50">Tail & Search</button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs uppercase tracking-wide text-slate-400">Database</p>
+                                            <div class="mt-2 space-y-1">
+                                                <button type="button" @click="terminalTab = 'database'" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-slate-600 hover:bg-slate-50">SQL Console</button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs uppercase tracking-wide text-slate-400">Environment</p>
+                                            <div class="mt-2 space-y-1">
+                                                <button type="button" @click="terminalTab = 'environment'" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-slate-600 hover:bg-slate-50">Runtime Info</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="space-y-4">
+                                <div class="ui-card p-5">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <button type="button" @click="terminalTab = 'diagnostics'" :class="terminalTab === 'diagnostics' ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">Diagnostics</button>
+                                        <button type="button" @click="terminalTab = 'services'" :class="terminalTab === 'services' ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">Services</button>
+                                        <button type="button" @click="terminalTab = 'logs'" :class="terminalTab === 'logs' ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">Logs</button>
+                                        <button type="button" @click="terminalTab = 'database'" :class="terminalTab === 'database' ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">Database</button>
+                                        <button type="button" @click="terminalTab = 'environment'" :class="terminalTab === 'environment' ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">Environment</button>
+                                    </div>
+
+                                    <div class="mt-6 space-y-6">
+                                        <div x-show="terminalTab === 'diagnostics'" class="space-y-4">
+                                            <div class="grid gap-4 md:grid-cols-2">
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">Ping Host</label>
+                                                    <input type="text" x-model="terminalInputs.pingHost" class="input-field" placeholder="example.com">
+                                                    <div class="flex gap-2">
+                                                        <input type="number" min="1" max="4" x-model.number="terminalInputs.pingCount" class="input-field">
+                                                        <button type="button" @click="runTerminalRecipe('ping', { host: terminalInputs.pingHost, count: terminalInputs.pingCount })" class="btn-primary">Ping</button>
+                                                    </div>
+                                                </div>
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">DNS Resolve</label>
+                                                    <input type="text" x-model="terminalInputs.dnsDomain" class="input-field" placeholder="inventory.local">
+                                                    <button type="button" @click="runTerminalRecipe('dns_lookup', { domain: terminalInputs.dnsDomain })" class="btn-secondary">Resolve</button>
+                                                </div>
+                                            </div>
+                                            <div class="grid gap-4 md:grid-cols-2">
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">TCP Port Check</label>
+                                                    <div class="flex gap-2">
+                                                        <input type="text" x-model="terminalInputs.tcpHost" class="input-field" placeholder="host">
+                                                        <input type="number" min="1" max="65535" x-model.number="terminalInputs.tcpPort" class="input-field" placeholder="443">
+                                                    </div>
+                                                    <button type="button" @click="runTerminalRecipe('tcp_check', { host: terminalInputs.tcpHost, port: terminalInputs.tcpPort })" class="btn-secondary">Check</button>
+                                                </div>
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">HTTP Check</label>
+                                                    <div class="flex gap-2">
+                                                        <input type="text" x-model="terminalInputs.httpUrl" class="input-field" placeholder="https://status.example.com">
+                                                        <select x-model="terminalInputs.httpMethod" class="select-field">
+                                                            <option value="GET">GET</option>
+                                                            <option value="HEAD">HEAD</option>
+                                                        </select>
+                                                    </div>
+                                                    <button type="button" @click="runTerminalRecipe('http_check', { url: terminalInputs.httpUrl, method: terminalInputs.httpMethod })" class="btn-secondary">Run</button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div x-show="terminalTab === 'services'" class="space-y-4">
+                                            <div class="space-y-2">
+                                                <label class="text-xs font-semibold text-slate-500">Service</label>
+                                                <select x-model="terminalInputs.serviceName" class="select-field">
+                                                    <template x-for="service in terminalAllowlists.services" :key="service">
+                                                        <option :value="service" x-text="service"></option>
+                                                    </template>
+                                                </select>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button type="button" @click="runTerminalRecipe('services_list', {})" class="btn-secondary">Liste</button>
+                                                <button type="button" @click="runTerminalRecipe('service_status', { service: terminalInputs.serviceName })" class="btn-secondary">Status</button>
+                                                <button type="button" @click="runTerminalRecipe('service_restart', { service: terminalInputs.serviceName, confirm: true })" class="btn-danger" :disabled="!settings.terminal.allowServiceRestart">Restart (Allowlist)</button>
+                                            </div>
+                                        </div>
+
+                                        <div x-show="terminalTab === 'logs'" class="space-y-4">
+                                            <div class="grid gap-4 md:grid-cols-2">
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">Log Source</label>
+                                                    <select x-model="terminalInputs.logSource" class="select-field">
+                                                        <template x-for="source in terminalAllowlists.logs" :key="source">
+                                                            <option :value="source" x-text="source"></option>
+                                                        </template>
+                                                    </select>
+                                                </div>
+                                                <div class="space-y-2">
+                                                    <label class="text-xs font-semibold text-slate-500">Lines</label>
+                                                    <input type="number" min="10" max="200" x-model.number="terminalInputs.logLines" class="input-field">
+                                                </div>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button type="button" @click="runTerminalRecipe('logs_tail', { source: terminalInputs.logSource, lines: terminalInputs.logLines })" class="btn-secondary">Tail</button>
+                                                <input type="text" x-model="terminalInputs.logKeyword" class="input-field max-w-xs" placeholder="Keyword / Regex">
+                                                <button type="button" @click="runTerminalRecipe('logs_search', { source: terminalInputs.logSource, lines: terminalInputs.logLines, keyword: terminalInputs.logKeyword })" class="btn-secondary">Search</button>
+                                            </div>
+                                        </div>
+
+                                        <div x-show="terminalTab === 'database'" class="space-y-4">
+                                            <div class="space-y-2">
+                                                <label class="text-xs font-semibold text-slate-500">Read-only SQL</label>
+                                                <textarea rows="5" x-model="terminalInputs.sqlQuery" class="input-field font-mono" placeholder="SELECT * FROM assets LIMIT 10;"></textarea>
+                                                <button type="button" @click="runDbQuery" class="btn-primary">Run (Read-only)</button>
+                                            </div>
+                                            <div class="space-y-2">
+                                                <label class="text-xs font-semibold text-rose-600">Write Execute (Danger)</label>
+                                                <textarea rows="4" x-model="terminalInputs.sqlWriteQuery" class="input-field font-mono" placeholder="UPDATE assets SET status='retired' WHERE id=1;"></textarea>
+                                                <input type="text" x-model="terminalInputs.sqlConfirm" class="input-field" placeholder="Type EXECUTE to confirm">
+                                                <button type="button" @click="runDbExecute" class="btn-danger" :disabled="!canWriteDb || !settings.terminal.allowDbWrite">Write Execute</button>
+                                            </div>
+                                        </div>
+
+                                        <div x-show="terminalTab === 'environment'" class="space-y-4">
+                                            <p class="text-sm text-slate-500">Readonly Runtime-Infos (ohne Secrets).</p>
+                                            <button type="button" @click="runTerminalRecipe('environment_snapshot', {})" class="btn-secondary">Snapshot laden</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-5">
+                                    <div class="flex items-center justify-between">
+                                        <h3 class="text-sm font-semibold text-slate-900">Terminal Output</h3>
+                                        <div class="flex gap-2">
+                                            <button type="button" @click="copyTerminalOutput" class="btn-secondary">Copy</button>
+                                            <button type="button" @click="clearTerminalOutput" class="btn-secondary">Clear</button>
+                                        </div>
+                                    </div>
+                                    <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                        <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Command Console (Recipes only)</label>
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            <input type="text" x-model="terminalCommand" @keydown.enter.prevent="runTerminalCommand" class="flex-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono text-slate-700 focus:border-indigo-500 focus:ring-indigo-500" placeholder="ping example.com 4">
+                                            <button type="button" @click="runTerminalCommand" class="btn-secondary">Run</button>
+                                            <button type="button" @click="showTerminalHelp" class="btn-secondary">Help</button>
+                                        </div>
+                                        <p class="mt-2 text-[11px] text-slate-400">Nur Whitelist-Kommandos. Beispiele: <span class="font-mono">ping example.com 4</span>, <span class="font-mono">dns example.com</span>, <span class="font-mono">tcp host 443</span>, <span class="font-mono">http https://example.com GET</span></p>
+                                    </div>
+                                    <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-900 p-4 text-xs text-slate-100">
+                                        <template x-if="!terminalOutput.length">
+                                            <p class="text-slate-400">Noch keine Ausgabe.</p>
+                                        </template>
+                                        <template x-for="entry in terminalOutput" :key="entry.time + entry.title">
+                                            <div class="mb-4 border-b border-slate-700 pb-3 last:border-none">
+                                                <div class="flex items-center justify-between text-[11px] text-slate-400">
+                                                    <span x-text="entry.time"></span>
+                                                    <span x-text="entry.title"></span>
+                                                </div>
+                                                <pre class="mt-2 whitespace-pre-wrap font-mono text-xs text-slate-100" x-text="entry.output"></pre>
+                                            </div>
+                                        </template>
+                                    </div>
+                                    <p class="mt-2 text-xs text-rose-500" x-show="terminalError" x-text="terminalError"></p>
+                                </div>
+                            </div>
+
+                            <div class="space-y-4">
+                                <div class="ui-card p-5">
+                                    <h3 class="text-sm font-semibold text-slate-900">Session Info</h3>
+                                    <div class="mt-3 space-y-2 text-xs text-slate-500">
+                                        <div class="flex items-center justify-between">
+                                            <span>Status</span>
+                                            <span x-text="terminalSessionActive() ? 'Active' : 'Idle'"></span>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>Expires</span>
+                                            <span x-text="terminalSessionExpiresAt ? new Date(terminalSessionExpiresAt).toLocaleString('de-DE') : '-'"></span>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>Rate Limit</span>
+                                            <span>12 / Min</span>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>Max Output</span>
+                                            <span>200 KB</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-5">
+                                    <h3 class="text-sm font-semibold text-slate-900">Session Security</h3>
+                                    <div class="mt-3 space-y-3 text-xs text-slate-500">
+                                        <p>Re-Auth erforderlich: <strong x-text="settings.terminal.requireReauth ? 'Ja' : 'Nein'"></strong></p>
+                                        <div class="space-y-2">
+                                            <input type="password" x-model="terminalPassword" class="input-field" placeholder="Passwort erneut eingeben">
+                                            <input type="text" x-model="terminalOtp" class="input-field" placeholder="OTP (falls aktiviert)">
+                                        </div>
+                                        <p class="text-[11px] text-slate-400">OTP nur nötig, wenn für dein Konto aktiviert.</p>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-5">
+                                    <h3 class="text-sm font-semibold text-slate-900">Audit & Hinweise</h3>
+                                    <ul class="mt-3 space-y-2 text-xs text-slate-500">
+                                        <li>Alle Aktionen werden audit-logged (User, Zeit, Params, Status).</li>
+                                        <li>Ausgaben werden redacted und bei 200 KB abgeschnitten.</li>
+                                        <li>Keine freien Shell-Kommandos – nur Recipes.</li>
+                                    </ul>
+                                </div>
+
+                                <div class="ui-card p-5">
+                                    <h3 class="text-sm font-semibold text-slate-900">Dev Info Panel</h3>
+                                    <ul class="mt-3 space-y-2 text-xs text-slate-500">
+                                        <li><a href="/health" class="text-indigo-600 hover:underline">Health Module Summary</a></li>
+                                        <li>Environment: <span x-text="settings.server.debug ? 'dev' : 'prod'"></span></li>
+                                        <li>Build: <span x-text="settings.server.port ? `Port ${settings.server.port}` : 'n/a'"></span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="/static/vendor/feather.min.js"></script>
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('serverSettingsApp', () => ({
+                activeSection: window.inventoryInitialSection || 'server',
+                canViewTerminal: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.view'),
+                canUseTerminal: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.use'),
+                canWriteDb: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.db_write'),
+                settings: {
+                    server: { host: '0.0.0.0', port: 5000, debug: false },
+                    proFeaturesEnabled: false,
+                    backup: {
+                        enabled: false,
+                        compress: false,
+                        schedule: 'daily',
+                        time: '02:00',
+                        retentionDays: 14,
+                        directory: 'backups/',
+                        notifyEmail: '',
+                        encrypt: false
+                    },
+                    importExport: {
+                        exportAllowed: true,
+                        importAllowed: false,
+                        exportFormat: 'sqlite',
+                        importMode: 'merge',
+                        includeUploads: true
+                    },
+                    security: {
+                        forceHttps: false,
+                        requireMfa: false,
+                        sessionTimeoutMinutes: 60,
+                        maxFailedAttempts: 5,
+                        lockoutMinutes: 15,
+                        ipWhitelist: [],
+                        minPasswordLength: 10
+                    },
+                    terminal: {
+                        enabled: false,
+                        requireReauth: true,
+                        ipAllowlist: [],
+                        allowDbWrite: false,
+                        allowServiceRestart: false,
+                        breakGlassMode: false
+                    }
+                },
+                inventoryLinks: [],
+                inventoryLinkForm: {
+                    displayName: '',
+                    baseUrl: '',
+                    authModeChoice: 'auto',
+                    secret: '',
+                    verifyTls: true,
+                    allowPrivateNetwork: false
+                },
+                editingInventoryLinkId: null,
+                inventoryLinkSaving: false,
+                inventoryLinkTesting: false,
+                inventoryLinkMessage: '',
+                inventoryLinkError: '',
+                meta: { pendingRestart: false, warnings: [], enforcedCapabilities: {} },
+                originalSettings: null,
+                ipWhitelistInput: '',
+                terminalAllowlistInput: '',
+                customization: window.InventoryCustomization ? window.InventoryCustomization.defaults() : {},
+                customizationHistory: [],
+                presets: [
+                    {
+                        id: 'default-light',
+                        label: 'Default Light',
+                        data: window.InventoryCustomization ? window.InventoryCustomization.defaults() : {},
+                    },
+                    {
+                        id: 'midnight',
+                        label: 'Midnight Indigo',
+                        data: {
+                            baseTokens: {
+                                colors: {
+                                    primary: '#4338ca',
+                                    secondary: '#7c3aed',
+                                    accent: '#22c55e',
+                                    background: '#0b1120',
+                                    surface: '#111827',
+                                    text: '#e2e8f0',
+                                    border: '#1f2937',
+                                },
+                            },
+                            componentOverrides: {
+                                card: { background: '#0f172a' },
+                                button: { primary: { background: '#4338ca' } },
+                            },
+                        },
+                    },
+                    {
+                        id: 'warm-sand',
+                        label: 'Warm Sand',
+                        data: {
+                            baseTokens: {
+                                colors: {
+                                    primary: '#c2410c',
+                                    secondary: '#ea580c',
+                                    accent: '#f97316',
+                                    background: '#fff7ed',
+                                    surface: '#ffffff',
+                                    text: '#431407',
+                                    border: '#fed7aa',
+                                },
+                            },
+                        },
+                    },
+                ],
+                selectedPreset: '',
+                saveLocalOnly: false,
+                loading: false,
+                saving: false,
+                errorMessage: '',
+                successMessage: '',
+                customizeMessage: '',
+                customizeError: '',
+                terminalTab: 'diagnostics',
+                terminalOutput: [],
+                terminalSessionId: null,
+                terminalSessionExpiresAt: null,
+                terminalBusy: false,
+                terminalError: '',
+                terminalCommand: '',
+                terminalPassword: '',
+                terminalOtp: '',
+                terminalAllowlists: { services: [], logs: [] },
+                terminalInputs: {
+                    pingHost: '',
+                    pingCount: 4,
+                    dnsDomain: '',
+                    tcpHost: '',
+                    tcpPort: 443,
+                    httpUrl: '',
+                    httpMethod: 'GET',
+                    serviceName: '',
+                    logSource: '',
+                    logLines: 50,
+                    logKeyword: '',
+                    sqlQuery: '',
+                    sqlWriteQuery: '',
+                    sqlConfirm: ''
+                },
+                contrastWarnings: [],
+                history: [],
+                future: [],
+                suppressHistory: false,
+
+                async init() {
+                    await this.fetchSettings();
+                    await this.fetchInventoryLinks();
+                    if (this.activeSection === 'terminal' && !this.canViewTerminal) {
+                        this.activeSection = 'server';
+                    }
+                    await this.loadCustomization();
+                    await this.fetchCustomizationHistory();
+                    this.applyCustomization();
+                    this.updateContrastWarnings();
+                    this.resetHistory();
+                    this.$watch('customization', () => {
+                        if (this.suppressHistory) return;
+                        this.applyCustomization();
+                        this.updateContrastWarnings();
+                    });
+                    this.$nextTick(() => feather.replace());
+                },
+
+                async fetchSettings() {
+                    this.loading = true;
+                    this.errorMessage = '';
+                    this.successMessage = '';
+                    try {
+                        const response = await fetch('/api/settings/server');
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Konnte Einstellungen nicht laden.');
+                        }
+                        const data = await response.json();
+                        this.settings = data.settings;
+                        this.meta = data.meta;
+                        this.originalSettings = JSON.parse(JSON.stringify(this.settings));
+                        this.ipWhitelistInput = (this.settings.security.ipWhitelist || []).join(', ');
+                        this.terminalAllowlistInput = (this.settings.terminal.ipAllowlist || []).join(', ');
+                    } catch (error) {
+                        this.errorMessage = error.message;
+                    } finally {
+                        this.loading = false;
+                        this.$nextTick(() => feather.replace());
+                    }
+                },
+
+                async fetchInventoryLinks() {
+                    this.inventoryLinkError = '';
+                    try {
+                        const response = await fetch('/api/inventory-links');
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Konnte Links nicht laden.');
+                        }
+                        this.inventoryLinks = await response.json();
+                    } catch (error) {
+                        this.inventoryLinkError = error.message;
+                    } finally {
+                        this.$nextTick(() => feather.replace());
+                    }
+                },
+
+                resetInventoryLinkForm(clearMessages = true) {
+                    this.inventoryLinkForm = {
+                        displayName: '',
+                        baseUrl: '',
+                        authModeChoice: 'auto',
+                        secret: '',
+                        verifyTls: true,
+                        allowPrivateNetwork: false
+                    };
+                    this.editingInventoryLinkId = null;
+                    if (clearMessages) {
+                        this.inventoryLinkMessage = '';
+                        this.inventoryLinkError = '';
+                    }
+                },
+
+                editInventoryLink(link) {
+                    this.editingInventoryLinkId = link.id;
+                    this.inventoryLinkForm = {
+                        displayName: link.displayName,
+                        baseUrl: link.baseUrl,
+                        authModeChoice: link.authMode || 'auto',
+                        secret: '',
+                        verifyTls: link.verifyTls,
+                        allowPrivateNetwork: link.allowPrivateNetwork
+                    };
+                    this.inventoryLinkMessage = '';
+                    this.inventoryLinkError = '';
+                },
+
+                buildInventoryLinkPayload() {
+                    const payload = { ...this.inventoryLinkForm };
+                    const choice = payload.authModeChoice || 'auto';
+                    let resolvedMode = choice;
+                    if (choice === 'auto') {
+                        if (!payload.secret) {
+                            resolvedMode = 'login';
+                        } else if (payload.secret.includes(':')) {
+                            resolvedMode = 'login';
+                        } else {
+                            resolvedMode = 'apiKey';
+                        }
+                    }
+                    payload.authMode = resolvedMode;
+                    delete payload.authModeChoice;
+                    return payload;
+                },
+
+                async saveInventoryLink() {
+                    this.inventoryLinkSaving = true;
+                    this.inventoryLinkError = '';
+                    this.inventoryLinkMessage = '';
+                    try {
+                        const payload = this.buildInventoryLinkPayload();
+                        if (this.editingInventoryLinkId) {
+                            const response = await fetch(`/api/inventory-links/${this.editingInventoryLinkId}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+                            if (!response.ok) {
+                                const error = await response.json();
+                                throw new Error(error.error || 'Konnte Link nicht speichern.');
+                            }
+                            this.inventoryLinkMessage = 'Link aktualisiert.';
+                        } else {
+                            const response = await fetch('/api/inventory-links', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+                            if (!response.ok) {
+                                const error = await response.json();
+                                throw new Error(error.error || 'Konnte Link nicht speichern.');
+                            }
+                            this.inventoryLinkMessage = 'Link hinzugefügt.';
+                        }
+                        await this.fetchInventoryLinks();
+                        this.resetInventoryLinkForm(false);
+                    } catch (error) {
+                        this.inventoryLinkError = error.message;
+                    } finally {
+                        this.inventoryLinkSaving = false;
+                    }
+                },
+
+                async deleteInventoryLink(link) {
+                    if (!confirm(`Link "${link.displayName}" entfernen?`)) return;
+                    this.inventoryLinkError = '';
+                    this.inventoryLinkMessage = '';
+                    try {
+                        const response = await fetch(`/api/inventory-links/${link.id}`, { method: 'DELETE' });
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Konnte Link nicht entfernen.');
+                        }
+                        this.inventoryLinkMessage = 'Link entfernt.';
+                        await this.fetchInventoryLinks();
+                        if (this.editingInventoryLinkId === link.id) {
+                            this.resetInventoryLinkForm();
+                        }
+                    } catch (error) {
+                        this.inventoryLinkError = error.message;
+                    }
+                },
+
+                async testInventoryLink() {
+                    this.inventoryLinkTesting = true;
+                    this.inventoryLinkError = '';
+                    this.inventoryLinkMessage = '';
+                    try {
+                        const payload = this.buildInventoryLinkPayload();
+                        const url = this.editingInventoryLinkId
+                            ? `/api/inventory-links/${this.editingInventoryLinkId}/test`
+                            : '/api/inventory-links/test';
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const result = await response.json();
+                        if (!response.ok) {
+                            throw new Error(result.error || 'Test fehlgeschlagen.');
+                        }
+                        if (result.status === 'ok') {
+                            this.inventoryLinkMessage = 'Verbindung erfolgreich.';
+                        } else if (result.status === 'unauthorized') {
+                            this.inventoryLinkError = 'Nicht autorisiert. Bitte Credentials prüfen.';
+                        } else {
+                            this.inventoryLinkError = result.error || 'Verbindung fehlgeschlagen.';
+                        }
+                        await this.fetchInventoryLinks();
+                    } catch (error) {
+                        this.inventoryLinkError = error.message;
+                    } finally {
+                        this.inventoryLinkTesting = false;
+                    }
+                },
+
+                hasChanges() {
+                    if (!this.originalSettings) return false;
+                    return JSON.stringify(this.settings) !== JSON.stringify(this.originalSettings);
+                },
+
+                validateSettings() {
+                    if (!this.settings.server.host) {
+                        return 'Host darf nicht leer sein.';
+                    }
+                    if (!Number.isInteger(this.settings.server.port) || this.settings.server.port < 1 || this.settings.server.port > 65535) {
+                        return 'Port muss zwischen 1 und 65535 liegen.';
+                    }
+                    if (this.settings.backup.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(this.settings.backup.time)) {
+                        return 'Backup-Zeit muss im Format HH:MM sein.';
+                    }
+                    if (!Number.isInteger(this.settings.backup.retentionDays) || this.settings.backup.retentionDays < 1) {
+                        return 'Retention muss mindestens 1 Tag betragen.';
+                    }
+                    if (this.settings.backup.notifyEmail && !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(this.settings.backup.notifyEmail)) {
+                        return 'E-Mail-Adresse ist ungültig.';
+                    }
+                    if (!Number.isInteger(this.settings.security.sessionTimeoutMinutes)) {
+                        return 'Session-Timeout muss eine Zahl sein.';
+                    }
+                    if (!Number.isInteger(this.settings.security.maxFailedAttempts)) {
+                        return 'Maximale Fehlversuche müssen eine Zahl sein.';
+                    }
+                    if (!Number.isInteger(this.settings.security.lockoutMinutes)) {
+                        return 'Sperrdauer muss eine Zahl sein.';
+                    }
+                    if (!Number.isInteger(this.settings.security.minPasswordLength)) {
+                        return 'Mindest-Passwortlänge muss eine Zahl sein.';
+                    }
+                    return '';
+                },
+
+                prepareSettingsForSave() {
+                    const whitelist = this.ipWhitelistInput
+                        .split(',')
+                        .map(item => item.trim())
+                        .filter(Boolean);
+                    this.settings.security.ipWhitelist = whitelist;
+                    const terminalAllowlist = this.terminalAllowlistInput
+                        .split(',')
+                        .map(item => item.trim())
+                        .filter(Boolean);
+                    this.settings.terminal.ipAllowlist = terminalAllowlist;
+                },
+                terminalStatusLabel() {
+                    return this.settings.terminal.enabled ? 'Enabled' : 'Disabled';
+                },
+                terminalStatusClass() {
+                    return this.settings.terminal.enabled
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-slate-100 text-slate-500';
+                },
+                terminalSessionActive() {
+                    return !!this.terminalSessionId;
+                },
+                formatTerminalTimestamp(value) {
+                    const date = value ? new Date(value) : new Date();
+                    return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                },
+                pushTerminalOutput(entry) {
+                    this.terminalOutput.unshift(entry);
+                },
+                clearTerminalOutput() {
+                    this.terminalOutput = [];
+                },
+                showTerminalHelp() {
+                    this.pushTerminalOutput({
+                        time: this.formatTerminalTimestamp(),
+                        title: 'help',
+                        status: 'ok',
+                        output: [
+                            'Allowed commands:',
+                            'ping <host> [count]',
+                            'dns <domain>',
+                            'tcp <host> <port>',
+                            'http <url> [GET|HEAD]',
+                            'service status <name>',
+                            'service restart <name>',
+                            'logs tail <source> [lines]',
+                            'logs search <source> <keyword> [lines]',
+                            'env',
+                            'db.query <sql>',
+                            'db.exec EXECUTE <sql>'
+                        ].join('\\n')
+                    });
+                },
+                async runTerminalCommand() {
+                    const raw = (this.terminalCommand || '').trim();
+                    if (!raw) return;
+                    if (!this.terminalSessionId) {
+                        this.terminalError = 'Session nicht aktiv.';
+                        return;
+                    }
+                    const parts = raw.split(' ');
+                    const command = parts[0].toLowerCase();
+                    const args = parts.slice(1);
+                    this.terminalCommand = '';
+                    if (command === 'help' || command === '?') {
+                        this.showTerminalHelp();
+                        return;
+                    }
+                    if (command === 'ping') {
+                        await this.runTerminalRecipe('ping', { host: args[0] || '', count: args[1] || 4 });
+                        return;
+                    }
+                    if (command === 'dns') {
+                        await this.runTerminalRecipe('dns_lookup', { domain: args[0] || '' });
+                        return;
+                    }
+                    if (command === 'tcp') {
+                        await this.runTerminalRecipe('tcp_check', { host: args[0] || '', port: args[1] || '' });
+                        return;
+                    }
+                    if (command === 'http') {
+                        await this.runTerminalRecipe('http_check', { url: args[0] || '', method: (args[1] || 'GET').toUpperCase() });
+                        return;
+                    }
+                    if (command === 'service') {
+                        const action = (args[0] || '').toLowerCase();
+                        const name = args[1] || '';
+                        if (action === 'status') {
+                            await this.runTerminalRecipe('service_status', { service: name });
+                            return;
+                        }
+                        if (action === 'restart') {
+                            await this.runTerminalRecipe('service_restart', { service: name, confirm: true });
+                            return;
+                        }
+                    }
+                    if (command === 'logs') {
+                        const action = (args[0] || '').toLowerCase();
+                        const source = args[1] || '';
+                        if (action === 'tail') {
+                            await this.runTerminalRecipe('logs_tail', { source: source, lines: args[2] || 50 });
+                            return;
+                        }
+                        if (action === 'search') {
+                            await this.runTerminalRecipe('logs_search', { source: source, keyword: args[2] || '', lines: args[3] || 100 });
+                            return;
+                        }
+                    }
+                    if (command === 'env') {
+                        await this.runTerminalRecipe('environment_snapshot', {});
+                        return;
+                    }
+                    if (command === 'db.query') {
+                        this.terminalInputs.sqlQuery = raw.replace(/^db\\.query\\s+/i, '');
+                        await this.runDbQuery();
+                        return;
+                    }
+                    if (command === 'db.exec') {
+                        if (args[0] !== 'EXECUTE') {
+                            this.pushTerminalOutput({
+                                time: this.formatTerminalTimestamp(),
+                                title: 'db.exec',
+                                status: 'error',
+                                output: 'Bestätigung fehlt. Verwende: db.exec EXECUTE <sql>'
+                            });
+                            return;
+                        }
+                        this.terminalInputs.sqlWriteQuery = raw.replace(/^db\\.exec\\s+EXECUTE\\s+/i, '');
+                        this.terminalInputs.sqlConfirm = 'EXECUTE';
+                        await this.runDbExecute();
+                        return;
+                    }
+                    this.pushTerminalOutput({
+                        time: this.formatTerminalTimestamp(),
+                        title: 'command',
+                        status: 'error',
+                        output: 'Unbekanntes Kommando. Tippe help für die Liste.'
+                    });
+                },
+                async copyTerminalOutput() {
+                    const text = this.terminalOutput.map(item => `[${item.time}] ${item.title}\n${item.output}`).join('\n\n');
+                    await navigator.clipboard.writeText(text);
+                },
+                async startTerminalSession() {
+                    if (!this.canUseTerminal || this.terminalBusy) return;
+                    this.terminalBusy = true;
+                    this.terminalError = '';
+                    try {
+                        const response = await fetch('/api/terminal/session/start', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                password: this.terminalPassword,
+                                otp: this.terminalOtp
+                            })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Session konnte nicht gestartet werden.');
+                        }
+                        this.terminalSessionId = data.session_id;
+                        this.terminalSessionExpiresAt = data.expires_at;
+                        this.terminalAllowlists = data.allowlists || { services: [], logs: [] };
+                        if (this.terminalAllowlists.services.length) {
+                            this.terminalInputs.serviceName = this.terminalAllowlists.services[0];
+                        }
+                        if (this.terminalAllowlists.logs.length) {
+                            this.terminalInputs.logSource = this.terminalAllowlists.logs[0];
+                        }
+                        this.pushTerminalOutput({
+                            time: this.formatTerminalTimestamp(),
+                            title: 'Session gestartet',
+                            status: 'ok',
+                            output: `Session-ID ${data.session_id}`
+                        });
+                    } catch (error) {
+                        this.terminalError = error.message;
+                    } finally {
+                        this.terminalBusy = false;
+                    }
+                },
+                async stopTerminalSession() {
+                    if (!this.terminalSessionId || this.terminalBusy) return;
+                    this.terminalBusy = true;
+                    try {
+                        const response = await fetch('/api/terminal/session/stop', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ session_id: this.terminalSessionId })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Session konnte nicht beendet werden.');
+                        }
+                        this.pushTerminalOutput({
+                            time: this.formatTerminalTimestamp(),
+                            title: 'Session beendet',
+                            status: 'ok',
+                            output: 'Session wurde geschlossen.'
+                        });
+                        this.terminalSessionId = null;
+                        this.terminalSessionExpiresAt = null;
+                    } catch (error) {
+                        this.terminalError = error.message;
+                    } finally {
+                        this.terminalBusy = false;
+                    }
+                },
+                async runTerminalRecipe(recipeId, params) {
+                    if (!this.terminalSessionId || this.terminalBusy) return;
+                    this.terminalBusy = true;
+                    this.terminalError = '';
+                    try {
+                        const response = await fetch('/api/terminal/run', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                session_id: this.terminalSessionId,
+                                recipe_id: recipeId,
+                                params: params
+                            })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Recipe fehlgeschlagen.');
+                        }
+                        this.pushTerminalOutput({
+                            time: this.formatTerminalTimestamp(),
+                            title: recipeId,
+                            status: data.status,
+                            output: data.output || ''
+                        });
+                    } catch (error) {
+                        this.terminalError = error.message;
+                    } finally {
+                        this.terminalBusy = false;
+                    }
+                },
+                async runDbQuery() {
+                    if (!this.terminalSessionId || this.terminalBusy) return;
+                    this.terminalBusy = true;
+                    this.terminalError = '';
+                    try {
+                        const response = await fetch('/api/terminal/db/query', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                session_id: this.terminalSessionId,
+                                query: this.terminalInputs.sqlQuery
+                            })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Query fehlgeschlagen.');
+                        }
+                        this.pushTerminalOutput({
+                            time: this.formatTerminalTimestamp(),
+                            title: 'DB Query',
+                            status: data.status,
+                            output: data.output || ''
+                        });
+                    } catch (error) {
+                        this.terminalError = error.message;
+                    } finally {
+                        this.terminalBusy = false;
+                    }
+                },
+                async runDbExecute() {
+                    if (!this.terminalSessionId || this.terminalBusy) return;
+                    this.terminalBusy = true;
+                    this.terminalError = '';
+                    try {
+                        const response = await fetch('/api/terminal/db/execute', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                session_id: this.terminalSessionId,
+                                query: this.terminalInputs.sqlWriteQuery,
+                                confirm: this.terminalInputs.sqlConfirm
+                            })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Execute fehlgeschlagen.');
+                        }
+                        this.pushTerminalOutput({
+                            time: this.formatTerminalTimestamp(),
+                            title: 'DB Execute',
+                            status: data.status,
+                            output: data.output || ''
+                        });
+                        this.terminalInputs.sqlConfirm = '';
+                    } catch (error) {
+                        this.terminalError = error.message;
+                    } finally {
+                        this.terminalBusy = false;
+                    }
+                },
+
+                async saveSettings() {
+                    this.saving = true;
+                    this.errorMessage = '';
+                    this.successMessage = '';
+                    const validationError = this.validateSettings();
+                    if (validationError) {
+                        this.errorMessage = validationError;
+                        this.saving = false;
+                        return;
+                    }
+                    this.prepareSettingsForSave();
+                    try {
+                        const response = await fetch('/api/settings/server', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.settings)
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            const detail = data.details ? JSON.stringify(data.details) : '';
+                            throw new Error(data.error || detail || 'Speichern fehlgeschlagen.');
+                        }
+                        this.settings = data.settings;
+                        this.meta = data.meta;
+                        this.originalSettings = JSON.parse(JSON.stringify(this.settings));
+                        this.ipWhitelistInput = (this.settings.security.ipWhitelist || []).join(', ');
+                        this.successMessage = 'Einstellungen gespeichert.';
+                    } catch (error) {
+                        this.errorMessage = error.message;
+                    } finally {
+                        this.saving = false;
+                        this.$nextTick(() => feather.replace());
+                    }
+                },
+
+                cloneCustomization() {
+                    return JSON.parse(JSON.stringify(this.customization));
+                },
+
+                resetHistory() {
+                    this.history = [this.cloneCustomization()];
+                    this.future = [];
+                },
+
+                trackChange() {
+                    if (this.suppressHistory) return;
+                    this.history.push(this.cloneCustomization());
+                    if (this.history.length > 50) {
+                        this.history.shift();
+                    }
+                    this.future = [];
+                },
+
+                undoChange() {
+                    if (this.history.length <= 1) return;
+                    this.suppressHistory = true;
+                    const current = this.history.pop();
+                    this.future.push(current);
+                    this.customization = JSON.parse(JSON.stringify(this.history[this.history.length - 1]));
+                    this.suppressHistory = false;
+                    this.applyCustomization();
+                    this.updateContrastWarnings();
+                },
+
+                redoChange() {
+                    if (!this.future.length) return;
+                    this.suppressHistory = true;
+                    const next = this.future.pop();
+                    this.history.push(JSON.parse(JSON.stringify(next)));
+                    this.customization = JSON.parse(JSON.stringify(next));
+                    this.suppressHistory = false;
+                    this.applyCustomization();
+                    this.updateContrastWarnings();
+                },
+
+                async loadCustomization() {
+                    this.customizeError = '';
+                    const defaults = window.InventoryCustomization ? window.InventoryCustomization.defaults() : {};
+                    this.customization = defaults;
+                    try {
+                        const response = await fetch('/api/customize', { credentials: 'same-origin' });
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.customization) {
+                                this.customization = window.InventoryCustomization.migrate(data.customization);
+                            }
+                        }
+                    } catch (error) {
+                        this.customizeError = error.message || 'Customize konnte nicht geladen werden.';
+                    }
+                    const localOverride = window.InventoryCustomization ? window.InventoryCustomization.getLocalOverride() : null;
+                    if (localOverride) {
+                        this.customization = window.InventoryCustomization.merge(this.customization, localOverride);
+                        this.saveLocalOnly = true;
+                    }
+                    this.applyCustomization();
+                },
+
+                applyCustomization() {
+                    if (window.InventoryCustomization) {
+                        window.InventoryCustomization.apply(this.customization);
+                    }
+                },
+
+                updateContrastWarnings() {
+                    const warnings = [];
+                    const primary = this.customization.componentOverrides.button.primary.background;
+                    const primaryText = this.customization.componentOverrides.button.primary.text;
+                    const bg = this.customization.baseTokens.colors.background;
+                    const text = this.customization.baseTokens.colors.text;
+                    if (this.contrastRatio(primary, primaryText) < 3.5) {
+                        warnings.push('Button-Text hat zu wenig Kontrast zum Primärhintergrund.');
+                    }
+                    if (this.contrastRatio(bg, text) < 4.5) {
+                        warnings.push('Fließtext hat zu wenig Kontrast zum Hintergrund.');
+                    }
+                    this.contrastWarnings = warnings;
+                },
+
+                contrastRatio(hex1, hex2) {
+                    const lum = (hex) => {
+                        const rgb = hex.replace('#', '').match(/.{2}/g).map((v) => parseInt(v, 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+                        return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+                    };
+                    if (!hex1 || !hex2 || hex1.length < 4 || hex2.length < 4) return 1;
+                    const l1 = lum(hex1);
+                    const l2 = lum(hex2);
+                    const lighter = Math.max(l1, l2);
+                    const darker = Math.min(l1, l2);
+                    return (lighter + 0.05) / (darker + 0.05);
+                },
+
+                handleLogoUpload(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        this.customization.branding.logoDataUrl = reader.result;
+                    };
+                    reader.readAsDataURL(file);
+                },
+
+                resetCustomization() {
+                    const defaults = window.InventoryCustomization ? window.InventoryCustomization.defaults() : {};
+                    this.customization = defaults;
+                    this.saveLocalOnly = false;
+                    if (window.InventoryCustomization) {
+                        window.InventoryCustomization.setLocalOverride(null);
+                    }
+                    this.customizeMessage = 'Alle Anpassungen wurden zurückgesetzt.';
+                    this.customizeError = '';
+                    this.resetHistory();
+                    setTimeout(() => {
+                        this.customizeMessage = '';
+                    }, 3000);
+                },
+
+                resetSection(section) {
+                    const defaults = window.InventoryCustomization ? window.InventoryCustomization.defaults() : {};
+                    if (section === 'tokens') {
+                        this.customization.baseTokens = defaults.baseTokens;
+                    }
+                    if (section === 'components') {
+                        this.customization.componentOverrides = defaults.componentOverrides;
+                    }
+                    this.customizeMessage = 'Bereich wurde zurückgesetzt.';
+                    setTimeout(() => {
+                        this.customizeMessage = '';
+                    }, 3000);
+                },
+
+                async saveCustomization() {
+                    this.customizeMessage = '';
+                    this.customizeError = '';
+                    if (this.saveLocalOnly) {
+                        if (window.InventoryCustomization) {
+                            window.InventoryCustomization.setLocalOverride(this.customization);
+                        }
+                        this.customizeMessage = 'Lokal gespeichert. Server-Konfiguration bleibt unverändert.';
+                        setTimeout(() => {
+                            this.customizeMessage = '';
+                        }, 3000);
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch('/api/customize', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.customization),
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Speichern fehlgeschlagen.');
+                        }
+                        this.customization = window.InventoryCustomization.migrate(data.customization || this.customization);
+                        if (window.InventoryCustomization) {
+                            window.InventoryCustomization.setLocalOverride(null);
+                            window.InventoryCustomization.setCached({
+                                customization: this.customization,
+                                updatedAt: data.updated_at,
+                                revisionId: data.revision_id,
+                                cachedAt: new Date().toISOString(),
+                            });
+                        }
+                        this.customizeMessage = 'Customize-Einstellungen gespeichert.';
+                        await this.fetchCustomizationHistory();
+                    } catch (error) {
+                        this.customizeError = error.message || 'Speichern fehlgeschlagen.';
+                    }
+                },
+
+                exportCustomization() {
+                    const payload = JSON.stringify(this.customization, null, 2);
+                    const blob = new Blob([payload], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `inventorypro-customize-${new Date().toISOString().slice(0, 10)}.json`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                },
+
+                importCustomization(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        try {
+                            const parsed = JSON.parse(reader.result);
+                            this.customization = window.InventoryCustomization.migrate(parsed);
+                            this.customizeMessage = 'Import erfolgreich geladen.';
+                            this.resetHistory();
+                        } catch (error) {
+                            this.customizeError = 'Import fehlgeschlagen: JSON ungültig.';
+                        }
+                    };
+                    reader.readAsText(file);
+                },
+
+                applyPreset() {
+                    if (!this.selectedPreset) return;
+                    const preset = this.presets.find((item) => item.id === this.selectedPreset);
+                    if (!preset) return;
+                    const defaults = window.InventoryCustomization ? window.InventoryCustomization.defaults() : {};
+                    this.customization = window.InventoryCustomization.merge(defaults, preset.data);
+                    this.customizeMessage = `Preset "${preset.label}" geladen.`;
+                    this.resetHistory();
+                },
+
+                async fetchCustomizationHistory() {
+                    try {
+                        const response = await fetch('/api/customize/history', { credentials: 'same-origin' });
+                        if (!response.ok) return;
+                        const data = await response.json();
+                        this.customizationHistory = (data.revisions || []).map((revision) => ({
+                            id: revision.id,
+                            label: revision.created_by ? `Update von ${revision.created_by}` : 'System-Update',
+                            meta: new Date(revision.created_at).toLocaleString('de-DE'),
+                        }));
+                    } catch (error) {
+                        console.warn('History could not be loaded', error);
+                    }
+                },
+
+                async rollbackRevision(revisionId) {
+                    try {
+                        const response = await fetch(`/api/customize/rollback/${revisionId}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Rollback fehlgeschlagen.');
+                        }
+                        this.customization = window.InventoryCustomization.migrate(data.customization);
+                        this.customizeMessage = 'Rollback erfolgreich.';
+                        await this.fetchCustomizationHistory();
+                    } catch (error) {
+                        this.customizeError = error.message || 'Rollback fehlgeschlagen.';
+                    }
+                },
+            }));
+        });
+
+        async function logout() {
+            try {
+                const response = await fetch('/logout', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (response.ok) {
+                    window.location.href = '/login';
+                } else {
+                    const data = await response.json();
+                    alert('Logout failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Network error: ' + error.message);
+            }
+        }
+    </script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
+    {% include 'pondsec_ai_drawer.html' %}
+</body>
+</html>

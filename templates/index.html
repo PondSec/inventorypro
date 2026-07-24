@@ -1,0 +1,2090 @@
+{% extends "base_app.html" %}
+
+{% block title %}Inventory Pro{% endblock %}
+{% block html_attrs %}x-data="app()"{% endblock %}
+{% block app_content_class %} inventory-content{% endblock %}
+{% block page_class %} inventory-page{% endblock %}
+
+{% block topbar_actions %}
+<button @click="openAddDeviceModal()" data-testid="open-device-modal" class="inventory-top-action inventory-top-action--primary">
+    <i data-feather="plus" class="w-4 h-4"></i>
+    <span>Neues Gerät</span>
+</button>
+<div class="relative" x-data="{ open: false }">
+    <button @click="open = !open" data-testid="dashboard-action-menu-toggle" class="inventory-top-action inventory-top-action--icon" aria-label="Weitere Aktionen">
+        <i data-feather="more-horizontal" class="w-4 h-4"></i>
+    </button>
+    <div x-show="open" data-testid="dashboard-action-menu" @click.away="open = false" class="topbar-menu" x-transition>
+        <button @click="openAddCategoryModal(); open=false" class="topbar-menu__item">Kategorie anlegen</button>
+        <button @click="openAddAssetModal(); open=false" class="topbar-menu__item">Neuer Asset-Eintrag</button>
+        <a href="/api/export/devices" class="topbar-menu__item">CSV Export</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+                    <section class="inventory-workspace-nav">
+                        <div class="inventory-workspace-nav__copy">
+                            <p class="inventory-kicker">Inventory Pro</p>
+                            <h2 x-text="workspaceTitle()"></h2>
+                            <p x-text="workspaceDescription()"></p>
+                        </div>
+                        <nav class="inventory-workspace-tabs" aria-label="Inventar-Arbeitsbereiche">
+                            <button type="button" @click="setWorkspaceView('overview')" :class="workspaceView === 'overview' ? 'active' : ''">
+                                <i data-feather="layout" class="w-4 h-4"></i>
+                                <span>Überblick</span>
+                                <small>Start</small>
+                            </button>
+                            <button type="button" @click="setWorkspaceView('devices')" :class="workspaceView === 'devices' ? 'active' : ''">
+                                <i data-feather="monitor" class="w-4 h-4"></i>
+                                <span>Geräte</span>
+                                <small x-text="`${filteredDevices.length} Treffer`"></small>
+                            </button>
+                            <button type="button" @click="setWorkspaceView('assets')" :class="workspaceView === 'assets' ? 'active' : ''">
+                                <i data-feather="package" class="w-4 h-4"></i>
+                                <span>Assets</span>
+                                <small x-text="`${filteredAssets().length} Einträge`"></small>
+                            </button>
+                            <button type="button" @click="setWorkspaceView('taxonomy')" :class="workspaceView === 'taxonomy' ? 'active' : ''">
+                                <i data-feather="layers" class="w-4 h-4"></i>
+                                <span>Struktur</span>
+                                <small x-text="`${categories.length + assetCategories.length} Profile`"></small>
+                            </button>
+                        </nav>
+                    </section>
+
+                    <section class="inventory-overview" x-show="workspaceView === 'overview'" x-transition>
+                        <div class="inventory-overview__main">
+                            <p class="inventory-kicker">Dashboard</p>
+                            <h3>Schnell weiterarbeiten.</h3>
+                            <p>Suche, Pflege und Struktur sind getrennt. Öffne genau den Bereich, den du gerade brauchst.</p>
+                            <div class="inventory-quick-actions">
+                                <button type="button" @click="setWorkspaceView('devices')" class="inventory-action">
+                                    <span><i data-feather="search" class="w-4 h-4"></i> Geräte finden</span>
+                                    <small>Suchen, filtern, öffnen</small>
+                                </button>
+                                <button type="button" @click="openAddDeviceModal()" class="inventory-action inventory-action--strong">
+                                    <span><i data-feather="plus" class="w-4 h-4"></i> Neues Gerät</span>
+                                    <small>Direkt erfassen</small>
+                                </button>
+                                <button type="button" @click="setWorkspaceView('assets')" class="inventory-action">
+                                    <span><i data-feather="package" class="w-4 h-4"></i> Assets verwalten</span>
+                                    <small>Zuweisung, Komponenten, Lifecycle</small>
+                                </button>
+                                <button type="button" @click="setWorkspaceView('taxonomy')" class="inventory-action">
+                                    <span><i data-feather="layers" class="w-4 h-4"></i> Struktur pflegen</span>
+                                    <small>Kategorien und Felder</small>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="inventory-overview__metrics">
+                            <div>
+                                <span x-text="devices.length"></span>
+                                <small>Geräte</small>
+                            </div>
+                            <div>
+                                <span x-text="assets.length"></span>
+                                <small>Assets</small>
+                            </div>
+                            <div>
+                                <span x-text="maintenanceSummary.open"></span>
+                                <small>Wartungen offen</small>
+                            </div>
+                            <div>
+                                <span x-text="maintenanceSummary.overdue"></span>
+                                <small>Überfällig</small>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section x-show="workspaceView === 'devices'" x-transition class="inventory-surface">
+                        <div class="inventory-section-head">
+                            <div>
+                                <p class="inventory-kicker">Geräte</p>
+                                <h3 x-text="activeCategory ? getCategoryName(activeCategory) : 'Alle Geräte'"></h3>
+                                <p>Suche zuerst. Filter und Sortierung bleiben erreichbar, ohne die Liste zu überladen.</p>
+                            </div>
+                            <div class="inventory-section-meta">
+                                <span><i data-feather="monitor" class="h-3 w-3"></i><strong x-text="filteredDevices.length"></strong> Treffer</span>
+                                <span><i data-feather="layers" class="h-3 w-3"></i><strong x-text="categories.length"></strong> Kategorien</span>
+                            </div>
+                        </div>
+
+                        <div class="inventory-command-strip">
+                            <label class="inventory-search">
+                                <i data-feather="search" class="h-4 w-4"></i>
+                                <input type="text" placeholder="Gerät, Inventarnummer, Kategorie oder Standort suchen" x-model="searchQuery" @input.debounce.300ms="searchDevices()">
+                            </label>
+                            <button type="button" @click="filtersOpen = !filtersOpen" class="inventory-ghost-button" :class="filtersOpen ? 'active' : ''">
+                                <i data-feather="sliders" class="h-4 w-4"></i>
+                                Filter
+                            </button>
+                            <div class="relative" x-data="{ open: false }">
+                                <button type="button" @click="open = !open" class="inventory-ghost-button">
+                                    <i data-feather="sliders" class="h-4 w-4"></i>
+                                    Sortieren
+                                </button>
+                                <div x-show="open" @click.away="open = false" class="topbar-menu" x-transition>
+                                    <button @click="sortDevices('name', 'asc'); open=false" class="topbar-menu__item">Name (A-Z)</button>
+                                    <button @click="sortDevices('name', 'desc'); open=false" class="topbar-menu__item">Name (Z-A)</button>
+                                    <button @click="sortDevices('serial_number', 'asc'); open=false" class="topbar-menu__item">Inventarnummer aufsteigend</button>
+                                    <button @click="sortDevices('serial_number', 'desc'); open=false" class="topbar-menu__item">Inventarnummer absteigend</button>
+                                </div>
+                            </div>
+                            <button x-show="activeCategory" @click="loadDevices()" class="inventory-ghost-button">
+                                <i data-feather="x-circle" class="h-4 w-4"></i>
+                                Alle Geräte
+                            </button>
+                        </div>
+
+                        <div x-show="filtersOpen" class="inventory-filter-grid" x-transition>
+                            <label>
+                                <span>Inventarnummer enthält</span>
+                                <input type="text" x-model="ownerQuery" placeholder="z. B. NB-014">
+                            </label>
+                            <label>
+                                <span>Kategorie</span>
+                                <select x-model="categoryFilter">
+                                    <option value="">Alle Kategorien</option>
+                                    <template x-for="category in categories" :key="category.id">
+                                        <option :value="category.id" x-text="category.name"></option>
+                                    </template>
+                                </select>
+                            </label>
+                            <label>
+                                <span>Standort</span>
+                                <select x-model="locationFilter">
+                                    <option value="">Alle Standorte</option>
+                                    <template x-for="location in locations" :key="location.id">
+                                        <option :value="location.id" x-text="location.name"></option>
+                                    </template>
+                                </select>
+                            </label>
+                            <label>
+                                <span>Spezifikationen enthalten</span>
+                                <input type="text" x-model="specQuery" placeholder="z. B. i7, 16GB, SSD">
+                            </label>
+                            <label>
+                                <span>Erstellt von</span>
+                                <input type="date" x-model="createdFrom">
+                            </label>
+                            <label>
+                                <span>Erstellt bis</span>
+                                <input type="date" x-model="createdTo">
+                            </label>
+                            <button type="button" @click="resetDeviceFilters()" class="inventory-ghost-button">Filter zurücksetzen</button>
+                        </div>
+
+                        <div class="inventory-list-panel">
+                            <div class="table-responsive scrollbar-hide">
+                                <table class="w-full table-fixed text-sm responsive-table">
+                                    <thead class="text-left text-slate-500">
+                                        <tr>
+                                            <th class="py-3 px-4 sm:px-6 font-semibold">Gerät</th>
+                                            <th class="py-3 px-4 sm:px-6 font-semibold">Kategorie</th>
+                                            <th class="py-3 px-4 sm:px-6 font-semibold">Standort</th>
+                                            <th class="hidden md:table-cell py-3 px-4 sm:px-6 font-semibold">Inventar-/Seriennr.</th>
+                                            <th class="hidden lg:table-cell py-3 px-4 sm:px-6 font-semibold">Specs</th>
+                                            <th class="py-3 px-4 sm:px-6 font-semibold text-right">Aktionen</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="device in filteredDevices" :key="device.id">
+                                            <tr @click="openDeviceDetail(device)">
+                                                <td class="py-4 px-4 sm:px-6">
+                                                    <p class="max-w-[14rem] truncate font-semibold text-slate-900 sm:max-w-none" x-text="device.name"></p>
+                                                    <p class="text-xs text-slate-500" x-text="device.created_at?.slice(0, 10) || ''"></p>
+                                                </td>
+                                                <td class="py-4 px-4 sm:px-6 max-w-0">
+                                                    <span class="inline-flex max-w-full items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide" :class="getCategoryColor(device.category_name)">
+                                                        <span class="truncate max-w-full" x-text="device.category_name"></span>
+                                                    </span>
+                                                </td>
+                                                <td class="py-4 px-4 sm:px-6 text-slate-700 truncate max-w-0" x-text="device.location_name || '-' "></td>
+                                                <td class="hidden md:table-cell py-4 px-4 sm:px-6 text-slate-700 truncate max-w-0" x-text="device.serial_number || '-' "></td>
+                                                <td class="hidden lg:table-cell py-4 px-4 sm:px-6 max-w-[16rem]">
+                                                    <div class="flex flex-wrap gap-2 max-w-full">
+                                                        <template x-for="spec in getDeviceSpecEntries(device).slice(0, 2)" :key="spec.key">
+                                                            <span class="inline-flex max-w-full items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                                                                <span class="truncate" x-text="spec.key"></span>: <span class="ml-1 truncate text-slate-800" x-text="spec.value"></span>
+                                                            </span>
+                                                        </template>
+                                                        <span x-show="getDeviceSpecEntries(device).length === 0" class="text-xs text-slate-400">Keine Specs</span>
+                                                    </div>
+                                                </td>
+                                                <td class="py-4 px-4 sm:px-6 text-right" @click.stop>
+                                                    <div class="flex items-center justify-end gap-2" x-data="{ open: false }">
+                                                        <button @click.stop="open = !open" class="inventory-icon-button" aria-label="Weitere Aktionen">
+                                                            <i data-feather="more-vertical" class="h-4 w-4"></i>
+                                                        </button>
+                                                        <div x-show="open" @click.away="open = false" class="topbar-menu" x-transition>
+                                                            <button @click.stop="openEditDeviceModal(device); open=false" class="topbar-menu__item">Bearbeiten</button>
+                                                            <button @click.stop="deleteDevice(device.id); open=false" class="topbar-menu__item danger">Löschen</button>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                                <p x-show="filteredDevices.length === 0" class="inventory-empty">Keine Geräte gefunden.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section x-show="workspaceView === 'assets'" x-transition class="inventory-surface asset-workbench">
+                        <div class="inventory-section-head">
+                            <div>
+                                <p class="inventory-kicker">Assets</p>
+                                <h3>Asset-Einträge verwalten</h3>
+                                <p>Kategorien links, passende Assets rechts. Zuweisung, Checkout und Lebenszyklus bleiben im Detail verfügbar.</p>
+                            </div>
+                            <div class="inventory-section-meta">
+                                <span><i data-feather="package" class="h-3 w-3"></i><strong x-text="assets.length"></strong> Assets</span>
+                                <span><i data-feather="layout" class="h-3 w-3"></i><strong x-text="assetCategories.length"></strong> Kategorien</span>
+                            </div>
+                        </div>
+
+                        <div class="asset-workbench__layout">
+                            <aside class="asset-category-rail">
+                                <div class="asset-rail-head">
+                                    <div>
+                                        <h4>Asset-Kategorien</h4>
+                                        <p>Auswahl filtert die Ergebnisfläche.</p>
+                                    </div>
+                                    <button @click="openAddAssetCategoryModal()" class="inventory-icon-button" aria-label="Asset-Kategorie hinzufügen">
+                                        <i data-feather="plus" class="h-4 w-4"></i>
+                                    </button>
+                                </div>
+                                <label class="inventory-search inventory-search--compact">
+                                    <i data-feather="search" class="h-4 w-4"></i>
+                                    <input type="text" x-model="assetCategorySearchQuery" placeholder="Kategorien suchen">
+                                </label>
+                                <div class="asset-category-list">
+                                    <button type="button" @click="clearAssetCategorySelection()" class="asset-category-item" :class="!selectedAssetCategory ? 'active' : ''">
+                                        <span>
+                                            <strong>Alle Assets</strong>
+                                            <small>Gesamter Bestand</small>
+                                        </span>
+                                        <em x-text="assets.length"></em>
+                                    </button>
+                                    <template x-for="category in filteredAssetCategories()" :key="category.id">
+                                        <div class="asset-category-item-wrap">
+                                            <button type="button" @click="selectAssetCategory(category)" class="asset-category-item" :class="selectedAssetCategory?.id === category.id ? 'active' : ''">
+                                                <span>
+                                                    <strong x-text="category.name"></strong>
+                                                    <small x-text="category.description || 'Keine Beschreibung'"></small>
+                                                </span>
+                                                <em x-text="category.asset_count || 0"></em>
+                                            </button>
+                                            <div class="asset-category-actions">
+                                                <button @click="openEditAssetCategoryModal(category)" aria-label="Asset-Kategorie bearbeiten"><i data-feather="edit" class="h-3 w-3"></i></button>
+                                                <button @click="deleteAssetCategory(category.id)" aria-label="Asset-Kategorie löschen"><i data-feather="trash-2" class="h-3 w-3"></i></button>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <p x-show="filteredAssetCategories().length === 0" class="inventory-empty compact">Keine Asset-Kategorien gefunden.</p>
+                                </div>
+                            </aside>
+
+                            <div class="asset-results">
+                                <div class="asset-results__head">
+                                    <div>
+                                        <h4 x-text="selectedAssetCategory ? selectedAssetCategory.name : 'Alle Asset-Einträge'"></h4>
+                                        <p x-text="selectedAssetCategory ? (selectedAssetCategory.description || 'Gefilterte Asset-Einträge') : 'Alle Asset-Einträge über alle Kategorien.'"></p>
+                                    </div>
+                                    <button @click="openAddAssetModal()" class="inventory-top-action inventory-top-action--primary">
+                                        <i data-feather="plus" class="w-4 h-4"></i>
+                                        <span>Asset-Eintrag</span>
+                                    </button>
+                                </div>
+                                <div class="inventory-command-strip asset-command-strip">
+                                    <label class="inventory-search">
+                                        <i data-feather="search" class="h-4 w-4"></i>
+                                        <input type="text" x-model="assetSearchQuery" placeholder="Asset, Kategorie oder Notiz suchen">
+                                    </label>
+                                    <button x-show="selectedAssetCategory" @click="clearAssetCategorySelection()" class="inventory-ghost-button">
+                                        <i data-feather="x" class="h-4 w-4"></i>
+                                        Filter lösen
+                                    </button>
+                                </div>
+                                <div class="asset-list">
+                                    <template x-for="asset in filteredAssets()" :key="asset.id">
+                                        <div class="asset-row">
+                                            <button @click="openAssetDetail(asset)" class="asset-row__main">
+                                                <span class="asset-row__count" x-text="asset.device_count || 0"></span>
+                                                <span>
+                                                    <strong x-text="asset.name"></strong>
+                                                    <small x-text="asset.category_name || 'Ohne Kategorie'"></small>
+                                                </span>
+                                            </button>
+                                            <p x-text="asset.notes || 'Keine Notizen hinterlegt.'"></p>
+                                            <div class="asset-row__actions">
+                                                <button @click="openAssetDetail(asset)" class="inventory-ghost-button">Öffnen</button>
+                                                <button @click="openEditAssetModal(asset)" class="inventory-icon-button" aria-label="Asset bearbeiten"><i data-feather="edit" class="h-4 w-4"></i></button>
+                                                <button @click="deleteAsset(asset.id)" class="inventory-icon-button danger" aria-label="Asset löschen"><i data-feather="trash-2" class="h-4 w-4"></i></button>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <p x-show="filteredAssets().length === 0" class="inventory-empty">Keine Asset-Einträge gefunden.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section x-show="workspaceView === 'taxonomy'" x-transition id="inventory-taxonomy" class="inventory-surface">
+                        <div class="inventory-section-head">
+                            <div>
+                                <p class="inventory-kicker">Struktur</p>
+                                <h3>Kategorien pflegen</h3>
+                                <p>Geräte-Kategorien und Asset-Kategorien sind getrennt, damit Änderungen eindeutig bleiben.</p>
+                            </div>
+                            <div class="inventory-section-meta">
+                                <span><i data-feather="layers" class="h-3 w-3"></i><strong x-text="categories.length"></strong> Geräte-Kategorien</span>
+                                <span><i data-feather="layout" class="h-3 w-3"></i><strong x-text="assetCategories.length"></strong> Asset-Kategorien</span>
+                            </div>
+                        </div>
+
+                        <div class="taxonomy-split">
+                            <div class="taxonomy-column">
+                                <div class="taxonomy-column__head">
+                                    <div>
+                                        <h4>Geräte-Kategorien</h4>
+                                        <p>Für Listen, Filter und Geräteprofile.</p>
+                                    </div>
+                                    <button @click="openAddCategoryModal()" class="inventory-icon-button" aria-label="Kategorie hinzufügen">
+                                        <i data-feather="plus" class="h-4 w-4"></i>
+                                    </button>
+                                </div>
+                                <label class="inventory-search inventory-search--compact">
+                                    <i data-feather="search" class="h-4 w-4"></i>
+                                    <input type="text" x-model="categorySearchQuery" placeholder="Geräte-Kategorien suchen">
+                                </label>
+                                <div class="taxonomy-list">
+                                    <template x-for="category in filteredCategories()" :key="category.id">
+                                        <div class="taxonomy-row">
+                                            <button @click="loadDevices(category.id)" class="taxonomy-row__main">
+                                                <span x-html="renderIconSvg(category.icon, 'w-4 h-4 text-slate-500')"></span>
+                                                <span>
+                                                    <strong x-text="category.name"></strong>
+                                                    <small x-text="category.description || 'Keine Beschreibung hinterlegt.'"></small>
+                                                </span>
+                                            </button>
+                                            <div class="taxonomy-row__actions">
+                                                <button @click="editCategoryModal(category)" aria-label="Kategorie bearbeiten"><i data-feather="edit" class="h-4 w-4"></i></button>
+                                                <button @click="deleteCategory(category.id)" aria-label="Kategorie löschen"><i data-feather="trash-2" class="h-4 w-4"></i></button>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <p x-show="filteredCategories().length === 0" class="inventory-empty compact">Keine Kategorien gefunden.</p>
+                                </div>
+                            </div>
+
+                            <div class="taxonomy-column">
+                                <div class="taxonomy-column__head">
+                                    <div>
+                                        <h4>Asset-Kategorien</h4>
+                                        <p>Für Asset-Einträge, Zuweisung und Lifecycle.</p>
+                                    </div>
+                                    <button @click="openAddAssetCategoryModal()" class="inventory-icon-button" aria-label="Asset-Kategorie hinzufügen">
+                                        <i data-feather="plus" class="h-4 w-4"></i>
+                                    </button>
+                                </div>
+                                <label class="inventory-search inventory-search--compact">
+                                    <i data-feather="search" class="h-4 w-4"></i>
+                                    <input type="text" x-model="assetCategorySearchQuery" placeholder="Asset-Kategorien suchen">
+                                </label>
+                                <div class="taxonomy-list">
+                                    <template x-for="category in filteredAssetCategories()" :key="category.id">
+                                        <div class="taxonomy-row">
+                                            <button @click="selectAssetCategory(category)" class="taxonomy-row__main">
+                                                <span x-html="renderIconSvg(category.icon, 'w-4 h-4 text-slate-500')"></span>
+                                                <span>
+                                                    <strong x-text="category.name"></strong>
+                                                    <small x-text="`${category.asset_count || 0} Asset-Einträge`"></small>
+                                                </span>
+                                            </button>
+                                            <div class="taxonomy-row__actions">
+                                                <button @click="openEditAssetCategoryModal(category)" aria-label="Asset-Kategorie bearbeiten"><i data-feather="edit" class="h-4 w-4"></i></button>
+                                                <button @click="deleteAssetCategory(category.id)" aria-label="Asset-Kategorie löschen"><i data-feather="trash-2" class="h-4 w-4"></i></button>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <p x-show="filteredAssetCategories().length === 0" class="inventory-empty compact">Keine Asset-Kategorien gefunden.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+{% endblock %}
+
+{% block overlays %}
+    <div x-show="deviceDetailOpen" @click.away="closeDeviceDetail()" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
+        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Geräteübersicht</p>
+                    <h3 class="text-xl font-semibold text-slate-900" x-text="selectedDevice?.name"></h3>
+                </div>
+                <button @click="closeDeviceDetail()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Detailansicht schließen">
+                    <i data-feather="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div class="grid gap-6 p-6 lg:grid-cols-3">
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="text-sm font-semibold text-slate-700">Kurzprofil</p>
+                        <div class="mt-3 grid gap-2 text-sm text-slate-600">
+                            <div class="flex justify-between">
+                                <span>Kategorie</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedDevice?.category_name"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Standort</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedDevice?.location_name || '-' "></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Inventar-/Seriennr.</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedDevice?.serial_number || '-' "></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Erstellt</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedDevice?.created_at?.slice(0, 10) || '-' "></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p class="text-sm font-semibold text-slate-900">Vollständige Gerätedaten</p>
+                        <div class="mt-3 space-y-2 text-sm text-slate-600">
+                            <div class="flex justify-between gap-4">
+                                <span>ID</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedDevice?.id || '-' "></span>
+                            </div>
+                            <div class="flex justify-between gap-4">
+                                <span>Name</span>
+                                <span class="font-semibold text-slate-900 text-right" x-text="selectedDevice?.name || '-' "></span>
+                            </div>
+                            <div class="flex justify-between gap-4">
+                                <span>Kategorie</span>
+                                <span class="font-semibold text-slate-900 text-right" x-text="selectedDevice?.category_name || '-' "></span>
+                            </div>
+                            <div class="flex justify-between gap-4">
+                                <span>Standort</span>
+                                <span class="font-semibold text-slate-900 text-right" x-text="selectedDevice?.location_name || '-' "></span>
+                            </div>
+                            <div class="flex justify-between gap-4">
+                                <span>Inventar-/Seriennr.</span>
+                                <span class="font-semibold text-slate-900 text-right" x-text="selectedDevice?.serial_number || '-' "></span>
+                            </div>
+                            <div class="flex justify-between gap-4">
+                                <span>Erstellt am</span>
+                                <span class="font-semibold text-slate-900 text-right" x-text="selectedDevice?.created_at?.slice(0, 10) || '-' "></span>
+                            </div>
+                        </div>
+                        <div class="mt-4 border-t border-slate-100 pt-4">
+                            <p class="text-sm font-semibold text-slate-900">Spezifikationen</p>
+                            <div class="mt-2 space-y-2 text-sm text-slate-600">
+                                <template x-for="spec in getDeviceSpecEntries(selectedDevice)" :key="spec.key">
+                                    <div class="flex justify-between gap-4">
+                                        <span x-text="spec.key"></span>
+                                        <span class="font-semibold text-slate-900 text-right" x-text="spec.value"></span>
+                                    </div>
+                                </template>
+                                <p x-show="getDeviceSpecEntries(selectedDevice).length === 0" class="text-xs text-slate-400">Keine Spezifikationen hinterlegt.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">Notizen</p>
+                                <p class="text-xs text-slate-500">Freigabe für alle Nutzer</p>
+                            </div>
+                            <i data-feather="file-text" class="w-4 h-4 text-slate-400"></i>
+                        </div>
+                        <div class="mt-3 flex gap-2">
+                            <input type="text" placeholder="Neue Notiz hinzufügen" x-model="newNote" class="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <button @click="addNote()" class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Speichern</button>
+                        </div>
+                        <div class="mt-4 space-y-3">
+                            <template x-for="note in deviceNotes" :key="note.id">
+                                <div class="flex items-start justify-between rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                                    <div>
+                                        <p class="text-sm text-slate-700" x-text="note.note"></p>
+                                        <p class="text-xs text-slate-400" x-text="note.created_at.slice(0, 10)"></p>
+                                    </div>
+                                    <button @click="deleteNote(note.id)" class="icon-button text-slate-400 hover:text-rose-500" aria-label="Notiz löschen">
+                                        <i data-feather="trash-2" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </template>
+                            <p x-show="deviceNotes.length === 0" class="text-xs text-slate-400">Noch keine Notizen.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">Tags</p>
+                                <p class="text-xs text-slate-500">Freie Labels für Ordnung</p>
+                            </div>
+                            <i data-feather="tag" class="w-4 h-4 text-slate-400"></i>
+                        </div>
+                        <div class="mt-3 flex gap-2">
+                            <input type="text" placeholder="Tag hinzufügen" x-model="newTag" class="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <button @click="addTag()" class="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Add</button>
+                        </div>
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            <template x-for="tag in deviceTags" :key="tag.id">
+                                <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                    <span x-text="tag.tag"></span>
+                                    <button @click="removeTag(tag.id)" class="icon-button text-slate-400 hover:text-rose-500" aria-label="Tag entfernen">
+                                        <i data-feather="x" class="w-3 h-3"></i>
+                                    </button>
+                                </span>
+                            </template>
+                            <p x-show="deviceTags.length === 0" class="text-xs text-slate-400">Noch keine Tags.</p>
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-indigo-700">Wartungsplan</p>
+                                <p class="text-xs text-indigo-500">Erinnerungen &amp; Checklisten</p>
+                            </div>
+                            <i data-feather="shield" class="w-4 h-4 text-indigo-400"></i>
+                        </div>
+                        <div class="mt-3 space-y-3">
+                            <div class="flex gap-2">
+                                <input type="text" placeholder="Wartungstitel" x-model="newMaintenance.title" class="flex-1 rounded-2xl border border-indigo-100 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:ring-indigo-400">
+                            </div>
+                            <div class="flex gap-2">
+                                <input type="date" x-model="newMaintenance.due_date" class="flex-1 rounded-2xl border border-indigo-100 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:ring-indigo-400">
+                                <button @click="addMaintenanceTask()" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Planen</button>
+                            </div>
+                        </div>
+                        <div class="mt-4 space-y-3">
+                            <template x-for="task in maintenanceTasks" :key="task.id">
+                                <div class="rounded-2xl border border-indigo-100 bg-white px-3 py-3 text-sm space-y-3">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div>
+                                            <p class="font-semibold text-slate-800" x-text="task.title"></p>
+                                            <p class="text-xs text-slate-400" x-text="task.due_date ? `Fällig: ${task.due_date}` : 'Kein Datum'"></p>
+                                        </div>
+                                        <button @click="updateMaintenanceStatus(task.id, task.status === 'open' ? 'done' : 'open')" class="text-xs font-semibold text-indigo-600">
+                                            <span x-text="task.status === 'open' ? 'Erledigt' : 'Offen'"></span>
+                                        </button>
+                                    </div>
+                                    <div class="space-y-2" x-show="can('attachment.download') || can('attachment.upload')">
+                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                            <label x-show="can('attachment.upload')" class="inline-flex w-full cursor-pointer items-center justify-center rounded-2xl border border-indigo-100 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 sm:w-auto">
+                                                <span>Anhang hinzufügen</span>
+                                                <input type="file" class="hidden" @change="uploadMaintenanceAttachment(task.id, $event)">
+                                            </label>
+                                            <p class="text-xs text-rose-600" x-show="maintenanceAttachmentErrors[task.id]" x-text="maintenanceAttachmentErrors[task.id]"></p>
+                                        </div>
+                                        <template x-for="attachment in (maintenanceAttachments[task.id] || [])" :key="attachment.id">
+                                            <div class="rounded-2xl border border-indigo-100 bg-indigo-50/60 px-3 py-2">
+                                                <div class="flex items-start justify-between gap-2">
+                                                    <div class="min-w-0">
+                                                        <p class="break-words text-xs font-semibold text-slate-800" x-text="attachment.original_filename"></p>
+                                                        <p class="text-[11px] text-slate-500" x-text="`${formatFileSize(attachment.size_bytes)} • ${attachment.uploaded_by || 'System'}`"></p>
+                                                    </div>
+                                                    <div class="flex shrink-0 items-center gap-2">
+                                                        <a :href="attachment.download_url" class="rounded-full border border-indigo-100 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100">Download</a>
+                                                        <button x-show="can('attachment.delete')" @click="deleteMaintenanceAttachment(task.id, attachment.id)" class="rounded-full border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50">Löschen</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <p x-show="(maintenanceAttachments[task.id] || []).length === 0" class="text-xs text-indigo-500">Keine Anhänge.</p>
+                                    </div>
+                                </div>
+                            </template>
+                            <p x-show="maintenanceTasks.length === 0" class="text-xs text-indigo-500">Keine Wartungen geplant.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="assetDetailOpen" @click.away="if (!assignmentModalOpen) { closeAssetDetail() }" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
+        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Asset-Eintrag</p>
+                    <h3 class="text-xl font-semibold text-slate-900" x-text="selectedAsset?.name"></h3>
+                </div>
+                <button @click="closeAssetDetail()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Asset-Detail schließen">
+                    <i data-feather="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div class="grid gap-6 p-6 lg:grid-cols-3">
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="text-sm font-semibold text-slate-700">Kurzprofil</p>
+                        <div class="mt-3 grid gap-2 text-sm text-slate-600">
+                            <div class="flex justify-between">
+                                <span>Komponenten</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.devices?.length || 0"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Kategorie</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.category_name || '-' "></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Erstellt</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.created_at?.slice(0, 10) || '-' "></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">Zuweisung &amp; Checkout</p>
+                                <p class="text-xs text-slate-500">Status und Verantwortlichkeit</p>
+                            </div>
+                            <span class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600" x-text="assignmentStatusLabel(selectedAsset?.assignment?.status)"></span>
+                        </div>
+                        <div class="mt-3 grid gap-2 text-sm text-slate-600">
+                            <div class="flex justify-between gap-4">
+                                <span>Zugewiesen an</span>
+                                <span class="font-semibold text-slate-900 text-right" x-text="assignmentTargetLabel(selectedAsset?.assignment)"></span>
+                            </div>
+                            <div class="flex justify-between gap-4">
+                                <span>Fällig am</span>
+                                <span class="font-semibold text-slate-900 text-right" x-text="selectedAsset?.assignment?.due_at || '-'"></span>
+                            </div>
+                            <div class="flex justify-between gap-4">
+                                <span>Checkout</span>
+                                <span class="font-semibold text-slate-900 text-right" x-text="selectedAsset?.assignment?.checked_out_at || '-'"></span>
+                            </div>
+                        </div>
+                        <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                            <button x-show="can('asset.assign')" @click="openAssetAssignmentModal('assign')" class="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto">
+                                Zuweisen
+                            </button>
+                            <button x-show="can('asset.checkout') && selectedAsset?.assignment?.status !== 'checked_out'" @click="openAssetAssignmentModal('checkout')" class="w-full rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 sm:w-auto">
+                                Checkout
+                            </button>
+                            <button x-show="can('asset.checkin') && selectedAsset?.assignment?.status === 'checked_out'" @click="openAssetAssignmentModal('checkin')" class="w-full rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 sm:w-auto">
+                                Check-in
+                            </button>
+                            <button x-show="can('asset.assign') && selectedAsset?.assignment?.status && selectedAsset?.assignment?.status !== 'checked_out'" @click="openAssetAssignmentModal('unassign')" class="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 sm:w-auto">
+                                Unassign
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p class="text-sm font-semibold text-slate-900">Lebenszyklus</p>
+                        <div class="mt-3 grid gap-2 text-sm text-slate-600">
+                            <div class="flex justify-between">
+                                <span>Anschaffungsdatum</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.acquisition_date || '-'"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Inbetriebnahme</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.commissioning_date || '-'"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Garantieende</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.warranty_end || '-'"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Garantie-Status</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.warranty_status || '-'"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Abschreibung</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.depreciation_months ? `${selectedAsset.depreciation_months} Monate` : '-'"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Aussonderung</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.retirement_date || '-'"></span>
+                            </div>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-500" x-text="selectedAsset?.retirement_reason || ''"></p>
+                    </div>
+
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4" x-show="can('procurement.view') || can('procurement.manage')">
+                        <p class="text-sm font-semibold text-slate-900">Beschaffung</p>
+                        <div class="mt-3 grid gap-2 text-sm text-slate-600">
+                            <div class="flex justify-between">
+                                <span>Lieferant</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.vendor_name || '-'"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Bestellung</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.purchase_order_number || '-'"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Kaufpreis</span>
+                                <span class="font-semibold text-slate-900" x-text="formatCurrency(selectedAsset?.purchase_cost, selectedAsset?.currency)"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Währung</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.currency || '-'"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Kostenstelle</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.cost_center || '-'"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Rechnungsnummer</span>
+                                <span class="font-semibold text-slate-900" x-text="selectedAsset?.invoice_number || '-'"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p class="text-sm font-semibold text-slate-900">Spezifikationen</p>
+                        <div class="mt-3 space-y-2 text-sm text-slate-600">
+                            <template x-for="spec in getAssetSpecEntries(selectedAsset)" :key="spec.key">
+                                <div class="flex justify-between gap-4">
+                                    <span x-text="spec.key"></span>
+                                    <span class="font-semibold text-slate-900 text-right" x-text="spec.value"></span>
+                                </div>
+                            </template>
+                            <p x-show="getAssetSpecEntries(selectedAsset).length === 0" class="text-xs text-slate-400">Keine Spezifikationen hinterlegt.</p>
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p class="text-sm font-semibold text-slate-900">Notizen</p>
+                        <p class="mt-2 text-sm text-slate-600 whitespace-pre-line" x-text="selectedAsset?.notes || 'Keine Notizen hinterlegt.'"></p>
+                    </div>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-indigo-700">Eintrag-Komponenten</p>
+                                <p class="text-xs text-indigo-500">Zugeordnete Geräte</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button x-show="can('assets.manage')" @click="openEditAssetModal(selectedAsset)" class="rounded-full border border-indigo-100 bg-white px-3 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-50">Komponenten bearbeiten</button>
+                                <i data-feather="layers" class="w-4 h-4 text-indigo-400"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4 space-y-3 text-sm">
+                            <template x-for="device in selectedAsset?.devices || []" :key="device.id">
+                                <div class="rounded-2xl border border-indigo-100 bg-white px-3 py-2">
+                                    <p class="font-semibold text-slate-800" x-text="device.name"></p>
+                                    <p class="text-xs text-slate-500" x-text="device.category_name"></p>
+                                    <p class="text-xs text-slate-500" x-text="`Menge: ${device.quantity || 1}`"></p>
+                                    <p x-show="device.notes" class="text-xs text-slate-400" x-text="device.notes"></p>
+                                </div>
+                            </template>
+                            <p x-show="(selectedAsset?.devices || []).length === 0" class="text-xs text-indigo-500">Keine Geräte zugeordnet.</p>
+                        </div>
+                    </div>
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">Beziehungen</p>
+                                <p class="text-xs text-slate-500">Verknüpfte Assets</p>
+                            </div>
+                            <i data-feather="share-2" class="w-4 h-4 text-slate-400"></i>
+                        </div>
+                        <div class="mt-4 space-y-2 text-sm">
+                            <template x-for="relation in selectedAsset?.relations || []" :key="relation.id">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                    <p class="font-semibold text-slate-800" x-text="relation.direction === 'outgoing' ? relation.related_asset_name : relation.asset_name"></p>
+                                    <p class="text-xs text-slate-500" x-text="relation.relation_type_name || 'Beziehung'"></p>
+                                </div>
+                            </template>
+                            <p x-show="(selectedAsset?.relations || []).length === 0" class="text-xs text-slate-400">Keine Beziehungen hinterlegt.</p>
+                        </div>
+                    </div>
+                    <div class="binpacking-compact" x-show="selectedAsset?.binpacking?.enabled">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Einräumassistent</p>
+                                <h4 class="mt-1 text-lg font-semibold text-slate-950" x-text="selectedAsset?.binpacking?.plan_status_label || 'Plan'"></h4>
+                                <p class="mt-2 text-sm leading-6 text-slate-600" x-text="selectedAsset?.binpacking?.message"></p>
+                            </div>
+                            <span class="shrink-0 rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-emerald-700 shadow-sm" x-text="`${selectedAsset?.binpacking?.placed_count || 0}/${selectedAsset?.binpacking?.total_count || 0}`"></span>
+                        </div>
+
+                        <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/80">
+                            <div class="h-full rounded-full bg-emerald-600 transition-all" :style="`width:${binpackingCompletionPercent(selectedAsset?.binpacking)}%`"></div>
+                        </div>
+
+                        <div class="mt-4 rounded-[22px] bg-white/82 px-4 py-3" x-show="selectedAsset?.binpacking?.next_step">
+                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Nächster Schritt</p>
+                            <div class="mt-2 flex items-start gap-3">
+                                <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white" x-text="selectedAsset?.binpacking?.next_step?.step"></span>
+                                <div class="min-w-0">
+                                    <p class="font-semibold text-slate-950" x-text="selectedAsset?.binpacking?.next_step?.asset_name"></p>
+                                    <p class="mt-1 text-xs text-slate-500" x-text="binpackingStepInstruction(selectedAsset?.binpacking?.next_step)"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+                            <div class="rounded-2xl bg-white/76 px-3 py-2">
+                                <p class="font-semibold text-slate-950" x-text="selectedAsset?.binpacking?.layer_count || 0"></p>
+                                <p class="mt-0.5 text-slate-500">Ebenen</p>
+                            </div>
+                            <div class="rounded-2xl bg-white/76 px-3 py-2">
+                                <p class="font-semibold text-slate-950" x-text="`${selectedAsset?.binpacking?.efficiency_percent || 0}%`"></p>
+                                <p class="mt-0.5 text-slate-500">Volumen</p>
+                            </div>
+                            <div class="rounded-2xl bg-white/76 px-3 py-2">
+                                <p class="font-semibold text-slate-950" x-text="selectedAsset?.binpacking?.algorithm_label || 'Best-Fit'"></p>
+                                <p class="mt-0.5 text-slate-500">Methode</p>
+                            </div>
+                        </div>
+
+                        <button @click="openBinpackingPreview()" class="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600">
+                            <i data-feather="map" class="h-4 w-4"></i>
+                            Einräumplan öffnen
+                        </button>
+
+                        <div x-show="selectedAsset?.binpacking?.status === 'incomplete'" class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                            Für dieses Storage-Asset fehlen gültige Breite-, Höhe- oder Tiefe-Werte.
+                        </div>
+                    </div>
+                    <div class="rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-amber-700">Offene Tickets</p>
+                                <p class="text-xs text-amber-500">Aktive Supportfälle</p>
+                            </div>
+                            <i data-feather="life-buoy" class="w-4 h-4 text-amber-400"></i>
+                        </div>
+                        <div class="mt-4 space-y-2 text-sm">
+                            <template x-for="ticket in selectedAsset?.open_tickets || []" :key="ticket.id">
+                                <div class="rounded-2xl border border-amber-100 bg-white px-3 py-2">
+                                    <p class="font-semibold text-slate-800" x-text="ticket.title"></p>
+                                    <p class="text-xs text-slate-500" x-text="`#${ticket.id} • ${ticket.status}`"></p>
+                                </div>
+                            </template>
+                            <p x-show="(selectedAsset?.open_tickets || []).length === 0" class="text-xs text-amber-500">Keine offenen Tickets.</p>
+                        </div>
+                    </div>
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4" x-show="can('asset.view_history')">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">Historie</p>
+                                <p class="text-xs text-slate-500">Letzte Zuweisungen &amp; Checkouts</p>
+                            </div>
+                            <i data-feather="clock" class="w-4 h-4 text-slate-400"></i>
+                        </div>
+                        <div class="mt-4 space-y-3 text-sm">
+                            <template x-for="entry in assetAssignmentHistory" :key="entry.id">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <p class="font-semibold text-slate-800" x-text="assignmentStatusLabel(entry.status)"></p>
+                                        <span class="text-xs text-slate-400" x-text="entry.created_at?.slice(0, 16).replace('T', ' ')"></span>
+                                    </div>
+                                    <p class="text-xs text-slate-500" x-text="entry.assigned_user || entry.assigned_team || 'Keine Zuweisung'"></p>
+                                    <p class="text-xs text-slate-400" x-text="entry.note || ''"></p>
+                                    <p class="text-[11px] text-slate-400" x-text="entry.created_by ? `von ${entry.created_by}` : ''"></p>
+                                </div>
+                            </template>
+                            <p x-show="assetAssignmentHistory.length === 0" class="text-xs text-slate-400">Noch keine Historie.</p>
+                        </div>
+                    </div>
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4" x-show="can('attachment.download') || can('attachment.upload')">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">Anhänge</p>
+                                <p class="text-xs text-slate-500">Dateien zum Asset</p>
+                            </div>
+                            <i data-feather="paperclip" class="w-4 h-4 text-slate-400"></i>
+                        </div>
+                        <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <label x-show="can('attachment.upload')" class="inline-flex w-full cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto">
+                                <span>Datei hochladen</span>
+                                <input type="file" class="hidden" @change="uploadAssetAttachment">
+                            </label>
+                            <p class="text-xs text-rose-600" x-show="assetAttachmentError" x-text="assetAttachmentError"></p>
+                        </div>
+                        <div class="mt-4 space-y-3">
+                            <template x-for="attachment in assetAttachments" :key="attachment.id">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="min-w-0">
+                                            <p class="break-words text-sm font-semibold text-slate-800" x-text="attachment.original_filename"></p>
+                                            <p class="text-xs text-slate-500" x-text="`${formatFileSize(attachment.size_bytes)} • ${attachment.uploaded_by || 'System'}`"></p>
+                                        </div>
+                                        <div class="flex shrink-0 items-center gap-2">
+                                            <a :href="attachment.download_url" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">Download</a>
+                                            <button x-show="can('attachment.delete')" @click="deleteAssetAttachment(attachment.id)" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Löschen</button>
+                                        </div>
+                                    </div>
+                                    <p class="text-xs text-slate-400" x-text="attachment.created_at?.slice(0, 16).replace('T', ' ')"></p>
+                                </div>
+                            </template>
+                            <p x-show="assetAttachments.length === 0" class="text-xs text-slate-400">Keine Anhänge vorhanden.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="binpackingPreviewOpen" @click.self="closeBinpackingPreview()" @keydown.escape.window="closeBinpackingPreview()" class="modal fixed inset-0 z-[70] bg-slate-950/70 p-4 lg:p-8" x-transition>
+        <div @click.stop class="binpacking-modal-panel modal-panel flex h-[min(94vh,980px)] w-full max-w-[min(1700px,96vw)] mx-auto flex-col overflow-hidden rounded-[32px] bg-slate-50 shadow-2xl">
+            <div class="binpacking-modal-header flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-white px-6 py-5">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Einräumplan</p>
+                    <h3 class="text-2xl font-semibold text-slate-900" x-text="selectedAsset?.name || 'Asset'"></h3>
+                    <p class="mt-1 text-sm text-slate-500">
+                        <span x-text="currentBinpackingPreview()?.content_category_name || 'Inhalte'"></span>
+                        · visuelle Regalvorschau mit Schrittfolge
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <div class="flex flex-wrap gap-2">
+                        <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700" x-text="`${currentBinpackingPreview()?.placed_count || 0}/${currentBinpackingPreview()?.total_count || 0} eingeplant`"></span>
+                        <span class="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700" x-text="currentBinpackingPreview()?.algorithm_label || '3D Best-Fit'"></span>
+                        <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700" x-text="`Volumen ${currentBinpackingPreview()?.efficiency_percent || 0}%`"></span>
+                    </div>
+                    <button @click="closeBinpackingPreview()" data-modal-close class="binpacking-modal-close icon-button inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700" aria-label="Einräumplan schließen">
+                        <i data-feather="x" class="h-5 w-5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="border-b border-slate-200 bg-white px-6 py-4" x-show="(currentBinpackingPreview()?.layers || []).length > 0">
+                <div class="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <template x-for="(layer, index) in (currentBinpackingPreview()?.layers || [])" :key="`layer-tab-${layer.z}-${index}`">
+                            <button
+                                @click="setBinpackingPreviewLayer(index)"
+                                :class="index === binpackingPreviewLayerIndex ? 'border-emerald-300 bg-emerald-50 text-emerald-800 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:text-emerald-700'"
+                                class="rounded-full border px-4 py-2 text-sm font-semibold transition"
+                            >
+                                <span x-text="binpackingLayerLabel(layer, index)"></span>
+                            </button>
+                        </template>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button
+                            @click="focusAdjacentBinpackingStep(-1)"
+                            :class="Number(currentBinpackingActiveStep()?.step || 0) <= 1 ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400' : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-200 hover:text-emerald-700'"
+                            class="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition"
+                        >
+                            <i data-feather="arrow-left" class="h-4 w-4"></i>
+                            Zurück
+                        </button>
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-center">
+                            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-400">Aktiver Schritt</p>
+                            <p class="mt-1 text-sm font-semibold text-slate-900" x-text="currentBinpackingActiveStep() ? `Schritt ${currentBinpackingActiveStep().step} von ${(currentBinpackingPreview()?.steps || []).length}` : 'Kein Schritt aktiv'"></p>
+                        </div>
+                        <button
+                            @click="focusAdjacentBinpackingStep(1)"
+                            :class="Number(currentBinpackingActiveStep()?.step || 0) >= Number((currentBinpackingPreview()?.steps || []).length || 0) ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400' : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300 hover:bg-emerald-100'"
+                            class="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition"
+                        >
+                            Weiter
+                            <i data-feather="arrow-right" class="h-4 w-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid min-h-0 flex-1 xl:grid-cols-[350px_minmax(0,1fr)]">
+                <aside class="min-h-0 overflow-y-auto border-b border-slate-200 bg-white xl:border-b-0 xl:border-r">
+                    <div class="space-y-4 p-6">
+                        <div class="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+                            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Einräumfolge</p>
+                            <p class="mt-2 text-sm text-slate-600">Klicke einen Schritt. Die Box leuchtet im Regal auf. Danach mit Weiter durchgehen.</p>
+                            <div class="mt-4 flex flex-wrap gap-2 text-xs">
+                                <span class="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700" x-text="`${(currentBinpackingPreview()?.steps || []).length} Schritte`"></span>
+                                <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-semibold text-emerald-700" x-text="`${currentBinpackingPreview()?.placed_count || 0} Inhalte im Plan`"></span>
+                            </div>
+                        </div>
+
+                        <div class="space-y-3" x-show="(currentBinpackingPreview()?.steps || []).length > 0">
+                            <template x-for="step in (currentBinpackingPreview()?.steps || [])" :key="`modal-step-${step.step}`">
+                                <button
+                                    @click="focusBinpackingStep(step)"
+                                    :class="isBinpackingStepActive(step) ? 'border-emerald-300 bg-emerald-50 shadow-sm ring-2 ring-emerald-100' : 'border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/50'"
+                                    class="w-full rounded-[26px] border px-4 py-4 text-left transition"
+                                >
+                                    <div class="flex items-start gap-3">
+                                        <span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white" :style="binpackingPlacementBadgeStyle(binpackingPlacementByStep(step))" x-text="step.step"></span>
+                                        <div class="min-w-0">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <p class="font-semibold text-slate-900" x-text="step.asset_name"></p>
+                                                <span class="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600" x-text="`Ebene ${step.layer_index}`"></span>
+                                            </div>
+                                            <p class="mt-2 text-sm text-slate-700" x-text="step.zone_label"></p>
+                                            <p class="mt-1 text-xs text-slate-500" x-text="`${step.dimensions_label} · ${step.orientation_label}`"></p>
+                                            <p class="mt-1 text-[11px] text-slate-400" x-text="step.coordinate_label"></p>
+                                        </div>
+                                    </div>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </aside>
+
+                <div class="min-h-0 overflow-y-auto bg-[linear-gradient(180deg,#f8fafc_0%,#ecfdf5_100%)] p-6">
+                    <div class="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_360px]">
+                        <div class="space-y-6">
+                            <div class="binpacking-3d-panel">
+                                <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                                    <div class="min-w-0">
+                                        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Regal-Vorschau</p>
+                                        <h4 class="mt-2 text-2xl font-semibold text-slate-950">Boxen im Storage</h4>
+                                        <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Ziehe die Ansicht mit der Maus. Klicke eine Box oder einen Schritt, um die Position eindeutig zu sehen.</p>
+                                    </div>
+                                    <div class="flex flex-wrap gap-2">
+                                        <button type="button" @click="setBinpackingCamera('iso')" :class="binpackingPreviewCamera === 'iso' ? 'bg-slate-950 text-white' : 'bg-white text-slate-700'" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold transition">3D</button>
+                                        <button type="button" @click="setBinpackingCamera('front')" :class="binpackingPreviewCamera === 'front' ? 'bg-slate-950 text-white' : 'bg-white text-slate-700'" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold transition">Front</button>
+                                        <button type="button" @click="setBinpackingCamera('side')" :class="binpackingPreviewCamera === 'side' ? 'bg-slate-950 text-white' : 'bg-white text-slate-700'" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold transition">Seite</button>
+                                        <button type="button" @click="setBinpackingCamera('top')" :class="binpackingPreviewCamera === 'top' ? 'bg-slate-950 text-white' : 'bg-white text-slate-700'" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold transition">Oben</button>
+                                    </div>
+                                </div>
+
+                                <div
+                                    class="binpacking-scene mt-6"
+                                    @click.stop
+                                    @pointerdown="startBinpacking3dDrag($event)"
+                                    @pointermove="dragBinpacking3dView($event)"
+                                    @pointerup="endBinpacking3dDrag($event)"
+                                    @pointercancel="endBinpacking3dDrag($event)"
+                                >
+                                    <svg
+                                        class="binpacking-scene__svg"
+                                        :viewBox="binpackingSceneViewBox()"
+                                        role="img"
+                                        aria-label="3D Regalvorschau"
+                                        x-html="binpackingSceneMarkup(currentBinpackingPreview())"
+                                        @click.stop="handleBinpackingSceneEvent($event)"
+                                        @keydown.enter.prevent="handleBinpackingSceneEvent($event)"
+                                        @keydown.space.prevent="handleBinpackingSceneEvent($event)"
+                                    ></svg>
+                                    <div class="binpacking-scene__hint">
+                                        <i data-feather="move" class="h-4 w-4"></i>
+                                        Ziehen dreht das Regal, Klick wählt den Schritt.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rounded-[32px] border border-emerald-200 bg-white p-6 shadow-sm">
+                                <div class="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                                    <div class="min-w-0">
+                                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Aktiver Einräumschritt</p>
+                                        <div class="mt-3 flex flex-wrap items-center gap-3">
+                                            <span class="inline-flex h-11 w-11 items-center justify-center rounded-full text-base font-semibold text-white shadow-sm" :style="binpackingPlacementBadgeStyle(currentBinpackingActivePlacement())" x-text="currentBinpackingActiveStep()?.step || '-'"></span>
+                                            <div class="min-w-0">
+                                                <h4 class="text-2xl font-semibold text-slate-900" x-text="currentBinpackingActiveStep()?.asset_name || 'Kein Inhalt ausgewählt'"></h4>
+                                                <p class="mt-1 text-sm text-slate-500" x-text="currentBinpackingActiveStep() ? `Ebene ${currentBinpackingActiveStep().layer_index} · ${currentBinpackingActiveStep().orientation_label}` : 'Kein Schritt aktiv'"></p>
+                                            </div>
+                                        </div>
+                                        <p class="mt-4 max-w-3xl text-base leading-7 text-slate-700" x-text="binpackingStepInstruction(currentBinpackingActiveStep())"></p>
+                                    </div>
+
+                                    <div class="grid gap-3 sm:grid-cols-2 xl:w-[360px]">
+                                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-400">Position</p>
+                                            <p class="mt-2 text-sm font-semibold text-slate-900" x-text="currentBinpackingActiveStep()?.zone_label || '-'"></p>
+                                            <p class="mt-1 text-xs text-slate-500" x-text="currentBinpackingActiveStep()?.coordinate_label || ''"></p>
+                                        </div>
+                                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-400">Maße</p>
+                                            <p class="mt-2 text-sm font-semibold text-slate-900" x-text="currentBinpackingActiveStep()?.dimensions_label || '-'"></p>
+                                            <p class="mt-1 text-xs text-slate-500">Die Grafik bleibt maßstabsgetreu.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="grid gap-5 2xl:grid-cols-2">
+                                <div class="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm">
+                                    <div class="flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Grundriss</p>
+                                            <p class="mt-1 text-sm text-slate-500">Breite und Tiefe des Regals. Der aktive Schritt bleibt hervorgehoben.</p>
+                                        </div>
+                                        <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-700" x-text="`Breite ${formatDimensionValue(currentBinpackingPreview()?.container?.width)} · Tiefe ${formatDimensionValue(currentBinpackingPreview()?.container?.depth)}`"></span>
+                                    </div>
+                                    <div class="mt-4 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                                        <span>Links</span>
+                                        <span>Rechts</span>
+                                    </div>
+                                    <div class="binpacking-projection mt-3" :style="`${binpackingProjectionStyle(currentBinpackingPreview()?.container, 'topdown')} min-height: 420px;`">
+                                        <div class="pointer-events-none absolute inset-4 rounded-[22px] border border-white/70"></div>
+                                        <template x-for="placement in (currentBinpackingLayer()?.items || [])" :key="`modal-top-${placement.asset_id}`">
+                                            <button
+                                                @click="focusBinpackingStep(placement.step)"
+                                                class="binpacking-projection__item cursor-pointer"
+                                                :style="binpackingPreviewPlacementStyle(placement, currentBinpackingPreview()?.container, 'topdown')"
+                                            >
+                                                <span class="binpacking-projection__badge" :style="binpackingPlacementBadgeStyle(placement)" x-text="placement.step"></span>
+                                                <span x-show="isBinpackingStepActive(placement.step)" class="binpacking-projection__label" x-text="placement.asset_name"></span>
+                                            </button>
+                                        </template>
+                                    </div>
+                                    <div class="mt-3 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                                        <span>Vorne</span>
+                                        <span>Hinten</span>
+                                    </div>
+                                </div>
+
+                                <div class="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm">
+                                    <div class="flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Frontansicht</p>
+                                            <p class="mt-1 text-sm text-slate-500">Zeigt Stapelhöhe und seitliche Position der aktuellen Ebene.</p>
+                                        </div>
+                                        <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-700" x-text="`Höhe ${formatDimensionValue(currentBinpackingPreview()?.container?.height)} · genutzt ${currentBinpackingPreview()?.used_height_percent || 0}%`"></span>
+                                    </div>
+                                    <div class="mt-4 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                                        <span>Links</span>
+                                        <span>Rechts</span>
+                                    </div>
+                                    <div class="binpacking-projection mt-3" :style="`${binpackingProjectionStyle(currentBinpackingPreview()?.container, 'elevation')} min-height: 420px;`">
+                                        <div class="pointer-events-none absolute inset-4 rounded-[22px] border border-white/70"></div>
+                                        <template x-for="placement in (currentBinpackingLayer()?.items || [])" :key="`modal-front-${placement.asset_id}`">
+                                            <button
+                                                @click="focusBinpackingStep(placement.step)"
+                                                class="binpacking-projection__item cursor-pointer"
+                                                :style="binpackingPreviewPlacementStyle(placement, currentBinpackingPreview()?.container, 'elevation')"
+                                            >
+                                                <span class="binpacking-projection__badge" :style="binpackingPlacementBadgeStyle(placement)" x-text="placement.step"></span>
+                                                <span x-show="isBinpackingStepActive(placement.step)" class="binpacking-projection__label" x-text="placement.asset_name"></span>
+                                            </button>
+                                        </template>
+                                    </div>
+                                    <div class="mt-3 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                                        <span>Unten</span>
+                                        <span>Oben</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm">
+                                <div class="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Legende der aktiven Ebene</p>
+                                        <p class="mt-1 text-sm text-slate-500">Farben und Nummern im Regal entsprechen genau dieser Liste.</p>
+                                    </div>
+                                    <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-700" x-text="currentBinpackingLayer() ? binpackingLayerLabel(currentBinpackingLayer(), binpackingPreviewLayerIndex) : 'Keine Ebene'"></span>
+                                </div>
+                                <div class="mt-4 flex flex-wrap gap-2" x-show="(currentBinpackingLayer()?.items || []).length > 0">
+                                    <template x-for="placement in (currentBinpackingLayer()?.items || [])" :key="`layer-legend-${placement.asset_id}`">
+                                        <button
+                                            @click="focusBinpackingStep(placement.step)"
+                                            :class="Number(placement.step) === Number(binpackingPreviewActiveStep) ? 'border-emerald-300 bg-emerald-50 shadow-sm' : 'border-slate-200 bg-slate-50 hover:border-emerald-200 hover:bg-white'"
+                                            class="inline-flex items-center gap-3 rounded-full border px-4 py-2 text-left transition"
+                                        >
+                                            <span class="inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold text-white" :style="binpackingPlacementBadgeStyle(placement)" x-text="placement.step"></span>
+                                            <span class="text-sm font-semibold text-slate-900" x-text="placement.asset_name"></span>
+                                            <span class="text-xs text-slate-500" x-text="placement.zone_label"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                                <p x-show="(currentBinpackingLayer()?.items || []).length === 0" class="mt-3 text-sm text-slate-500">Für diese Ebene sind noch keine platzierbaren Inhalte vorhanden.</p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div class="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Ebenenstatus</p>
+                                <h4 class="mt-2 text-lg font-semibold text-slate-900" x-text="currentBinpackingLayer() ? binpackingLayerLabel(currentBinpackingLayer(), binpackingPreviewLayerIndex) : 'Keine Ebene aktiv'"></h4>
+                                <p class="mt-2 text-sm text-slate-500" x-text="currentBinpackingPreview()?.message"></p>
+
+                                <div class="mt-5 space-y-4">
+                                    <div>
+                                        <div class="flex items-center justify-between gap-3 text-sm">
+                                            <span class="font-medium text-slate-700">Stellfläche dieser Ebene</span>
+                                            <span class="font-semibold text-slate-900" x-text="`${currentBinpackingLayer()?.footprint_percent || 0}%`"></span>
+                                        </div>
+                                        <div class="mt-2 h-2 rounded-full bg-slate-100">
+                                            <div class="h-2 rounded-full bg-emerald-500" :style="`width:${Math.min(currentBinpackingLayer()?.footprint_percent || 0, 100)}%`"></div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div class="flex items-center justify-between gap-3 text-sm">
+                                            <span class="font-medium text-slate-700">Volumen in dieser Ebene</span>
+                                            <span class="font-semibold text-slate-900" x-text="`${currentBinpackingLayer()?.occupancy_percent || 0}%`"></span>
+                                        </div>
+                                        <div class="mt-2 h-2 rounded-full bg-slate-100">
+                                            <div class="h-2 rounded-full bg-sky-500" :style="`width:${Math.min(currentBinpackingLayer()?.occupancy_percent || 0, 100)}%`"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-400">Freies Volumen</p>
+                                            <p class="mt-2 text-xl font-semibold text-slate-900" x-text="formatDimensionValue(currentBinpackingPreview()?.free_volume)"></p>
+                                        </div>
+                                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-400">Gesamteffizienz</p>
+                                            <p class="mt-2 text-xl font-semibold text-slate-900" x-text="`${currentBinpackingPreview()?.efficiency_percent || 0}%`"></p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Schritte in dieser Ebene</p>
+                                        <p class="mt-1 text-sm text-slate-500">Ideal, wenn du nur die aktuell sichtbare Ebene abarbeiten willst.</p>
+                                    </div>
+                                    <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-700" x-text="`${currentBinpackingLayerSteps().length} Einträge`"></span>
+                                </div>
+                                <div class="mt-4 space-y-3" x-show="currentBinpackingLayerSteps().length > 0">
+                                    <template x-for="step in currentBinpackingLayerSteps()" :key="`layer-step-${step.step}`">
+                                        <button
+                                            @click="focusBinpackingStep(step)"
+                                            :class="isBinpackingStepActive(step) ? 'border-emerald-300 bg-emerald-50 shadow-sm' : 'border-slate-200 bg-slate-50 hover:border-emerald-200 hover:bg-white'"
+                                            class="w-full rounded-2xl border px-4 py-3 text-left transition"
+                                        >
+                                            <div class="flex items-start gap-3">
+                                                <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" :style="binpackingPlacementBadgeStyle(binpackingPlacementByStep(step))" x-text="step.step"></span>
+                                                <div class="min-w-0">
+                                                    <p class="font-semibold text-slate-900" x-text="step.asset_name"></p>
+                                                    <p class="mt-1 text-xs text-slate-500" x-text="`${step.zone_label} · ${step.dimensions_label}`"></p>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    </template>
+                                </div>
+                                <p x-show="currentBinpackingLayerSteps().length === 0" class="mt-3 text-sm text-slate-500">Für diese Ebene gibt es noch keine Schritte.</p>
+                            </div>
+
+                            <div class="space-y-4">
+                                <div x-show="(currentBinpackingPreview()?.unplaced_assets || []).length > 0" class="rounded-[28px] border border-rose-200 bg-rose-50/80 p-5">
+                                    <p class="text-sm font-semibold text-rose-700">Passt aktuell nicht ins Regal</p>
+                                    <p class="mt-1 text-xs text-rose-700/80">Diese Inhalte brauchen ein anderes Regal oder geänderte Maße.</p>
+                                    <div class="mt-3 space-y-2 text-xs text-rose-800">
+                                        <template x-for="asset in (currentBinpackingPreview()?.unplaced_assets || [])" :key="`modal-unplaced-${asset.id}`">
+                                            <div class="rounded-2xl border border-rose-200 bg-white px-3 py-2">
+                                                <p class="font-semibold" x-text="asset.name"></p>
+                                                <p x-text="formatDimensionTriplet(asset.dimensions)"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div x-show="(currentBinpackingPreview()?.invalid_assets || []).length > 0" class="rounded-[28px] border border-amber-200 bg-amber-50/80 p-5">
+                                    <p class="text-sm font-semibold text-amber-700">Unvollständige Maße</p>
+                                    <p class="mt-1 text-xs text-amber-700/80">Diese Inhalte tauchen erst im Plan auf, sobald die fehlenden Werte gepflegt sind.</p>
+                                    <div class="mt-3 space-y-2 text-xs text-amber-800">
+                                        <template x-for="asset in (currentBinpackingPreview()?.invalid_assets || [])" :key="`modal-invalid-${asset.id}`">
+                                            <div class="rounded-2xl border border-amber-200 bg-white px-3 py-2">
+                                                <p class="font-semibold" x-text="asset.name"></p>
+                                                <p x-show="(asset.missing_fields || []).length > 0" x-text="`Fehlt: ${(asset.missing_fields || []).map(item => item.field || item.axis).join(', ')}`"></p>
+                                                <p x-show="(asset.invalid_fields || []).length > 0" x-text="`Ungültig: ${(asset.invalid_fields || []).map(item => item.field || item.axis).join(', ')}`"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="assignmentModalOpen" @click.self="closeAssetAssignmentModal()" class="modal fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" x-transition>
+        <div class="modal-panel bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Asset Aktion</p>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="assignmentAction === 'checkout' ? 'Asset ausgeben' : assignmentAction === 'checkin' ? 'Asset einchecken' : assignmentAction === 'unassign' ? 'Zuweisung entfernen' : 'Asset zuweisen'"></h3>
+                </div>
+                <button @click="closeAssetAssignmentModal()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Assignment-Modal schließen">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <form @submit.prevent="submitAssetAssignment()" class="space-y-4 p-6">
+                <div x-show="assignmentAction === 'assign' || assignmentAction === 'checkout'" class="space-y-3">
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Benutzer</label>
+                        <select x-model="assignmentForm.assigned_to_user_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                            <option value="">Kein Benutzer</option>
+                            <template x-for="user in assignmentOptions.users" :key="user.id">
+                                <option :value="user.id" x-text="user.username"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Team</label>
+                        <select x-model="assignmentForm.assigned_to_team_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                            <option value="">Kein Team</option>
+                            <template x-for="team in assignmentOptions.teams" :key="team.id">
+                                <option :value="team.id" x-text="team.name"></option>
+                            </template>
+                        </select>
+                        <p class="mt-1 text-[11px] text-slate-400">Bitte nur eine Auswahl treffen.</p>
+                    </div>
+                </div>
+                <div x-show="assignmentAction === 'checkout'">
+                    <label class="text-xs font-semibold text-slate-500">Fällig am</label>
+                    <input type="date" x-model="assignmentForm.due_at" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-500">Notiz</label>
+                    <textarea rows="3" x-model="assignmentForm.note" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm" placeholder="Optionaler Hinweis"></textarea>
+                </div>
+                <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    <button type="button" @click="closeAssetAssignmentModal()" class="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto">Abbrechen</button>
+                    <button type="submit" class="w-full rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 sm:w-auto">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="isAssetModalOpen" @click.away="closeAssetModal()" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
+        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Asset-Eintrag</p>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingAsset ? 'Asset-Eintrag bearbeiten' : 'Neuer Asset-Eintrag'"></h3>
+                </div>
+                <button @click="closeAssetModal()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Asset-Modal schließen">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <form @submit.prevent="saveAsset()" class="space-y-4 p-6">
+                <input type="hidden" x-model="currentAsset.id">
+                <div x-show="assetFormMessage" class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" x-text="assetFormMessage"></div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div>
+                        <label class="text-sm font-semibold text-slate-700">Name*</label>
+                        <input type="text" x-model="currentAsset.name" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <p x-show="getAssetFieldError('name')" class="mt-1 text-xs text-rose-600" x-text="getAssetFieldError('name')"></p>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Asset-Kategorie*</label>
+                    <select x-model="currentAsset.category_id" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <option value="">-- Kategorie wählen --</option>
+                        <template x-for="category in assetCategories" :key="category.id">
+                            <option :value="category.id" x-text="category.name"></option>
+                        </template>
+                    </select>
+                    <p x-show="getAssetFieldError('category_id')" class="mt-1 text-xs text-rose-600" x-text="getAssetFieldError('category_id')"></p>
+                    <p x-show="assetCategories.length === 0" class="mt-1 text-xs text-rose-500">Bitte zuerst eine Asset-Kategorie anlegen.</p>
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Notizen</label>
+                    <textarea x-model="currentAsset.notes" rows="3" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Zusätzliche Infos, z. B. Einsatzzweck"></textarea>
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Lebenszyklus</label>
+                    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <label class="text-xs font-semibold text-slate-500">Anschaffungsdatum</label>
+                            <input type="date" x-model="currentAsset.acquisition_date" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p x-show="getAssetFieldError('acquisition_date')" class="mt-1 text-xs text-rose-600" x-text="getAssetFieldError('acquisition_date')"></p>
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold text-slate-500">Inbetriebnahme</label>
+                            <input type="date" x-model="currentAsset.commissioning_date" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p x-show="getAssetFieldError('commissioning_date')" class="mt-1 text-xs text-rose-600" x-text="getAssetFieldError('commissioning_date')"></p>
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold text-slate-500">Garantieende</label>
+                            <input type="date" x-model="currentAsset.warranty_end" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p x-show="getAssetFieldError('warranty_end')" class="mt-1 text-xs text-rose-600" x-text="getAssetFieldError('warranty_end')"></p>
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold text-slate-500">Abschreibungszeitraum (Monate)</label>
+                            <input type="number" min="0" x-model="currentAsset.depreciation_months" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p x-show="getAssetFieldError('depreciation_months')" class="mt-1 text-xs text-rose-600" x-text="getAssetFieldError('depreciation_months')"></p>
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold text-slate-500">Aussonderungsdatum</label>
+                            <input type="date" x-model="currentAsset.retirement_date" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p x-show="getAssetFieldError('retirement_date')" class="mt-1 text-xs text-rose-600" x-text="getAssetFieldError('retirement_date')"></p>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="text-xs font-semibold text-slate-500">Grund der Ausmusterung</label>
+                            <textarea x-model="currentAsset.retirement_reason" rows="2" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div x-show="can('procurement.view') || can('procurement.manage')">
+                    <label class="text-sm font-semibold text-slate-700">Beschaffung</label>
+                    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <label class="text-xs font-semibold text-slate-500">Lieferant</label>
+                            <select x-model="currentAsset.vendor_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">-- Lieferant wählen --</option>
+                                <template x-for="vendor in vendors" :key="vendor.id">
+                                    <option :value="vendor.id" x-text="vendor.name"></option>
+                                </template>
+                            </select>
+                            <p x-show="getAssetFieldError('vendor_id')" class="mt-1 text-xs text-rose-600" x-text="getAssetFieldError('vendor_id')"></p>
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold text-slate-500">Bestellung</label>
+                            <select x-model="currentAsset.purchase_order_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">-- Bestellung wählen --</option>
+                                <template x-for="order in purchaseOrders" :key="order.id">
+                                    <option :value="order.id" x-text="order.po_number"></option>
+                                </template>
+                            </select>
+                            <p x-show="getAssetFieldError('purchase_order_id')" class="mt-1 text-xs text-rose-600" x-text="getAssetFieldError('purchase_order_id')"></p>
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold text-slate-500">Kaufpreis</label>
+                            <input type="number" step="0.01" min="0" x-model="currentAsset.purchase_cost" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p x-show="getAssetFieldError('purchase_cost')" class="mt-1 text-xs text-rose-600" x-text="getAssetFieldError('purchase_cost')"></p>
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold text-slate-500">Währung</label>
+                            <select x-model="currentAsset.currency" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="EUR">EUR</option>
+                                <option value="USD">USD</option>
+                                <option value="GBP">GBP</option>
+                                <option value="CHF">CHF</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold text-slate-500">Kostenstelle</label>
+                            <input type="text" x-model="currentAsset.cost_center" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="z. B. IT-OPS">
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold text-slate-500">Rechnungsnummer</label>
+                            <input type="text" x-model="currentAsset.invoice_number" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Spezifikationen</label>
+                    <div class="mt-2 space-y-2">
+                        <template x-for="field in getAssetCategoryFieldEntries(currentAsset.category_id)" :key="field.name">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 mb-1" x-text="field.name"></label>
+                                <template x-if="field.type === 'number'">
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <input type="number" x-model="currentAsset.specs[field.name]" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500">
+                                            <span x-show="field.unit" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500" x-text="field.unit"></span>
+                                        </div>
+                                        <p x-show="getAssetSpecFieldError(field.name)" class="mt-1 text-xs text-rose-600" x-text="getAssetSpecFieldError(field.name)"></p>
+                                    </div>
+                                </template>
+                                <template x-if="field.type === 'date'">
+                                    <div>
+                                        <input type="date" x-model="currentAsset.specs[field.name]" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500">
+                                        <p x-show="getAssetSpecFieldError(field.name)" class="mt-1 text-xs text-rose-600" x-text="getAssetSpecFieldError(field.name)"></p>
+                                    </div>
+                                </template>
+                                <template x-if="field.type === 'select'">
+                                    <div>
+                                        <select x-model="currentAsset.specs[field.name]" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500">
+                                            <option value="">-- Auswahl --</option>
+                                            <template x-for="option in field.options" :key="option">
+                                                <option :value="option" x-text="option"></option>
+                                            </template>
+                                        </select>
+                                        <p x-show="getAssetSpecFieldError(field.name)" class="mt-1 text-xs text-rose-600" x-text="getAssetSpecFieldError(field.name)"></p>
+                                    </div>
+                                </template>
+                                <template x-if="field.type === 'checkbox'">
+                                    <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                        <input type="checkbox" x-model="currentAsset.specs[field.name]" class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                                        <span>Aktiv</span>
+                                    </label>
+                                </template>
+                                <template x-if="field.type !== 'number' && field.type !== 'date' && field.type !== 'select' && field.type !== 'checkbox'">
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <input type="text" x-model="currentAsset.specs[field.name]" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500">
+                                            <span x-show="field.unit" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500" x-text="field.unit"></span>
+                                        </div>
+                                        <p x-show="getAssetSpecFieldError(field.name)" class="mt-1 text-xs text-rose-600" x-text="getAssetSpecFieldError(field.name)"></p>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                        <p x-show="getAssetCategoryFieldEntries(currentAsset.category_id).length === 0" class="text-xs text-slate-400">Keine spezifischen Felder definiert.</p>
+                    </div>
+                    <div class="mt-4">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs font-semibold text-slate-500">Zusätzliche Spezifikationen</p>
+                            <button type="button" @click="addAssetSpec()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                                <i data-feather="plus" class="w-3 h-3"></i>
+                                Spezifikation hinzufügen
+                            </button>
+                        </div>
+                        <div class="mt-3 space-y-3">
+                            <template x-for="spec in currentAsset.extraSpecs" :key="spec.id">
+                                <div class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center">
+                                    <div class="flex-1">
+                                        <label class="text-xs font-semibold text-slate-500">Bezeichnung</label>
+                                        <input type="text" x-model="spec.name" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="z. B. Build">
+                                    </div>
+                                    <div class="flex-1">
+                                        <label class="text-xs font-semibold text-slate-500">Wert</label>
+                                        <input type="text" x-model="spec.value" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="z. B. Gaming PC">
+                                    </div>
+                                    <button type="button" @click="removeAssetSpec(spec.id)" class="self-start rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 sm:self-center">
+                                        Entfernen
+                                    </button>
+                                </div>
+                            </template>
+                            <p x-show="currentAsset.extraSpecs.length === 0" class="text-xs text-slate-400">Keine zusätzlichen Spezifikationen angelegt.</p>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-semibold text-slate-700">Asset-Beziehungen</label>
+                        <button type="button" @click="addAssetRelation()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                            <i data-feather="plus" class="w-3 h-3"></i>
+                            Beziehung hinzufügen
+                        </button>
+                    </div>
+                    <div class="mt-3 space-y-3">
+                        <template x-for="relation in currentAsset.relations" :key="relation.id">
+                            <div class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center">
+                                <div class="flex-1">
+                                    <label class="text-xs font-semibold text-slate-500">Ziel-Asset</label>
+                                    <select x-model="relation.related_asset_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <option value="">-- Asset wählen --</option>
+                                        <template x-for="asset in assetEntryOptions.filter(item => item.id !== currentAsset.id)" :key="asset.id">
+                                            <option :value="asset.id" x-text="asset.name"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div class="flex-1">
+                                    <label class="text-xs font-semibold text-slate-500">Relationstyp</label>
+                                    <select x-model="relation.relation_type_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <option value="">-- Typ wählen --</option>
+                                        <template x-for="type in relationTypes" :key="type.id">
+                                            <option :value="type.id" x-text="type.name"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <button type="button" @click="removeAssetRelation(relation.id)" class="self-start rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 sm:self-center">
+                                    Entfernen
+                                </button>
+                            </div>
+                        </template>
+                        <p x-show="currentAsset.relations.length === 0" class="text-xs text-slate-400">Noch keine Beziehungen definiert.</p>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Geräte zuordnen</label>
+                    <div class="mt-3 space-y-4">
+                        <template x-for="category in categories" :key="category.id">
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                <p class="text-sm font-semibold text-slate-700" x-text="category.name"></p>
+                                <div class="mt-3 grid gap-2 sm:grid-cols-2">
+                                    <template x-for="device in getDevicesForCategory(category.id)" :key="device.id">
+                                        <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                                            <input type="checkbox" :value="device.id" x-model="currentAsset.device_ids" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="truncate" x-text="device.name"></span>
+                                        </label>
+                                    </template>
+                                    <p x-show="getDevicesForCategory(category.id).length === 0" class="text-xs text-slate-400">Keine Geräte in dieser Kategorie.</p>
+                                </div>
+                            </div>
+                        </template>
+                        <p x-show="categories.length === 0" class="text-xs text-slate-400">Bitte zuerst Kategorien und Geräte anlegen.</p>
+                    </div>
+                    <p x-show="getAssetFieldError('device_ids')" class="mt-2 text-xs text-rose-600" x-text="getAssetFieldError('device_ids')"></p>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" @click="closeAssetModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
+                    <button type="submit" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="isCategoryModalOpen" @click.away="closeCategoryModal()" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
+        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Kategorie</p>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingCategory ? 'Kategorie bearbeiten' : 'Neue Kategorie'"></h3>
+                </div>
+                <button @click="closeCategoryModal()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Kategorie-Modal schließen">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <form @submit.prevent="saveCategory()" class="space-y-4 p-6">
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Name*</label>
+                    <input type="text" x-model="currentCategory.name" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Beschreibung</label>
+                    <textarea rows="2" x-model="currentCategory.description" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500" placeholder="Wofür ist diese Kategorie gedacht?"></textarea>
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Icon*</label>
+                    <div class="mt-2 space-y-3">
+                        <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div class="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white">
+                                <div x-html="renderIconSvg(currentCategory.icon, 'w-5 h-5 text-slate-600')"></div>
+                            </div>
+                            <div class="flex-1">
+                                <input type="text" x-model="iconSearch" placeholder="Icon suchen (z. B. box, camera, tool)" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                <p class="mt-1 text-xs text-slate-400">Aktuell: <span class="font-semibold text-slate-600" x-text="formatIconLabel(currentCategory.icon)"></span></p>
+                            </div>
+                        </div>
+                        <div class="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2">
+                            <div class="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                                <template x-for="iconName in filteredIconCatalog()" :key="iconName">
+                                    <button type="button" @click="selectIcon(iconName)" class="flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide transition"
+                                        :class="iconsMatch(currentCategory.icon, iconName) ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'">
+                                        <div x-html="renderIconSvg(iconName, 'w-4 h-4')"></div>
+                                        <span class="w-full truncate" x-text="formatIconLabel(iconName)"></span>
+                                    </button>
+                                </template>
+                            </div>
+                            <p x-show="filteredIconCatalog().length === 0" class="p-4 text-center text-xs text-slate-400">Keine Icons gefunden.</p>
+                        </div>
+                        <p class="text-xs text-slate-500">Tipp: Nutze die Suche für eine große Auswahl an passenden Symbolen.</p>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-semibold text-slate-700">Spezifikationsfelder</label>
+                        <button type="button" @click="addCategoryField()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                            <i data-feather="plus" class="w-3 h-3"></i>
+                            Feld hinzufügen
+                        </button>
+                    </div>
+                    <div class="mt-3 space-y-3">
+                        <template x-for="field in currentCategory.fields" :key="field.id">
+                            <div class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center">
+                                <div class="flex-1">
+                                    <label class="text-xs font-semibold text-slate-500">Feldname</label>
+                                    <input type="text" x-model="field.name" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" placeholder="z. B. Modell">
+                                </div>
+                                <div class="w-full sm:w-40">
+                                    <label class="text-xs font-semibold text-slate-500">Typ</label>
+                                    <select x-model="field.type" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                        <option value="text">Text</option>
+                                        <option value="number">Zahl</option>
+                                        <option value="date">Datum</option>
+                                        <option value="select">Dropdown</option>
+                                        <option value="checkbox">Checkbox</option>
+                                    </select>
+                                </div>
+                                <template x-if="field.type === 'text' || field.type === 'number'">
+                                    <div class="w-full sm:w-32">
+                                        <label class="text-xs font-semibold text-slate-500">Einheit</label>
+                                        <input type="text" x-model="field.unit" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" placeholder="z. B. GHz">
+                                    </div>
+                                </template>
+                                <template x-if="field.type === 'select'">
+                                    <div class="flex-1">
+                                        <label class="text-xs font-semibold text-slate-500">Optionen</label>
+                                        <input type="text" x-model="field.optionsText" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" placeholder="z. B. Klein, Mittel, Groß">
+                                        <p class="mt-1 text-[11px] text-slate-400">Optionen durch Komma trennen.</p>
+                                    </div>
+                                </template>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" @click="moveCategoryField(field.id, -1)" class="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-white" title="Nach oben">
+                                        ↑
+                                    </button>
+                                    <button type="button" @click="moveCategoryField(field.id, 1)" class="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-white" title="Nach unten">
+                                        ↓
+                                    </button>
+                                </div>
+                                <button type="button" @click="removeCategoryField(field.id)" class="self-start rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 sm:self-center">
+                                    Entfernen
+                                </button>
+                            </div>
+                        </template>
+                        <p x-show="currentCategory.fields.length === 0" class="text-xs text-slate-400">Noch keine Felder definiert. Füge eigene Spezifikationen hinzu.</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+                    <button type="button" x-show="editingCategory" @click="confirmDeleteCategory()" class="rounded-2xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50">Kategorie löschen</button>
+                    <div class="ml-auto flex gap-3">
+                    <button type="button" @click="closeCategoryModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
+                    <button type="submit" class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Speichern</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="isAssetCategoryModalOpen" @click.away="closeAssetCategoryModal()" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
+        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Asset-Kategorie</p>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingAssetCategory ? 'Asset-Kategorie bearbeiten' : 'Neue Asset-Kategorie'"></h3>
+                </div>
+                <button @click="closeAssetCategoryModal()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Asset-Kategorie-Modal schließen">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <form @submit.prevent="saveAssetCategory()" class="space-y-4 p-6">
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Name*</label>
+                    <input type="text" x-model="currentAssetCategory.name" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-emerald-500 focus:ring-emerald-500">
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Beschreibung</label>
+                    <textarea rows="2" x-model="currentAssetCategory.description" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="Wofür ist diese Asset-Kategorie gedacht?"></textarea>
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Icon*</label>
+                    <div class="mt-2 space-y-3">
+                        <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div class="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white">
+                                <div x-html="renderIconSvg(currentAssetCategory.icon, 'w-5 h-5 text-slate-600')"></div>
+                            </div>
+                            <div class="flex-1">
+                                <input type="text" x-model="iconSearch" placeholder="Icon suchen (z. B. box, server, shield)" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500">
+                                <p class="mt-1 text-xs text-slate-400">Aktuell: <span class="font-semibold text-slate-600" x-text="formatIconLabel(currentAssetCategory.icon)"></span></p>
+                            </div>
+                        </div>
+                        <div class="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2">
+                            <div class="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                                <template x-for="iconName in filteredIconCatalog()" :key="iconName">
+                                    <button type="button" @click="selectAssetIcon(iconName)" class="flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[10px] font-semibold uppercase tracking-wide transition"
+                                        :class="iconsMatch(currentAssetCategory.icon, iconName) ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'">
+                                        <div x-html="renderIconSvg(iconName, 'w-4 h-4')"></div>
+                                        <span class="w-full truncate" x-text="formatIconLabel(iconName)"></span>
+                                    </button>
+                                </template>
+                            </div>
+                            <p x-show="filteredIconCatalog().length === 0" class="p-4 text-center text-xs text-slate-400">Keine Icons gefunden.</p>
+                        </div>
+                        <p class="text-xs text-slate-500">Tipp: Nutze die Suche für eine große Auswahl an passenden Symbolen.</p>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-semibold text-slate-700">Spezifikationsfelder</label>
+                        <button type="button" @click="addAssetCategoryField()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                            <i data-feather="plus" class="w-3 h-3"></i>
+                            Feld hinzufügen
+                        </button>
+                    </div>
+                    <div class="mt-3 space-y-3">
+                        <template x-for="field in currentAssetCategory.fields" :key="field.id">
+                            <div class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center">
+                                <div class="flex-1">
+                                    <label class="text-xs font-semibold text-slate-500">Feldname</label>
+                                    <input type="text" x-model="field.name" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="z. B. Kritikalität">
+                                </div>
+                                <div class="w-full sm:w-40">
+                                    <label class="text-xs font-semibold text-slate-500">Typ</label>
+                                    <select x-model="field.type" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500">
+                                        <option value="text">Text</option>
+                                        <option value="number">Zahl</option>
+                                        <option value="date">Datum</option>
+                                        <option value="select">Dropdown</option>
+                                        <option value="checkbox">Checkbox</option>
+                                    </select>
+                                </div>
+                                <template x-if="field.type === 'text' || field.type === 'number'">
+                                    <div class="w-full sm:w-32">
+                                        <label class="text-xs font-semibold text-slate-500">Einheit</label>
+                                        <input type="text" x-model="field.unit" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="z. B. TB">
+                                    </div>
+                                </template>
+                                <template x-if="field.type === 'select'">
+                                    <div class="flex-1">
+                                        <label class="text-xs font-semibold text-slate-500">Optionen</label>
+                                        <input type="text" x-model="field.optionsText" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="z. B. niedrig, mittel, hoch">
+                                        <p class="mt-1 text-[11px] text-slate-400">Optionen durch Komma trennen.</p>
+                                    </div>
+                                </template>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" @click="moveAssetCategoryField(field.id, -1)" class="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-white" title="Nach oben">
+                                        ↑
+                                    </button>
+                                    <button type="button" @click="moveAssetCategoryField(field.id, 1)" class="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-white" title="Nach unten">
+                                        ↓
+                                    </button>
+                                </div>
+                                <button type="button" @click="removeAssetCategoryField(field.id)" class="self-start rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 sm:self-center">
+                                    Entfernen
+                                </button>
+                            </div>
+                        </template>
+                        <p x-show="currentAssetCategory.fields.length === 0" class="text-xs text-slate-400">Noch keine Felder definiert. Füge Standard-Spezifikationen hinzu.</p>
+                    </div>
+                </div>
+                <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-4">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-900">Binpacking-Vorschau</p>
+                            <p class="text-xs text-slate-500">Berechnet, wie verknüpfte Assets aus einer Zielkategorie grafisch in diesen Storage-Typ eingeräumt werden.</p>
+                        </div>
+                        <label class="inline-flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">
+                            <input type="checkbox" x-model="currentAssetCategory.binpacking_config.enabled" class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                            Binpacking aktivieren
+                        </label>
+                    </div>
+
+                    <div x-show="currentAssetCategory.binpacking_config.enabled" class="space-y-4" x-transition>
+                        <div class="grid gap-4 lg:grid-cols-2">
+                            <div>
+                                <label class="text-xs font-semibold text-slate-500">Inhaltskategorie*</label>
+                                <select x-model="currentAssetCategory.binpacking_config.content_category_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500">
+                                    <option value="">Kategorie auswählen</option>
+                                    <template x-for="category in assetCategories.filter(item => String(item.id) !== String(currentAssetCategory.id || ''))" :key="category.id">
+                                        <option :value="String(category.id)" x-text="category.name"></option>
+                                    </template>
+                                </select>
+                                <p class="mt-1 text-[11px] text-slate-400">Diese Kategorie beschreibt die Assets, die in den Storage eingeordnet werden.</p>
+                            </div>
+                            <div class="grid gap-4 sm:grid-cols-2">
+                                <div>
+                                    <label class="text-xs font-semibold text-slate-500">Abstand</label>
+                                    <input type="number" min="0" step="0.1" x-model="currentAssetCategory.binpacking_config.clearance" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="0">
+                                    <p class="mt-1 text-[11px] text-slate-400">Optionaler Sicherheitsabstand je Seite.</p>
+                                </div>
+                                <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 sm:mt-6">
+                                    <input type="checkbox" x-model="currentAssetCategory.binpacking_config.allow_rotation" class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                                    Rotation erlauben
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="grid gap-4 lg:grid-cols-2">
+                            <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm font-semibold text-slate-900">Storage-Maße</p>
+                                        <p class="text-xs text-slate-500">Ordne die numerischen Felder dieser Kategorie zu.</p>
+                                    </div>
+                                    <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600" x-text="`${getCurrentAssetCategoryNumberFields().length} Zahlenfelder`"></span>
+                                </div>
+                                <div class="mt-3 grid gap-3">
+                                    <template x-for="axis in ['width', 'height', 'depth']" :key="`storage-${axis}`">
+                                        <div>
+                                            <label class="text-xs font-semibold text-slate-500" x-text="axis === 'width' ? 'Breite*' : axis === 'height' ? 'Höhe*' : 'Tiefe*'"></label>
+                                            <select x-model="currentAssetCategory.binpacking_config.container_fields[axis]" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500">
+                                                <option value="">Feld wählen</option>
+                                                <template x-for="field in getCurrentAssetCategoryNumberFields()" :key="field.id">
+                                                    <option :value="field.name" x-text="field.name"></option>
+                                                </template>
+                                            </select>
+                                        </div>
+                                    </template>
+                                </div>
+                                <p x-show="getCurrentAssetCategoryNumberFields().length === 0" class="mt-3 text-xs text-amber-600">Lege zuerst numerische Felder wie Breite, Höhe und Tiefe an.</p>
+                            </div>
+
+                            <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm font-semibold text-slate-900">Inhalts-Maße</p>
+                                        <p class="text-xs text-slate-500">Ordne die numerischen Felder der Zielkategorie zu.</p>
+                                    </div>
+                                    <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600" x-text="`${getBinpackingTargetNumberFields().length} Zahlenfelder`"></span>
+                                </div>
+                                <div class="mt-3 grid gap-3">
+                                    <template x-for="axis in ['width', 'height', 'depth']" :key="`item-${axis}`">
+                                        <div>
+                                            <label class="text-xs font-semibold text-slate-500" x-text="axis === 'width' ? 'Breite*' : axis === 'height' ? 'Höhe*' : 'Tiefe*'"></label>
+                                            <select x-model="currentAssetCategory.binpacking_config.item_fields[axis]" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500">
+                                                <option value="">Feld wählen</option>
+                                                <template x-for="field in getBinpackingTargetNumberFields()" :key="field.name">
+                                                    <option :value="field.name" x-text="field.name"></option>
+                                                </template>
+                                            </select>
+                                        </div>
+                                    </template>
+                                </div>
+                                <p x-show="!currentAssetCategory.binpacking_config.content_category_id" class="mt-3 text-xs text-slate-400">Wähle zuerst eine Inhaltskategorie.</p>
+                                <p x-show="currentAssetCategory.binpacking_config.content_category_id && getBinpackingTargetNumberFields().length === 0" class="mt-3 text-xs text-amber-600">Die Zielkategorie benötigt numerische Felder für Breite, Höhe und Tiefe.</p>
+                            </div>
+                        </div>
+
+                        <div class="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-xs text-emerald-800">
+                            Für die Berechnung werden im Asset-Detail verknüpfte Assets der Zielkategorie verwendet. Nutze dafür Relationstypen wie <span class="font-semibold">enthält</span> oder <span class="font-semibold">gelagert in</span>.
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+                    <button type="button" x-show="editingAssetCategory" @click="confirmDeleteAssetCategory()" class="rounded-2xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50">Kategorie löschen</button>
+                    <div class="ml-auto flex gap-3">
+                        <button type="button" @click="closeAssetCategoryModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
+                        <button type="submit" class="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">Speichern</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="isDeviceModalOpen" @click.away="closeDeviceModal()" data-testid="device-modal-container" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
+        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto scrollbar-hide" data-testid="device-modal">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Gerät</p>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingDevice ? 'Gerät bearbeiten' : 'Neues Gerät'"></h3>
+                </div>
+                <button @click="closeDeviceModal()" data-modal-close data-testid="device-modal-close" class="icon-button text-slate-400 hover:text-slate-600" aria-label="Geräte-Modal schließen">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <form @submit.prevent="saveDevice()" class="space-y-4 p-6">
+                <input type="hidden" x-model="currentDevice.id">
+                <div x-show="deviceFormMessage" class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" x-text="deviceFormMessage"></div>
+                <div x-show="!editingDevice && currentDevice.category_id" class="rounded-2xl border border-blue-100 bg-blue-50/80 p-4">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-blue-500">Schnellstart</p>
+                            <h4 class="text-sm font-semibold text-slate-900">Nächste freie Gerätenummer</h4>
+                            <p class="mt-1 text-xs text-slate-600">
+                                Name:
+                                <span class="font-semibold text-slate-800" x-text="getDeviceIdentitySuggestions().name || '-'"></span>
+                                · Inventarnummer:
+                                <span class="font-semibold text-slate-800" x-text="getDeviceIdentitySuggestions().serial_number || '-'"></span>
+                            </p>
+                        </div>
+                        <button type="button" @click="applySuggestedDeviceIdentity(true)" class="inline-flex items-center justify-center rounded-full border border-blue-200 bg-white px-4 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">
+                            Vorschlag übernehmen
+                        </button>
+                    </div>
+                </div>
+                <div class="grid gap-4 lg:grid-cols-2">
+                    <div>
+                        <label class="text-sm font-semibold text-slate-700">Name*</label>
+                        <input type="text" x-model="currentDevice.name" required :class="getDeviceFieldError('name') ? 'border-rose-300 bg-rose-50/70' : ''" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                        <p x-show="getDeviceFieldError('name')" class="mt-2 text-xs font-medium text-rose-600" x-text="getDeviceFieldError('name')"></p>
+                    </div>
+                    <div>
+                        <label class="text-sm font-semibold text-slate-700">Kategorie*</label>
+                        <select x-model="currentDevice.category_id" @change="handleDeviceCategoryChange()" required :class="getDeviceFieldError('category_id') ? 'border-rose-300 bg-rose-50/70' : ''" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">-- Kategorie wählen --</option>
+                            <template x-for="category in categories" :key="category.id">
+                                <option :value="category.id" x-text="category.name"></option>
+                            </template>
+                        </select>
+                        <p x-show="getDeviceFieldError('category_id')" class="mt-2 text-xs font-medium text-rose-600" x-text="getDeviceFieldError('category_id')"></p>
+                    </div>
+                    <div>
+                        <label class="text-sm font-semibold text-slate-700">Inventar-/Seriennummer</label>
+                        <input type="text" x-model="currentDevice.serial_number" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="text-sm font-semibold text-slate-700">Standort</label>
+                        <select x-model="currentDevice.location_id" :class="getDeviceFieldError('location_id') ? 'border-rose-300 bg-rose-50/70' : ''" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">-- Standort wählen --</option>
+                            <template x-for="location in locations" :key="location.id">
+                                <option :value="location.id" x-text="location.name"></option>
+                            </template>
+                        </select>
+                        <p x-show="getDeviceFieldError('location_id')" class="mt-2 text-xs font-medium text-rose-600" x-text="getDeviceFieldError('location_id')"></p>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Spezifikationen</label>
+                    <div class="mt-2 space-y-2">
+                        <template x-for="field in getCategoryFieldEntries(currentDevice.category_id)" :key="field.name">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 mb-1" x-text="field.name"></label>
+                                <template x-if="field.type === 'number'">
+                                    <div class="flex items-center gap-2">
+                                        <input type="number" x-model="currentDevice.specs[field.name]" :class="getDeviceSpecFieldError(field.name) ? 'border-rose-300 bg-rose-50/70' : ''" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                        <span x-show="field.unit" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500" x-text="field.unit"></span>
+                                    </div>
+                                </template>
+                                <template x-if="field.type === 'date'">
+                                    <input type="date" x-model="currentDevice.specs[field.name]" :class="getDeviceSpecFieldError(field.name) ? 'border-rose-300 bg-rose-50/70' : ''" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                </template>
+                                <template x-if="field.type === 'select'">
+                                    <select x-model="currentDevice.specs[field.name]" :class="getDeviceSpecFieldError(field.name) ? 'border-rose-300 bg-rose-50/70' : ''" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                        <option value="">-- Auswahl --</option>
+                                        <template x-for="option in field.options" :key="option">
+                                            <option :value="option" x-text="option"></option>
+                                        </template>
+                                    </select>
+                                </template>
+                                <template x-if="field.type === 'checkbox'">
+                                    <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                        <input type="checkbox" x-model="currentDevice.specs[field.name]" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                        <span>Aktiv</span>
+                                    </label>
+                                </template>
+                                <template x-if="field.type !== 'number' && field.type !== 'date' && field.type !== 'select' && field.type !== 'checkbox'">
+                                    <div class="flex items-center gap-2">
+                                        <input type="text" x-model="currentDevice.specs[field.name]" :class="getDeviceSpecFieldError(field.name) ? 'border-rose-300 bg-rose-50/70' : ''" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm focus:border-blue-500 focus:ring-blue-500">
+                                        <span x-show="field.unit" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500" x-text="field.unit"></span>
+                                    </div>
+                                </template>
+                                <p x-show="getDeviceSpecFieldError(field.name)" class="mt-2 text-xs font-medium text-rose-600" x-text="getDeviceSpecFieldError(field.name)"></p>
+                            </div>
+                        </template>
+                        <p x-show="getCategoryFieldEntries(currentDevice.category_id).length === 0" class="text-xs text-slate-400">Keine spezifischen Felder definiert.</p>
+                    </div>
+                    <div class="mt-4">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs font-semibold text-slate-500">Zusätzliche Spezifikationen</p>
+                            <button type="button" @click="addExtraSpec()" class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                                <i data-feather="plus" class="w-3 h-3"></i>
+                                Spezifikation hinzufügen
+                            </button>
+                        </div>
+                        <div class="mt-3 space-y-3">
+                            <template x-for="spec in currentDevice.extraSpecs" :key="spec.id">
+                                <div class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center">
+                                    <div class="flex-1">
+                                        <label class="text-xs font-semibold text-slate-500">Bezeichnung</label>
+                                        <input type="text" x-model="spec.name" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" placeholder="z. B. Farbe">
+                                    </div>
+                                    <div class="flex-1">
+                                        <label class="text-xs font-semibold text-slate-500">Wert</label>
+                                        <input type="text" x-model="spec.value" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500" placeholder="z. B. Schwarz">
+                                    </div>
+                                    <button type="button" @click="removeExtraSpec(spec.id)" class="self-start rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 sm:self-center">
+                                        Entfernen
+                                    </button>
+                                </div>
+                            </template>
+                            <p x-show="currentDevice.extraSpecs.length === 0" class="text-xs text-slate-400">Keine zusätzlichen Spezifikationen angelegt.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" @click="closeDeviceModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
+                    <button type="submit" class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="otpModalOpen" x-transition class="modal fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div @click.away="otpModalOpen = false" class="modal-panel bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 scrollbar-hide">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-gray-900">Google Authenticator einrichten</h3>
+                <button @click="otpModalOpen = false" data-modal-close class="icon-button text-gray-500 hover:text-gray-700" aria-label="OTP-Modal schließen">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div class="text-sm text-gray-600">
+                    <p>Scannen Sie diesen QR-Code mit der Google Authenticator App:</p>
+                </div>
+                <img :src="otpQrCode" alt="QR Code" x-show="otpQrCode">
+                <div class="text-sm text-gray-600">
+                    <p class="font-medium">Oder geben Sie diesen Code manuell ein:</p>
+                    <div class="mt-1 p-2 bg-gray-100 rounded-md font-mono text-center" x-text="otpSecret"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="/static/icons.js?v=inventory-v3"></script>
+<script src="/static/script.js?v=inventory-v3"></script>
+{% endblock %}

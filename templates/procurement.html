@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="de" x-data="procurementApp()" x-init="init()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Pro - Beschaffung</title>
+    <script>
+        window.inventoryPermissions = {{ permissions | tojson }};
+        window.inventoryIsSuperuser = {{ 'true' if is_superuser else 'false' }};
+    </script>
+    <script src="/static/theme.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/vendor/alpinejs.min.js" defer></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app-body">
+    <div class="app-shell">
+        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
+            <div class="sidebar-header p-6 border-b border-slate-200">
+                <a href="/" class="flex items-center gap-3">
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg" data-brand-logo>
+                        <i data-feather="cpu" data-brand-logo-icon class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <p class="text-lg font-semibold text-slate-900 sidebar-text" data-brand-name>Inventory Pro</p>
+                        <p class="text-xs text-slate-500 sidebar-text" data-brand-tagline>Smart Asset Hub</p>
+                    </div>
+                </a>
+            </div>
+            <nav class="p-4 space-y-4 sidebar-scroll sidebar-primary-links">
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Hauptbereiche</p>
+                    <div class="mt-3 space-y-1">
+                        <a href="/" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="home" class="w-4 h-4"></i></span>
+                                Dashboard
+                            </span>
+                        </a>
+                        {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
+                        <a href="/locations" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="map-pin" class="w-4 h-4"></i></span>
+                                Standorte
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
+                        <a href="/tickets" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="life-buoy" class="w-4 h-4"></i></span>
+                                Ticketsystem
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
+                        <a href="/knowledge" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="book-open" class="w-4 h-4"></i></span>
+                                Wissensbasis
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
+                        <a href="/roadmap" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="git-merge" class="w-4 h-4"></i></span>
+                                Roadmap
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'procurement.view' in permissions or 'procurement.manage' in permissions %}
+                        <a href="/procurement" class="sidebar-link active">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="shopping-cart" class="w-4 h-4"></i></span>
+                                Beschaffung
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'ai.use' in permissions or 'ai.manage' in permissions %}
+                        <a href="/ai/activity" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="message-circle" class="w-4 h-4"></i></span>
+                                PondSec AI
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Inventory Links</p>
+                    <div class="mt-3 space-y-1">
+                        {% if inventory_links %}
+                        {% for link in inventory_links %}
+                        <a href="/inventory-links/{{ link.id }}/portal" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="link-2" class="w-4 h-4"></i></span>
+                                {{ link.displayName }}
+                            </span>
+                            {% if link.healthStatus %}
+                            <span class="text-xs font-semibold rounded-full px-2 py-0.5 {% if link.healthStatus == 'ok' %}bg-emerald-100 text-emerald-700{% elif link.healthStatus == 'unauthorized' %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+                                {{ link.healthStatus }}
+                            </span>
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                        {% else %}
+                        <a href="/settings?section=server#inventory-links" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="plus-circle" class="w-4 h-4"></i></span>
+                                Link hinzufügen
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Auswertung</p>
+                    <div class="mt-3 space-y-1">
+                        {% if 'stats.view' in permissions %}
+                        <a href="/stats" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="bar-chart-2" class="w-4 h-4"></i></span>
+                                Statistiken
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
+                        <a href="/dependencies" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="share-2" class="w-4 h-4"></i></span>
+                                Dependency-Graph
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'timemachine.view' in permissions %}
+                        <a href="/time-machine" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="clock" class="w-4 h-4"></i></span>
+                                Zeitmaschine
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
+                        <a href="/health" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="activity" class="w-4 h-4"></i></span>
+                                Health
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if 'users.manage' in permissions or 'server_settings.manage' in permissions %}
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Administration</p>
+                    <div class="mt-3 space-y-1">
+                        {% if 'users.manage' in permissions %}
+                        <a href="/users" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="users" class="w-4 h-4"></i></span>
+                                Benutzer
+                            </span>
+                        </a>
+                        {% endif %}
+                        {% if 'server_settings.manage' in permissions %}
+                        <a href="/settings" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="settings" class="w-4 h-4"></i></span>
+                                Einstellungen
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </nav>
+        </aside>
+
+        <div class="app-main app-main--fixed">
+            <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
+                <div class="flex items-center gap-4">
+                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="icon-button inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
+                        <i data-feather="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div>
+                        <p class="text-xs uppercase tracking-widest text-slate-400">Beschaffung</p>
+                        <h1 class="text-xl font-semibold text-slate-900">Lieferanten, Vertraege & Bestellungen</h1>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="hidden sm:block text-right">
+                        <p class="text-xs text-slate-400">Angemeldet als</p>
+                        <p class="text-sm font-semibold text-slate-800">{{ username }}</p>
+                    </div>
+                    {% include 'pondsec_ai_button.html' %}
+                    <form action="/logout" method="post">
+                        <button type="submit" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-800">
+                            <i data-feather="log-out" class="h-4 w-4"></i>
+                            Logout
+                        </button>
+                    </form>
+                </div>
+            </header>
+
+            <main class="app-content app-content--padded pt-[110px] pb-16">
+                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                            <p class="text-xs uppercase tracking-widest text-slate-400">Beschaffung & Compliance</p>
+                            <h2 class="text-2xl font-semibold text-slate-900">Prozesse im Blick</h2>
+                            <p class="mt-1 text-sm text-slate-500">Vertraege, Bestellungen und anstehende Erneuerungen zentral steuern.</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">Lieferanten</p>
+                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.vendors"></p>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">Vertraege</p>
+                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.contracts"></p>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">Bestellungen</p>
+                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.orders"></p>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs uppercase text-slate-400">Renewals</p>
+                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.renewals"></p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div class="flex flex-wrap gap-2">
+                            <button @click="activeTab = 'vendors'" class="rounded-full px-4 py-2 text-sm font-semibold" :class="activeTab === 'vendors' ? 'bg-slate-900 text-white' : 'text-slate-600'">Lieferanten</button>
+                            <button @click="activeTab = 'contracts'" class="rounded-full px-4 py-2 text-sm font-semibold" :class="activeTab === 'contracts' ? 'bg-slate-900 text-white' : 'text-slate-600'">Vertraege</button>
+                            <button @click="activeTab = 'orders'" class="rounded-full px-4 py-2 text-sm font-semibold" :class="activeTab === 'orders' ? 'bg-slate-900 text-white' : 'text-slate-600'">Bestellungen</button>
+                            <button @click="activeTab = 'renewals'" class="rounded-full px-4 py-2 text-sm font-semibold" :class="activeTab === 'renewals' ? 'bg-slate-900 text-white' : 'text-slate-600'">Renewals</button>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button x-show="can('procurement.manage') && activeTab === 'vendors'" @click="openVendorModal()" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Lieferant hinzufuegen</button>
+                            <button x-show="can('procurement.manage') && activeTab === 'contracts'" @click="openContractModal()" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Vertrag hinzufuegen</button>
+                            <button x-show="can('procurement.manage') && activeTab === 'orders'" @click="openOrderModal()" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Bestellung hinzufuegen</button>
+                            <button @click="refreshRenewals" class="rounded-full border border-slate-200 bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Aktualisieren</button>
+                        </div>
+                    </div>
+
+                    <div class="mt-6" x-show="activeTab === 'vendors'">
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <template x-for="vendor in vendors" :key="vendor.id">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-900" x-text="vendor.name"></p>
+                                            <p class="text-xs text-slate-500" x-text="vendor.vendor_type || 'Kein Typ'" ></p>
+                                        </div>
+                                        <div class="flex shrink-0 items-center gap-2" x-show="can('procurement.manage')">
+                                            <button @click="openVendorModal(vendor)" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-white">Bearbeiten</button>
+                                            <button @click="deleteVendor(vendor.id)" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Loeschen</button>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 grid gap-2 text-xs text-slate-600">
+                                        <p><span class="font-semibold">Kontakt:</span> <span x-text="vendor.contact_name || '-'" ></span></p>
+                                        <p><span class="font-semibold">E-Mail:</span> <span x-text="vendor.email || '-'" ></span></p>
+                                        <p><span class="font-semibold">Telefon:</span> <span x-text="vendor.phone || '-'" ></span></p>
+                                        <p><span class="font-semibold">Bewertung:</span> <span x-text="vendor.rating || 3" ></span>/5</p>
+                                    </div>
+                                    <p class="mt-2 text-xs text-slate-500" x-text="vendor.notes || ''"></p>
+                                </div>
+                            </template>
+                        </div>
+                        <p x-show="vendors.length === 0" class="text-xs text-slate-400">Noch keine Lieferanten angelegt.</p>
+                    </div>
+
+                    <div class="mt-6" x-show="activeTab === 'contracts'">
+                        <div class="space-y-3">
+                            <template x-for="contract in contracts" :key="contract.id">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-900" x-text="contract.name"></p>
+                                            <p class="text-xs text-slate-500" x-text="contract.vendor_name || 'Kein Lieferant'"></p>
+                                        </div>
+                                        <div class="flex shrink-0 items-center gap-2" x-show="can('procurement.manage')">
+                                            <button @click="openContractModal(contract)" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-white">Bearbeiten</button>
+                                            <button @click="deleteContract(contract.id)" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Loeschen</button>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
+                                        <div><span class="font-semibold">Typ:</span> <span x-text="contract.contract_type || '-'" ></span></div>
+                                        <div><span class="font-semibold">Status:</span> <span x-text="contract.status || '-'" ></span></div>
+                                        <div><span class="font-semibold">Ende:</span> <span x-text="contract.end_date || '-'" ></span></div>
+                                        <div><span class="font-semibold">Renewal:</span> <span x-text="contract.renewal_type || '-'" ></span></div>
+                                        <div><span class="font-semibold">Notice:</span> <span x-text="contract.renewal_notice_days || 0" ></span> Tage</div>
+                                        <div><span class="font-semibold">Kosten:</span> <span x-text="formatCurrency(contract.cost, contract.currency)"></span></div>
+                                    </div>
+                                    <p class="mt-2 text-xs text-slate-500" x-text="contract.notes || ''"></p>
+                                </div>
+                            </template>
+                        </div>
+                        <p x-show="contracts.length === 0" class="text-xs text-slate-400">Noch keine Vertraege angelegt.</p>
+                    </div>
+
+                    <div class="mt-6" x-show="activeTab === 'orders'">
+                        <div class="space-y-3">
+                            <template x-for="order in purchaseOrders" :key="order.id">
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-900" x-text="order.po_number"></p>
+                                            <p class="text-xs text-slate-500" x-text="order.vendor_name || 'Kein Lieferant'"></p>
+                                        </div>
+                                        <div class="flex shrink-0 items-center gap-2" x-show="can('procurement.manage')">
+                                            <button @click="openOrderModal(order)" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-white">Bearbeiten</button>
+                                            <button @click="deleteOrder(order.id)" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Loeschen</button>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
+                                        <div><span class="font-semibold">Status:</span> <span x-text="order.status || '-'" ></span></div>
+                                        <div><span class="font-semibold">Bestelldatum:</span> <span x-text="order.order_date || '-'" ></span></div>
+                                        <div><span class="font-semibold">Lieferung:</span> <span x-text="order.expected_date || '-'" ></span></div>
+                                        <div><span class="font-semibold">Positionen:</span> <span x-text="order.item_count || 0"></span></div>
+                                        <div><span class="font-semibold">Total:</span> <span x-text="formatCurrency(order.total, order.currency)"></span></div>
+                                        <div><span class="font-semibold">Kostenstelle:</span> <span x-text="order.cost_center || '-'" ></span></div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <p x-show="purchaseOrders.length === 0" class="text-xs text-slate-400">Noch keine Bestellungen angelegt.</p>
+                    </div>
+
+                    <div class="mt-6" x-show="activeTab === 'renewals'">
+                        <div class="grid gap-4 lg:grid-cols-2">
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm font-semibold text-slate-900">Vertraege mit Ablauf</p>
+                                        <p class="text-xs text-slate-500" x-text="`Naechste ${renewals.days} Tage`"></p>
+                                    </div>
+                                    <i data-feather="alert-circle" class="w-4 h-4 text-slate-400"></i>
+                                </div>
+                                <div class="mt-3 space-y-2 text-sm">
+                                    <template x-for="contract in renewals.contracts" :key="contract.id">
+                                        <div class="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                                            <div class="flex justify-between">
+                                                <p class="font-semibold text-slate-800" x-text="contract.name"></p>
+                                                <span class="text-xs text-slate-500" x-text="`${contract.days_left} Tage`"></span>
+                                            </div>
+                                            <p class="text-xs text-slate-500" x-text="`${contract.vendor_name || 'Kein Lieferant'} • ${contract.end_date || '-'}`"></p>
+                                        </div>
+                                    </template>
+                                    <p x-show="renewals.contracts.length === 0" class="text-xs text-slate-400">Keine Vertraege in dieser Zeit.</p>
+                                </div>
+                            </div>
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm font-semibold text-slate-900">Garantien laufen aus</p>
+                                        <p class="text-xs text-slate-500" x-text="`Naechste ${renewals.days} Tage`"></p>
+                                    </div>
+                                    <i data-feather="shield" class="w-4 h-4 text-slate-400"></i>
+                                </div>
+                                <div class="mt-3 space-y-2 text-sm">
+                                    <template x-for="asset in renewals.warranties" :key="asset.id">
+                                        <div class="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                                            <div class="flex justify-between">
+                                                <p class="font-semibold text-slate-800" x-text="asset.name"></p>
+                                                <span class="text-xs text-slate-500" x-text="`${asset.days_left} Tage`"></span>
+                                            </div>
+                                            <p class="text-xs text-slate-500" x-text="`${asset.vendor_name || 'Kein Lieferant'} • ${asset.warranty_end || '-'}`"></p>
+                                        </div>
+                                    </template>
+                                    <p x-show="renewals.warranties.length === 0" class="text-xs text-slate-400">Keine Garantien in dieser Zeit.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div x-show="vendorModalOpen" @click.away="closeVendorModal()" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
+        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-lg">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Lieferant</p>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingVendor ? 'Lieferant bearbeiten' : 'Neuer Lieferant'"></h3>
+                </div>
+                <button @click="closeVendorModal()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Modal schliessen">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <form @submit.prevent="saveVendor" class="space-y-4 p-6">
+                <div>
+                    <label class="text-sm font-semibold text-slate-700">Name*</label>
+                    <input type="text" x-model="currentVendor.name" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Typ</label>
+                        <input type="text" x-model="currentVendor.vendor_type" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Bewertung (1-5)</label>
+                        <input type="number" min="1" max="5" x-model="currentVendor.rating" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Kontakt</label>
+                        <input type="text" x-model="currentVendor.contact_name" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">E-Mail</label>
+                        <input type="email" x-model="currentVendor.email" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Telefon</label>
+                        <input type="text" x-model="currentVendor.phone" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Website</label>
+                        <input type="text" x-model="currentVendor.website" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-500">Adresse</label>
+                    <textarea rows="2" x-model="currentVendor.address" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"></textarea>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-500">Notizen</label>
+                    <textarea rows="2" x-model="currentVendor.notes" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"></textarea>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" @click="closeVendorModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
+                    <button type="submit" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="contractModalOpen" @click.away="closeContractModal()" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
+        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-2xl">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Vertrag</p>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingContract ? 'Vertrag bearbeiten' : 'Neuer Vertrag'"></h3>
+                </div>
+                <button @click="closeContractModal()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Modal schliessen">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <form @submit.prevent="saveContract" class="space-y-4 p-6">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <div>
+                        <label class="text-sm font-semibold text-slate-700">Name*</label>
+                        <input type="text" x-model="currentContract.name" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Lieferant</label>
+                        <select x-model="currentContract.vendor_id" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                            <option value="">-- Lieferant waehlen --</option>
+                            <template x-for="vendor in vendors" :key="vendor.id">
+                                <option :value="vendor.id" x-text="vendor.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Typ</label>
+                        <input type="text" x-model="currentContract.contract_type" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Status</label>
+                        <select x-model="currentContract.status" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                            <option value="active">Aktiv</option>
+                            <option value="pending">Pending</option>
+                            <option value="expired">Abgelaufen</option>
+                            <option value="closed">Beendet</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Renewal</label>
+                        <select x-model="currentContract.renewal_type" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                            <option value="manual">Manuell</option>
+                            <option value="auto">Auto</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Start</label>
+                        <input type="date" x-model="currentContract.start_date" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Ende</label>
+                        <input type="date" x-model="currentContract.end_date" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Notice (Tage)</label>
+                        <input type="number" min="0" x-model="currentContract.renewal_notice_days" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Kosten</label>
+                        <input type="number" step="0.01" min="0" x-model="currentContract.cost" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Waehrung</label>
+                        <select x-model="currentContract.currency" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                            <option value="EUR">EUR</option>
+                            <option value="USD">USD</option>
+                            <option value="GBP">GBP</option>
+                            <option value="CHF">CHF</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Owner</label>
+                        <input type="text" x-model="currentContract.owner" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-500">Service-Level</label>
+                    <input type="text" x-model="currentContract.service_level" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-500">Notizen</label>
+                    <textarea rows="2" x-model="currentContract.notes" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"></textarea>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" @click="closeContractModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
+                    <button type="submit" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="orderModalOpen" @click.away="closeOrderModal()" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
+        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Bestellung</p>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingOrder ? 'Bestellung bearbeiten' : 'Neue Bestellung'"></h3>
+                </div>
+                <button @click="closeOrderModal()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Modal schliessen">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <form @submit.prevent="saveOrder" class="space-y-4 p-6">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <div>
+                        <label class="text-sm font-semibold text-slate-700">Bestellnummer*</label>
+                        <input type="text" x-model="currentOrder.po_number" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Lieferant</label>
+                        <select x-model="currentOrder.vendor_id" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                            <option value="">-- Lieferant waehlen --</option>
+                            <template x-for="vendor in vendors" :key="vendor.id">
+                                <option :value="vendor.id" x-text="vendor.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Status</label>
+                        <select x-model="currentOrder.status" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                            <option value="draft">Draft</option>
+                            <option value="ordered">Bestellt</option>
+                            <option value="received">Erhalten</option>
+                            <option value="closed">Abgeschlossen</option>
+                            <option value="cancelled">Storniert</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Bestelldatum</label>
+                        <input type="date" x-model="currentOrder.order_date" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Liefertermin</label>
+                        <input type="date" x-model="currentOrder.expected_date" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Anforderer</label>
+                        <input type="text" x-model="currentOrder.requester" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Genehmiger</label>
+                        <input type="text" x-model="currentOrder.approver" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Kostenstelle</label>
+                        <input type="text" x-model="currentOrder.cost_center" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Steuer</label>
+                        <input type="number" step="0.01" min="0" x-model="currentOrder.tax" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Waehrung</label>
+                        <select x-model="currentOrder.currency" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                            <option value="EUR">EUR</option>
+                            <option value="USD">USD</option>
+                            <option value="GBP">GBP</option>
+                            <option value="CHF">CHF</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-500">Eingegangen</label>
+                        <input type="date" x-model="currentOrder.received_date" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-semibold text-slate-700">Positionen</label>
+                        <button type="button" @click="addOrderItem" class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                            <i data-feather="plus" class="w-3 h-3"></i>
+                            Position hinzufuegen
+                        </button>
+                    </div>
+                    <div class="mt-3 space-y-3">
+                        <template x-for="item in currentOrder.items" :key="item.id">
+                            <div class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center">
+                                <div class="flex-1">
+                                    <label class="text-xs font-semibold text-slate-500">Bezeichnung</label>
+                                    <input type="text" x-model="item.item_name" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                </div>
+                                <div class="w-32">
+                                    <label class="text-xs font-semibold text-slate-500">Typ</label>
+                                    <select x-model="item.item_type" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-2 py-2 text-sm">
+                                        <option value="asset">Asset</option>
+                                        <option value="device">Geraet</option>
+                                        <option value="software">Software</option>
+                                        <option value="service">Service</option>
+                                        <option value="consumable">Consumable</option>
+                                    </select>
+                                </div>
+                                <div class="w-24">
+                                    <label class="text-xs font-semibold text-slate-500">Menge</label>
+                                    <input type="number" min="1" x-model="item.quantity" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-2 py-2 text-sm">
+                                </div>
+                                <div class="w-28">
+                                    <label class="text-xs font-semibold text-slate-500">Stueckpreis</label>
+                                    <input type="number" step="0.01" min="0" x-model="item.unit_cost" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-2 py-2 text-sm">
+                                </div>
+                                <button type="button" @click="removeOrderItem(item.id)" class="self-start rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 sm:self-center">
+                                    Entfernen
+                                </button>
+                            </div>
+                        </template>
+                        <p x-show="currentOrder.items.length === 0" class="text-xs text-slate-400">Keine Positionen angelegt.</p>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-slate-500">Notizen</label>
+                    <textarea rows="2" x-model="currentOrder.notes" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"></textarea>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" @click="closeOrderModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
+                    <button type="submit" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/procurement.js"></script>
+    <script src="/static/vendor/feather.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            feather.replace();
+        });
+    </script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
+    {% include 'pondsec_ai_drawer.html' %}
+</body>
+</html>
