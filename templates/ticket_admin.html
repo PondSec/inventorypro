@@ -36,10 +36,14 @@
             <div x-show="error" class="sd-error" role="alert"><i data-feather="alert-triangle"></i><span x-text="error"></span><button type="button" @click="loadSection()">Erneut versuchen</button></div>
 
             <section x-show="section === 'general'" class="ticket-admin-content">
-                <div class="ticket-admin-empty">
-                    <i data-feather="sliders"></i>
-                    <h2>Allgemeine Einstellungen</h2>
-                    <p>Die operativen Ticketfunktionen verwenden die bestehenden Rollen, Statuswerte und Kategorie-SLAs. Weitere Standardwerte werden in kommenden Modulen ergänzt.</p>
+                <div class="ticket-admin-section-heading"><div><h2>Operatives Konfigurationszentrum</h2><p>Alle sichtbaren Bereiche sind unmittelbar nutzbar und führen zu einer aktiven Verwaltung.</p></div></div>
+                <div class="ticket-admin-hub">
+                    <a href="/admin/tickets/categories"><i data-feather="folder"></i><span><strong>Kategorien & SLA</strong><small>Klassifizierung und Lösungsziele pflegen</small></span><i data-feather="arrow-right"></i></a>
+                    <a href="/admin/tickets/workflows"><i data-feather="git-pull-request"></i><span><strong>Workflows & Reviews</strong><small>Verbindliche Change-Abnahmen nachvollziehen</small></span><i data-feather="arrow-right"></i></a>
+                    <a href="/admin/tickets/priorities"><i data-feather="alert-circle"></i><span><strong>Prioritäten</strong><small>Bedeutung und Reihenfolge einsehen</small></span><i data-feather="arrow-right"></i></a>
+                    <a href="/admin/tickets/automations"><i data-feather="zap"></i><span><strong>Automationen</strong><small>Aktive Ticket-Alerts verwalten</small></span><i data-feather="arrow-right"></i></a>
+                    <a href="/admin/tickets/email"><i data-feather="mail"></i><span><strong>E-Mail</strong><small>SMTP und Benachrichtigungen konfigurieren</small></span><i data-feather="arrow-right"></i></a>
+                    <a href="/users"><i data-feather="shield"></i><span><strong>Rollen & Berechtigungen</strong><small>Benutzerzugriffe zentral verwalten</small></span><i data-feather="arrow-right"></i></a>
                 </div>
             </section>
 
@@ -85,8 +89,43 @@
                 </form>
             </section>
 
-            <section x-show="!currentSection.available" class="ticket-admin-content">
-                <div class="ticket-admin-empty"><i :data-feather="currentSection.icon"></i><h2 x-text="currentSection.label"></h2><p>Dieser Konfigurationsbereich ist in der neuen Informationsarchitektur vorgesehen und wird schrittweise an das vorhandene Backend angebunden.</p></div>
+            <section x-show="section === 'workflows'" class="ticket-admin-content">
+                <div class="ticket-admin-section-heading"><div><h2>Verbindlicher Ticket-Workflow</h2><p>Statuswechsel bleiben nachvollziehbar; Change-Abschlüsse benötigen eine abgenommene Review.</p></div></div>
+                <div class="ticket-admin-rule-grid">
+                    <article><i data-feather="git-branch"></i><div><h3>Standardstatus</h3><p>Offen → In Bearbeitung → Wartend → Gelöst oder Geschlossen</p></div></article>
+                    <article><i data-feather="shield"></i><div><h3>Change-Kontrolle</h3><p>Jeder Change erhält genau eine Review. Gelöst und Geschlossen bleiben bis zur Review-Abnahme gesperrt.</p></div></article>
+                    <article><i data-feather="lock"></i><div><h3>Nachvollziehbarkeit</h3><p>Verknüpfte Change- und Review-Tickets können weder umklassifiziert noch gelöscht oder zusammengeführt werden.</p></div></article>
+                    <article><i data-feather="layers"></i><div><h3>Mehrfachbearbeitung</h3><p>Das Review-Gate gilt ebenso für Statusänderungen an mehreren Tickets.</p></div></article>
+                </div>
+            </section>
+
+            <section x-show="section === 'priorities'" class="ticket-admin-content">
+                <div class="ticket-admin-section-heading"><div><h2>Prioritätsstandard</h2><p>Einheitliche Einordnung nach Auswirkung und notwendiger Reaktionsgeschwindigkeit.</p></div></div>
+                <div class="ticket-admin-priority-list">
+                    <article data-priority="urgent"><strong>Kritisch</strong><span>Geschäftskritischer Ausfall oder unmittelbares Sicherheitsrisiko</span><small>Sofortige Bearbeitung</small></article>
+                    <article data-priority="high"><strong>Hoch</strong><span>Starke Einschränkung eines wichtigen Arbeitsablaufs</span><small>Vorrangige Bearbeitung</small></article>
+                    <article data-priority="normal"><strong>Normal</strong><span>Begrenzte Auswirkung mit verfügbarem Arbeitsweg</span><small>Reguläre Bearbeitung</small></article>
+                    <article data-priority="low"><strong>Niedrig</strong><span>Geringe Auswirkung, Information oder planbare Optimierung</span><small>Planbare Bearbeitung</small></article>
+                </div>
+            </section>
+
+            <section x-show="section === 'slas' && can('ticket_categories.manage')" class="ticket-admin-content">
+                <div class="ticket-admin-section-heading"><div><h2>Aktive SLA-Ziele</h2><p>Die Lösungszeit wird unmittelbar über die Ticketkategorie gesteuert.</p></div><a class="sd-button sd-button-primary" href="/admin/tickets/categories"><i data-feather="edit-2"></i>Ziele bearbeiten</a></div>
+                <div class="ticket-admin-sla-list">
+                    <template x-for="category in categories" :key="category.id">
+                        <article><span :style="`background:${category.color || '#2563eb'}`"></span><div><strong x-text="category.name"></strong><small x-text="category.description || 'Keine Beschreibung hinterlegt'"></small></div><b x-text="`${category.sla_hours || 72} Std.`"></b></article>
+                    </template>
+                    <p x-show="!loading && !categories.length" class="sd-empty-inline">Noch keine Kategorien vorhanden.</p>
+                </div>
+            </section>
+
+            <section x-show="section === 'permissions'" class="ticket-admin-content">
+                <div class="ticket-admin-section-heading"><div><h2>Rollen & Ticketrechte</h2><p>Benutzer, Rollen und Berechtigungen werden in der zentralen Benutzerverwaltung gepflegt.</p></div><a class="sd-button sd-button-primary" href="/users"><i data-feather="external-link"></i>Benutzerverwaltung öffnen</a></div>
+                <div class="ticket-admin-rule-grid">
+                    <article><i data-feather="eye"></i><div><h3>Sichtbarkeit</h3><p>Eigene oder alle Tickets sehen – abhängig von der zugewiesenen Rolle.</p></div></article>
+                    <article><i data-feather="edit-2"></i><div><h3>Bearbeitung</h3><p>Ändern, kommentieren und interne Notizen sind getrennt berechtigbar.</p></div></article>
+                    <article><i data-feather="settings"></i><div><h3>Administration</h3><p>Kategorien, Alerts und Benachrichtigungen erfordern explizite Verwaltungsrechte.</p></div></article>
+                </div>
             </section>
         </main>
     </div>
