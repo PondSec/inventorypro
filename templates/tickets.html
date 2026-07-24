@@ -42,13 +42,13 @@
             <div class="sd-queue-heading">
                 <span x-show="!queuesCollapsed">Service Desk</span>
                 <button type="button" @click="queuesCollapsed = !queuesCollapsed" :aria-label="queuesCollapsed ? 'Queues ausklappen' : 'Queues einklappen'">
-                    <i :data-feather="queuesCollapsed ? 'chevron-right' : 'chevron-left'"></i>
+                    <span class="sd-icon-slot" x-html="iconSvg(queuesCollapsed ? 'chevron-right' : 'chevron-left')"></span>
                 </button>
             </div>
             <nav>
                 <template x-for="queue in queues" :key="queue.key">
                     <button type="button" @click="selectQueue(queue)" :class="{ active: activeQueue === queue.key }" :title="queue.label">
-                        <i :data-feather="queue.icon"></i>
+                        <span class="sd-icon-slot" x-html="iconSvg(queue.icon)"></span>
                         <span x-show="!queuesCollapsed" x-text="queue.label"></span>
                         <small x-show="!queuesCollapsed && queueCounts[queue.key] !== undefined" x-text="queueCounts[queue.key]"></small>
                     </button>
@@ -58,7 +58,7 @@
                 <h2>Gespeicherte Ansichten</h2>
                 <template x-for="view in savedViews" :key="view.id">
                     <button type="button" @click="applySavedView(view)">
-                        <i :data-feather="view.is_favorite ? 'star' : 'bookmark'"></i>
+                        <span class="sd-icon-slot" x-html="iconSvg(view.is_favorite ? 'star' : 'bookmark')"></span>
                         <span x-text="view.name"></span>
                     </button>
                 </template>
@@ -117,7 +117,7 @@
                                 <th class="select-column"><input type="checkbox" :checked="allVisibleSelected" @change="toggleAllVisible($event)" aria-label="Alle sichtbaren Tickets auswählen"></th>
                                 <template x-for="column in visibleColumns" :key="column.key">
                                     <th :class="column.className || ''" :aria-sort="sortAria(column.key)">
-                                        <button type="button" @click="sortBy(column.key)"><span x-text="column.label"></span><i :data-feather="sortIcon(column.key)"></i></button>
+                                        <button type="button" @click="sortBy(column.key)"><span x-text="column.label"></span><span class="sd-icon-slot" x-html="iconSvg(sortIcon(column.key), 12)"></span></button>
                                     </th>
                                 </template>
                                 <th class="actions-column"><span class="sr-only">Aktionen</span></th>
@@ -137,7 +137,7 @@
                                             <template x-if="column.key === 'assignee'"><span :class="{ muted: !ticket.assignee }" x-text="ticket.assignee || 'Nicht zugewiesen'"></span></template>
                                             <template x-if="column.key === 'category'"><span x-text="ticket.category_name || '—'"></span></template>
                                             <template x-if="column.key === 'assets'"><span x-text="ticket.asset_count ? `${ticket.asset_count} verknüpft` : '—'"></span></template>
-                                            <template x-if="column.key === 'sla'"><span class="sd-sla" :class="slaState(ticket).state"><i :data-feather="slaState(ticket).icon"></i><span x-text="slaState(ticket).label"></span></span></template>
+                                            <template x-if="column.key === 'sla'"><span class="sd-sla" :class="slaState(ticket).state"><span class="sd-icon-slot" x-html="iconSvg(slaState(ticket).icon)"></span><span x-text="slaState(ticket).label"></span></span></template>
                                             <template x-if="column.key === 'updated_at'"><time :datetime="ticket.updated_at" x-text="formatRelative(ticket.updated_at)"></time></template>
                                             <template x-if="column.key === 'due_date'"><time :class="{ overdue: isOverdue(ticket) }" :datetime="ticket.due_date" x-text="formatDate(ticket.due_date)"></time></template>
                                         </td>
@@ -177,7 +177,7 @@
                         <div class="sd-detail-summary">
                             <span class="sd-status" :data-status="selectedTicket.status"><i></i><span x-text="statusLabel(selectedTicket.status)"></span></span>
                             <span class="sd-priority" :data-priority="selectedTicket.priority"><i data-feather="flag"></i><span x-text="priorityLabel(selectedTicket.priority)"></span></span>
-                            <span class="sd-sla" :class="slaState(selectedTicket).state"><i :data-feather="slaState(selectedTicket).icon"></i><span x-text="slaState(selectedTicket).label"></span></span>
+                            <span class="sd-sla" :class="slaState(selectedTicket).state"><span class="sd-icon-slot" x-html="iconSvg(slaState(selectedTicket).icon)"></span><span x-text="slaState(selectedTicket).label"></span></span>
                         </div>
                     </div>
                     <div class="sd-detail-header-actions">
@@ -235,7 +235,7 @@
                     </section>
 
                     <aside class="sd-metadata" :class="{ collapsed: metadataCollapsed }">
-                        <button type="button" class="sd-metadata-toggle" @click="metadataCollapsed = !metadataCollapsed" :aria-label="metadataCollapsed ? 'Metadaten einblenden' : 'Metadaten ausblenden'"><i :data-feather="metadataCollapsed ? 'chevron-left' : 'chevron-right'"></i></button>
+                        <button type="button" class="sd-metadata-toggle" @click="metadataCollapsed = !metadataCollapsed" :aria-label="metadataCollapsed ? 'Metadaten einblenden' : 'Metadaten ausblenden'"><span class="sd-icon-slot" x-html="iconSvg(metadataCollapsed ? 'chevron-left' : 'chevron-right')"></span></button>
                         <div x-show="!metadataCollapsed">
                             <section><h3>Ticketdetails</h3>
                                 <label>Status<select x-model="selectedTicket.status" @change="updateTicketField('status', selectedTicket.status)" :disabled="!canUpdateTicket()"><template x-for="item in statuses" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
@@ -326,7 +326,7 @@
         <section class="sd-modal sd-shortcuts" role="dialog" aria-modal="true"><header><div><p>Produktivität</p><h2>Tastaturkürzel</h2></div><button type="button" @click="showShortcuts = false"><i data-feather="x"></i></button></header><div class="sd-shortcut-grid"><span><kbd>/</kbd>Suche fokussieren</span><span><kbd>C</kbd>Ticket erstellen</span><span><kbd>J</kbd>Nächstes Ticket</span><span><kbd>K</kbd>Vorheriges Ticket</span><span><kbd>Enter</kbd>Ticket öffnen</span><span><kbd>R</kbd>Antworten</span><span><kbd>N</kbd>Interne Notiz</span><span><kbd>Esc</kbd>Dialog schließen</span></div></section>
     </div>
 
-    <div class="sd-toast-region" aria-live="polite"><template x-for="toast in toasts" :key="toast.id"><div class="sd-toast" :class="toast.type"><i :data-feather="toast.type === 'error' ? 'alert-triangle' : 'check-circle'"></i><span x-text="toast.message"></span></div></template></div>
+    <div class="sd-toast-region" aria-live="polite"><template x-for="toast in toasts" :key="toast.id"><div class="sd-toast" :class="toast.type"><span class="sd-icon-slot" x-html="iconSvg(toast.type === 'error' ? 'alert-triangle' : 'check-circle')"></span><span x-text="toast.message"></span></div></template></div>
 
     <script src="/static/vendor/feather.min.js"></script>
     <script src="/static/tickets.js"></script>
