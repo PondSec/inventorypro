@@ -28,6 +28,7 @@ document.addEventListener('alpine:init', () => {
         detailTab: 'conversation',
         assetPickerTarget: 'create',
         assetSearch: '',
+        iconRefreshTimer: null,
         keyboardIndex: -1,
         newComment: '',
         internalComment: false,
@@ -233,7 +234,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         sortIcon(key) {
-            if (this.sort.key !== key) return 'chevrons-up-down';
+            if (this.sort.key !== key) return 'more-horizontal';
             return this.sort.direction === 'asc' ? 'chevron-up' : 'chevron-down';
         },
 
@@ -781,7 +782,16 @@ document.addEventListener('alpine:init', () => {
         },
 
         refreshIcons() {
-            this.$nextTick(() => window.feather?.replace({ width: 16, height: 16 }));
+            window.clearTimeout(this.iconRefreshTimer);
+            this.iconRefreshTimer = window.setTimeout(() => {
+                this.$nextTick(() => {
+                    try {
+                        window.feather?.replace({ width: 16, height: 16 });
+                    } catch {
+                        // A delayed Alpine update can remove an icon while Feather is replacing it.
+                    }
+                });
+            }, 40);
         }
     }));
 });
