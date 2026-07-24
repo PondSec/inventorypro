@@ -3608,6 +3608,27 @@ def init_db():
         ''')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS ticket_review_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                change_ticket_id INTEGER NOT NULL UNIQUE,
+                review_ticket_id INTEGER NOT NULL UNIQUE,
+                created_by TEXT NOT NULL DEFAULT 'System',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CHECK (change_ticket_id != review_ticket_id),
+                FOREIGN KEY (change_ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+                FOREIGN KEY (review_ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+            )
+        ''')
+        c.execute(
+            'CREATE INDEX IF NOT EXISTS idx_ticket_review_links_change '
+            'ON ticket_review_links(change_ticket_id)'
+        )
+        c.execute(
+            'CREATE INDEX IF NOT EXISTS idx_ticket_review_links_review '
+            'ON ticket_review_links(review_ticket_id)'
+        )
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS saved_ticket_views (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -4986,12 +5007,14 @@ def init_db():
             ("Incident", "Störungen und dringende Ausfälle", "#dc2626", 24, 0),
             ("Service Request", "Bestellungen und Service-Anfragen", "#0f766e", 120, 0),
             ("Change", "Geplante Änderungen und Wartungen", "#7c3aed", 168, 0),
+            ("Review", "Kontroll- und Abnahmeaufgaben für Changes", "#0f766e", 72, 0),
             ("Verbesserungen", "Optimierungen, neue Features und Produktideen", "#0ea5e9", 168, 0)
         ]
         c.executemany('''
             INSERT OR IGNORE INTO ticket_categories (name, description, color, sla_hours, is_default)
             VALUES (?, ?, ?, ?, ?)
         ''', default_ticket_categories)
+        backfill_ticket_review_links(db)
 
         default_relation_types = [
             ("hostet", "Asset stellt Ressourcen für ein anderes bereit"),
@@ -6965,6 +6988,214 @@ def fetch_ticket(db, ticket_id):
         WHERE t.id = ?
     ''', (ticket_id,)).fetchone()
     return dict(ticket) if ticket else None
+
+def get_ticket_category(db, category_id):
+    if not category_id:
+        return None
+    row = db.execute(
+        'SELECT id, name, description, color, sla_hours, is_default FROM ticket_categories WHERE id = ?',
+        (category_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+def get_ticket_category_by_name(db, name):
+    row = db.execute(
+        'SELECT id, name, description, color, sla_hours, is_default '
+        'FROM ticket_categories WHERE LOWER(name) = LOWER(?)',
+        (name,),
+    ).fetchone()
+    return dict(row) if row else None
+
+def is_ticket_category(ticket, category_name):
+    return str((ticket or {}).get("category_name") or "").strip().lower() == category_name.lower()
+
+def get_ticket_review_relation(db, ticket_id):
+    row = db.execute(
+        '''
+        SELECT l.id, l.change_ticket_id, l.review_ticket_id, l.created_by, l.created_at,
+               change_ticket.title AS change_title,
+               change_ticket.status AS change_status,
+               review_ticket.title AS review_title,
+               review_ticket.status AS review_status
+        FROM ticket_review_links l
+        JOIN tickets change_ticket ON change_ticket.id = l.change_ticket_id
+        JOIN tickets review_ticket ON review_ticket.id = l.review_ticket_id
+        WHERE l.change_ticket_id = ? OR l.review_ticket_id = ?
+        LIMIT 1
+        ''',
+        (ticket_id, ticket_id),
+    ).fetchone()
+    if not row:
+        return None
+    relation = dict(row)
+    relation["role"] = "change" if relation["change_ticket_id"] == ticket_id else "review"
+    relation["approved"] = is_closed_status(relation["review_status"])
+    return relation
+
+def create_review_for_change(db, change_ticket, actor="System"):
+    existing = get_ticket_review_relation(db, change_ticket["id"])
+    if existing:
+        return existing["review_ticket_id"]
+
+    review_category = get_ticket_category_by_name(db, "Review")
+    if not review_category:
+        raise ValueError("Review-Kategorie ist nicht konfiguriert")
+
+    assignee = str(change_ticket.get("assignee") or "").strip() or "pond"
+    due_date = str(change_ticket.get("due_date") or "").strip()
+    priority = str(change_ticket.get("priority") or "normal").strip()
+    change_title = str(change_ticket.get("title") or "").strip()
+    review_title = f"Review zu Change #{change_ticket['id']}: {change_title}"
+    review_description = (
+        f"Kontroll- und Abnahmeauftrag für Change #{change_ticket['id']}. "
+        "Prüfe Umsetzung, Akzeptanzkriterien und dokumentierte Testergebnisse. "
+        "Der zugehörige Change darf erst nach erfolgreicher Abnahme geschlossen werden."
+    )
+    cursor = db.execute(
+        '''
+        INSERT INTO tickets (
+            title, description, category_id, priority, status, requester_name,
+            created_by, assignee, due_date, tags, custom_fields
+        )
+        VALUES (?, ?, ?, ?, 'open', 'System', 'System', ?, ?, ?, '[]')
+        ''',
+        (
+            review_title,
+            review_description,
+            review_category["id"],
+            priority,
+            assignee,
+            due_date,
+            json.dumps(["review", "change-control", f"change-{change_ticket['id']}"]),
+        ),
+    )
+    review_ticket_id = cursor.lastrowid
+    db.execute(
+        '''
+        INSERT INTO ticket_review_links (change_ticket_id, review_ticket_id, created_by)
+        VALUES (?, ?, ?)
+        ''',
+        (change_ticket["id"], review_ticket_id, actor or "System"),
+    )
+    db.execute(
+        '''
+        INSERT INTO ticket_comments (ticket_id, author, body, is_internal)
+        VALUES (?, 'System', ?, 0)
+        ''',
+        (
+            review_ticket_id,
+            f"Automatisch erzeugter Kontrollauftrag für Change #{change_ticket['id']}.",
+        ),
+    )
+    db.execute(
+        '''
+        INSERT INTO activity_log (username, action, entity_type, entity_id, details)
+        VALUES ('System', 'create', 'ticket', ?, ?)
+        ''',
+        (
+            review_ticket_id,
+            json.dumps({
+                "title": review_title,
+                "change_ticket_id": change_ticket["id"],
+                "source": "change_review_gate",
+            }),
+        ),
+    )
+    return review_ticket_id
+
+def link_review_to_change(db, change_ticket_id, review_ticket_id, actor):
+    change_ticket = fetch_ticket(db, change_ticket_id)
+    review_ticket = fetch_ticket(db, review_ticket_id)
+    if not change_ticket or not is_ticket_category(change_ticket, "Change"):
+        raise ValueError("Der ausgewählte Bezug ist kein Change-Ticket")
+    if is_closed_status(change_ticket.get("status")):
+        raise ValueError("Für einen abgeschlossenen Change kann kein neues Review erstellt werden")
+    if not review_ticket or not is_ticket_category(review_ticket, "Review"):
+        raise ValueError("Das zu verknüpfende Ticket ist kein Review")
+    existing = get_ticket_review_relation(db, change_ticket_id)
+    if existing:
+        raise ValueError(f"Change #{change_ticket_id} ist bereits mit Review #{existing['review_ticket_id']} verknüpft")
+    db.execute(
+        '''
+        INSERT INTO ticket_review_links (change_ticket_id, review_ticket_id, created_by)
+        VALUES (?, ?, ?)
+        ''',
+        (change_ticket_id, review_ticket_id, actor or "System"),
+    )
+
+def backfill_ticket_review_links(db):
+    review_rows = db.execute(
+        '''
+        SELECT t.id, t.title
+        FROM tickets t
+        JOIN ticket_categories c ON c.id = t.category_id
+        WHERE LOWER(c.name) = 'review'
+        ORDER BY t.id
+        '''
+    ).fetchall()
+    for review in review_rows:
+        match = re.match(r"^Review zu Change #(\d+):", review["title"] or "", re.IGNORECASE)
+        if not match:
+            continue
+        change_ticket_id = int(match.group(1))
+        change = fetch_ticket(db, change_ticket_id)
+        if not change or not is_ticket_category(change, "Change"):
+            continue
+        db.execute(
+            '''
+            INSERT OR IGNORE INTO ticket_review_links (change_ticket_id, review_ticket_id, created_by)
+            VALUES (?, ?, 'System')
+            ''',
+            (change_ticket_id, review["id"]),
+        )
+
+    open_changes = db.execute(
+        '''
+        SELECT t.*, c.name AS category_name, c.color AS category_color
+        FROM tickets t
+        JOIN ticket_categories c ON c.id = t.category_id
+        LEFT JOIN ticket_review_links l ON l.change_ticket_id = t.id
+        WHERE LOWER(c.name) = 'change'
+          AND t.status NOT IN ('closed', 'resolved', 'done')
+          AND l.id IS NULL
+        ORDER BY t.id
+        '''
+    ).fetchall()
+    for change in open_changes:
+        create_review_for_change(db, dict(change), actor="System")
+
+def validate_review_assignment(db, category, change_ticket_id, review_ticket_id=None):
+    if not category or category["name"].strip().lower() != "review":
+        return None
+    parsed_change_id = normalize_optional_int(change_ticket_id)
+    if parsed_change_id is None:
+        raise ValueError("Für ein Review muss ein zugehöriger Change ausgewählt werden")
+    change_ticket = fetch_ticket(db, parsed_change_id)
+    if not change_ticket or not is_ticket_category(change_ticket, "Change"):
+        raise ValueError("Der ausgewählte Bezug ist kein Change-Ticket")
+    if is_closed_status(change_ticket.get("status")):
+        raise ValueError("Der ausgewählte Change ist bereits abgeschlossen")
+    relation = get_ticket_review_relation(db, parsed_change_id)
+    if relation and relation["review_ticket_id"] != review_ticket_id:
+        raise ValueError(
+            f"Change #{parsed_change_id} ist bereits mit Review #{relation['review_ticket_id']} verknüpft"
+        )
+    return parsed_change_id
+
+def ensure_change_can_close(db, ticket):
+    if not is_ticket_category(ticket, "Change"):
+        return None
+    relation = get_ticket_review_relation(db, ticket["id"])
+    if relation and relation["approved"]:
+        return None
+    review_ticket_id = relation["review_ticket_id"] if relation else None
+    message = "Der Change kann erst nach einem gelösten oder geschlossenen Review abgeschlossen werden"
+    return {
+        "error": message,
+        "code": "change_review_required",
+        "change_ticket_id": ticket["id"],
+        "review_ticket_id": review_ticket_id,
+    }
 
 def normalize_ticket_row(row):
     ticket = dict(row)
@@ -10095,6 +10326,9 @@ def ticket_categories():
 @login_required
 def ticket_category_detail(category_id):
     db = get_db()
+    existing_category = get_ticket_category(db, category_id)
+    if not existing_category:
+        return jsonify({"error": "Kategorie nicht gefunden"}), 404
     if request.method == 'PUT':
         if not user_can('ticket_categories.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
@@ -10106,6 +10340,14 @@ def ticket_category_detail(category_id):
         is_default = 1 if data.get('is_default') else 0
         if not name:
             return jsonify({"error": "Name ist erforderlich"}), 400
+        if (
+            existing_category["name"].strip().lower() in {"change", "review"}
+            and name.strip().lower() != existing_category["name"].strip().lower()
+        ):
+            return jsonify({
+                "error": "Die Workflow-Kategorien Change und Review können nicht umbenannt werden",
+                "code": "protected_ticket_category",
+            }), 409
         result = db.execute('''
             UPDATE ticket_categories
             SET name = ?, description = ?, color = ?, sla_hours = ?, is_default = ?
@@ -10119,6 +10361,11 @@ def ticket_category_detail(category_id):
 
     if not user_can('ticket_categories.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    if existing_category["name"].strip().lower() in {"change", "review"}:
+        return jsonify({
+            "error": "Die Workflow-Kategorien Change und Review können nicht gelöscht werden",
+            "code": "protected_ticket_category",
+        }), 409
     affected_tickets = db.execute(
         'SELECT id FROM tickets WHERE category_id = ?',
         (category_id,)
@@ -11707,7 +11954,8 @@ def tickets():
         data = request.get_json() or {}
         title = (data.get('title') or '').strip()
         description = (data.get('description') or '').strip()
-        category_id = data.get('category_id')
+        raw_category_id = data.get('category_id')
+        category_id = normalize_optional_int(raw_category_id)
         priority = (data.get('priority') or 'normal').strip()
         status = (data.get('status') or 'open').strip()
         escalation_level = int(data.get('escalation_level') or 0)
@@ -11739,13 +11987,37 @@ def tickets():
             field_errors["title"] = "Titel ist erforderlich"
         if not description:
             field_errors["description"] = "Beschreibung ist erforderlich"
+        if raw_category_id not in (None, "") and category_id is None:
+            field_errors["category_id"] = "Kategorie ist ungültig"
         if field_errors:
             return validation_error_response("Bitte Ticketangaben prüfen", field_errors)
         creator_id = current_user.get("id") or get_current_user_id(db)
-        category_name = None
-        if category_id:
-            category_row = db.execute('SELECT name FROM ticket_categories WHERE id = ?', (category_id,)).fetchone()
-            category_name = category_row["name"] if category_row else None
+        category = get_ticket_category(db, category_id)
+        if category_id and not category:
+            return validation_error_response(
+                "Bitte Ticketangaben prüfen",
+                {"category_id": "Kategorie ist ungültig"},
+            )
+        category_name = category["name"] if category else None
+        try:
+            change_ticket_id = validate_review_assignment(
+                db,
+                category,
+                data.get("change_ticket_id"),
+            )
+        except ValueError as exc:
+            return validation_error_response(
+                "Bitte Ticketangaben prüfen",
+                {"change_ticket_id": str(exc)},
+            )
+        if category_name and category_name.strip().lower() == "review":
+            status = "open"
+            resolved_at = None
+        if category_name and category_name.strip().lower() == "change" and is_closed_status(status):
+            return jsonify({
+                "error": "Ein neuer Change kann erst nach abgeschlossenem Review gelöst oder geschlossen werden",
+                "code": "change_review_required",
+            }), 409
         cursor = db.execute('''
             INSERT INTO tickets (
                 title, description, category_id, priority, status, requester_name,
@@ -11779,6 +12051,11 @@ def tickets():
             "assignee_email": assignee_email,
             "due_date": due_date
         }
+        review_ticket_id = None
+        if category_name and category_name.strip().lower() == "review":
+            link_review_to_change(db, change_ticket_id, ticket_id, current_username)
+        elif category_name and category_name.strip().lower() == "change":
+            review_ticket_id = create_review_for_change(db, new_ticket, actor=current_username)
         if should_auto_create_roadmap(category_name):
             create_roadmap_for_ticket(db, new_ticket, category_name, created_by=current_username)
         log_activity(db, "create", "ticket", ticket_id, {"title": title})
@@ -11787,7 +12064,12 @@ def tickets():
         if ticket:
             ticket = normalize_ticket_row(ticket)
             trigger_ticket_notifications(db, "created", ticket, actor=current_username)
-        return jsonify({"status": "created", "id": ticket_id}), 201
+        return jsonify({
+            "status": "created",
+            "id": ticket_id,
+            "review_ticket_id": review_ticket_id,
+            "change_ticket_id": change_ticket_id,
+        }), 201
 
     if not (user_can('tickets.view_all') or user_can('tickets.view_own')):
         return jsonify({"error": "Keine Berechtigung"}), 403
@@ -11937,14 +12219,79 @@ def bulk_update_tickets():
     changes = {key: value for key, value in (data.get('changes') or {}).items() if key in allowed}
     if not ticket_ids or not changes:
         return jsonify({"error": "Tickets und Änderungen sind erforderlich"}), 400
-    assignments = ', '.join(f'{key} = ?' for key in changes)
     placeholders = ','.join('?' for _ in ticket_ids)
+    target_rows = db.execute(
+        f'''
+        SELECT t.*, c.name AS category_name, c.color AS category_color
+        FROM tickets t
+        LEFT JOIN ticket_categories c ON c.id = t.category_id
+        WHERE t.id IN ({placeholders})
+        ''',
+        ticket_ids,
+    ).fetchall()
+    target_tickets = [dict(row) for row in target_rows]
+    if len(target_tickets) != len(ticket_ids):
+        return jsonify({"error": "Mindestens ein Ticket wurde nicht gefunden"}), 404
+
+    requested_status = str(changes.get("status") or "").strip()
+    if requested_status and is_closed_status(requested_status):
+        blocked = []
+        for ticket in target_tickets:
+            gate_error = ensure_change_can_close(db, ticket)
+            if gate_error:
+                blocked.append(gate_error)
+        if blocked:
+            return jsonify({
+                "error": "Mindestens ein Change wartet noch auf ein abgeschlossenes Review",
+                "code": "change_review_required",
+                "blocked": blocked,
+            }), 409
+
+    requested_category = None
+    if "category_id" in changes:
+        requested_category = get_ticket_category(db, normalize_optional_int(changes["category_id"]))
+        if not requested_category:
+            return validation_error_response(
+                "Bitte Ticketangaben prüfen",
+                {"category_id": "Kategorie ist ungültig"},
+            )
+        if requested_category["name"].strip().lower() == "review":
+            return validation_error_response(
+                "Reviews müssen einzeln erstellt werden",
+                {"change_ticket_id": "Für jedes Review muss ein Change ausgewählt werden"},
+            )
+        for ticket in target_tickets:
+            relation = get_ticket_review_relation(db, ticket["id"])
+            if relation and normalize_optional_int(changes["category_id"]) != ticket.get("category_id"):
+                return jsonify({
+                    "error": "Die Kategorie verknüpfter Change-/Review-Tickets kann nicht per Mehrfachbearbeitung geändert werden",
+                    "code": "ticket_review_relation_locked",
+                    "ticket_id": ticket["id"],
+                }), 409
+
+    if "category_id" in changes:
+        changes["category_id"] = normalize_optional_int(changes["category_id"])
+    assignments = ', '.join(f'{key} = ?' for key in changes)
+    if requested_status:
+        assignments += ", resolved_at = ?"
+        resolved_at = (
+            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            if is_closed_status(requested_status)
+            else None
+        )
+        update_values = [*changes.values(), resolved_at, *ticket_ids]
+    else:
+        update_values = [*changes.values(), *ticket_ids]
     db.execute(
         f'UPDATE tickets SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})',
-        [*changes.values(), *ticket_ids],
+        update_values,
     )
     for ticket_id in ticket_ids:
         log_activity(db, 'bulk_update', 'ticket', ticket_id, changes)
+    if requested_category and requested_category["name"].strip().lower() == "change":
+        for ticket_id in ticket_ids:
+            change_ticket = fetch_ticket(db, ticket_id)
+            create_review_for_change(db, change_ticket, actor=session.get("username"))
     db.commit()
     return jsonify({"status": "updated", "count": len(ticket_ids)})
 
@@ -11995,6 +12342,45 @@ def delete_saved_ticket_view(view_id):
     )
     db.commit()
     return jsonify({"status": "deleted", "count": cursor.rowcount})
+
+@app.route('/api/tickets/reviewable-changes', methods=['GET'])
+@login_required
+@require_permissions('tickets.view_all', 'tickets.view_own', 'tickets.create')
+def reviewable_change_tickets():
+    db = get_db()
+    access = get_user_access(db)
+    search = (request.args.get("search") or "").strip()
+    filters = [
+        "LOWER(c.name) = 'change'",
+        "t.status NOT IN ('closed', 'resolved', 'done')",
+        "l.id IS NULL",
+    ]
+    params = []
+    if not access["is_superuser"] and "tickets.view_all" not in access["permissions"]:
+        filters.append(
+            "(t.created_by_user_id = ? OR (t.created_by_user_id IS NULL AND t.created_by = ?))"
+        )
+        params.extend([access["user"]["id"], access["user"]["username"]])
+    if search:
+        if search.lstrip("#").isdigit():
+            filters.append("(t.id = ? OR t.title LIKE ?)")
+            params.extend([int(search.lstrip("#")), f"%{search}%"])
+        else:
+            filters.append("t.title LIKE ?")
+            params.append(f"%{search}%")
+    rows = db.execute(
+        f'''
+        SELECT t.id, t.title, t.status, t.priority, t.assignee, t.updated_at
+        FROM tickets t
+        JOIN ticket_categories c ON c.id = t.category_id
+        LEFT JOIN ticket_review_links l ON l.change_ticket_id = t.id
+        WHERE {' AND '.join(filters)}
+        ORDER BY t.updated_at DESC, t.id DESC
+        LIMIT 100
+        ''',
+        params,
+    ).fetchall()
+    return jsonify([dict(row) for row in rows])
 
 @app.route('/api/ticket-assets/search', methods=['GET'])
 @login_required
@@ -12070,6 +12456,7 @@ def ticket_detail(ticket_id):
         if roadmap:
             roadmap["steps"] = fetch_roadmap_steps(db, roadmap["id"])
         ticket['roadmap'] = roadmap
+        ticket['review_relation'] = get_ticket_review_relation(db, ticket_id)
         return jsonify(ticket)
 
     if request.method == 'PUT':
@@ -12082,7 +12469,8 @@ def ticket_detail(ticket_id):
             return jsonify({"error": "Ticket-Ersteller kann nicht geändert werden"}), 400
         title = (data.get('title') or ticket['title']).strip()
         description = (data.get('description') or ticket['description']).strip()
-        category_id = data.get('category_id')
+        raw_category_id = data.get('category_id') if 'category_id' in data else ticket.get('category_id')
+        category_id = normalize_optional_int(raw_category_id)
         priority = (data.get('priority') or ticket['priority']).strip()
         status = (data.get('status') or ticket['status']).strip()
         escalation_level = int(data.get('escalation_level') or ticket.get('escalation_level') or 0)
@@ -12099,8 +12487,64 @@ def ticket_detail(ticket_id):
             field_errors["title"] = "Titel ist erforderlich"
         if not description:
             field_errors["description"] = "Beschreibung ist erforderlich"
+        if raw_category_id not in (None, "") and category_id is None:
+            field_errors["category_id"] = "Kategorie ist ungültig"
         if field_errors:
             return validation_error_response("Bitte Ticketangaben prüfen", field_errors)
+        category = get_ticket_category(db, category_id)
+        if category_id and not category:
+            return validation_error_response(
+                "Bitte Ticketangaben prüfen",
+                {"category_id": "Kategorie ist ungültig"},
+            )
+        category_name = category["name"] if category else None
+        existing_relation = get_ticket_review_relation(db, ticket_id)
+        category_changed = category_id != ticket.get("category_id")
+        if category_changed and existing_relation:
+            return jsonify({
+                "error": "Die Kategorie eines verknüpften Change-/Review-Tickets kann nicht geändert werden",
+                "code": "ticket_review_relation_locked",
+                "ticket_id": ticket_id,
+            }), 409
+        change_ticket_id = None
+        if category_name and category_name.strip().lower() == "review":
+            if existing_relation and existing_relation["role"] == "review":
+                change_ticket_id = existing_relation["change_ticket_id"]
+            else:
+                try:
+                    change_ticket_id = validate_review_assignment(
+                        db,
+                        category,
+                        data.get("change_ticket_id"),
+                        review_ticket_id=ticket_id,
+                    )
+                except ValueError as exc:
+                    return validation_error_response(
+                        "Bitte Ticketangaben prüfen",
+                        {"change_ticket_id": str(exc)},
+                    )
+        candidate_ticket = {
+            **ticket,
+            "category_id": category_id,
+            "category_name": category_name,
+            "status": status,
+        }
+        if is_closed_status(status):
+            gate_error = ensure_change_can_close(db, candidate_ticket)
+            if gate_error:
+                return jsonify(gate_error), 409
+        if (
+            existing_relation
+            and existing_relation["role"] == "review"
+            and is_closed_status(ticket.get("status"))
+            and not is_closed_status(status)
+            and is_closed_status(existing_relation["change_status"])
+        ):
+            return jsonify({
+                "error": "Der Review kann erst wieder geöffnet werden, nachdem der zugehörige Change wieder geöffnet wurde",
+                "code": "closed_change_review_locked",
+                "change_ticket_id": existing_relation["change_ticket_id"],
+            }), 409
         tags = json.dumps(data.get('tags') or json.loads(ticket.get('tags') or '[]'))
         custom_fields = json.dumps(data.get('custom_fields') or json.loads(ticket.get('custom_fields') or '[]'))
         asset_ids = data.get('asset_ids')
@@ -12111,10 +12555,6 @@ def ticket_detail(ticket_id):
                 resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             else:
                 resolved_at = None
-        category_name = None
-        if category_id:
-            category_row = db.execute('SELECT name FROM ticket_categories WHERE id = ?', (category_id,)).fetchone()
-            category_name = category_row["name"] if category_row else None
         changes = build_ticket_changes(ticket, {
             "title": title,
             "description": description,
@@ -12148,6 +12588,22 @@ def ticket_detail(ticket_id):
                     INSERT OR IGNORE INTO ticket_assets (ticket_id, asset_id)
                     VALUES (?, ?)
                 ''', (ticket_id, asset_id))
+        review_ticket_id = None
+        if category_name and category_name.strip().lower() == "review" and not existing_relation:
+            link_review_to_change(db, change_ticket_id, ticket_id, session.get("username"))
+        elif category_name and category_name.strip().lower() == "change":
+            updated_for_review = {
+                **candidate_ticket,
+                "title": title,
+                "priority": priority,
+                "assignee": assignee,
+                "due_date": due_date,
+            }
+            review_ticket_id = create_review_for_change(
+                db,
+                updated_for_review,
+                actor=session.get("username"),
+            )
         log_activity(db, "update", "ticket", ticket_id, {"title": title})
         if should_auto_create_roadmap(category_name):
             updated_ticket = {
@@ -12171,12 +12627,24 @@ def ticket_detail(ticket_id):
             normalized = normalize_ticket_row(updated_ticket)
             event_type = resolve_ticket_event_type(changes)
             trigger_ticket_notifications(db, event_type, normalized, changes=changes, actor=session.get('username'))
-        return jsonify({"status": "updated"}), 200
+        return jsonify({
+            "status": "updated",
+            "review_ticket_id": review_ticket_id,
+            "change_ticket_id": change_ticket_id,
+        }), 200
 
     can_delete = user_can('tickets.delete')
     can_delete_own = user_can('tickets.delete_own')
     if not can_delete and not (can_delete_own and is_ticket_owner(ticket, access)):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    review_relation = get_ticket_review_relation(db, ticket_id)
+    if review_relation:
+        return jsonify({
+            "error": "Verknüpfte Change-/Review-Tickets können aus Gründen der Nachvollziehbarkeit nicht gelöscht werden",
+            "code": "ticket_review_relation_locked",
+            "change_ticket_id": review_relation["change_ticket_id"],
+            "review_ticket_id": review_relation["review_ticket_id"],
+        }), 409
     db.execute('DELETE FROM ticket_comments WHERE ticket_id = ?', (ticket_id,))
     db.execute('DELETE FROM ticket_watchers WHERE ticket_id = ?', (ticket_id,))
     db.execute('DELETE FROM ticket_assets WHERE ticket_id = ?', (ticket_id,))
@@ -12246,6 +12714,15 @@ def merge_tickets():
             return jsonify({"error": f"Ticket #{ticket_id} nicht gefunden"}), 404
         if not ensure_ticket_access(ticket, access):
             return jsonify({"error": "Keine Berechtigung"}), 403
+        relation = get_ticket_review_relation(db, ticket_id)
+        if relation:
+            return jsonify({
+                "error": "Verknüpfte Change-/Review-Tickets können nicht zusammengeführt werden",
+                "code": "ticket_review_relation_locked",
+                "ticket_id": ticket_id,
+                "change_ticket_id": relation["change_ticket_id"],
+                "review_ticket_id": relation["review_ticket_id"],
+            }), 409
         if ticket_id != target_ticket_id:
             source_tickets.append(ticket)
 
