@@ -22,6 +22,7 @@ document.addEventListener('alpine:init', () => {
         error: '',
         createError: '',
         queuesCollapsed: false,
+        mobileQueuesOpen: false,
         metadataCollapsed: false,
         filterOpen: false,
         createOpen: false,
@@ -38,6 +39,7 @@ document.addEventListener('alpine:init', () => {
         internalComment: false,
         toasts: [],
         toastSequence: 0,
+        focusReturnStack: [],
         activeQueue: 'my-work',
         sort: { key: 'updated_at', direction: 'desc' },
         filters: { search: '', status: '', priority: '', category_id: '', assignee: '', mine: false },
@@ -112,6 +114,49 @@ document.addEventListener('alpine:init', () => {
                 this.syncUrl();
             }
             this.refreshIcons();
+        },
+
+        rememberFocus() {
+            const activeElement = document.activeElement;
+            if (activeElement instanceof HTMLElement) this.focusReturnStack.push(activeElement);
+        },
+
+        restoreFocus() {
+            const previousElement = this.focusReturnStack.pop();
+            this.$nextTick(() => {
+                if (previousElement?.isConnected) previousElement.focus();
+            });
+        },
+
+        focusDialog(dialogSelector = '[role="dialog"]') {
+            this.$nextTick(() => {
+                const dialogs = [...document.querySelectorAll(dialogSelector)]
+                    .filter(dialog => dialog.offsetParent !== null);
+                const dialog = dialogs.at(-1);
+                const target = dialog?.querySelector(
+                    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                );
+                target?.focus();
+            });
+        },
+
+        trapFocus(event) {
+            if (event.key !== 'Tab') return;
+            const dialog = event.currentTarget.querySelector('[role="dialog"]');
+            if (!dialog) return;
+            const focusable = [...dialog.querySelectorAll(
+                'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )].filter(element => element.offsetParent !== null);
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable.at(-1);
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
         },
 
         get visibleColumns() {
