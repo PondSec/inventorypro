@@ -1,7 +1,10 @@
 FROM python:3.12-slim
 
+ARG APP_VERSION=dev
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    APP_VERSION=${APP_VERSION} \
     INVENTORY_HOST=0.0.0.0 \
     INVENTORY_PORT=5000 \
     INVENTORY_DATABASE_PATH=/data/inventory.db \
@@ -9,6 +12,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     INVENTORY_INSTANCE_PATH=/data/instance
 
 WORKDIR /app
+
+LABEL org.opencontainers.image.title="Inventory Pro" \
+      org.opencontainers.image.version="${APP_VERSION}"
 
 COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt gunicorn

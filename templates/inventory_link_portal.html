@@ -78,7 +78,7 @@
                     </span>
                     <div>
                         <p class="text-lg font-semibold text-slate-900 sidebar-text">Inventory Pro</p>
-                        <p class="text-xs text-slate-500 sidebar-text">Linked Inventory View</p>
+                        <p class="text-xs text-slate-500 sidebar-text">Verknüpfte Instanz</p>
                     </div>
                 </a>
             </div>
@@ -90,7 +90,7 @@
                     <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 sidebar-text">
                         <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1">
                             <i data-feather="globe" class="w-3 h-3"></i>
-                            {% if link.allowPrivateNetwork %}WAN oder LAN{% else %}WAN only{% endif %}
+                            {% if link.connectionScope == 'local' %}Lokales Netzwerk{% else %}Sichere Internet-Verbindung{% endif %}
                         </span>
                         <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1">
                             <i data-feather="shield" class="w-3 h-3"></i>
@@ -140,7 +140,7 @@
                     <p class="sidebar-panel-title">Zielinstanz</p>
                     <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
                         <p class="font-semibold text-slate-700 break-all">{{ link.baseUrl }}</p>
-                        <p class="mt-2">Alle Ansichten darunter laden Kategorien, Geräte, Assets, Tickets und weitere Daten direkt aus dieser verknüpften Instanz.</p>
+                        <p class="mt-2">Die Ansicht arbeitet direkt auf dieser Instanz. Es werden weder Daten kopiert noch deine Rechte erweitert; sichtbar bleibt nur, was das Zielkonto freigibt.</p>
                     </div>
                 </div>
             </nav>
@@ -153,7 +153,7 @@
                         <i data-feather="menu" class="w-4 h-4"></i>
                     </button>
                     <div>
-                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Linked Inventory</p>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Verknüpfte Instanz</p>
                         <h1 class="text-2xl font-semibold text-slate-900">{{ link.displayName }}</h1>
                     </div>
                 </div>

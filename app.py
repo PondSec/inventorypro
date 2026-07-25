@@ -197,6 +197,12 @@ DEFAULT_SERVER_SETTINGS = {
         "notifyEmail": "",
         "encrypt": False
     },
+    "updates": {
+        "autoUpdateEnabled": False,
+        "channel": "stable",
+        "checkIntervalMinutes": 360,
+        "maintenanceWindow": "03:30"
+    },
     "importExport": {
         "exportAllowed": True,
         "importAllowed": False,
@@ -915,6 +921,37 @@ def store_runtime_settings(runtime_settings):
     }
     RUNTIME_CONFIG_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
+def store_update_policy(update_settings):
+    """Atomically publish the non-sensitive updater policy for the optional sidecar."""
+    ensure_instance_path()
+    policy_path = APP_INSTANCE_PATH / "update_policy.json"
+    policy = {
+        "schemaVersion": 1,
+        "autoUpdateEnabled": bool(update_settings.get("autoUpdateEnabled")),
+        "channel": update_settings.get("channel") or "stable",
+        "checkIntervalMinutes": int(update_settings.get("checkIntervalMinutes") or 360),
+        "maintenanceWindow": update_settings.get("maintenanceWindow") or "03:30",
+        "updatedAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=policy_path.parent,
+            prefix=".update-policy-",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(policy, handle, sort_keys=True, separators=(",", ":"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary_path, stat.S_IRUSR | stat.S_IWUSR)
+        os.replace(temporary_path, policy_path)
+    finally:
+        if temporary_path and temporary_path.exists():
+            temporary_path.unlink(missing_ok=True)
+
 def parse_ip_whitelist(value):
     if value is None:
         return [], []
@@ -961,6 +998,10 @@ def serialize_server_settings(settings_row):
     else:
         ip_whitelist, _ = parse_ip_whitelist(settings_row["allowed_ip_ranges"] or "")
         terminal_allowlist, _ = parse_ip_whitelist(settings_row["terminal_ip_allowlist"] or "")
+        update_policy = merge_settings(
+            DEFAULT_SERVER_SETTINGS["updates"],
+            safe_json_load(settings_row["update_policy_json"], {}),
+        )
         settings = {
             "schemaVersion": settings_row["schema_version"] or SETTINGS_SCHEMA_VERSION,
             "server": {
@@ -979,6 +1020,7 @@ def serialize_server_settings(settings_row):
                 "notifyEmail": settings_row["backup_notify_email"] or "",
                 "encrypt": bool(settings_row["backup_encrypt"])
             },
+            "updates": update_policy,
             "importExport": {
                 "exportAllowed": bool(settings_row["allow_db_export"] if settings_row["allow_db_export"] is not None else DEFAULT_SERVER_SETTINGS["importExport"]["exportAllowed"]),
                 "importAllowed": bool(settings_row["allow_db_import"]),
@@ -1016,6 +1058,7 @@ def serialize_server_settings(settings_row):
             "forceHttps": {"enforced": bool(settings["security"]["forceHttps"]), "infraRequired": True},
             "requireMfa": {"enforced": bool(settings["security"]["requireMfa"]), "infraRequired": False},
             "backupScheduler": {"enforced": bool(settings["backup"]["enabled"]), "infraRequired": False},
+            "autoUpdates": {"enforced": bool(settings["updates"]["autoUpdateEnabled"]), "infraRequired": True},
             "ipWhitelist": {"enforced": bool(settings["security"]["ipWhitelist"]), "infraRequired": False}
         },
         "warnings": []
@@ -1024,6 +1067,8 @@ def serialize_server_settings(settings_row):
         meta["warnings"].append("BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung ist nicht verfügbar.")
     if settings["terminal"]["enabled"]:
         meta["warnings"].append("Terminal ist aktiviert. Zugriff nur für Admins und freigegebene IPs erlauben.")
+    if settings["updates"]["autoUpdateEnabled"] and not parse_bool_env(os.environ.get("INVENTORY_UPDATER_ENABLED")):
+        meta["warnings"].append("Automatische Updates sind aktiviert, aber der abgesicherte Updater-Dienst wurde noch nicht bereitgestellt.")
     return settings, meta
 
 def validate_settings_payload(payload, partial=False):
@@ -1064,6 +1109,22 @@ def validate_settings_payload(payload, partial=False):
         errors["backup.notifyEmail"] = "E-Mail-Adresse ist ungültig."
     if backup.get("encrypt") and not os.environ.get("BACKUP_ENCRYPTION_KEY"):
         errors["backup.encrypt"] = "BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung kann nicht aktiviert werden."
+
+    updates = merged.get("updates", {})
+    update_channel = (updates.get("channel") or "").strip().lower()
+    if update_channel != "stable":
+        errors["updates.channel"] = "Nur der signierte Stable-Kanal ist zulässig."
+    update_interval = updates.get("checkIntervalMinutes")
+    try:
+        update_interval = int(update_interval)
+    except (TypeError, ValueError):
+        errors["updates.checkIntervalMinutes"] = "Prüfintervall muss eine Zahl sein."
+    else:
+        if update_interval < 15 or update_interval > 1440:
+            errors["updates.checkIntervalMinutes"] = "Prüfintervall muss zwischen 15 und 1440 Minuten liegen."
+    update_window = (updates.get("maintenanceWindow") or "").strip()
+    if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', update_window):
+        errors["updates.maintenanceWindow"] = "Wartungsfenster muss im Format HH:MM sein."
 
     import_export = merged.get("importExport", {})
     export_format = (import_export.get("exportFormat") or "").lower()
@@ -1125,6 +1186,10 @@ def validate_settings_payload(payload, partial=False):
     merged["backup"]["time"] = time_value
     merged["backup"]["retentionDays"] = retention
     merged["backup"]["notifyEmail"] = notify_email
+    merged["updates"]["autoUpdateEnabled"] = bool(updates.get("autoUpdateEnabled"))
+    merged["updates"]["channel"] = update_channel
+    merged["updates"]["checkIntervalMinutes"] = update_interval
+    merged["updates"]["maintenanceWindow"] = update_window
     merged["importExport"]["exportFormat"] = export_format
     merged["importExport"]["importMode"] = import_mode
     merged["security"]["sessionTimeoutMinutes"] = session_timeout
@@ -1175,6 +1240,7 @@ def persist_server_settings(db, settings, updated_by):
             terminal_allow_db_write = ?,
             terminal_allow_service_restart = ?,
             terminal_break_glass = ?,
+            update_policy_json = ?,
             schema_version = ?,
             updated_by = ?,
             updated_at = CURRENT_TIMESTAMP
@@ -1211,6 +1277,7 @@ def persist_server_settings(db, settings, updated_by):
             1 if settings["terminal"]["allowDbWrite"] else 0,
             1 if settings["terminal"]["allowServiceRestart"] else 0,
             1 if settings["terminal"]["breakGlassMode"] else 0,
+            json.dumps(settings["updates"], sort_keys=True, separators=(",", ":")),
             SETTINGS_SCHEMA_VERSION,
             updated_by
         )
@@ -1349,6 +1416,56 @@ def validate_inventory_link_target(base_url, allow_private_network):
             raise ValueError("Zieladresse ist nicht erlaubt.")
     return parsed
 
+def is_inventory_link_private_ip(ip_str):
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    if ip_obj.is_loopback:
+        return inventory_links_allow_loopback()
+    return (
+        ip_obj.is_private
+        and not ip_obj.is_link_local
+        and not ip_obj.is_multicast
+        and not ip_obj.is_unspecified
+        and not ip_obj.is_reserved
+    )
+
+def normalize_inventory_link_connection_scope(scope):
+    normalized = (scope or "internet").strip().lower()
+    if normalized not in {"internet", "local"}:
+        raise ValueError("Verbindungsart muss Internet oder lokales Netzwerk sein.")
+    return normalized
+
+def validate_inventory_link_configuration(base_url, connection_scope, verify_tls, allow_private_network):
+    """Validate an inventory connection as a safe Internet or LAN-only route.
+
+    Keeping the two paths explicit avoids ambiguous settings such as a public URL
+    with private-network access enabled. Resolution is repeated for every proxy
+    request to reduce DNS rebinding exposure.
+    """
+    normalized = normalize_inventory_link_base_url(base_url)
+    scope = normalize_inventory_link_connection_scope(connection_scope)
+    parsed = urllib.parse.urlsplit(normalized)
+
+    if scope == "internet":
+        if parsed.scheme != "https":
+            raise ValueError("Internet-Verbindungen benötigen HTTPS.")
+        if not verify_tls:
+            raise ValueError("Internet-Verbindungen müssen das TLS-Zertifikat prüfen.")
+        if allow_private_network:
+            raise ValueError("Internet-Verbindungen dürfen keine privaten Netzwerkziele zulassen.")
+        validate_inventory_link_target(normalized, False)
+        return normalized, scope, True, False
+
+    if not allow_private_network:
+        raise ValueError("Lokale Verbindungen benötigen die Freigabe für private Netzwerkziele.")
+    validate_inventory_link_target(normalized, True)
+    resolved_ips = resolve_inventory_link_ips(parsed.hostname)
+    if not resolved_ips or any(not is_inventory_link_private_ip(ip_str) for ip_str in resolved_ips):
+        raise ValueError("Lokale Verbindungen dürfen nur auf private LAN-Adressen zeigen.")
+    return normalized, scope, bool(verify_tls), True
+
 def parse_inventory_link_login_secret(secret):
     if not secret or ":" not in secret:
         raise ValueError("Login-Secret muss im Format Benutzername:Passwort vorliegen.")
@@ -1441,6 +1558,7 @@ def serialize_inventory_link(row):
         "verifyTls": bool(row["verify_tls"]),
         "authMode": row["auth_mode"],
         "allowPrivateNetwork": bool(row["allow_private_network"]),
+        "connectionScope": row["connection_scope"] or "internet",
         "healthStatus": row["health_status"],
         "lastCheckedAt": row["health_last_checked_at"],
         "createdAt": row["created_at"],
@@ -1450,7 +1568,7 @@ def serialize_inventory_link(row):
 def list_inventory_links(db, user_id):
     rows = db.execute(
         '''
-        SELECT id, display_name, base_url, verify_tls, auth_mode, allow_private_network,
+        SELECT id, display_name, base_url, verify_tls, auth_mode, allow_private_network, connection_scope,
                health_status, health_last_checked_at, created_at, updated_at
         FROM inventory_links
         WHERE user_id = ?
@@ -1911,8 +2029,11 @@ def perform_inventory_link_test(config):
     secret = config.get("secret") or ""
     verify_tls = bool(config.get("verify_tls", True))
     allow_private_network = bool(config.get("allow_private_network", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    connection_scope = config.get("connection_scope") or "internet"
     try:
-        validate_inventory_link_target(base_url, allow_private_network)
+        validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
     except ValueError as exc:
         return {"status": "down", "error": str(exc)}
 
@@ -4505,6 +4626,7 @@ def init_db():
                 terminal_allow_db_write INTEGER DEFAULT 0,
                 terminal_allow_service_restart INTEGER DEFAULT 0,
                 terminal_break_glass INTEGER DEFAULT 0,
+                update_policy_json TEXT DEFAULT '{}',
                 schema_version INTEGER DEFAULT 1,
                 updated_by TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -4529,6 +4651,7 @@ def init_db():
                 auth_mode TEXT DEFAULT 'apiKey',
                 secret_encrypted TEXT,
                 allow_private_network INTEGER DEFAULT 1,
+                connection_scope TEXT DEFAULT 'internet',
                 health_status TEXT,
                 health_last_checked_at TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -4537,6 +4660,14 @@ def init_db():
             )
         ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_inventory_links_user_id ON inventory_links(user_id)')
+        try:
+            c.execute("ALTER TABLE inventory_links ADD COLUMN connection_scope TEXT DEFAULT 'internet'")
+            # Existing plain-HTTP links are treated as LAN links. Other existing
+            # links remain Internet links and must satisfy the stricter policy
+            # on their next request instead of silently broadening access.
+            c.execute("UPDATE inventory_links SET connection_scope = 'local' WHERE lower(base_url) LIKE 'http://%'")
+        except sqlite3.OperationalError:
+            pass
         c.execute('''
             CREATE TABLE IF NOT EXISTS backup_runs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4724,6 +4855,7 @@ def init_db():
             ("terminal_allow_db_write", "INTEGER DEFAULT 0"),
             ("terminal_allow_service_restart", "INTEGER DEFAULT 0"),
             ("terminal_break_glass", "INTEGER DEFAULT 0"),
+            ("update_policy_json", "TEXT DEFAULT '{}'"),
             ("schema_version", "INTEGER DEFAULT 1"),
             ("updated_by", "TEXT"),
         ):
@@ -12701,6 +12833,138 @@ def search_ticket_assets():
         "pages": max(1, (total + per_page - 1) // per_page),
     })
 
+def ticket_context_terms(ticket):
+    ignored_terms = {
+        "aber", "alle", "auch", "beim", "dass", "deine", "der", "den", "dem", "des", "die",
+        "eine", "einem", "einen", "einer", "eines", "für", "habe", "hier", "ihre", "ihren",
+        "ist", "mit", "nach", "nicht", "noch", "oder", "sich", "sind", "ticket", "und", "von",
+        "wird", "wurde", "zum", "zur",
+    }
+    source = f"{ticket.get('title') or ''} {ticket.get('description') or ''}".casefold()
+    terms = []
+    for term in re.findall(r"[\w-]+", source, flags=re.UNICODE):
+        if len(term) < 4 or term in ignored_terms or term.isdigit() or term in terms:
+            continue
+        terms.append(term)
+        if len(terms) == 6:
+            break
+    return terms
+
+def ticket_context_preview(value, limit=240):
+    compact = " ".join(str(value or "").split())
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[:limit - 1].rstrip()}…"
+
+def build_ticket_work_context(db, ticket, access):
+    """Find reusable, visible knowledge without crossing ticket permission boundaries."""
+    terms = ticket_context_terms(ticket)
+    work_context = {"knowledge_entries": [], "similar_resolved_tickets": []}
+    knowledge_allowed = access["is_superuser"] or bool(
+        {"knowledge.view", "knowledge.manage"}.intersection(access["permissions"])
+    )
+
+    if knowledge_allowed:
+        knowledge_filters = ["ke.related_ticket_id = ?"]
+        knowledge_params = [ticket["id"]]
+        if terms:
+            matching_terms = []
+            for term in terms:
+                matching_terms.append(
+                    "(lower(ke.title) LIKE ? OR lower(ke.summary) LIKE ? OR lower(ke.content) LIKE ?)"
+                )
+                like = f"%{term}%"
+                knowledge_params.extend([like, like, like])
+            knowledge_filters.append("(" + " OR ".join(matching_terms) + ")")
+        knowledge_rows = db.execute(
+            f'''
+            SELECT ke.id, ke.title, ke.summary, ke.content, ke.category_id, ke.related_ticket_id,
+                   ke.created_by, ke.created_at, ke.updated_at, kc.name AS category_name
+            FROM knowledge_entries ke
+            LEFT JOIN knowledge_categories kc ON kc.id = ke.category_id
+            WHERE {' OR '.join(knowledge_filters)}
+            ORDER BY CASE WHEN ke.related_ticket_id = ? THEN 0 ELSE 1 END,
+                     ke.updated_at DESC, ke.created_at DESC
+            LIMIT 60
+            ''',
+            [*knowledge_params, ticket["id"]],
+        ).fetchall()
+        knowledge_entries = []
+        for row in knowledge_rows:
+            haystack = f"{row['title'] or ''} {row['summary'] or ''} {row['content'] or ''}".casefold()
+            score = sum(1 for term in terms if term in haystack)
+            if row["related_ticket_id"] == ticket["id"]:
+                score += 100
+            knowledge_entries.append({
+                "id": row["id"],
+                "title": row["title"],
+                "summary": ticket_context_preview(row["summary"] or row["content"]),
+                "category_name": row["category_name"],
+                "related_ticket_id": row["related_ticket_id"],
+                "updated_at": row["updated_at"] or row["created_at"],
+                "score": score,
+            })
+        knowledge_entries.sort(key=lambda item: (item["score"], item["updated_at"] or "", item["id"]), reverse=True)
+        work_context["knowledge_entries"] = knowledge_entries[:6]
+
+    resolved_filters = ["t.id != ?", "lower(t.status) IN ('resolved', 'closed', 'done')"]
+    resolved_params = [ticket["id"]]
+    term_filters = []
+    for term in terms:
+        term_filters.append("(lower(t.title) LIKE ? OR lower(t.description) LIKE ?)")
+        like = f"%{term}%"
+        resolved_params.extend([like, like])
+    if term_filters:
+        if ticket.get("category_id"):
+            resolved_filters.append("(t.category_id = ? OR " + " OR ".join(term_filters) + ")")
+            resolved_params.insert(1, ticket["category_id"])
+        else:
+            resolved_filters.append("(" + " OR ".join(term_filters) + ")")
+    elif ticket.get("category_id"):
+        resolved_filters.append("t.category_id = ?")
+        resolved_params.append(ticket["category_id"])
+    else:
+        return work_context
+
+    candidate_rows = db.execute(
+        f'''
+        SELECT t.*, c.name AS category_name
+        FROM tickets t
+        LEFT JOIN ticket_categories c ON c.id = t.category_id
+        WHERE {' AND '.join(resolved_filters)}
+        ORDER BY t.updated_at DESC, t.id DESC
+        LIMIT 80
+        ''',
+        resolved_params,
+    ).fetchall()
+    similar_tickets = []
+    for row in candidate_rows:
+        candidate = dict(row)
+        if not ensure_ticket_access(candidate, access):
+            continue
+        haystack = f"{candidate.get('title') or ''} {candidate.get('description') or ''}".casefold()
+        score = sum(1 for term in terms if term in haystack)
+        if ticket.get("category_id") and candidate.get("category_id") == ticket.get("category_id"):
+            score += 1
+        resolution = (
+            candidate.get("resolution_outcome")
+            or candidate.get("resolution_notes")
+            or candidate.get("resolution_action")
+            or "Keine dokumentierte Lösung hinterlegt."
+        )
+        similar_tickets.append({
+            "id": candidate["id"],
+            "title": candidate["title"],
+            "category_name": candidate.get("category_name"),
+            "status": candidate["status"],
+            "resolution": ticket_context_preview(resolution),
+            "updated_at": candidate.get("updated_at"),
+            "score": score,
+        })
+    similar_tickets.sort(key=lambda item: (item["score"], item["updated_at"] or "", item["id"]), reverse=True)
+    work_context["similar_resolved_tickets"] = similar_tickets[:5]
+    return work_context
+
 @app.route('/api/tickets/<int:ticket_id>', methods=['GET', 'PUT', 'DELETE'])
 @login_required
 def ticket_detail(ticket_id):
@@ -12736,6 +13000,7 @@ def ticket_detail(ticket_id):
             roadmap["steps"] = fetch_roadmap_steps(db, roadmap["id"])
         ticket['roadmap'] = roadmap
         ticket['review_relation'] = get_ticket_review_relation(db, ticket_id)
+        ticket['work_context'] = build_ticket_work_context(db, ticket, access)
         activities = db.execute(
             '''
             SELECT id, username, action, details, created_at
@@ -14358,6 +14623,7 @@ def server_settings():
     db = get_db()
     if request.method == 'POST':
         data = request.get_json() or {}
+        current_settings, _ = serialize_server_settings(get_server_settings(db))
         payload = {
             "server": {
                 "host": data.get("host"),
@@ -14375,6 +14641,7 @@ def server_settings():
                 "notifyEmail": data.get("backup_notify_email"),
                 "encrypt": data.get("backup_encrypt")
             },
+            "updates": current_settings["updates"],
             "importExport": {
                 "exportAllowed": data.get("allow_db_export"),
                 "importAllowed": data.get("allow_db_import"),
@@ -14400,6 +14667,7 @@ def server_settings():
             schedule_backup_jobs(settings_payload)
             log_activity(db, "update", "server_settings", details={"source": "legacy_api"})
             db.commit()
+            store_update_policy(settings_payload["updates"])
         except sqlite3.Error:
             db.rollback()
             raise
@@ -14429,6 +14697,7 @@ def server_settings_v2():
         schedule_backup_jobs(settings_payload)
         log_activity(db, "update", "server_settings", details={"schema_version": SETTINGS_SCHEMA_VERSION})
         db.commit()
+        store_update_policy(settings_payload["updates"])
     except sqlite3.Error:
         db.rollback()
         raise
@@ -14501,28 +14770,27 @@ def inventory_links_api():
     auth_mode = data.get("authMode") or "apiKey"
     verify_tls = bool(data.get("verifyTls", True))
     allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    connection_scope = data.get("connectionScope") or "internet"
     secret = data.get("secret") or ""
 
     if not display_name:
         return jsonify({"error": "Display-Name ist erforderlich."}), 400
     if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
-    if auth_mode != "none" and not secret:
+    if auth_mode not in {"none", "login"} and not secret:
         return jsonify({"error": "Secret ist erforderlich."}), 400
-    if auth_mode == "login":
+    if auth_mode == "login" and secret:
         try:
             parse_inventory_link_login_secret(secret)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
     try:
-        normalized = normalize_inventory_link_base_url(base_url)
-        validate_inventory_link_target(normalized, allow_private_network)
+        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-
-    if normalized.startswith("http://"):
-        verify_tls = True
 
     try:
         secret_encrypted = encrypt_inventory_link_secret(secret) if secret else ""
@@ -14534,12 +14802,12 @@ def inventory_links_api():
         '''
         INSERT INTO inventory_links (
             id, user_id, display_name, base_url, verify_tls, auth_mode, secret_encrypted,
-            allow_private_network, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            allow_private_network, connection_scope, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ''',
         (
             link_id, user["id"], display_name, normalized, 1 if verify_tls else 0,
-            auth_mode, secret_encrypted, 1 if allow_private_network else 0
+            auth_mode, secret_encrypted, 1 if allow_private_network else 0, connection_scope
         )
     )
     log_activity(db, "create", "inventory_link", details={"link_id": link_id, "display_name": display_name})
@@ -14560,22 +14828,23 @@ def inventory_links_test_draft():
     auth_mode = data.get("authMode") or "apiKey"
     verify_tls = bool(data.get("verifyTls", True))
     allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    connection_scope = data.get("connectionScope") or "internet"
     secret = data.get("secret") or ""
     if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
     try:
-        normalized = normalize_inventory_link_base_url(base_url)
-        validate_inventory_link_target(normalized, allow_private_network)
+        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    if normalized.startswith("http://"):
-        verify_tls = True
     result = perform_inventory_link_test({
         "base_url": normalized,
         "verify_tls": verify_tls,
         "auth_mode": auth_mode,
         "secret": secret,
-        "allow_private_network": allow_private_network
+        "allow_private_network": allow_private_network,
+        "connection_scope": connection_scope,
     })
     return jsonify(result), 200
 
@@ -14603,15 +14872,14 @@ def inventory_link_detail_api(link_id):
     auth_mode = data.get("authMode") or link["auth_mode"]
     verify_tls = bool(data.get("verifyTls", bool(link["verify_tls"])))
     allow_private_network = bool(data.get("allowPrivateNetwork", bool(link["allow_private_network"])))
+    connection_scope = data.get("connectionScope") or (link["connection_scope"] or "internet")
     secret = data.get("secret")
 
     if not display_name:
         return jsonify({"error": "Display-Name ist erforderlich."}), 400
     if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
-    if auth_mode == "login" and secret is None:
-        if not link["secret_encrypted"]:
-            return jsonify({"error": "Secret ist erforderlich."}), 400
+    if auth_mode == "login" and secret is None and link["secret_encrypted"]:
         try:
             existing_secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
             parse_inventory_link_login_secret(existing_secret)
@@ -14624,17 +14892,15 @@ def inventory_link_detail_api(link_id):
             return jsonify({"error": str(exc)}), 400
 
     try:
-        normalized = normalize_inventory_link_base_url(base_url)
-        validate_inventory_link_target(normalized, allow_private_network)
+        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    if normalized.startswith("http://"):
-        verify_tls = True
-
     secret_encrypted = link["secret_encrypted"]
     if secret is not None:
-        if auth_mode != "none" and not secret and not secret_encrypted:
+        if auth_mode not in {"none", "login"} and not secret and not secret_encrypted:
             return jsonify({"error": "Secret ist erforderlich."}), 400
         if secret:
             try:
@@ -14648,12 +14914,12 @@ def inventory_link_detail_api(link_id):
         '''
         UPDATE inventory_links
         SET display_name = ?, base_url = ?, verify_tls = ?, auth_mode = ?, secret_encrypted = ?,
-            allow_private_network = ?, updated_at = CURRENT_TIMESTAMP
+            allow_private_network = ?, connection_scope = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ? AND user_id = ?
         ''',
         (
             display_name, normalized, 1 if verify_tls else 0, auth_mode, secret_encrypted,
-            1 if allow_private_network else 0, link_id, user["id"]
+            1 if allow_private_network else 0, connection_scope, link_id, user["id"]
         )
     )
     log_activity(db, "update", "inventory_link", details={"link_id": link_id})
@@ -14683,7 +14949,8 @@ def inventory_link_test_api(link_id):
         "verify_tls": bool(link["verify_tls"]),
         "auth_mode": link["auth_mode"],
         "secret": secret,
-        "allow_private_network": bool(link["allow_private_network"])
+        "allow_private_network": bool(link["allow_private_network"]),
+        "connection_scope": link["connection_scope"] or "internet",
     })
     status_label = result.get("status")
     update_inventory_link_health(db, link_id, status_label)
@@ -14725,7 +14992,10 @@ def inventory_link_auth_login(link_id):
     if not username or not password:
         return jsonify({"error": "Benutzername und Passwort erforderlich."}), 400
     try:
-        validate_inventory_link_target(link["base_url"], bool(link["allow_private_network"]))
+        validate_inventory_link_configuration(
+            link["base_url"], link["connection_scope"] or "internet",
+            bool(link["verify_tls"]), bool(link["allow_private_network"])
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     secret = f"{username}:{password}"
@@ -14770,7 +15040,10 @@ def inventory_link_proxy(link_id, subpath):
         return jsonify({"error": "Link nicht gefunden."}), 404
 
     try:
-        validate_inventory_link_target(link["base_url"], bool(link["allow_private_network"]))
+        validate_inventory_link_configuration(
+            link["base_url"], link["connection_scope"] or "internet",
+            bool(link["verify_tls"]), bool(link["allow_private_network"])
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -16383,6 +16656,7 @@ if __name__ == '__main__':
         if not runtime or runtime == DEFAULT_SERVER_SETTINGS["server"]:
             runtime = settings["server"]
             store_runtime_settings(runtime)
+        store_update_policy(settings["updates"])
         RUNTIME_SETTINGS_CACHE = runtime
         schedule_backup_jobs(settings)
         schedule_health_jobs()

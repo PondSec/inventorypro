@@ -297,6 +297,46 @@
                             <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
                                 <div class="flex items-center gap-3">
                                     <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                        <i data-feather="refresh-cw" class="h-5 w-5"></i>
+                                    </span>
+                                    <div>
+                                        <h2 class="text-xl font-semibold text-slate-900">Signierte Updates</h2>
+                                        <p class="text-sm text-slate-500">Automatische Updates werden nur aus dem Stable-Kanal akzeptiert, vor dem Wechsel gesichert und nach dem Start geprüft.</p>
+                                    </div>
+                                </div>
+
+                                <label class="mt-6 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                    <input type="checkbox" x-model="settings.updates.autoUpdateEnabled" aria-label="Automatische Updates aktivieren" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                    <div>
+                                        <p class="text-sm font-semibold text-slate-700">Automatische Updates aktivieren</p>
+                                        <p class="text-xs text-slate-500">Nur mit bereitgestelltem Updater-Dienst. Bei Signatur-, Backup- oder Healthcheck-Fehlern bleibt die aktuelle Version aktiv oder wird zurückgesetzt.</p>
+                                    </div>
+                                </label>
+
+                                <div class="mt-6 grid gap-6 md:grid-cols-3">
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Kanal</label>
+                                        <select x-model="settings.updates.channel" aria-label="Update-Kanal" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                            <option value="stable">Stable – signierte Releases</option>
+                                        </select>
+                                        <p class="text-xs text-slate-400">Vorschau- und unsignierte Kanäle sind bewusst gesperrt.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Prüfintervall (Minuten)</label>
+                                        <input type="number" min="15" max="1440" step="15" x-model.number="settings.updates.checkIntervalMinutes" aria-label="Update-Prüfintervall in Minuten" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">Der Updater lädt keine Daten aus der Anwendung hoch.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Wartungsfenster</label>
+                                        <input type="time" x-model="settings.updates.maintenanceWindow" aria-label="Wartungsfenster für Updates" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">Installationen erfolgen nur innerhalb dieses Fensters.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                         <i data-feather="database" class="h-5 w-5"></i>
                                     </span>
                                     <div>
@@ -495,7 +535,7 @@
                                     </span>
                                     <div>
                                         <h2 class="text-xl font-semibold text-slate-900">Inventory-Verbindungen</h2>
-                                        <p class="text-sm text-slate-500">Verbinde mehrere Inventory-Pro-Instanzen über WAN oder LAN und wechsle anschließend vollständig in deren Oberfläche.</p>
+                                        <p class="text-sm text-slate-500">Öffne eine freigegebene externe Instanz im vertrauten Inventory-Pro-Kontext – ohne Daten zu kopieren oder Zugriffsrechte zu erweitern.</p>
                                     </div>
                                 </div>
 
@@ -509,7 +549,8 @@
                                                         <p class="text-xs text-slate-500" x-text="link.baseUrl"></p>
                                                         <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
                                                             <span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600" x-text="link.authMode"></span>
-                                                            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600" x-text="link.verifyTls ? 'TLS geprüft' : 'TLS off'"></span>
+                                                            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600" x-text="link.connectionScope === 'local' ? 'Lokales Netzwerk' : 'Internet' "></span>
+                                                            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600" x-text="link.verifyTls ? 'TLS geprüft' : 'TLS bewusst deaktiviert' "></span>
                                                             <template x-if="link.healthStatus">
                                                                 <span class="rounded-full px-2 py-0.5 text-xs font-semibold"
                                                                       :class="link.healthStatus === 'ok' ? 'bg-emerald-100 text-emerald-700' : (link.healthStatus === 'unauthorized' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700')"
@@ -526,7 +567,7 @@
                                             </div>
                                         </template>
                                         <div x-show="inventoryLinks.length === 0" class="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
-                                            Noch keine Verbindung. Gib rechts nur Name, URL und optional Zugangsdaten an.
+                                            Noch keine Verbindung. Wähle rechts zuerst einen sicheren Verbindungsweg und teste ihn vor dem Speichern.
                                         </div>
                                     </div>
 
@@ -540,15 +581,33 @@
                                                 <label class="text-xs font-semibold text-slate-600">Name der Instanz</label>
                                                 <input type="text" x-model="inventoryLinkForm.displayName" aria-label="Anzeigename der Inventory-Verknüpfung" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="HQ Inventory">
                                             </div>
+                                            <fieldset class="space-y-2">
+                                                <legend class="text-xs font-semibold text-slate-600">Verbindungsweg</legend>
+                                                <div class="grid gap-2 sm:grid-cols-2">
+                                                    <label class="cursor-pointer rounded-2xl border p-3 transition"
+                                                           :class="inventoryLinkForm.connectionScope === 'internet' ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white'">
+                                                        <input type="radio" value="internet" x-model="inventoryLinkForm.connectionScope" @change="applyInventoryLinkScope" class="sr-only">
+                                                        <span class="block text-xs font-semibold text-slate-800">Sicher über Internet</span>
+                                                        <span class="mt-1 block text-[11px] text-slate-500">HTTPS und gültiges Zertifikat sind zwingend.</span>
+                                                    </label>
+                                                    <label class="cursor-pointer rounded-2xl border p-3 transition"
+                                                           :class="inventoryLinkForm.connectionScope === 'local' ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white'">
+                                                        <input type="radio" value="local" x-model="inventoryLinkForm.connectionScope" @change="applyInventoryLinkScope" class="sr-only">
+                                                        <span class="block text-xs font-semibold text-slate-800">Nur im lokalen Netzwerk</span>
+                                                        <span class="mt-1 block text-[11px] text-slate-500">Ausschließlich private LAN-Adressen; keine öffentliche Route.</span>
+                                                    </label>
+                                                </div>
+                                            </fieldset>
                                             <div class="space-y-1">
                                                 <label class="text-xs font-semibold text-slate-600">Ziel-URL</label>
                                                 <input type="text" x-model="inventoryLinkForm.baseUrl" aria-label="Basis-URL der Inventory-Verknüpfung" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="https://inv.pondsec.com">
-                                                <p class="text-[11px] text-slate-400">Gib die vollständige Adresse der Zielinstanz ein.</p>
+                                                <p class="text-[11px] text-slate-400" x-show="inventoryLinkForm.connectionScope === 'internet'">Beispiel: https://inventory.kryo-kerl.io – nur HTTPS mit geprüftem Zertifikat.</p>
+                                                <p class="text-[11px] text-slate-400" x-show="inventoryLinkForm.connectionScope === 'local'">Beispiel: https://192.168.30.4 oder http://inventory.lan – nur private LAN-Ziele.</p>
                                             </div>
                                             <div class="space-y-1">
                                                 <label class="text-xs font-semibold text-slate-600">Zugangsdaten (optional)</label>
                                                 <input type="password" x-model="inventoryLinkForm.secret" aria-label="Zugangsdaten der Inventory-Verknüpfung" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Benutzername:Passwort oder API-Key">
-                                                <p class="text-[11px] text-slate-400">Automatisch erkannt: <span class="font-semibold">Benutzername:Passwort</span> → Login, sonst API-Key. Leer lassen, um beim Öffnen nach Zugangsdaten zu fragen.</p>
+                                                <p class="text-[11px] text-slate-400">Automatisch erkannt: <span class="font-semibold">Benutzername:Passwort</span> → Login, sonst API-Key. Leer lassen, um die Zugangsdaten beim Öffnen persönlich einzugeben.</p>
                                                 <p class="text-[11px] text-slate-400">Secrets werden serverseitig verschlüsselt gespeichert.</p>
                                             </div>
                                             <details class="rounded-2xl border border-slate-200 bg-white p-3">
@@ -566,17 +625,18 @@
                                                         </select>
                                                     </div>
                                                     <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
-                                                        <input type="checkbox" x-model="inventoryLinkForm.verifyTls" aria-label="TLS-Zertifikat prüfen" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                                        <input type="checkbox" x-model="inventoryLinkForm.verifyTls" :disabled="inventoryLinkForm.connectionScope === 'internet'" aria-label="TLS-Zertifikat prüfen" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60">
                                                         <div>
                                                             <p class="text-xs font-semibold text-slate-700">TLS Zertifikate prüfen</p>
-                                                            <p class="text-[11px] text-slate-400">Deaktivieren nur für selbstsignierte HTTPS-Ziele.</p>
+                                                            <p class="text-[11px] text-slate-400" x-show="inventoryLinkForm.connectionScope === 'internet'">Für Internet-Verbindungen verpflichtend.</p>
+                                                            <p class="text-[11px] text-slate-400" x-show="inventoryLinkForm.connectionScope === 'local'">Nur für ein bewusst verwaltetes, selbstsigniertes LAN-Zertifikat deaktivieren.</p>
                                                         </div>
                                                     </label>
-                                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
-                                                        <input type="checkbox" x-model="inventoryLinkForm.allowPrivateNetwork" aria-label="Private Netzwerkziele erlauben" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3" x-show="inventoryLinkForm.connectionScope === 'local'">
+                                                        <input type="checkbox" x-model="inventoryLinkForm.allowPrivateNetwork" disabled aria-label="Private Netzwerkziele erlauben" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60">
                                                         <div>
-                                                            <p class="text-xs font-semibold text-slate-700">Private Netzwerke zulassen</p>
-                                                            <p class="text-[11px] text-slate-400">Erlaubt RFC1918 (LAN), blockiert weiterhin Loopback & Metadata.</p>
+                                                            <p class="text-xs font-semibold text-slate-700">Privates Netzwerk erforderlich</p>
+                                                            <p class="text-[11px] text-slate-400">Nur RFC1918/ULA-LAN-Ziele. Loopback, Metadata und öffentliche Ziele bleiben blockiert.</p>
                                                         </div>
                                                     </label>
                                                 </div>
@@ -1401,6 +1461,12 @@
                         notifyEmail: '',
                         encrypt: false
                     },
+                    updates: {
+                        autoUpdateEnabled: false,
+                        channel: 'stable',
+                        checkIntervalMinutes: 360,
+                        maintenanceWindow: '03:30'
+                    },
                     importExport: {
                         exportAllowed: true,
                         importAllowed: false,
@@ -1430,6 +1496,7 @@
                 inventoryLinkForm: {
                     displayName: '',
                     baseUrl: '',
+                    connectionScope: 'internet',
                     authModeChoice: 'auto',
                     secret: '',
                     verifyTls: true,
@@ -1593,6 +1660,7 @@
                     this.inventoryLinkForm = {
                         displayName: '',
                         baseUrl: '',
+                        connectionScope: 'internet',
                         authModeChoice: 'auto',
                         secret: '',
                         verifyTls: true,
@@ -1610,6 +1678,7 @@
                     this.inventoryLinkForm = {
                         displayName: link.displayName,
                         baseUrl: link.baseUrl,
+                        connectionScope: link.connectionScope || 'internet',
                         authModeChoice: link.authMode || 'auto',
                         secret: '',
                         verifyTls: link.verifyTls,
@@ -1617,6 +1686,16 @@
                     };
                     this.inventoryLinkMessage = '';
                     this.inventoryLinkError = '';
+                },
+
+                applyInventoryLinkScope() {
+                    if (this.inventoryLinkForm.connectionScope === 'internet') {
+                        this.inventoryLinkForm.verifyTls = true;
+                        this.inventoryLinkForm.allowPrivateNetwork = false;
+                    } else {
+                        this.inventoryLinkForm.allowPrivateNetwork = true;
+                        this.inventoryLinkForm.verifyTls = true;
+                    }
                 },
 
                 buildInventoryLinkPayload() {
@@ -1748,6 +1827,12 @@
                     }
                     if (this.settings.backup.notifyEmail && !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(this.settings.backup.notifyEmail)) {
                         return 'E-Mail-Adresse ist ungültig.';
+                    }
+                    if (!Number.isInteger(this.settings.updates.checkIntervalMinutes) || this.settings.updates.checkIntervalMinutes < 15 || this.settings.updates.checkIntervalMinutes > 1440) {
+                        return 'Update-Prüfintervall muss zwischen 15 und 1440 Minuten liegen.';
+                    }
+                    if (!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(this.settings.updates.maintenanceWindow || '')) {
+                        return 'Update-Wartungsfenster muss im Format HH:MM sein.';
                     }
                     if (!Number.isInteger(this.settings.security.sessionTimeoutMinutes)) {
                         return 'Session-Timeout muss eine Zahl sein.';

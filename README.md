@@ -1,177 +1,92 @@
 # Inventory Pro
 
-Inventory Pro ist eine professionelle Web-Plattform für Inventarisierung, Helpdesk und Wissensmanagement. Sie bündelt Hardware-Assets, Support-Prozesse und Betriebsinformationen in einer Oberfläche – mit rollenbasierter Zugriffskontrolle, Automatisierungen und optionalen Betriebsmodulen.
+Enterprise-Inventarisierung und Service-Management für Teams, die Geräte, Assets, Standorte, Beschaffung und Supportvorgänge in einem nachvollziehbaren System steuern wollen.
 
-## Inhalt
-- [Überblick](#überblick)
-- [Funktionen](#funktionen)
-- [Module](#module)
-- [Technischer Stack](#technischer-stack)
-- [Schnellstart](#schnellstart)
-- [Konfiguration](#konfiguration)
-- [Betrieb & Wartung](#betrieb--wartung)
-- [Lizenz](#lizenz)
+![Inventory Pro Dashboard](docs/images/inventory-pro-dashboard.png)
 
-## Überblick
-Inventory Pro kombiniert Inventarisierung, Ticketing und Wissensdatenbank. Teams behalten Geräte, Assets und Standorte im Blick, dokumentieren Änderungen im Aktivitätslog und verwalten Tickets über Kategorien, Prioritäten und SLAs. Ergänzend stehen Roadmaps, Abhängigkeitsanalysen und eine „Time Machine“ für historische Ereignisse bereit.
+> Die Abbildung zeigt eine isolierte Demo-Instanz mit synthetischen Daten. Sie enthält keine Daten einer produktiven Installation.
 
-## Funktionen
-### Inventar & Assets
-- **Dynamische Kategorien** für Geräte mit frei definierbaren Feldern.
-- **Geräteverwaltung** mit Seriennummern, Standorten, Tags und Notizen.
-- **Asset-Registry** inkl. Lebenszyklusdaten (Anschaffung, Inbetriebnahme, Abschreibung, Ausmusterung).
-- **Asset-Zuweisung & Checkout** inkl. Historie, Verantwortlichkeit und Rückgaben.
-- **Wartungsplanung** für Geräte inklusive Status-Tracking.
-- **Anhänge & Dokumente** an Assets, Tickets und Wartungsaufgaben.
+## Was Inventory Pro verbindet
 
-### Helpdesk & Wissen
-- **Ticket-System** mit Kategorien, Prioritäten, Status, SLA/Due-Dates und Eskalationsstufen.
-- **Kommentare & interne Notizen** sowie Asset-Zuordnungen zu Tickets.
-- **Benachrichtigungen per E-Mail** für Ticket-Events.
-- **Wissensdatenbank** mit Kategorien, Artikeln und Ticket-Referenzen.
+- **Inventar und Lifecycle:** Geräte, Asset-Einträge, Kategorien, Standorte, Zuweisungen, Komponenten, Garantie- und Beschaffungsdaten.
+- **Service Desk:** Tickets mit SLA, Prioritäten, Anhängen, Watchern, Kommentaren, Aktivitäten und nachvollziehbaren Statuswechseln.
+- **Wissensgestützte Bearbeitung:** Direkt im Ticket erscheinen passende Wissensartikel und vergleichbare, bereits gelöste Fälle – immer innerhalb der jeweiligen Berechtigung.
+- **Kontrollierte Änderungen:** Zu jedem Change wird ein Review geführt. Ein Change kann erst gelöst oder geschlossen werden, wenn das zugehörige Review abgenommen wurde.
+- **Operative Übersicht:** Das Workflow-Cockpit macht fehlende Beziehungen, Service-Risiken, Lifecycle-Lücken und nächste Arbeitszüge sichtbar.
+- **Standortbezogene Arbeit:** Ein Standort führt direkt zu der auf ihn gefilterten Geräteansicht.
+- **Sichere Instanzverknüpfung:** Verknüpfte Inventory-Pro-Instanzen bleiben getrennt. Die Zielinstanz liefert nur die Daten, für die der angemeldete Benutzer dort berechtigt ist.
 
-### Planung & Transparenz
-- **Roadmaps** mit Meilensteinen und Ticket-Verknüpfung.
-- **Abhängigkeits-Graph** zwischen Assets, Tickets, Roadmaps und Organisationseinheiten.
-- **Time-Machine-Ansicht** als Zeitstrahl aus dem Aktivitätslog.
-- **Analytics/Statistiken** für Tickets, Reporter und Asset-Häufigkeiten.
+## Sicherheitsmodell
 
-### Sicherheit & Governance
-- **Rollen- und Rechteverwaltung (RBAC)** mit granularen Berechtigungen.
-- **Multi-Faktor-Authentifizierung (TOTP)** inkl. QR-Code Setup und Recovery.
-- **Audit-Log** für Aktionen und Änderungen im System.
+- Rollen und fein abgestufte Berechtigungen für Daten und Aktionen
+- Passwort-Hashing, optionale TOTP-Zwei-Faktor-Authentifizierung und sichere Passwort-Resets
+- Auditierbare Ticket- und Änderungsverläufe
+- Verschlüsselte, serverseitige Verknüpfungsgeheimnisse; keine Zugangsdaten im Browser speichern
+- Zwei explizite Verbindungsarten für andere Instanzen:
+  - **Internet:** ausschließlich HTTPS mit geprüfter Zertifikatskette; private und lokale Zielnetze werden abgewiesen.
+  - **Lokales Netzwerk:** ausschließlich private LAN-Adressen; öffentliche, Loopback- und Metadaten-Ziele werden abgewiesen.
+- Release- und Update-Metadaten enthalten keine Inventar- oder Kundendaten.
 
-### Daten & Betrieb
-- **Export/Import** von Inventardaten (SQLite/JSON/CSV) inkl. optionaler Uploads.
-- **Automatisierte Backups** mit Zeitplan, Retention, Kompression und optionaler Verschlüsselung.
-- **Server-Einstellungen** für Betrieb, Sicherheit, Sessions und Feature-Flags.
+## Schnellstart für Entwicklung
 
-## Module
-Inventory Pro bringt optionale Betriebs-Module für IT-Teams mit:
+Voraussetzung: Python 3.12 oder neuer.
 
-- **Health Monitoring**: Dashboard für System-, Netzwerk- und Service-Checks inkl. Incidents und Trenddaten.
-- **Maintenance Console (Terminal)**: gesicherte Diagnose-Recipes (Ping, DNS, HTTP, Logs, DB-Reads) ohne freien Shell-Zugriff.
-
-## Technischer Stack
-- **Backend:** Python 3 / Flask
-- **Frontend:** HTML, CSS, Vanilla JS, Alpine.js, Tailwind via CDN
-- **Datenbank:** SQLite
-- **Jobs & Scheduler:** APScheduler
-- **Sicherheit:** Werkzeug Password Hashing, TOTP (pyotp), optional Verschlüsselung via Fernet
-
-## Schnellstart
 ```bash
-python -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 python app.py
 ```
 
-Die Anwendung läuft anschließend standardmäßig auf `http://localhost:5000`.
+Danach ist die Anwendung standardmäßig unter `http://localhost:5000` verfügbar. Für reale Umgebungen müssen insbesondere `APP_SECRET_KEY`, der Datenpfad und die Uploads als geschützte Infrastruktur-Konfiguration gesetzt werden – keine Geheimnisse in Git ablegen.
 
-## Troubleshooting
-### npm ERESOLVE bei Docker/Node-Builds (optional)
-Dieses Repository enthält **keinen** Node-/Docker-Build. Falls Sie jedoch in Ihrer Umgebung einen separaten Frontend-Container bauen und dabei `npm install` mit einem ERESOLVE-Fehler abbrechen sehen (z. B. Konflikte zwischen `xterm` und `xterm-addon-fit`), prüfen Sie die Versionen in `package.json` und `package-lock.json` auf Konsistenz. Ein typischer Workaround ist, die Peer-Dependencies explizit zu harmonisieren oder beim Build `npm install --legacy-peer-deps` zu verwenden. Damit bleibt der Python/Flask-Startpfad oben unverändert.
+## Betrieb mit Docker
 
-## Konfiguration
-### Wichtige Umgebungsvariablen
-| Variable | Zweck | Default |
-| --- | --- | --- |
-| `DATABASE_URL` | Postgres-Backup via `pg_dump` | – |
-| `INVENTORY_UPLOADS_DIR` | Pfad für Uploads | `uploads/` |
-| `INVENTORY_MAX_IMPORT_BYTES` | Max. Importgröße | `52428800` |
-| `INVENTORY_MAX_UPLOAD_BYTES` | Max. Uploadgröße für Anhänge | `INVENTORY_MAX_IMPORT_BYTES` |
-| `BACKUP_ENCRYPTION_KEY` | Schlüssel für Backup-Verschlüsselung | – |
-| `INVENTORY_ANTIVIRUS_COMMAND` | Optionaler AV-Check beim Import | – |
-| `APP_VERSION` | Anzeige in der UI/Diagnostics | `unbekannt` |
-| `FLASK_ENV` | Environment Label | `production` |
-| `INVENTORY_LINKS_ENCRYPTION_KEY` | Verschlüsselungsschlüssel für Linked Inventory Secrets | – |
-| `INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS` | RFC1918-Private Netzwerke erlauben (`1`/`0`) | `1` |
-| `INVENTORY_LINK_PROXY_TIMEOUT_SECONDS` | Proxy Timeout für Linked Inventory | `20` |
-| `INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS` | Proxy Requests pro Minute | `120` |
-
-### PondSec AI – Ollama (kostenlos, lokal/remote)
-PondSec AI nutzt Ollama als Standard-LLM. Es werden **keine** API-Keys benötigt.
-
-**Vorbereitung:**
 ```bash
-ollama pull mistral
+docker compose up -d --build app
 ```
 
-**Option A (Ollama auf dem Host):**
-```bash
-export PONDSEC_AI_LLM_PROVIDER=ollama
-export PONDSEC_AI_OLLAMA_URL=http://host.docker.internal:11434
-export PONDSEC_AI_OLLAMA_MODEL=mistral
-```
+Die Standard-Compose-Datei nutzt ein Docker-Volume für `/data`. Bestehende Installationen mit einem Bind-Mount müssen diesen Mount in ihrer produktionsspezifischen Compose-Override-Datei ausdrücklich beibehalten, bevor sie auf Compose umgestellt werden. So bleibt die vorhandene Datenbank unangetastet.
 
-**Option B (Ollama als Container via Docker Compose):**
-```yaml
-services:
-  ollama:
-    image: ollama/ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama:/root/.ollama
-```
-```bash
-export PONDSEC_AI_LLM_PROVIDER=ollama
-export PONDSEC_AI_OLLAMA_URL=http://ollama:11434
-export PONDSEC_AI_OLLAMA_MODEL=mistral
-```
+Wichtige Konfigurationen:
 
-**Zusätzliche Optionen:**
-```bash
-export PONDSEC_AI_LLM_TIMEOUT_SECONDS=30
-export PONDSEC_AI_LLM_MAX_TOKENS=256
-```
-
-**Hinweis:** Wenn Ollama nicht erreichbar ist, nutzt PondSec AI eine deterministische Fallback-Logik.
-
-### Neue Berechtigungen (Auszug)
-| Permission | Zweck |
+| Variable | Zweck |
 | --- | --- |
-| `asset.assign` | Asset an Benutzer/Team zuweisen |
-| `asset.checkout` | Asset ausgeben (Checkout) |
-| `asset.checkin` | Asset zurücknehmen (Check-in) |
-| `asset.view_history` | Zuweisungs-/Checkout-Historie einsehen |
-| `attachment.upload` | Anhänge hochladen |
-| `attachment.download` | Anhänge herunterladen |
-| `attachment.delete` | Anhänge löschen |
+| `APP_SECRET_KEY` | Zufälliger, persistenter Flask-Session-Schlüssel |
+| `INVENTORY_DATABASE_PATH` | Pfad zur SQLite-Datenbank innerhalb der Instanz |
+| `INVENTORY_UPLOADS_DIR` | Persistenter Speicher für Uploads |
+| `INVENTORY_LINKS_ENCRYPTION_KEY` | Schlüssel zum Schutz von Instanzverknüpfungen |
+| `INVENTORY_UPDATER_ENABLED` | Schaltet die Update-Einstellungen frei; Standard ist `0` |
 
-### Server-Einstellungen (UI)
-Im Admin-Bereich können u. a. Backup-Strategien, Import/Export-Optionen, Sicherheitsrichtlinien, MFA-Pflicht und IP-Whitelists verwaltet werden.
+## Signierte automatische Updates
 
-## Linked Inventory Pros (Multi-Instance Federation)
-Linked Inventory Pros werden im Bereich **Einstellungen → Linked Inventory Pros** gepflegt. Die Cloud-UI zeigt sie im Sidebar-Abschnitt **Inventory Links**. Die Inhalte werden serverseitig über den Proxy geladen (kein CORS, keine Secrets im Browser).
+Automatische Updates sind standardmäßig ausgeschaltet. Nach bewusstem Aktivieren in **Einstellungen → Server → Automatische Updates** prüft ein separater Updater nur den stabilen Release-Kanal. Er akzeptiert ausschließlich signierte Release-Manifeste und unveränderliche Container-Digests aus `ghcr.io/pondsec/inventorypro`.
 
-### Beispiel: Public HTTPS über Cloudflare (inv.pondsec.com)
-1. Öffne **Einstellungen → Linked Inventory Pros**.
-2. Display Name: `PondSec HQ`
-3. Base URL: `https://inv.pondsec.com`
-4. Auth Mode: `API Key` oder `Bearer Token` (empfohlen).
-5. Secret: Deinen Key/Token eintragen.
-6. TLS prüfen aktiviert lassen.
-7. Verbindung testen → speichern.
+Vor einem Update erstellt der Updater ein lokales SQLite-Backup und prüft dessen Integrität. Nach dem Rollout wartet er auf den Health-Check. Schlägt ein Schritt fehl, bleibt die laufende Version erhalten oder wird auf das vorherige Image zurückgesetzt. Die Instanzdaten verlassen dabei zu keinem Zeitpunkt den Server.
 
-### Beispiel: LAN Host:Port (192.168.20.10:5001)
-1. Display Name: `Werkstatt`
-2. Base URL: `http://192.168.20.10:5001`
-3. Auth Mode: `API Key`/`Bearer Token` (empfohlen).
-4. Secret eintragen.
-5. Private Netzwerke zulassen aktivieren (Standard).
-6. Verbindung testen → speichern.
+Der Updater wird bewusst separat und nur mit dem Compose-Profil `updater` gestartet:
 
-**Hinweise**
-- Secrets werden serverseitig verschlüsselt gespeichert (`INVENTORY_LINKS_ENCRYPTION_KEY` empfohlen). Ohne Key werden Secrets unverschlüsselt abgelegt, sofern `INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS=1` gesetzt ist.
-- Alternativ ist `Login` möglich: Secret im Format `Benutzername:Passwort`, die Session wird serverseitig verwaltet.
-- Cookie-basierte Logins werden in v1 nicht geteilt; nutze Header-Auth für zuverlässige Verbindungen.
+```bash
+docker compose --profile updater up -d
+```
 
-## Betrieb & Wartung
-- Für Produktionsumgebungen empfiehlt sich ein WSGI-Server (z. B. Gunicorn) hinter einem Reverse-Proxy.
-- Backups sollten vor Updates erzwungen und regelmäßig getestet werden.
-- Die optionalen Module **Health** und **Terminal** können im Server-Settings-Panel aktiviert bzw. deaktiviert werden.
+Der Sidecar benötigt Zugriff auf den lokalen Docker-Socket, damit er einen geprüften Rollout und gegebenenfalls ein Rollback ausführen kann. Dieser privilegierte Zugriff gehört ausschließlich auf einen abgesicherten Server und ist regelmäßig zu überprüfen.
 
-## Lizenz
-AGPL-3.0 – siehe [LICENSE](LICENSE).
+## Qualitätssicherung
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+Die Tests decken unter anderem Rollen- und Sicherheitsgrenzen, Ticket- und Review-Workflows, Wissenskontext, Standortfilter, mobile Bedienung, sichere Instanzverknüpfungen und den Update-Mechanismus ab.
+
+## Releases
+
+Jeder Push nach `main` startet die Release-Pipeline. Sie baut ein unveränderliches GHCR-Image, erstellt ein Ed25519-signiertes Update-Manifest und veröffentlicht ein GitHub Release inklusive Deployment-Archiv. Der private Signaturschlüssel liegt ausschließlich als GitHub-Secret `INVENTORY_UPDATE_SIGNING_KEY` vor.
+
+## Lizenz und Kontakt
+
+Inventory Pro steht unter der [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.de.html). Für eine kommerzielle Nutzung ohne Offenlegungspflicht kann eine separate Lizenz vereinbart werden.
+
+PondSec · [joshua@pondsec.com](mailto:joshua@pondsec.com)
+Stand: Juli 2026

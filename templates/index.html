@@ -97,6 +97,53 @@
                         </div>
                     </section>
 
+                    <section class="enterprise-workflow-hub" x-show="workspaceView === 'overview'" x-transition aria-label="Enterprise Workflow Cockpit">
+                        <div class="enterprise-workflow-hub__summary">
+                            <div>
+                                <p class="inventory-kicker">Enterprise Cockpit</p>
+                                <h3>Systemzustand und nächste Arbeitszüge</h3>
+                                <p>Bestand, Service, Wartung und Beschaffung in einer operativen Sicht – damit Lücken früh sichtbar und Abläufe einfach bleiben.</p>
+                            </div>
+                            <div class="enterprise-score" aria-label="Datenqualitätswert">
+                                <span x-text="enterpriseWorkflow.score"></span>
+                                <small x-text="enterpriseWorkflow.status_label"></small>
+                            </div>
+                        </div>
+
+                        <div class="enterprise-signal-grid">
+                            <template x-for="signal in enterpriseWorkflow.signals" :key="signal.key">
+                                <a :href="signal.target_url" class="enterprise-signal" :data-severity="signal.severity">
+                                    <span class="enterprise-signal__icon" x-html="renderIconSvg(signal.icon, 'h-4 w-4')"></span>
+                                    <span class="enterprise-signal__body">
+                                        <strong x-text="signal.label"></strong>
+                                        <small x-text="signal.description"></small>
+                                    </span>
+                                    <em x-text="`${signal.value}${signal.unit || ''}`"></em>
+                                </a>
+                            </template>
+                        </div>
+
+                        <div class="enterprise-next-actions">
+                            <div>
+                                <h4>Nächste Arbeitszüge</h4>
+                                <p>Die wichtigsten Lücken zuerst schließen – direkt im passenden Arbeitsbereich.</p>
+                            </div>
+                            <div class="enterprise-action-list">
+                                <template x-for="action in enterpriseWorkflow.next_actions" :key="action.key">
+                                    <a :href="action.target_url" class="enterprise-action-row">
+                                        <span x-html="renderIconSvg(action.icon, 'h-4 w-4')"></span>
+                                        <span>
+                                            <strong x-text="action.title"></strong>
+                                            <small x-text="action.description"></small>
+                                        </span>
+                                        <em x-text="action.count"></em>
+                                    </a>
+                                </template>
+                                <p x-show="enterpriseWorkflow.next_actions.length === 0" class="inventory-empty compact">Keine offenen Arbeitszüge erkannt.</p>
+                            </div>
+                        </div>
+                    </section>
+
                     <section id="device-inventory" x-show="workspaceView === 'devices'" x-transition class="inventory-surface scroll-mt-24">
                         <div class="inventory-section-head">
                             <div>

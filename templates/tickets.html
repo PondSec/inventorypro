@@ -230,6 +230,56 @@
                             </div>
                         </div>
 
+                        <div x-show="detailTab === 'knowledge'" class="sd-tab-section sd-work-context">
+                            <header>
+                                <div>
+                                    <h3>Wissen und ähnliche gelöste Fälle</h3>
+                                    <p>Nur Vorgänge und Artikel, für die deine aktuelle Rolle berechtigt ist.</p>
+                                </div>
+                                <a href="/knowledge" class="sd-button"><i data-feather="book-open"></i>Wissensbasis</a>
+                            </header>
+                            <section class="sd-context-block">
+                                <div class="sd-context-heading">
+                                    <div><h4>Ähnliche gelöste Tickets</h4><p>Frühere Lösungen mit fachlichem Bezug zum aktuellen Vorgang.</p></div>
+                                    <span x-text="(selectedTicket.work_context?.similar_resolved_tickets || []).length"></span>
+                                </div>
+                                <div class="sd-context-list">
+                                    <template x-for="item in selectedTicket.work_context?.similar_resolved_tickets || []" :key="item.id">
+                                        <button type="button" class="sd-context-row" @click="loadTicket(item.id, true)">
+                                            <span class="sd-icon-slot" x-html="iconSvg('check-circle')"></span>
+                                            <span>
+                                                <strong><small x-text="`#${item.id}`"></small><span x-text="item.title"></span></strong>
+                                                <em x-text="item.category_name || 'Ohne Kategorie'"></em>
+                                                <p x-text="item.resolution"></p>
+                                            </span>
+                                            <span class="sd-icon-slot" x-html="iconSvg('arrow-up-right')"></span>
+                                        </button>
+                                    </template>
+                                    <p x-show="!(selectedTicket.work_context?.similar_resolved_tickets || []).length" class="sd-empty-inline">Keine sichtbaren, ähnlichen gelösten Tickets gefunden.</p>
+                                </div>
+                            </section>
+                            <section class="sd-context-block">
+                                <div class="sd-context-heading">
+                                    <div><h4>Passende Wissensartikel</h4><p>Wiederverwendbare Anleitungen und dokumentierte Lösungswege.</p></div>
+                                    <span x-text="(selectedTicket.work_context?.knowledge_entries || []).length"></span>
+                                </div>
+                                <div class="sd-context-list">
+                                    <template x-for="entry in selectedTicket.work_context?.knowledge_entries || []" :key="entry.id">
+                                        <a class="sd-context-row" :href="`/knowledge?entry_id=${entry.id}`">
+                                            <span class="sd-icon-slot" x-html="iconSvg('book-open')"></span>
+                                            <span>
+                                                <strong x-text="entry.title"></strong>
+                                                <em x-text="entry.category_name || 'Wissensartikel'"></em>
+                                                <p x-text="entry.summary || 'Keine Kurzbeschreibung hinterlegt.'"></p>
+                                            </span>
+                                            <span class="sd-icon-slot" x-html="iconSvg('arrow-up-right')"></span>
+                                        </a>
+                                    </template>
+                                    <p x-show="!(selectedTicket.work_context?.knowledge_entries || []).length" class="sd-empty-inline">Keine passenden Wissensartikel gefunden.</p>
+                                </div>
+                            </section>
+                        </div>
+
                         <div x-show="detailTab === 'activity'" class="sd-tab-section">
                             <header><div><h3>Aktivitäten</h3><p>Nachvollziehbare Änderungen am Ticket</p></div></header>
                             <ol class="sd-activity-timeline" aria-label="Ticketverlauf">

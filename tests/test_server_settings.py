@@ -59,6 +59,40 @@ class ServerSettingsTestCase(unittest.TestCase):
         update_response = self.client.put("/api/settings/server", json=settings)
         self.assertEqual(update_response.status_code, 400)
 
+    def test_signed_update_policy_is_validated_and_published(self):
+        self.login()
+        response = self.client.get("/api/settings/server")
+        settings = response.get_json()["settings"]
+        settings["updates"] = {
+            "autoUpdateEnabled": True,
+            "channel": "stable",
+            "checkIntervalMinutes": 120,
+            "maintenanceWindow": "02:45",
+        }
+
+        update_response = self.client.put("/api/settings/server", json=settings)
+
+        self.assertEqual(update_response.status_code, 200)
+        policy_path = inventory_app.APP_INSTANCE_PATH / "update_policy.json"
+        self.assertTrue(policy_path.exists())
+        policy = json.loads(policy_path.read_text(encoding="utf-8"))
+        self.assertTrue(policy["autoUpdateEnabled"])
+        self.assertEqual(policy["channel"], "stable")
+        self.assertEqual(policy["checkIntervalMinutes"], 120)
+        self.assertEqual(policy["maintenanceWindow"], "02:45")
+        self.assertFalse(any("password" in key.lower() for key in policy))
+
+    def test_unsigned_update_channel_is_rejected(self):
+        self.login()
+        response = self.client.get("/api/settings/server")
+        settings = response.get_json()["settings"]
+        settings["updates"]["channel"] = "preview"
+
+        update_response = self.client.put("/api/settings/server", json=settings)
+
+        self.assertEqual(update_response.status_code, 400)
+        self.assertIn("updates.channel", update_response.get_json()["details"])
+
     def test_backup_run(self):
         self.login()
         response = self.client.get("/api/settings/server")

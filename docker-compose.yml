@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: inventorypro:latest
+    image: ${INVENTORY_IMAGE:-inventorypro:latest}
     ports:
       - "${INVENTORY_PORT:-5000}:5000"
     environment:
@@ -12,6 +12,7 @@ services:
       INVENTORY_DATABASE_PATH: /data/inventory.db
       INVENTORY_UPLOADS_DIR: /data/uploads
       INVENTORY_INSTANCE_PATH: /data/instance
+      INVENTORY_UPDATER_ENABLED: ${INVENTORY_UPDATER_ENABLED:-0}
       APP_SECRET_KEY: ${APP_SECRET_KEY:-}
       INVENTORY_INITIAL_ADMIN_USERNAME: ${INVENTORY_INITIAL_ADMIN_USERNAME:-}
       INVENTORY_INITIAL_ADMIN_PASSWORD: ${INVENTORY_INITIAL_ADMIN_PASSWORD:-}
@@ -21,6 +22,29 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - inventorypro-data:/data
+    restart: unless-stopped
+
+  updater:
+    build:
+      context: .
+      dockerfile: Dockerfile.updater
+    image: inventorypro-updater:latest
+    profiles: ["updater"]
+    environment:
+      INVENTORY_UPDATE_POLICY_PATH: /data/instance/update_policy.json
+      INVENTORY_UPDATE_STATE_PATH: /data/instance/update_state.json
+      INVENTORY_UPDATE_MANIFEST_URL: ${INVENTORY_UPDATE_MANIFEST_URL:-https://github.com/PondSec/inventorypro/releases/latest/download/update-manifest.json}
+      INVENTORY_UPDATE_ALLOWED_IMAGE_REPOSITORY: ${INVENTORY_UPDATE_ALLOWED_IMAGE_REPOSITORY:-ghcr.io/pondsec/inventorypro}
+      INVENTORY_UPDATE_COMPOSE_FILE: /workspace/docker-compose.yml
+      INVENTORY_UPDATE_COMPOSE_PROJECT_DIR: /workspace
+      INVENTORY_UPDATE_HEALTH_URL: http://app:5000/login
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - inventorypro-data:/data
+      - ./:/workspace:ro
+    depends_on:
+      app:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
