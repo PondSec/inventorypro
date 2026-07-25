@@ -197,6 +197,12 @@ DEFAULT_SERVER_SETTINGS = {
         "notifyEmail": "",
         "encrypt": False
     },
+    "updates": {
+        "autoUpdateEnabled": False,
+        "channel": "stable",
+        "checkIntervalMinutes": 360,
+        "maintenanceWindow": "03:30"
+    },
     "importExport": {
         "exportAllowed": True,
         "importAllowed": False,
@@ -915,6 +921,37 @@ def store_runtime_settings(runtime_settings):
     }
     RUNTIME_CONFIG_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
+def store_update_policy(update_settings):
+    """Atomically publish the non-sensitive updater policy for the optional sidecar."""
+    ensure_instance_path()
+    policy_path = APP_INSTANCE_PATH / "update_policy.json"
+    policy = {
+        "schemaVersion": 1,
+        "autoUpdateEnabled": bool(update_settings.get("autoUpdateEnabled")),
+        "channel": update_settings.get("channel") or "stable",
+        "checkIntervalMinutes": int(update_settings.get("checkIntervalMinutes") or 360),
+        "maintenanceWindow": update_settings.get("maintenanceWindow") or "03:30",
+        "updatedAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=policy_path.parent,
+            prefix=".update-policy-",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(policy, handle, sort_keys=True, separators=(",", ":"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary_path, stat.S_IRUSR | stat.S_IWUSR)
+        os.replace(temporary_path, policy_path)
+    finally:
+        if temporary_path and temporary_path.exists():
+            temporary_path.unlink(missing_ok=True)
+
 def parse_ip_whitelist(value):
     if value is None:
         return [], []
@@ -961,6 +998,10 @@ def serialize_server_settings(settings_row):
     else:
         ip_whitelist, _ = parse_ip_whitelist(settings_row["allowed_ip_ranges"] or "")
         terminal_allowlist, _ = parse_ip_whitelist(settings_row["terminal_ip_allowlist"] or "")
+        update_policy = merge_settings(
+            DEFAULT_SERVER_SETTINGS["updates"],
+            safe_json_load(settings_row["update_policy_json"], {}),
+        )
         settings = {
             "schemaVersion": settings_row["schema_version"] or SETTINGS_SCHEMA_VERSION,
             "server": {
@@ -979,6 +1020,7 @@ def serialize_server_settings(settings_row):
                 "notifyEmail": settings_row["backup_notify_email"] or "",
                 "encrypt": bool(settings_row["backup_encrypt"])
             },
+            "updates": update_policy,
             "importExport": {
                 "exportAllowed": bool(settings_row["allow_db_export"] if settings_row["allow_db_export"] is not None else DEFAULT_SERVER_SETTINGS["importExport"]["exportAllowed"]),
                 "importAllowed": bool(settings_row["allow_db_import"]),
@@ -1016,6 +1058,7 @@ def serialize_server_settings(settings_row):
             "forceHttps": {"enforced": bool(settings["security"]["forceHttps"]), "infraRequired": True},
             "requireMfa": {"enforced": bool(settings["security"]["requireMfa"]), "infraRequired": False},
             "backupScheduler": {"enforced": bool(settings["backup"]["enabled"]), "infraRequired": False},
+            "autoUpdates": {"enforced": bool(settings["updates"]["autoUpdateEnabled"]), "infraRequired": True},
             "ipWhitelist": {"enforced": bool(settings["security"]["ipWhitelist"]), "infraRequired": False}
         },
         "warnings": []
@@ -1024,6 +1067,8 @@ def serialize_server_settings(settings_row):
         meta["warnings"].append("BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung ist nicht verfügbar.")
     if settings["terminal"]["enabled"]:
         meta["warnings"].append("Terminal ist aktiviert. Zugriff nur für Admins und freigegebene IPs erlauben.")
+    if settings["updates"]["autoUpdateEnabled"] and not parse_bool_env(os.environ.get("INVENTORY_UPDATER_ENABLED")):
+        meta["warnings"].append("Automatische Updates sind aktiviert, aber der abgesicherte Updater-Dienst wurde noch nicht bereitgestellt.")
     return settings, meta
 
 def validate_settings_payload(payload, partial=False):
@@ -1064,6 +1109,22 @@ def validate_settings_payload(payload, partial=False):
         errors["backup.notifyEmail"] = "E-Mail-Adresse ist ungültig."
     if backup.get("encrypt") and not os.environ.get("BACKUP_ENCRYPTION_KEY"):
         errors["backup.encrypt"] = "BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung kann nicht aktiviert werden."
+
+    updates = merged.get("updates", {})
+    update_channel = (updates.get("channel") or "").strip().lower()
+    if update_channel != "stable":
+        errors["updates.channel"] = "Nur der signierte Stable-Kanal ist zulässig."
+    update_interval = updates.get("checkIntervalMinutes")
+    try:
+        update_interval = int(update_interval)
+    except (TypeError, ValueError):
+        errors["updates.checkIntervalMinutes"] = "Prüfintervall muss eine Zahl sein."
+    else:
+        if update_interval < 15 or update_interval > 1440:
+            errors["updates.checkIntervalMinutes"] = "Prüfintervall muss zwischen 15 und 1440 Minuten liegen."
+    update_window = (updates.get("maintenanceWindow") or "").strip()
+    if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', update_window):
+        errors["updates.maintenanceWindow"] = "Wartungsfenster muss im Format HH:MM sein."
 
     import_export = merged.get("importExport", {})
     export_format = (import_export.get("exportFormat") or "").lower()
@@ -1125,6 +1186,10 @@ def validate_settings_payload(payload, partial=False):
     merged["backup"]["time"] = time_value
     merged["backup"]["retentionDays"] = retention
     merged["backup"]["notifyEmail"] = notify_email
+    merged["updates"]["autoUpdateEnabled"] = bool(updates.get("autoUpdateEnabled"))
+    merged["updates"]["channel"] = update_channel
+    merged["updates"]["checkIntervalMinutes"] = update_interval
+    merged["updates"]["maintenanceWindow"] = update_window
     merged["importExport"]["exportFormat"] = export_format
     merged["importExport"]["importMode"] = import_mode
     merged["security"]["sessionTimeoutMinutes"] = session_timeout
@@ -1175,6 +1240,7 @@ def persist_server_settings(db, settings, updated_by):
             terminal_allow_db_write = ?,
             terminal_allow_service_restart = ?,
             terminal_break_glass = ?,
+            update_policy_json = ?,
             schema_version = ?,
             updated_by = ?,
             updated_at = CURRENT_TIMESTAMP
@@ -1211,6 +1277,7 @@ def persist_server_settings(db, settings, updated_by):
             1 if settings["terminal"]["allowDbWrite"] else 0,
             1 if settings["terminal"]["allowServiceRestart"] else 0,
             1 if settings["terminal"]["breakGlassMode"] else 0,
+            json.dumps(settings["updates"], sort_keys=True, separators=(",", ":")),
             SETTINGS_SCHEMA_VERSION,
             updated_by
         )
@@ -4505,6 +4572,7 @@ def init_db():
                 terminal_allow_db_write INTEGER DEFAULT 0,
                 terminal_allow_service_restart INTEGER DEFAULT 0,
                 terminal_break_glass INTEGER DEFAULT 0,
+                update_policy_json TEXT DEFAULT '{}',
                 schema_version INTEGER DEFAULT 1,
                 updated_by TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -4724,6 +4792,7 @@ def init_db():
             ("terminal_allow_db_write", "INTEGER DEFAULT 0"),
             ("terminal_allow_service_restart", "INTEGER DEFAULT 0"),
             ("terminal_break_glass", "INTEGER DEFAULT 0"),
+            ("update_policy_json", "TEXT DEFAULT '{}'"),
             ("schema_version", "INTEGER DEFAULT 1"),
             ("updated_by", "TEXT"),
         ):
@@ -14358,6 +14427,7 @@ def server_settings():
     db = get_db()
     if request.method == 'POST':
         data = request.get_json() or {}
+        current_settings, _ = serialize_server_settings(get_server_settings(db))
         payload = {
             "server": {
                 "host": data.get("host"),
@@ -14375,6 +14445,7 @@ def server_settings():
                 "notifyEmail": data.get("backup_notify_email"),
                 "encrypt": data.get("backup_encrypt")
             },
+            "updates": current_settings["updates"],
             "importExport": {
                 "exportAllowed": data.get("allow_db_export"),
                 "importAllowed": data.get("allow_db_import"),
@@ -14400,6 +14471,7 @@ def server_settings():
             schedule_backup_jobs(settings_payload)
             log_activity(db, "update", "server_settings", details={"source": "legacy_api"})
             db.commit()
+            store_update_policy(settings_payload["updates"])
         except sqlite3.Error:
             db.rollback()
             raise
@@ -14429,6 +14501,7 @@ def server_settings_v2():
         schedule_backup_jobs(settings_payload)
         log_activity(db, "update", "server_settings", details={"schema_version": SETTINGS_SCHEMA_VERSION})
         db.commit()
+        store_update_policy(settings_payload["updates"])
     except sqlite3.Error:
         db.rollback()
         raise
@@ -16383,6 +16456,7 @@ if __name__ == '__main__':
         if not runtime or runtime == DEFAULT_SERVER_SETTINGS["server"]:
             runtime = settings["server"]
             store_runtime_settings(runtime)
+        store_update_policy(settings["updates"])
         RUNTIME_SETTINGS_CACHE = runtime
         schedule_backup_jobs(settings)
         schedule_health_jobs()
