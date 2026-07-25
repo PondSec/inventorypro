@@ -1,163 +1,92 @@
-# Inventory Pro – Inventarisierung & Helpdesk
+# Inventory Pro
 
-Inventory Pro ist eine professionelle Webplattform zur Verwaltung von Hardwarebeständen und Support-Tickets. Die Anwendung kombiniert eine flexible Inventarisierung, ein integriertes Helpdesk-System und ein rollenbasiertes Sicherheitskonzept. Damit eignet sie sich sowohl für IT-Abteilungen als auch für Managed-Service-Provider, die Asset- und Ticketdaten zentral und nachvollziehbar steuern möchten.
+Enterprise-Inventarisierung und Service-Management für Teams, die Geräte, Assets, Standorte, Beschaffung und Supportvorgänge in einem nachvollziehbaren System steuern wollen.
 
----
+![Inventory Pro Dashboard](docs/images/inventory-pro-dashboard.png)
 
-## Inhaltsverzeichnis
+> Die Abbildung zeigt eine isolierte Demo-Instanz mit synthetischen Daten. Sie enthält keine Daten einer produktiven Installation.
 
-- [Produktüberblick](#produktüberblick)
-- [Hauptfunktionen](#hauptfunktionen)
-- [Technischer Stack](#technischer-stack)
-- [Architektur & Datenmodell](#architektur--datenmodell)
-- [Installation](#installation)
-- [Konfiguration](#konfiguration)
-- [Betrieb & Deployment](#betrieb--deployment)
-- [Sicherheit](#sicherheit)
-- [Wartung & Betriebshinweise](#wartung--betriebshinweise)
-- [Lizenz](#lizenz)
-- [Kontakt](#kontakt)
+## Was Inventory Pro verbindet
 
----
+- **Inventar und Lifecycle:** Geräte, Asset-Einträge, Kategorien, Standorte, Zuweisungen, Komponenten, Garantie- und Beschaffungsdaten.
+- **Service Desk:** Tickets mit SLA, Prioritäten, Anhängen, Watchern, Kommentaren, Aktivitäten und nachvollziehbaren Statuswechseln.
+- **Wissensgestützte Bearbeitung:** Direkt im Ticket erscheinen passende Wissensartikel und vergleichbare, bereits gelöste Fälle – immer innerhalb der jeweiligen Berechtigung.
+- **Kontrollierte Änderungen:** Zu jedem Change wird ein Review geführt. Ein Change kann erst gelöst oder geschlossen werden, wenn das zugehörige Review abgenommen wurde.
+- **Operative Übersicht:** Das Workflow-Cockpit macht fehlende Beziehungen, Service-Risiken, Lifecycle-Lücken und nächste Arbeitszüge sichtbar.
+- **Standortbezogene Arbeit:** Ein Standort führt direkt zu der auf ihn gefilterten Geräteansicht.
+- **Sichere Instanzverknüpfung:** Verknüpfte Inventory-Pro-Instanzen bleiben getrennt. Die Zielinstanz liefert nur die Daten, für die der angemeldete Benutzer dort berechtigt ist.
 
-## Produktüberblick
+## Sicherheitsmodell
 
-Inventory Pro bietet eine konsolidierte Oberfläche zur Inventarisierung von IT-Komponenten sowie zur Bearbeitung von Support-Anfragen. Kategorien und Felder lassen sich dynamisch definieren, sodass Sie die Datenstruktur ohne Quellcodeänderung an Ihre Umgebung anpassen können. Gleichzeitig sorgt das Ticket-System für eine strukturierte Bearbeitung mit Status, Prioritäten, Kommentaren, Watchern und SLA-Informationen.
+- Rollen und fein abgestufte Berechtigungen für Daten und Aktionen
+- Passwort-Hashing, optionale TOTP-Zwei-Faktor-Authentifizierung und sichere Passwort-Resets
+- Auditierbare Ticket- und Änderungsverläufe
+- Verschlüsselte, serverseitige Verknüpfungsgeheimnisse; keine Zugangsdaten im Browser speichern
+- Zwei explizite Verbindungsarten für andere Instanzen:
+  - **Internet:** ausschließlich HTTPS mit geprüfter Zertifikatskette; private und lokale Zielnetze werden abgewiesen.
+  - **Lokales Netzwerk:** ausschließlich private LAN-Adressen; öffentliche, Loopback- und Metadaten-Ziele werden abgewiesen.
+- Release- und Update-Metadaten enthalten keine Inventar- oder Kundendaten.
 
----
+## Schnellstart für Entwicklung
 
-## Hauptfunktionen
-
-### Inventarisierung
-- **Dynamische Kategorien**: Frei definierbare Kategorien mit eigenen Felddefinitionen pro Asset-Typ.
-- **Formulargenerierung**: Eingabeformulare werden automatisch aus den JSON-Definitionen erstellt.
-- **Status-Tracking**: Statusinformationen werden für Auswertungen und Berichte genutzt.
-
-### Beschaffung & Vertraege
-- **Lieferantenmanagement**: Kontakt- und Bewertungsdaten zentral verwalten.
-- **Vertragssteuerung**: Laufzeiten, Renewal-Typen und Kosten mit Verantwortlichen hinterlegen.
-- **Bestellungen**: Purchase Orders mit Positionen, Status, Kostenstellen und Summen.
-- **Renewal-Dashboard**: Ablauftermine fuer Vertraege und Garantien im Blick behalten.
-
-### Helpdesk / Tickets
-- **Ticket-Management**: Erstellung, Priorisierung, Statuswechsel und Zuweisungen.
-- **SLA-Informationen**: Tickets können mit Fälligkeits- und SLA-Daten geführt werden.
-- **Kommentare & Watcher**: Interne und externe Kommentare sowie Benachrichtigungsempfänger.
-- **Alerts & Benachrichtigungen**: Automationsregeln für Ereignisse (Statuswechsel, Kommentare etc.).
-
-### Benutzer & Sicherheit
-- **Authentifizierung**: Benutzername/Passwort mit Passwort-Hashing.
-- **2FA (TOTP)**: Optionale Zwei-Faktor-Authentifizierung.
-- **Sicheres Passwort-Reset**: Reset via TOTP oder im eingeloggten Zustand.
-
-### UX & Bedienung
-- **Responsive Oberfläche**: Optimiert für Desktop und mobile Geräte.
-- **Dark Mode**: Integriertes Theme-System für helle und dunkle Darstellung.
-- **Moderne UI-Komponenten**: Klar strukturierte Bereiche, schnelle Navigation und konsistente Bedienelemente.
-
----
-
-## Technischer Stack
-
-| Ebene | Technologie |
-| --- | --- |
-| Frontend | HTML5, CSS3, JavaScript (Vanilla), Alpine.js, Tailwind via CDN |
-| Backend | Python 3.12, Flask |
-| Datenhaltung | SQLite |
-| Authentifizierung | bcrypt, TOTP (RFC 6238) |
-| API | RESTful, JSON-basiert |
-
----
-
-## Architektur & Datenmodell
-
-- **Trennung von UI & Backend**: UI-Templates und REST-Endpunkte sind klar getrennt.
-- **Dynamische Felder**: Kategorien speichern Felddefinitionen als JSON, Einträge übernehmen diese Struktur.
-- **Ticket-Datenmodell**: Enthält Status, Priorität, Kategorie, SLA/Deadline, Kommentare, Watcher und Benachrichtigungsregeln.
-
----
-
-## Installation
+Voraussetzung: Python 3.12 oder neuer.
 
 ```bash
-# 1) Virtuelle Umgebung erstellen
-python -m venv venv
-source venv/bin/activate
-
-# 2) Abhängigkeiten installieren
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-
-# 3) Anwendung starten
 python app.py
 ```
 
-Nach dem Start ist die Anwendung in der Regel unter `http://localhost:5000` erreichbar.
+Danach ist die Anwendung standardmäßig unter `http://localhost:5000` verfügbar. Für reale Umgebungen müssen insbesondere `APP_SECRET_KEY`, der Datenpfad und die Uploads als geschützte Infrastruktur-Konfiguration gesetzt werden – keine Geheimnisse in Git ablegen.
 
----
+## Betrieb mit Docker
 
-## Konfiguration
-
-- **SMTP / Benachrichtigungen**: Über das Ticket-Admin-Panel konfigurierbar.
-- **2FA aktivieren**: In der Benutzerverwaltung aktivieren und TOTP-Seed in einer Authenticator-App hinterlegen.
-- **JSON-Felder**: Kategorien definieren Felder über JSON, z. B.:
-
-```json
-{
-  "Status": "text",
-  "Hersteller": "text",
-  "Modell": "text",
-  "Spezifikationen": "text",
-  "Nummer": "number"
-}
+```bash
+docker compose up -d --build app
 ```
 
-Der Feldname **"Status"** hat eine besondere Bedeutung für die Auswertungslogik.
+Die Standard-Compose-Datei nutzt ein Docker-Volume für `/data`. Bestehende Installationen mit einem Bind-Mount müssen diesen Mount in ihrer produktionsspezifischen Compose-Override-Datei ausdrücklich beibehalten, bevor sie auf Compose umgestellt werden. So bleibt die vorhandene Datenbank unangetastet.
 
----
+Wichtige Konfigurationen:
 
-## Betrieb & Deployment
+| Variable | Zweck |
+| --- | --- |
+| `APP_SECRET_KEY` | Zufälliger, persistenter Flask-Session-Schlüssel |
+| `INVENTORY_DATABASE_PATH` | Pfad zur SQLite-Datenbank innerhalb der Instanz |
+| `INVENTORY_UPLOADS_DIR` | Persistenter Speicher für Uploads |
+| `INVENTORY_LINKS_ENCRYPTION_KEY` | Schlüssel zum Schutz von Instanzverknüpfungen |
+| `INVENTORY_UPDATER_ENABLED` | Schaltet die Update-Einstellungen frei; Standard ist `0` |
 
-Empfohlene Vorgehensweise für Produktionsumgebungen:
+## Signierte automatische Updates
 
-- **WSGI-Server nutzen** (z. B. Gunicorn oder uWSGI).
-- **Reverse Proxy** (z. B. Nginx) für SSL-Termination und Caching.
-- **Datenbank-Backup** regelmäßig einplanen.
-- **Secrets schützen** (SMTP-Credentials, TOTP-Secrets).
+Automatische Updates sind standardmäßig ausgeschaltet. Nach bewusstem Aktivieren in **Einstellungen → Server → Automatische Updates** prüft ein separater Updater nur den stabilen Release-Kanal. Er akzeptiert ausschließlich signierte Release-Manifeste und unveränderliche Container-Digests aus `ghcr.io/pondsec/inventorypro`.
 
----
+Vor einem Update erstellt der Updater ein lokales SQLite-Backup und prüft dessen Integrität. Nach dem Rollout wartet er auf den Health-Check. Schlägt ein Schritt fehl, bleibt die laufende Version erhalten oder wird auf das vorherige Image zurückgesetzt. Die Instanzdaten verlassen dabei zu keinem Zeitpunkt den Server.
 
-## Sicherheit
+Der Updater wird bewusst separat und nur mit dem Compose-Profil `updater` gestartet:
 
-- Passwort-Hashing mit **bcrypt**.
-- **TOTP-basierte Zwei-Faktor-Authentifizierung** (RFC 6238).
-- Session- und Rollenlogik in der Applikationsschicht.
-- Empfohlene Ergänzungen: TLS, regelmäßige Updates, Restriktionen für Admin-Zugriffe.
+```bash
+docker compose --profile updater up -d
+```
 
----
+Der Sidecar benötigt Zugriff auf den lokalen Docker-Socket, damit er einen geprüften Rollout und gegebenenfalls ein Rollback ausführen kann. Dieser privilegierte Zugriff gehört ausschließlich auf einen abgesicherten Server und ist regelmäßig zu überprüfen.
 
-## Wartung & Betriebshinweise
+## Qualitätssicherung
 
-- **Backups**: SQLite-Datei regelmäßig sichern (auch vor Updates).
-- **Monitoring**: Verfügbarkeit, Fehlerraten und Logs überwachen.
-- **Updates**: Abhängigkeiten regelmäßig prüfen und aktualisieren.
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
 
----
+Die Tests decken unter anderem Rollen- und Sicherheitsgrenzen, Ticket- und Review-Workflows, Wissenskontext, Standortfilter, mobile Bedienung, sichere Instanzverknüpfungen und den Update-Mechanismus ab.
 
-## Lizenz
+## Releases
 
-Dieses Projekt steht unter der GNU Affero General Public License Version 3 (AGPL-3.0).
+Jeder Push nach `main` startet die Release-Pipeline. Sie baut ein unveränderliches GHCR-Image, erstellt ein Ed25519-signiertes Update-Manifest und veröffentlicht ein GitHub Release inklusive Deployment-Archiv. Der private Signaturschlüssel liegt ausschließlich als GitHub-Secret `INVENTORY_UPDATE_SIGNING_KEY` vor.
 
-Sie dürfen diese Software verwenden, verändern und verbreiten, solange alle Änderungen und Erweiterungen unter denselben Bedingungen (AGPL-3.0) veröffentlicht werden, insbesondere bei Nutzung über ein Netzwerk (z. B. als Webanwendung).
+## Lizenz und Kontakt
 
-Für die kommerzielle Nutzung ohne Offenlegungspflicht (z. B. in geschlossenen Systemen oder als SaaS ohne Quellcodeveröffentlichung) ist eine separate Lizenzvereinbarung notwendig.
+Inventory Pro steht unter der [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.de.html). Für eine kommerzielle Nutzung ohne Offenlegungspflicht kann eine separate Lizenz vereinbart werden.
 
-Der vollständige Lizenztext: https://www.gnu.org/licenses/agpl-3.0.de.html
-
----
-
-## Kontakt
-
-Joshua Pond
-Fachinformatiker für Systemintegration
-E-Mail: joshua@pondsec.com
-Stand: Juli 2025
+PondSec · [joshua@pondsec.com](mailto:joshua@pondsec.com)
+Stand: Juli 2026
