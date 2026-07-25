@@ -13815,6 +13815,273 @@ def activity_feed():
         activity.append(entry)
     return jsonify(activity)
 
+def scalar_int(db, query, params=()):
+    row = db.execute(query, params).fetchone()
+    if not row:
+        return 0
+    value = row[0] if not isinstance(row, dict) else next(iter(row.values()), 0)
+    return int(value or 0)
+
+def build_enterprise_workflow_hub(db):
+    total_devices = scalar_int(db, "SELECT COUNT(*) FROM devices")
+    total_assets = scalar_int(db, "SELECT COUNT(*) FROM assets")
+    devices_missing_location = scalar_int(db, '''
+        SELECT COUNT(*) FROM devices
+        WHERE location_id IS NULL OR location_id = ''
+    ''')
+    devices_missing_serial = scalar_int(db, '''
+        SELECT COUNT(*) FROM devices
+        WHERE serial_number IS NULL OR TRIM(serial_number) = ''
+    ''')
+    devices_without_asset = scalar_int(db, '''
+        SELECT COUNT(*)
+        FROM devices d
+        WHERE NOT EXISTS (
+            SELECT 1 FROM asset_devices ad WHERE ad.device_id = d.id
+        )
+    ''')
+    assets_missing_category = scalar_int(db, '''
+        SELECT COUNT(*) FROM assets
+        WHERE category_id IS NULL OR category_id = ''
+    ''')
+    assets_without_devices = scalar_int(db, '''
+        SELECT COUNT(*)
+        FROM assets a
+        WHERE NOT EXISTS (
+            SELECT 1 FROM asset_devices ad WHERE ad.asset_id = a.id
+        )
+    ''')
+    assets_without_lifecycle = scalar_int(db, '''
+        SELECT COUNT(*) FROM assets
+        WHERE (acquisition_date IS NULL OR TRIM(acquisition_date) = '')
+          AND (commissioning_date IS NULL OR TRIM(commissioning_date) = '')
+          AND (warranty_end IS NULL OR TRIM(warranty_end) = '')
+    ''')
+    linked_assets = scalar_int(db, '''
+        SELECT COUNT(*)
+        FROM assets a
+        WHERE EXISTS (SELECT 1 FROM asset_devices ad WHERE ad.asset_id = a.id)
+           OR EXISTS (SELECT 1 FROM ticket_assets ta WHERE ta.asset_id = a.id)
+           OR EXISTS (SELECT 1 FROM asset_relations ar WHERE ar.asset_id = a.id OR ar.related_asset_id = a.id)
+           OR EXISTS (SELECT 1 FROM asset_assignments aa WHERE aa.asset_id = a.id)
+           OR EXISTS (SELECT 1 FROM asset_services src WHERE src.asset_id = a.id)
+           OR (a.purchase_order_id IS NOT NULL AND a.purchase_order_id != '')
+    ''')
+
+    issues_total = (
+        devices_missing_location
+        + devices_missing_serial
+        + devices_without_asset
+        + assets_missing_category
+        + assets_without_devices
+        + assets_without_lifecycle
+    )
+    denominator = max(total_devices + total_assets, 1)
+    quality_score = max(0, min(100, round(100 - ((issues_total / denominator) * 28))))
+    integration_score = round((linked_assets / max(total_assets, 1)) * 100) if total_assets else 100
+
+    signals = [
+        {
+            "key": "device_identity",
+            "label": "Geräte-Identität",
+            "value": devices_missing_location + devices_missing_serial,
+            "severity": "warning" if devices_missing_location or devices_missing_serial else "good",
+            "icon": "monitor",
+            "description": "Geräte ohne Standort oder Inventar-/Seriennummer bremsen Support, Audit und Übergabe.",
+            "action_label": "Geräte prüfen",
+            "target_url": "/?view=devices#device-inventory",
+        },
+        {
+            "key": "asset_structure",
+            "label": "Asset-Struktur",
+            "value": assets_missing_category + assets_without_devices,
+            "severity": "critical" if assets_missing_category else ("warning" if assets_without_devices else "good"),
+            "icon": "package",
+            "description": "Asset-Einträge sollten kategorisiert und mit Geräten, Komponenten oder Bestellungen verbunden sein.",
+            "action_label": "Assets verknüpfen",
+            "target_url": "/?view=assets",
+        },
+        {
+            "key": "lifecycle",
+            "label": "Lifecycle-Daten",
+            "value": assets_without_lifecycle,
+            "severity": "warning" if assets_without_lifecycle else "good",
+            "icon": "clock",
+            "description": "Beschaffung, Inbetriebnahme und Garantie fehlen noch bei Teilen des Bestands.",
+            "action_label": "Lifecycle pflegen",
+            "target_url": "/?view=assets",
+        },
+        {
+            "key": "integration_depth",
+            "label": "Verknüpfungstiefe",
+            "value": integration_score,
+            "severity": "critical" if integration_score < 35 else ("warning" if integration_score < 70 else "good"),
+            "icon": "share-2",
+            "description": "Je stärker Assets mit Tickets, Geräten, Services und Beschaffung verbunden sind, desto leichter führt das System durch den Workflow.",
+            "action_label": "Abhängigkeiten öffnen",
+            "target_url": "/dependencies",
+            "unit": "%",
+        },
+    ]
+
+    workflows = [
+        {
+            "key": "connect_inventory",
+            "title": "Inventar zusammenführen",
+            "description": "Geräte ohne Asset-Kontext und Assets ohne Gerätebezug nacheinander verbinden.",
+            "count": devices_without_asset + assets_without_devices,
+            "target_url": "/?view=assets",
+            "action_label": "Verknüpfungen schließen",
+            "icon": "link",
+        },
+        {
+            "key": "clean_identity",
+            "title": "Audit-fähige Gerätebasis",
+            "description": "Standort, Kategorie und Inventar-/Seriennummer vollständig halten.",
+            "count": devices_missing_location + devices_missing_serial,
+            "target_url": "/?view=devices#device-inventory",
+            "action_label": "Geräte bereinigen",
+            "icon": "check-square",
+        },
+    ]
+
+    if user_can('tickets.view_all') or user_can('tickets.view_own'):
+        open_ticket_filter = "LOWER(COALESCE(status, '')) NOT IN ('resolved', 'closed')"
+        open_tickets_without_assets = scalar_int(db, f'''
+            SELECT COUNT(*)
+            FROM tickets t
+            WHERE {open_ticket_filter}
+              AND NOT EXISTS (
+                  SELECT 1 FROM ticket_assets ta WHERE ta.ticket_id = t.id
+              )
+        ''')
+        overdue_tickets = scalar_int(db, f'''
+            SELECT COUNT(*)
+            FROM tickets
+            WHERE {open_ticket_filter}
+              AND due_date IS NOT NULL
+              AND TRIM(due_date) != ''
+              AND date(due_date) < date('now')
+        ''')
+        stale_tickets = scalar_int(db, f'''
+            SELECT COUNT(*)
+            FROM tickets
+            WHERE {open_ticket_filter}
+              AND datetime(updated_at) < datetime('now', '-14 days')
+        ''')
+        signals.append({
+            "key": "service_context",
+            "label": "Service-Kontext",
+            "value": open_tickets_without_assets,
+            "severity": "warning" if open_tickets_without_assets else "good",
+            "icon": "life-buoy",
+            "description": "Offene Tickets ohne Asset-Bezug erschweren Ursachenanalyse, Historie und Eskalation.",
+            "action_label": "Tickets verknüpfen",
+            "target_url": "/tickets?queue=all-open",
+        })
+        signals.append({
+            "key": "service_risk",
+            "label": "Service-Risiko",
+            "value": overdue_tickets + stale_tickets,
+            "severity": "critical" if overdue_tickets else ("warning" if stale_tickets else "good"),
+            "icon": "alert-triangle",
+            "description": "Überfällige oder länger nicht bewegte Tickets brauchen klare nächste Schritte.",
+            "action_label": "Queues prüfen",
+            "target_url": "/tickets?queue=overdue",
+        })
+        workflows.append({
+            "key": "ticket_asset_context",
+            "title": "Tickets mit Bestand verknüpfen",
+            "description": "Offene Tickets direkt mit Assets verbinden, damit Verlauf, Anhänge und Verantwortung zusammenlaufen.",
+            "count": open_tickets_without_assets,
+            "target_url": "/tickets?queue=all-open",
+            "action_label": "Service-Kontext schließen",
+            "icon": "life-buoy",
+        })
+
+    if user_can('maintenance.view') or user_can('maintenance.manage'):
+        overdue_maintenance = scalar_int(db, '''
+            SELECT COUNT(*)
+            FROM maintenance_tasks
+            WHERE status = 'open'
+              AND due_date IS NOT NULL
+              AND TRIM(due_date) != ''
+              AND date(due_date) < date('now')
+        ''')
+        open_maintenance = scalar_int(db, "SELECT COUNT(*) FROM maintenance_tasks WHERE status = 'open'")
+        signals.append({
+            "key": "maintenance",
+            "label": "Wartung",
+            "value": overdue_maintenance or open_maintenance,
+            "severity": "critical" if overdue_maintenance else ("warning" if open_maintenance else "good"),
+            "icon": "tool",
+            "description": "Offene Wartungen sollten im Gerätekontext sichtbar abgearbeitet werden.",
+            "action_label": "Geräte öffnen",
+            "target_url": "/?view=devices#device-inventory",
+        })
+
+    if user_can('procurement.view') or user_can('procurement.manage'):
+        expiring_contracts = scalar_int(db, '''
+            SELECT COUNT(*)
+            FROM contracts
+            WHERE LOWER(COALESCE(status, 'active')) = 'active'
+              AND end_date IS NOT NULL
+              AND TRIM(end_date) != ''
+              AND date(end_date) BETWEEN date('now') AND date('now', '+90 days')
+        ''')
+        overdue_orders = scalar_int(db, '''
+            SELECT COUNT(*)
+            FROM purchase_orders
+            WHERE LOWER(COALESCE(status, '')) NOT IN ('received', 'closed', 'cancelled')
+              AND expected_date IS NOT NULL
+              AND TRIM(expected_date) != ''
+              AND date(expected_date) < date('now')
+        ''')
+        signals.append({
+            "key": "procurement",
+            "label": "Beschaffung & Verträge",
+            "value": expiring_contracts + overdue_orders,
+            "severity": "critical" if overdue_orders else ("warning" if expiring_contracts else "good"),
+            "icon": "shopping-cart",
+            "description": "Ablaufende Verträge und verspätete Bestellungen gehören in denselben operativen Blick wie die betroffenen Assets.",
+            "action_label": "Procurement öffnen",
+            "target_url": "/procurement",
+        })
+        workflows.append({
+            "key": "renewal_readiness",
+            "title": "Renewals vorziehen",
+            "description": "Verträge, Bestellungen und Asset-Lifecycle gemeinsam prüfen.",
+            "count": expiring_contracts + overdue_orders,
+            "target_url": "/procurement",
+            "action_label": "Renewals prüfen",
+            "icon": "repeat",
+        })
+
+    next_actions = sorted(workflows, key=lambda item: item["count"], reverse=True)[:4]
+    status_label = "Stabil" if quality_score >= 85 and integration_score >= 70 else "Aufbau nötig"
+    if quality_score < 65 or integration_score < 35:
+        status_label = "Fokus erforderlich"
+
+    return {
+        "score": quality_score,
+        "integration_score": integration_score,
+        "status_label": status_label,
+        "signals": signals,
+        "next_actions": next_actions,
+        "summary": {
+            "devices": total_devices,
+            "assets": total_assets,
+            "linked_assets": linked_assets,
+            "issues": issues_total,
+        },
+    }
+
+@app.route('/api/enterprise/workflow-hub', methods=['GET'])
+@login_required
+@require_permissions('categories.view', 'categories.manage')
+def enterprise_workflow_hub():
+    return jsonify(build_enterprise_workflow_hub(get_db()))
+
 @app.route('/api/users', methods=['GET', 'POST'])
 @login_required
 @require_permission('users.manage')
