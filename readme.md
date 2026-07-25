@@ -33,6 +33,12 @@ Inventory Pro bietet eine konsolidierte Oberfläche zur Inventarisierung von IT-
 - **Formulargenerierung**: Eingabeformulare werden automatisch aus den JSON-Definitionen erstellt.
 - **Status-Tracking**: Statusinformationen werden für Auswertungen und Berichte genutzt.
 
+### Beschaffung & Vertraege
+- **Lieferantenmanagement**: Kontakt- und Bewertungsdaten zentral verwalten.
+- **Vertragssteuerung**: Laufzeiten, Renewal-Typen und Kosten mit Verantwortlichen hinterlegen.
+- **Bestellungen**: Purchase Orders mit Positionen, Status, Kostenstellen und Summen.
+- **Renewal-Dashboard**: Ablauftermine fuer Vertraege und Garantien im Blick behalten.
+
 ### Helpdesk / Tickets
 - **Ticket-Management**: Erstellung, Priorisierung, Statuswechsel und Zuweisungen.
 - **SLA-Informationen**: Tickets können mit Fälligkeits- und SLA-Daten geführt werden.

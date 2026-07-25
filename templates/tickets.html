@@ -1,760 +1,408 @@
 <!DOCTYPE html>
-<html lang="de" x-data="ticketsApp()">
+<html lang="de" x-data="serviceDesk()" :class="{ 'sd-detail-open': selectedTicket }">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventory Pro - Helpdesk</title>
-    <script src="/static/theme.js"></script>
-    <script>
-        tailwind.config = { darkMode: 'class' };
-    </script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Inventory Pro · Service Desk</title>
+    <script src="/static/theme.js?v=inventory-v3-20260724-1"></script>
     <script src="/static/vendor/alpinejs.min.js" defer></script>
     <script>
         window.inventoryPermissions = {{ permissions | tojson }};
         window.inventoryIsSuperuser = {{ is_superuser | tojson }};
         window.inventoryUsername = {{ username | tojson }};
+        window.initialTicketId = {{ initial_ticket_id | default(none) | tojson }};
     </script>
-    <script>
-        window.PONDSEC_AI_CONTEXT = { type: "tickets" };
-    </script>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=service-desk-20260725-4">
 </head>
-<body class="app-body">
-    <div class="app-shell">
-        <aside class="app-sidebar sidebar bg-white/90 backdrop-blur-xl border-r border-slate-200 shadow-sm">
-            <div class="sidebar-header p-6 border-b border-slate-200">
-                <a href="/">
-                    <div class="logo flex items-center space-x-3">
-                        <span class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-white shadow-lg" data-brand-logo>
-                            <i data-feather="cpu" data-brand-logo-icon class="w-5 h-5"></i>
-                        </span>
-                        <div>
-                            <p class="text-lg font-semibold text-slate-900 sidebar-text" data-brand-name>Inventory Pro</p>
-                            <p class="text-xs text-slate-500 sidebar-text" data-brand-tagline>Smart Asset Hub</p>
-                        </div>
-                    </div>
-                </a>
-            </div>
-            <nav class="p-4 space-y-4 sidebar-scroll sidebar-primary-links">
-                <div class="sidebar-panel">
-                    <p class="sidebar-panel-title">Hauptbereiche</p>
-                    <div class="mt-3 space-y-1">
-                        <a href="/" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="home" class="w-4 h-4"></i></span>
-                                Dashboard
-                            </span>
-                        </a>
-                        {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
-                        <a href="/locations" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="map-pin" class="w-4 h-4"></i></span>
-                                Standorte
-                            </span>
-                        </a>
-                        {% endif %}
-                        {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
-                        <a href="/tickets" class="sidebar-link active">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="life-buoy" class="w-4 h-4"></i></span>
-                                Ticketsystem
-                            </span>
-                        </a>
-                        {% endif %}
-                        {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
-                        <a href="/knowledge" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="book-open" class="w-4 h-4"></i></span>
-                                Wissensbasis
-                            </span>
-                        </a>
-                        {% endif %}
-                        {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
-                        <a href="/roadmap" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="git-merge" class="w-4 h-4"></i></span>
-                                Roadmap
-                            </span>
-                        </a>
-                        {% endif %}
-                        {% if 'ai.use' in permissions or 'ai.manage' in permissions %}
-                        <a href="/ai/activity" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="message-circle" class="w-4 h-4"></i></span>
-                                PondSec AI
-                            </span>
-                        </a>
-                        {% endif %}
-                    </div>
-                </div>
+<body class="sd-body" :class="{ 'modal-open': createOpen || assetPickerOpen || saveViewOpen || bulkDialog.open || showShortcuts || filterOpen || mobileQueuesOpen }" @keydown.window="handleShortcut($event)">
+    <a class="skip-link" href="#ticket-table">Zur Ticketliste springen</a>
 
-                {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
-                <div class="sidebar-panel">
-                    <p class="sidebar-panel-title">Auswertung</p>
-                    <div class="mt-3 space-y-1">
-                        {% if 'stats.view' in permissions %}
-                        <a href="/stats" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="bar-chart-2" class="w-4 h-4"></i></span>
-                                Statistiken
-                            </span>
-                        </a>
-                        {% endif %}
-                        {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
-                        <a href="/dependencies" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="share-2" class="w-4 h-4"></i></span>
-                                Dependency-Graph
-                            </span>
-                        </a>
-                        {% endif %}
-                        {% if 'timemachine.view' in permissions %}
-                        <a href="/time-machine" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="clock" class="w-4 h-4"></i></span>
-                                Zeitmaschine
-                            </span>
-                        </a>
-                        {% endif %}
-                        {% if 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
-                        <a href="/health" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="activity" class="w-4 h-4"></i></span>
-                                Health
-                            </span>
-                        </a>
-                        {% endif %}
-                    </div>
-                </div>
-                {% endif %}
-
-                {% if 'users.manage' in permissions or 'server_settings.manage' in permissions %}
-                <div class="sidebar-panel">
-                    <p class="sidebar-panel-title">Administration</p>
-                    <div class="mt-3 space-y-1">
-                        {% if 'users.manage' in permissions %}
-                        <a href="/users" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="users" class="w-4 h-4"></i></span>
-                                Benutzer
-                            </span>
-                        </a>
-                        {% endif %}
-                        {% if 'server_settings.manage' in permissions %}
-                        <a href="/settings" class="sidebar-link">
-                            <span>
-                                <span class="sidebar-link-icon"><i data-feather="settings" class="w-4 h-4"></i></span>
-                                Einstellungen
-                            </span>
-                        </a>
-                        {% endif %}
-                    </div>
-                </div>
-                {% endif %}
+    <div class="sd-shell">
+        <aside class="sd-global-nav" aria-label="Hauptnavigation">
+            <a href="/" class="sd-brand" aria-label="Inventory Pro Startseite">
+                <span class="sd-brand-mark"><i data-feather="box"></i></span>
+                <span class="sd-brand-copy"><strong data-brand-name>Inventory Pro</strong><small>Smart Asset Hub</small></span>
+            </a>
+            <nav class="sd-global-links">
+                <a href="/" aria-label="Übersicht"><i data-feather="grid"></i><span>Übersicht</span></a>
+                <a href="/locations" aria-label="Standorte"><i data-feather="map-pin"></i><span>Standorte</span></a>
+                <a href="/tickets" class="active" aria-current="page" aria-label="Service Desk"><i data-feather="life-buoy"></i><span>Service Desk</span></a>
+                <a href="/knowledge" aria-label="Wissen"><i data-feather="book-open"></i><span>Wissen</span></a>
+                <a href="/roadmap" aria-label="Roadmap"><i data-feather="git-merge"></i><span>Roadmap</span></a>
+                <a href="/dependencies" aria-label="Abhängigkeiten"><i data-feather="share-2"></i><span>Abhängigkeiten</span></a>
             </nav>
+            <div class="sd-global-footer">
+                <a x-show="canManageTickets()" href="/admin/tickets/categories" aria-label="Ticket-Administration"><i data-feather="settings"></i><span>Ticket-Admin</span></a>
+                <button type="button" @click="openShortcuts()" aria-label="Tastaturkürzel"><i data-feather="command"></i><span>Kürzel</span></button>
+                <form action="/logout" method="post"><button type="submit" aria-label="Abmelden"><i data-feather="log-out"></i><span>Abmelden</span></button></form>
+            </div>
         </aside>
 
-        <div class="app-main app-main--fixed">
-            <header class="app-header bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 flex justify-between items-center fixed top-0 z-30 h-[82px]">
-                <div class="flex items-center gap-4">
-                    <button type="button" data-sidebar-toggle aria-label="Navigation umschalten" class="icon-button inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50">
-                        <i data-feather="menu" class="w-4 h-4"></i>
+        <aside class="sd-queues" :class="{ 'is-collapsed': queuesCollapsed }" aria-label="Ticket-Queues">
+            <div class="sd-queue-heading">
+                <span x-show="!queuesCollapsed">Service Desk</span>
+                <button type="button" @click="queuesCollapsed = !queuesCollapsed" :aria-label="queuesCollapsed ? 'Queues ausklappen' : 'Queues einklappen'">
+                    <span class="sd-icon-slot" x-html="iconSvg(queuesCollapsed ? 'chevron-right' : 'chevron-left')"></span>
+                </button>
+            </div>
+            <nav>
+                <template x-for="queue in queues" :key="queue.key">
+                    <button type="button" @click="selectQueue(queue)" :class="{ active: activeQueue === queue.key }" :title="queue.label" :aria-label="queue.label" :aria-current="activeQueue === queue.key ? 'page' : null">
+                        <span class="sd-icon-slot" x-html="iconSvg(queue.icon)"></span>
+                        <span x-show="!queuesCollapsed" x-text="queue.label"></span>
+                        <small x-show="!queuesCollapsed && queueCounts[queue.key] !== undefined" x-text="queueCounts[queue.key]"></small>
                     </button>
-                    <div>
-                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Helpdesk</p>
-                        <h1 class="text-2xl font-semibold text-slate-900">Ticket-System</h1>
-                    </div>
+                </template>
+            </nav>
+            <section x-show="!queuesCollapsed && savedViews.length" class="sd-saved-views">
+                <h2>Gespeicherte Ansichten</h2>
+                <template x-for="view in savedViews" :key="view.id">
+                    <button type="button" @click="applySavedView(view)" :aria-label="`Gespeicherte Ansicht ${view.name} öffnen`">
+                        <span class="sd-icon-slot" x-html="iconSvg(view.is_favorite ? 'star' : 'bookmark')"></span>
+                        <span x-text="view.name"></span>
+                    </button>
+                </template>
+            </section>
+        </aside>
+
+        <main class="sd-main">
+            <header class="sd-toolbar">
+                <div class="sd-title">
+                    <p>Service Desk <span>/</span> <span x-text="activeQueueLabel"></span></p>
+                    <div><h1 x-text="activeQueueLabel"></h1><span x-text="loading ? 'Lädt …' : `${pagination.total} Tickets`"></span></div>
                 </div>
-                <div class="flex items-center justify-end gap-2 sm:gap-3">
-                    <span class="hidden text-sm text-slate-500 sm:inline">Angemeldet als {{ username }}</span>
-                    {% include 'pondsec_ai_button.html' %}
-                    <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
-                        <span data-theme-icon aria-hidden="true">🌙</span>
-                        <span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
-                    </button>
-                    <button onclick="logout()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
-                        <i data-feather="log-out" class="w-4 h-4"></i>
-                        <span class="sr-only sm:not-sr-only">Abmelden</span>
-                    </button>
-                    {% if 'tickets.create' in permissions %}
-                    <button @click="openNewTicket" data-testid="open-ticket-modal" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-amber-200 bg-amber-50 p-2 text-sm font-semibold text-amber-700 shadow-sm hover:bg-amber-100 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
-                        <i data-feather="plus-circle" class="w-4 h-4"></i>
-                        <span class="sr-only sm:not-sr-only">Ticket erstellen</span>
-                    </button>
-                    {% endif %}
+                <div class="sd-toolbar-actions">
+                    <button type="button" class="sd-button sd-mobile-queue-trigger" @click="openMobileQueues()" aria-label="Ticket-Queue auswählen"><i data-feather="menu"></i><span>Queue</span></button>
+                    <label class="sd-search">
+                        <i data-feather="search"></i>
+                        <span class="sr-only">Tickets durchsuchen</span>
+                        <input x-ref="search" type="search" x-model="filters.search" @input.debounce.350ms="searchChanged()" placeholder="ID, Titel, Benutzer, Asset …">
+                        <kbd>/</kbd>
+                    </label>
+                    <button type="button" class="sd-button sd-filter-trigger" @click="openFilter()" aria-label="Ticketliste filtern"><i data-feather="filter"></i><span>Filter</span><small x-show="activeFilterCount" x-text="activeFilterCount"></small></button>
+                    <button type="button" class="sd-icon-button" @click="openSaveView()" aria-label="Ansicht speichern" title="Ansicht speichern"><i data-feather="bookmark"></i></button>
+                    <button type="button" class="sd-icon-button" @click="loadTickets()" aria-label="Aktualisieren" title="Aktualisieren"><i data-feather="refresh-cw"></i></button>
+                    <button x-show="can('tickets.create')" type="button" class="sd-button sd-button-primary" @click="openCreateTicket()" data-testid="open-ticket-modal" aria-label="Neues Ticket erstellen"><i data-feather="plus"></i><span>Ticket</span></button>
                 </div>
             </header>
 
-            <main class="app-content">
-                <div class="page">
-                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div class="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Helpdesk</p>
-                            <h2 class="text-2xl font-semibold text-slate-900">Ticket-System</h2>
-                            <p class="mt-1 text-sm text-slate-500">SLA, Prioritäten und Workflows im Blick behalten.</p>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Offen</p>
-                                <p class="text-2xl font-semibold text-slate-900" x-text="stats.open"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">In Arbeit</p>
-                                <p class="text-2xl font-semibold text-slate-900" x-text="stats.in_progress"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Wartet</p>
-                                <p class="text-2xl font-semibold text-slate-900" x-text="stats.pending"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Gelöst</p>
-                                <p class="text-2xl font-semibold text-slate-900" x-text="stats.resolved"></p>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+            <section x-show="activeFilterCount" class="sd-filter-chips" aria-label="Aktive Filter">
+                <button x-show="filters.status" type="button" @click="clearFilter('status')">Status: <span x-text="statusLabel(filters.status)"></span><i data-feather="x"></i></button>
+                <button x-show="filters.priority" type="button" @click="clearFilter('priority')">Priorität: <span x-text="priorityLabel(filters.priority)"></span><i data-feather="x"></i></button>
+                <button x-show="filters.category_id" type="button" @click="clearFilter('category_id')">Kategorie: <span x-text="categoryLabel(filters.category_id)"></span><i data-feather="x"></i></button>
+                <button x-show="filters.assignee" type="button" @click="clearFilter('assignee')">Zuständig: <span x-text="filters.assignee"></span><i data-feather="x"></i></button>
+                <button type="button" class="clear-all" @click="resetFilters()">Alle zurücksetzen</button>
+            </section>
 
-                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div class="flex flex-wrap items-center gap-4">
-                        <div class="w-full sm:flex-1 sm:min-w-[220px]">
-                            <label class="text-xs uppercase text-slate-400">Suche</label>
-                            <input type="text" x-model="filters.search" @input.debounce.300ms="loadTickets" placeholder="Ticket, Kunde, Beschreibung" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm">
-                        </div>
-                        <div class="w-full sm:min-w-[160px]">
-                            <label class="text-xs uppercase text-slate-400">Status</label>
-                            <select x-model="filters.status" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                                <option value="">Alle</option>
-                                <template x-for="status in statusOptions" :key="status">
-                                    <option :value="status" x-text="statusLabels[status] || status"></option>
-                                </template>
-                            </select>
-                        </div>
-                        <div class="w-full sm:min-w-[160px]">
-                            <label class="text-xs uppercase text-slate-400">Priorität</label>
-                            <select x-model="filters.priority" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                                <option value="">Alle</option>
-                                <template x-for="priority in priorityOptions" :key="priority">
-                                    <option :value="priority" x-text="priority"></option>
-                                </template>
-                            </select>
-                        </div>
-                        <div class="w-full sm:min-w-[180px]">
-                            <label class="text-xs uppercase text-slate-400">Kategorie</label>
-                            <select x-model="filters.category_id" @change="loadTickets" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                                <option value="">Alle</option>
-                                <template x-for="category in categories" :key="category.id">
-                                    <option :value="category.id" x-text="category.name"></option>
-                                </template>
-                            </select>
-                        </div>
-                        <label class="inline-flex w-full items-center gap-2 text-sm text-slate-600 sm:w-auto">
-                            <input type="checkbox" x-model="filters.mine" @change="loadTickets" class="rounded border-slate-300 text-amber-600">
-                            Meine Tickets
-                        </label>
-                    </div>
-                </section>
+            <section x-show="selectedIds.length" x-transition class="sd-bulk-bar" aria-live="polite">
+                <strong><span x-text="selectedIds.length"></span> ausgewählt</strong>
+                <button type="button" @click="openBulk('assignee')"><i data-feather="user-plus"></i>Zuweisen</button>
+                <button type="button" @click="openBulk('status')"><i data-feather="repeat"></i>Status</button>
+                <button type="button" @click="openBulk('priority')"><i data-feather="alert-circle"></i>Priorität</button>
+                <button type="button" @click="exportSelected()"><i data-feather="download"></i>Export</button>
+                <button x-show="canDeleteSelection()" type="button" class="sd-bulk-danger" @click="deleteSelected()" :disabled="deletingTickets"><i data-feather="trash-2"></i><span x-text="deletingTickets ? 'Wird gelöscht …' : 'Löschen'"></span></button>
+                <button type="button" class="sd-bulk-clear" @click="selectedIds = []">Auswahl aufheben</button>
+            </section>
 
-                <section class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-                    <div class="space-y-6">
-                        <div class="space-y-4">
-                            <template x-for="ticket in tickets" :key="ticket.id">
-                                <button @click="selectTicket(ticket)" class="w-full text-left rounded-3xl border border-slate-200 bg-white p-5 shadow-sm hover:border-amber-200 hover:shadow-md transition">
-                                    <div class="flex flex-wrap items-start justify-between gap-3">
-                                        <div>
-                                            <p class="text-xs uppercase text-slate-400">Ticket #<span x-text="ticket.id"></span></p>
-                                            <h3 class="text-lg font-semibold text-slate-900" x-text="ticket.title"></h3>
-                                            <p class="mt-1 text-sm text-slate-500 line-clamp-2" x-text="ticket.description"></p>
-                                        </div>
-                                        <div class="flex flex-col items-end gap-2">
-                                            <span class="rounded-full px-3 py-1 text-xs font-semibold" :style="`background-color: ${ticket.category_color || '#e2e8f0'}; color: white;`" x-text="ticket.category_name || 'Unbekannt'"></span>
-                                            <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600" x-text="statusLabels[ticket.status] || ticket.status"></span>
-                                            <span class="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700" x-text="ticket.priority"></span>
-                                        </div>
-                                    </div>
-                                    <div class="mt-4 flex flex-wrap items-center gap-4 text-xs text-slate-500">
-                                        <span class="inline-flex items-center gap-1"><i data-feather="user" class="w-3 h-3"></i><span x-text="ticket.requester_name || 'Unbekannt'"></span></span>
-                                        <span class="inline-flex items-center gap-1"><i data-feather="user-check" class="w-3 h-3"></i><span x-text="ticket.assignee || 'Nicht zugewiesen'"></span></span>
-                                        <span class="inline-flex items-center gap-1"><i data-feather="calendar" class="w-3 h-3"></i><span x-text="ticket.due_date || 'Kein SLA'" ></span></span>
-                                    </div>
-                                </button>
-                            </template>
-                            <div x-show="tickets.length === 0" class="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center text-slate-500">
-                                Keine Tickets gefunden. Erstelle das erste Ticket.
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="space-y-6">
-                        <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm" x-show="selectedTicket">
-                            <template x-if="selectedTicket">
-                                <div>
-                                    <div class="flex items-start justify-between gap-4">
-                                        <div>
-                                            <p class="text-xs uppercase text-slate-400">Ausgewähltes Ticket</p>
-                                            <h3 class="text-xl font-semibold text-slate-900" x-text="selectedTicket.title"></h3>
-                                            <p class="text-sm text-slate-500" x-text="selectedTicket.description"></p>
-                                        </div>
-                                        <button @click="closeTicket" class="text-slate-400 hover:text-slate-700">
-                                            <i data-feather="x" class="w-4 h-4"></i>
-                                        </button>
-                                    </div>
-
-                                    <div class="mt-4 grid gap-3 text-sm text-slate-600">
-                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                            <span>Von</span>
-                                            <span class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-sm text-slate-700">
-                                                <i data-feather="lock" class="w-3 h-3 text-slate-400"></i>
-                                                <span x-text="selectedTicket.created_by || 'Unbekannt'"></span>
-                                            </span>
-                                        </div>
-                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                            <span>Status</span>
-                                            <select x-model="selectedTicket.status" @change="updateTicket" :disabled="!(can('tickets.update') || can('tickets.update_own'))" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm sm:w-auto">
-                                                <template x-for="status in statusOptions" :key="status">
-                                                    <option :value="status" x-text="statusLabels[status] || status"></option>
-                                                </template>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                            <span>Priorität</span>
-                                            <select x-model="selectedTicket.priority" @change="updateTicket" :disabled="!(can('tickets.update') || can('tickets.update_own'))" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm sm:w-auto">
-                                                <template x-for="priority in priorityOptions" :key="priority">
-                                                    <option :value="priority" x-text="priority"></option>
-                                                </template>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" x-show="can('tickets.update')">
-                                            <span>Zuständig</span>
-                                            <input type="text" x-model="selectedTicket.assignee" @change="updateTicket" placeholder="Team/Name" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm sm:w-auto">
-                                        </div>
-                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" x-show="can('tickets.update')">
-                                            <span>Assignee E-Mail</span>
-                                            <input type="email" x-model="selectedTicket.assignee_email" @change="updateTicket" placeholder="support@firma.de" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm sm:w-auto">
-                                        </div>
-                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" x-show="can('tickets.update')">
-                                            <span>Fällig</span>
-                                            <input type="date" x-model="selectedTicket.due_date" @change="updateTicket" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm sm:w-auto">
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-                                        <div class="flex items-center justify-between">
-                                            <div>
-                                                <p class="text-xs uppercase text-slate-400">Assets</p>
-                                                <p class="text-sm font-semibold text-slate-700">Betroffene Assets</p>
-                                            </div>
-                                            <i data-feather="package" class="w-4 h-4 text-slate-400"></i>
-                                        </div>
-                                        <div class="mt-3 grid gap-2">
-                                            <template x-for="asset in assets" :key="asset.id">
-                                                <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                                                    <input type="checkbox" :value="asset.id" x-model="selectedTicket.asset_ids" @change="updateTicket" :disabled="!(can('tickets.update') || can('tickets.update_own'))" class="rounded border-slate-300 text-amber-600 focus:ring-amber-500">
-                                                    <span class="truncate" x-text="asset.name"></span>
-                                                </label>
-                                            </template>
-                                            <p x-show="assets.length === 0" class="text-xs text-slate-400">Keine Assets verfügbar.</p>
-                                        </div>
-                                        <div class="mt-4 space-y-2 text-xs text-slate-500">
-                                            <template x-for="asset in selectedTicket.assets || []" :key="asset.id">
-                                                <div class="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                                                    <div class="flex items-center justify-between">
-                                                        <p class="font-semibold text-slate-800" x-text="asset.name"></p>
-                                                        <span class="text-[11px] text-slate-500" x-text="asset.warranty_status || 'Unbekannt'"></span>
-                                                    </div>
-                                                    <p class="text-[11px] text-slate-500" x-text="asset.manufacturer ? `Hersteller: ${asset.manufacturer}` : 'Hersteller: -'"></p>
-                                                    <p class="text-[11px] text-slate-500" x-text="asset.serial_numbers?.length ? `Seriennummern: ${asset.serial_numbers.join(', ')}` : 'Seriennummern: -'"></p>
-                                                    <p class="text-[11px] text-slate-500" x-text="asset.locations?.length ? `Standorte: ${asset.locations.join(', ')}` : 'Standorte: -'"></p>
-                                                </div>
-                                            </template>
-                                            <p x-show="(selectedTicket.assets || []).length === 0" class="text-xs text-slate-400">Noch keine Assets zugewiesen.</p>
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-5 rounded-2xl border border-slate-200 bg-white p-4" x-show="can('attachment.download') || can('attachment.upload')">
-                                        <div class="flex items-center justify-between">
-                                            <div>
-                                                <p class="text-xs uppercase text-slate-400">Anhänge</p>
-                                                <p class="text-sm font-semibold text-slate-700">Dateien zum Ticket</p>
-                                            </div>
-                                            <i data-feather="paperclip" class="w-4 h-4 text-slate-400"></i>
-                                        </div>
-                                        <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-                                            <label x-show="can('attachment.upload')" class="inline-flex w-full cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto">
-                                                <span>Datei hochladen</span>
-                                                <input type="file" class="hidden" @change="uploadTicketAttachment">
-                                            </label>
-                                            <p class="text-xs text-rose-600" x-show="ticketAttachmentError" x-text="ticketAttachmentError"></p>
-                                        </div>
-                                        <div class="mt-4 space-y-3">
-                                            <template x-for="attachment in ticketAttachments" :key="attachment.id">
-                                                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                                    <div class="flex items-start justify-between gap-2">
-                                                        <div class="min-w-0">
-                                                            <p class="break-words text-sm font-semibold text-slate-800" x-text="attachment.original_filename"></p>
-                                                            <p class="text-xs text-slate-500" x-text="`${formatFileSize(attachment.size_bytes)} • ${attachment.uploaded_by || 'System'}`"></p>
-                                                        </div>
-                                                        <div class="flex shrink-0 items-center gap-2">
-                                                            <a :href="attachment.download_url" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">Download</a>
-                                                            <button x-show="can('attachment.delete')" @click="deleteTicketAttachment(attachment.id)" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Löschen</button>
-                                                        </div>
-                                                    </div>
-                                                    <p class="text-xs text-slate-400" x-text="attachment.created_at?.slice(0, 16).replace('T', ' ')"></p>
-                                                </div>
-                                            </template>
-                                            <p x-show="ticketAttachments.length === 0" class="text-xs text-slate-400">Keine Anhänge vorhanden.</p>
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-5 rounded-2xl border border-slate-200 bg-white p-4" x-show="can('roadmap.view') || can('roadmap.manage')">
-                                        <div class="flex items-center justify-between gap-3">
-                                            <div>
-                                                <p class="text-xs uppercase text-slate-400">Roadmap</p>
-                                                <p class="text-sm font-semibold text-slate-700">Planung & Umsetzung</p>
-                                            </div>
-                                            <div class="flex flex-wrap gap-2">
-                                                <a :href="selectedTicket ? `/roadmap?ticket_id=${selectedTicket.id}` : '/roadmap'" class="rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">Board öffnen</a>
-                                                <button x-show="!selectedTicket.roadmap && can('roadmap.manage')" @click="createRoadmapForTicket" class="rounded-2xl border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">Roadmap anlegen</button>
-                                            </div>
-                                        </div>
-                                        <div class="mt-3 space-y-3" x-show="selectedTicket.roadmap">
-                                            <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                                                <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600" x-text="roadmapStatusLabels[selectedTicket.roadmap.status] || selectedTicket.roadmap.status"></span>
-                                                <span class="inline-flex items-center gap-1"><i data-feather="user-check" class="w-3 h-3"></i><span x-text="selectedTicket.roadmap.owner || 'Kein Owner'"></span></span>
-                                                <span class="inline-flex items-center gap-1"><i data-feather="calendar" class="w-3 h-3"></i><span x-text="selectedTicket.roadmap.target_date || 'Kein Zieltermin'"></span></span>
-                                            </div>
-                                            <div class="grid gap-2 text-xs text-slate-500">
-                                                <template x-for="step in (selectedTicket.roadmap.steps || [])" :key="step.id">
-                                                    <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                                        <div class="flex items-center justify-between">
-                                                            <p class="font-semibold text-slate-700" x-text="step.title"></p>
-                                                            <span class="text-[11px] text-slate-500" x-text="roadmapStatusLabels[step.status] || step.status"></span>
-                                                        </div>
-                                                        <p class="text-[11px] text-slate-500" x-text="step.description || 'Keine Beschreibung'"></p>
-                                                    </div>
-                                                </template>
-                                                <p x-show="(selectedTicket.roadmap.steps || []).length === 0" class="text-xs text-slate-400">Noch keine Roadmap-Schritte definiert.</p>
-                                            </div>
-                                        </div>
-                                        <p class="mt-3 text-xs text-slate-400" x-show="!selectedTicket.roadmap">Noch keine Roadmap für dieses Ticket vorhanden.</p>
-                                    </div>
-
-                                    <div class="mt-5 rounded-2xl border border-slate-200 bg-white p-4" x-show="can('knowledge.view') || can('knowledge.manage')">
-                                        <div class="flex items-center justify-between gap-3">
-                                            <div>
-                                                <p class="text-xs uppercase text-slate-400">Wissensbasis</p>
-                                                <p class="text-sm font-semibold text-slate-700">Ähnliche Lösungen & Workflows</p>
-                                            </div>
-                                            <a href="/knowledge" class="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Wissensbasis öffnen</a>
-                                        </div>
-                                        <div class="mt-3 space-y-2" x-show="knowledgeLoading">
-                                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">Vorschläge werden geladen ...</div>
-                                        </div>
-                                        <div class="mt-3 space-y-2" x-show="!knowledgeLoading">
-                                            <template x-for="entry in knowledgeSuggestions" :key="entry.id">
-                                                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                                    <div class="flex items-center justify-between">
-                                                        <p class="text-sm font-semibold text-slate-800" x-text="entry.title"></p>
-                                                        <span class="text-[11px] text-slate-500" x-text="entry.category_name || 'Ohne Kategorie'"></span>
-                                                    </div>
-                                                    <p class="mt-1 text-[11px] text-slate-500 line-clamp-2" x-text="entry.summary || entry.content || 'Keine Beschreibung'"></p>
-                                                    <div class="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-                                                        <span x-text="entry.updated_at || entry.created_at"></span>
-                                                        <a :href="`/knowledge?entry_id=${entry.id}`" class="text-emerald-600 hover:text-emerald-800">Öffnen</a>
-                                                    </div>
-                                                </div>
-                                            </template>
-                                            <p x-show="knowledgeSuggestions.length === 0" class="text-xs text-slate-400">Keine passenden Lösungen gefunden. Ergänze die Wissensbasis mit der finalen Lösung.</p>
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-5" x-show="can('tickets.watch') || can('tickets.watch_own')">
-                                        <p class="text-xs uppercase text-slate-400">Watcher</p>
-                                        <div class="flex flex-wrap gap-2 mt-2">
-                                            <template x-for="watcher in selectedTicket.watchers" :key="watcher.id">
-                                                <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
-                                                    <span x-text="watcher.email"></span>
-                                                    <button @click.stop="removeWatcher(watcher.id)" class="text-slate-400 hover:text-slate-700">&times;</button>
-                                                </span>
-                                            </template>
-                                        </div>
-                                        <div class="mt-3 flex flex-col gap-2 sm:flex-row">
-                                            <input type="email" x-model="newWatcher" placeholder="watcher@firma.de" class="w-full flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                                            <button @click="addWatcher" class="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white sm:w-auto">Hinzufügen</button>
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-6">
-                                        <p class="text-xs uppercase text-slate-400">Kommentare</p>
-                                        <div class="mt-3 space-y-3 max-h-[240px] overflow-auto pr-2">
-                                            <template x-for="comment in selectedTicket.comments" :key="comment.id">
-                                                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                                    <div class="flex items-center justify-between text-xs text-slate-400">
-                                                        <span x-text="comment.author || 'System'"></span>
-                                                        <span x-text="comment.created_at"></span>
-                                                    </div>
-                                                    <p class="mt-1 text-sm text-slate-700" x-text="comment.body"></p>
-                                                </div>
-                                            </template>
-                                        </div>
-                                        <div class="mt-3 space-y-2">
-                                            <textarea x-model="newComment" rows="3" placeholder="Kommentar hinzufügen" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
-                                            <label class="inline-flex items-center gap-2 text-xs text-slate-500" x-show="can('tickets.comment_internal')">
-                                                <input type="checkbox" x-model="internalComment" class="rounded border-slate-300 text-amber-600">
-                                                Interner Kommentar
-                                            </label>
-                                            <button @click="addComment" class="w-full rounded-2xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white">Kommentar senden</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </template>
-                        </div>
-
-                        <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm" x-show="can('ticket_categories.manage') || can('ticket_alerts.manage') || can('notifications.manage')">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-xs uppercase text-slate-400">Administration</p>
-                                    <h3 class="text-lg font-semibold text-slate-900">Einstellungen & Automationen</h3>
-                                </div>
-                                <div class="flex flex-wrap gap-2">
-                                    <button x-show="can('ticket_categories.manage')" @click="activeAdminTab = 'categories'" :class="activeAdminTab === 'categories' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'" class="w-full rounded-full px-3 py-1 text-xs font-semibold sm:w-auto">Kategorien</button>
-                                    <button x-show="can('ticket_alerts.manage')" @click="activeAdminTab = 'alerts'" :class="activeAdminTab === 'alerts' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'" class="w-full rounded-full px-3 py-1 text-xs font-semibold sm:w-auto">Alerts</button>
-                                    <button x-show="can('notifications.manage')" @click="activeAdminTab = 'notifications'" :class="activeAdminTab === 'notifications' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'" class="w-full rounded-full px-3 py-1 text-xs font-semibold sm:w-auto">E-Mail</button>
-                                </div>
-                            </div>
-
-                            <div class="mt-4" x-show="activeAdminTab === 'categories' && can('ticket_categories.manage')">
-                                <div class="space-y-3">
-                                    <template x-for="category in categories" :key="category.id">
-                                        <div class="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
-                                            <div>
-                                                <p class="font-semibold text-slate-800" x-text="category.name"></p>
-                                                <p class="text-xs text-slate-500" x-text="category.description"></p>
-                                            </div>
-                                            <div class="flex items-center gap-3">
-                                                <span class="rounded-full px-3 py-1 text-xs font-semibold" :style="`background-color: ${category.color}; color: white;`" x-text="`${category.sla_hours}h SLA`"></span>
-                                                <button @click="deleteCategory(category)" class="text-rose-500 text-xs font-semibold">Löschen</button>
-                                            </div>
-                                        </div>
-                                    </template>
-                                </div>
-                                <div class="mt-4 grid gap-3">
-                                    <input type="text" x-model="newCategory.name" placeholder="Kategorie" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                    <textarea x-model="newCategory.description" rows="2" placeholder="Beschreibung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm"></textarea>
-                                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                        <input type="color" x-model="newCategory.color" class="h-10 w-full rounded-2xl border border-slate-200">
-                                        <input type="number" x-model="newCategory.sla_hours" placeholder="SLA (Std.)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                    </div>
-                                    <label class="inline-flex items-center gap-2 text-xs text-slate-500">
-                                        <input type="checkbox" x-model="newCategory.is_default" class="rounded border-slate-300 text-amber-600">
-                                        Standard-Kategorie
-                                    </label>
-                                    <button @click="createCategory" class="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Kategorie speichern</button>
-                                </div>
-                            </div>
-
-                            <div class="mt-4" x-show="activeAdminTab === 'alerts' && can('ticket_alerts.manage')">
-                                <div class="space-y-3">
-                                    <template x-for="alert in alerts" :key="alert.id">
-                                        <div class="rounded-2xl border border-slate-200 px-4 py-3">
-                                            <div class="flex items-center justify-between">
-                                                <div>
-                                                    <p class="font-semibold text-slate-800" x-text="alert.name"></p>
-                                                    <p class="text-xs text-slate-500">Event: <span x-text="alert.event_type"></span> · Empfänger: <span x-text="alert.recipient_emails"></span></p>
-                                                </div>
-                                                <button @click="deleteAlert(alert.id)" class="text-rose-500 text-xs font-semibold">Löschen</button>
-                                            </div>
-                                        </div>
-                                    </template>
-                                </div>
-                                <div class="mt-4 grid gap-3">
-                                    <input type="text" x-model="newAlert.name" placeholder="Alert-Name" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                    <select x-model="newAlert.event_type" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                        <option value="created">Ticket erstellt</option>
-                                        <option value="updated">Ticket aktualisiert</option>
-                                        <option value="status_changed">Status geändert</option>
-                                        <option value="commented">Kommentar</option>
-                                    </select>
-                                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                        <select x-model="newAlert.status_match" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                            <option value="">Status (optional)</option>
-                                            <template x-for="status in statusOptions" :key="status">
-                                                <option :value="status" x-text="statusLabels[status] || status"></option>
-                                            </template>
-                                        </select>
-                                        <select x-model="newAlert.priority_match" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                            <option value="">Priorität (optional)</option>
-                                            <template x-for="priority in priorityOptions" :key="priority">
-                                                <option :value="priority" x-text="priority"></option>
-                                            </template>
-                                        </select>
-                                    </div>
-                                    <select x-model="newAlert.category_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                        <option value="">Kategorie (optional)</option>
-                                        <template x-for="category in categories" :key="category.id">
-                                            <option :value="category.id" x-text="category.name"></option>
-                                        </template>
-                                    </select>
-                                    <textarea x-model="newAlert.recipient_emails" rows="2" placeholder="Empfänger (kommagetrennt)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm"></textarea>
-                                    <label class="inline-flex items-center gap-2 text-xs text-slate-500">
-                                        <input type="checkbox" x-model="newAlert.is_enabled" class="rounded border-slate-300 text-amber-600">
-                                        Alert aktiv
-                                    </label>
-                                    <button @click="createAlert" class="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Alert speichern</button>
-                                </div>
-                            </div>
-
-                            <div class="mt-4" x-show="activeAdminTab === 'notifications' && can('notifications.manage')">
-                                <div class="grid gap-3">
-                                    <label class="inline-flex items-center gap-2 text-sm text-slate-600">
-                                        <input type="checkbox" x-model="notificationSettings.enabled" class="rounded border-slate-300 text-amber-600">
-                                        Benachrichtigungen aktiv
-                                    </label>
-                                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                        <input type="text" x-model="notificationSettings.smtp_host" placeholder="SMTP Host" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                        <input type="number" x-model="notificationSettings.smtp_port" placeholder="Port" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                    </div>
-                                    <input type="text" x-model="notificationSettings.smtp_username" placeholder="SMTP Benutzer" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                    <input type="password" x-model="notificationSettings.smtp_password" placeholder="SMTP Passwort" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                    <input type="email" x-model="notificationSettings.smtp_from" placeholder="Absender E-Mail" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                    <label class="inline-flex items-center gap-2 text-sm text-slate-600">
-                                        <input type="checkbox" x-model="notificationSettings.use_tls" class="rounded border-slate-300 text-amber-600">
-                                        TLS verwenden
-                                    </label>
-                                    <textarea x-model="notificationSettings.default_recipients" rows="2" placeholder="Standard-Empfänger (kommagetrennt)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm"></textarea>
-                                    <button @click="saveNotificationSettings" class="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Einstellungen speichern</button>
-                                    <div class="flex flex-col gap-2 sm:flex-row">
-                                        <input type="text" x-model="testRecipients" placeholder="Test-Empfänger" class="w-full flex-1 rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                                        <button @click="sendTestEmail" class="w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 sm:w-auto">Test senden</button>
-                                    </div>
-                                    <p class="text-xs text-slate-500" x-text="notificationMessage"></p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+            <section class="sd-table-panel" :aria-busy="loading">
+                <div x-show="error" class="sd-error" role="alert">
+                    <i data-feather="alert-triangle"></i><span x-text="error"></span>
+                    <button type="button" @click="loadTickets()">Erneut versuchen</button>
                 </div>
-            </main>
-        </div>
+                <div x-show="loading" class="sd-loading" aria-label="Tickets werden geladen">
+                    <span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <div class="sd-table-scroll" x-show="!error">
+                    <table id="ticket-table" class="sd-ticket-table">
+                        <thead>
+                            <tr>
+                                <th class="select-column"><input type="checkbox" :checked="allVisibleSelected" @change="toggleAllVisible($event)" aria-label="Alle sichtbaren Tickets auswählen"></th>
+                                <template x-for="column in visibleColumns" :key="column.key">
+                                    <th :class="column.className || ''" :aria-sort="sortAria(column.key)">
+                                        <button type="button" @click="sortBy(column.key)"><span x-text="column.label"></span><span class="sd-icon-slot" x-html="iconSvg(sortIcon(column.key), 12)"></span></button>
+                                    </th>
+                                </template>
+                                <th class="actions-column"><span class="sr-only">Aktionen</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="(ticket, index) in tickets" :key="ticket.id">
+                                <tr :class="{ 'is-selected': selectedIds.includes(ticket.id), 'is-active': selectedTicket?.id === ticket.id }" @click="openTicket(ticket, $event)" @auxclick.middle.prevent="openTicketInTab(ticket)" tabindex="0" @keydown.enter.prevent="openTicket(ticket, $event)" :data-ticket-index="index">
+                                    <td class="select-column" @click.stop><input type="checkbox" :value="ticket.id" x-model.number="selectedIds" :aria-label="`Ticket ${ticket.id} auswählen`"></td>
+                                    <template x-for="column in visibleColumns" :key="column.key">
+                                        <td :class="column.className || ''">
+                                            <template x-if="column.key === 'id'"><a :href="`/tickets/${ticket.id}`" @click.prevent class="sd-ticket-id" x-text="`#${ticket.id}`"></a></template>
+                                            <template x-if="column.key === 'status'"><span class="sd-status" :data-status="ticket.status"><i></i><span x-text="statusLabel(ticket.status)"></span></span></template>
+                                            <template x-if="column.key === 'priority'"><span class="sd-priority" :data-priority="ticket.priority"><i data-feather="flag"></i><span x-text="priorityLabel(ticket.priority)"></span></span></template>
+                                            <template x-if="column.key === 'title'"><span class="sd-cell-title" :title="ticket.title" x-text="ticket.title"></span></template>
+                                            <template x-if="column.key === 'requester'"><span x-text="ticket.requester_name || ticket.created_by || '—'"></span></template>
+                                            <template x-if="column.key === 'assignee'"><span :class="{ muted: !ticket.assignee }" x-text="ticket.assignee || 'Nicht zugewiesen'"></span></template>
+                                            <template x-if="column.key === 'category'"><span x-text="ticket.category_name || '—'"></span></template>
+                                            <template x-if="column.key === 'assets'"><span x-text="ticket.asset_count ? `${ticket.asset_count} verknüpft` : '—'"></span></template>
+                                            <template x-if="column.key === 'sla'"><span class="sd-sla" :class="slaState(ticket).state"><span class="sd-icon-slot" x-html="iconSvg(slaState(ticket).icon)"></span><span x-text="slaState(ticket).label"></span></span></template>
+                                            <template x-if="column.key === 'updated_at'"><time :datetime="ticket.updated_at" x-text="formatRelative(ticket.updated_at)"></time></template>
+                                            <template x-if="column.key === 'due_date'"><time :class="{ overdue: isOverdue(ticket) }" :datetime="ticket.due_date" x-text="formatDate(ticket.due_date)"></time></template>
+                                        </td>
+                                    </template>
+                                    <td class="actions-column" @click.stop><button type="button" @click="openTicket(ticket, $event)" :aria-label="`Ticket ${ticket.id} öffnen`"><i data-feather="chevron-right"></i></button></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="!loading && !tickets.length && !error" class="sd-empty">
+                    <i data-feather="inbox"></i><h2>Keine Tickets in dieser Ansicht</h2>
+                    <p x-text="activeFilterCount || filters.search ? 'Keine Ergebnisse für die aktuellen Filter.' : 'Diese Queue ist aktuell leer.'"></p>
+                    <button x-show="activeFilterCount" type="button" @click="resetFilters()">Filter zurücksetzen</button>
+                </div>
+                <footer class="sd-pagination" x-show="pagination.total">
+                    <span><strong x-text="pageStart"></strong>–<strong x-text="pageEnd"></strong> von <strong x-text="pagination.total"></strong></span>
+                    <label>Pro Seite <select x-model.number="pagination.per_page" @change="pagination.page = 1; loadTickets()"><option>25</option><option>50</option><option>100</option></select></label>
+                    <div>
+                        <button type="button" @click="goToPage(pagination.page - 1)" :disabled="pagination.page <= 1" aria-label="Vorherige Seite"><i data-feather="chevron-left"></i></button>
+                        <span>Seite <strong x-text="pagination.page"></strong> / <span x-text="pagination.pages"></span></span>
+                        <button type="button" @click="goToPage(pagination.page + 1)" :disabled="pagination.page >= pagination.pages" aria-label="Nächste Seite"><i data-feather="chevron-right"></i></button>
+                    </div>
+                </footer>
+            </section>
+        </main>
     </div>
 
-    <div x-show="ticketModalOpen" x-transition data-testid="ticket-modal-container" class="modal fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-        <div @click.away="ticketModalOpen = false" class="modal-panel max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6 shadow-xl" data-testid="ticket-modal">
-            <div class="flex items-start justify-between">
-                <div>
-                    <p class="text-xs uppercase text-slate-400">Neues Ticket</p>
-                    <h3 class="text-xl font-semibold text-slate-900">Helpdesk Anfrage</h3>
-                </div>
-                <button @click="ticketModalOpen = false" data-modal-close data-testid="ticket-modal-close" class="icon-button text-slate-400 hover:text-slate-700" aria-label="Ticket-Modal schließen">
-                    <i data-feather="x" class="w-4 h-4"></i>
-                </button>
-            </div>
-            <div class="mt-4 grid gap-3">
-                <input type="text" x-model="newTicket.title" placeholder="Titel" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                <textarea x-model="newTicket.description" rows="4" placeholder="Beschreibung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm"></textarea>
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <select x-model="newTicket.category_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                        <option value="">Kategorie</option>
-                        <template x-for="category in categories" :key="category.id">
-                            <option :value="category.id" x-text="category.name"></option>
-                        </template>
-                    </select>
-                    <select x-model="newTicket.priority" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                        <template x-for="priority in priorityOptions" :key="priority">
-                            <option :value="priority" x-text="priority"></option>
-                        </template>
-                    </select>
-                </div>
-                <div class="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                    <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Von</span>
-                    <span class="inline-flex items-center gap-2 font-semibold">
-                        <i data-feather="lock" class="w-3 h-3 text-slate-400"></i>
-                        <span x-text="currentUsername || 'Unbekannt'"></span>
-                    </span>
-                </div>
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2" x-show="can('tickets.update')">
-                    <input type="text" x-model="newTicket.assignee" placeholder="Zuständig" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                    <input type="email" x-model="newTicket.assignee_email" placeholder="Assignee E-Mail" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                </div>
-                <input type="date" x-model="newTicket.due_date" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm" x-show="can('tickets.update')">
-                <input type="text" x-model="newTicket.tags" placeholder="Tags (kommagetrennt)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-
-                <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase text-slate-400">Assets</p>
-                            <p class="text-sm font-semibold text-slate-700">Ticket verknüpfen</p>
+    <div x-show="selectedTicket" x-cloak class="sd-detail-backdrop" @click="closeTicket()"></div>
+    <aside x-show="selectedTicket" x-cloak class="sd-detail" aria-label="Ticketdetail">
+        <template x-if="selectedTicket">
+            <div class="sd-detail-inner">
+                <header class="sd-detail-header">
+                    <div>
+                        <div class="sd-detail-eyebrow"><a :href="`/tickets/${selectedTicket.id}`" x-text="`Ticket #${selectedTicket.id}`"></a><span>·</span><span x-text="categoryLabel(selectedTicket.category_id)"></span></div>
+                        <h2 x-text="selectedTicket.title"></h2>
+                        <div class="sd-detail-summary">
+                            <span class="sd-status" :data-status="selectedTicket.status"><i></i><span x-text="statusLabel(selectedTicket.status)"></span></span>
+                            <span class="sd-priority" :data-priority="selectedTicket.priority"><i data-feather="flag"></i><span x-text="priorityLabel(selectedTicket.priority)"></span></span>
+                            <span class="sd-sla" :class="slaState(selectedTicket).state"><span class="sd-icon-slot" x-html="iconSvg(slaState(selectedTicket).icon)"></span><span x-text="slaState(selectedTicket).label"></span></span>
                         </div>
-                        <i data-feather="package" class="w-4 h-4 text-slate-400"></i>
                     </div>
-                    <div class="mt-3 grid gap-2">
-                        <template x-for="asset in assets" :key="asset.id">
-                            <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                                <input type="checkbox" :value="asset.id" x-model="newTicket.asset_ids" class="rounded border-slate-300 text-amber-600 focus:ring-amber-500">
-                                <span class="truncate" x-text="asset.name"></span>
-                            </label>
-                        </template>
-                        <p x-show="assets.length === 0" class="text-xs text-slate-400">Keine Assets verfügbar.</p>
+                    <div class="sd-detail-header-actions">
+                        <button type="button" @click="copyTicketLink()" aria-label="Link kopieren"><i data-feather="link"></i></button>
+                        <a :href="`/tickets/${selectedTicket.id}`" aria-label="Als eigene Seite öffnen"><i data-feather="external-link"></i></a>
+                        <button type="button" @click="closeTicket()" aria-label="Ticketdetail schließen"><i data-feather="x"></i></button>
                     </div>
-                    <div class="mt-4 space-y-2 text-xs text-slate-500">
-                        <template x-for="asset in selectedAssetsForNewTicket()" :key="asset.id">
-                            <div class="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                                <div class="flex items-center justify-between">
-                                    <p class="font-semibold text-slate-800" x-text="asset.name"></p>
-                                    <span class="text-[11px] text-slate-500" x-text="asset.warranty_status || 'Unbekannt'"></span>
-                                </div>
-                                <p class="text-[11px] text-slate-500" x-text="asset.manufacturer ? `Hersteller: ${asset.manufacturer}` : 'Hersteller: -'"></p>
-                                <p class="text-[11px] text-slate-500" x-text="asset.serial_numbers?.length ? `Seriennummern: ${asset.serial_numbers.join(', ')}` : 'Seriennummern: -'"></p>
-                                <p class="text-[11px] text-slate-500" x-text="asset.locations?.length ? `Standorte: ${asset.locations.join(', ')}` : 'Standorte: -'"></p>
-                            </div>
-                        </template>
-                        <p x-show="selectedAssetsForNewTicket().length === 0" class="text-xs text-slate-400">Keine Assets ausgewählt.</p>
-                    </div>
-                </div>
+                </header>
 
-                <div class="space-y-2">
-                    <p class="text-xs uppercase text-slate-400">Benutzerdefinierte Felder</p>
-                    <template x-for="(field, index) in newTicket.custom_fields" :key="index">
-                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                            <input type="text" x-model="field.key" placeholder="Feldname" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <input type="text" x-model="field.value" placeholder="Wert" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <button @click="removeCustomField(index)" class="w-full rounded-2xl border border-slate-200 px-3 py-2 text-xs sm:w-auto">Entfernen</button>
-                        </div>
+                <nav class="sd-detail-tabs" role="tablist" aria-label="Ticketbereiche">
+                    <template x-for="tab in detailTabs" :key="tab.key">
+                        <button type="button" role="tab" :aria-selected="detailTab === tab.key" @click="detailTab = tab.key" :class="{ active: detailTab === tab.key }"><span x-text="tab.label"></span><small x-show="tabCount(tab.key)" x-text="tabCount(tab.key)"></small></button>
                     </template>
-                    <button @click="addCustomField" class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700">Feld hinzufügen</button>
-                </div>
+                </nav>
 
-                <button @click="createTicket" class="rounded-2xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white">Ticket speichern</button>
-                <p class="text-xs text-rose-500" x-text="ticketError"></p>
+                <div class="sd-detail-layout">
+                    <section class="sd-detail-content">
+                        <div x-show="detailLoading" class="sd-detail-loading">Ticket wird geladen …</div>
+                        <div x-show="detailTab === 'conversation'">
+                            <article class="sd-request-message">
+                                <header><span class="sd-avatar" x-text="initials(selectedTicket.requester_name || selectedTicket.created_by)"></span><div><strong x-text="selectedTicket.requester_name || selectedTicket.created_by"></strong><small>Ursprüngliche Anfrage · <time x-text="formatDateTime(selectedTicket.created_at)"></time></small></div></header>
+                                <p x-text="selectedTicket.description"></p>
+                            </article>
+                            <div class="sd-timeline">
+                                <template x-for="comment in selectedTicket.comments || []" :key="comment.id">
+                                    <article :class="{ internal: comment.is_internal }">
+                                        <header><span class="sd-avatar" x-text="initials(comment.author)"></span><div><strong x-text="comment.author || 'System'"></strong><small x-text="comment.is_internal ? 'Interne Notiz' : 'Öffentliche Antwort'"></small></div><time x-text="formatDateTime(comment.created_at)"></time></header>
+                                        <p x-text="comment.body"></p>
+                                    </article>
+                                </template>
+                                <p x-show="!(selectedTicket.comments || []).length" class="sd-empty-inline">Noch keine Antworten vorhanden.</p>
+                            </div>
+                            <form class="sd-composer" @submit.prevent="addComment()">
+                                <div class="sd-composer-mode">
+                                    <button type="button" @click="internalComment = false" :class="{ active: !internalComment }"><i data-feather="message-circle"></i>Öffentliche Antwort</button>
+                                    <button x-show="can('tickets.comment_internal')" type="button" @click="internalComment = true" :class="{ active: internalComment }"><i data-feather="lock"></i>Interne Notiz</button>
+                                </div>
+                                <label><span class="sr-only" x-text="internalComment ? 'Interne Notiz' : 'Öffentliche Antwort'"></span><textarea x-ref="comment" x-model="newComment" rows="4" :placeholder="internalComment ? 'Nur für Mitarbeitende sichtbar …' : 'Antwort verfassen …'"></textarea></label>
+                                <footer><span><button type="button" @click="$refs.detailFile.click()" aria-label="Datei anhängen"><i data-feather="paperclip"></i></button><input x-ref="detailFile" hidden type="file" @change="uploadAttachment($event)"></span><button type="submit" class="sd-button sd-button-primary" :disabled="!newComment.trim() || saving">Senden</button></footer>
+                            </form>
+                        </div>
+
+                        <div x-show="detailTab === 'attachments'" class="sd-tab-section">
+                            <header><div><h3>Anhänge</h3><p>Dateien und Bilder zu diesem Ticket</p></div><button type="button" class="sd-button" @click="$refs.attachmentFile.click()"><i data-feather="upload"></i>Hochladen</button><input x-ref="attachmentFile" hidden type="file" @change="uploadAttachment($event)"></header>
+                            <div class="sd-file-list">
+                                <template x-for="file in attachments" :key="file.id"><article><i data-feather="file-text"></i><div><strong x-text="file.original_filename"></strong><small x-text="formatFileSize(file.size_bytes)"></small></div><a :href="`/attachments/${file.id}/download`" aria-label="Anhang herunterladen"><i data-feather="download"></i></a></article></template>
+                                <p x-show="!attachments.length" class="sd-empty-inline">Noch keine Anhänge vorhanden.</p>
+                            </div>
+                        </div>
+
+                        <div x-show="detailTab === 'activity'" class="sd-tab-section">
+                            <header><div><h3>Aktivitäten</h3><p>Nachvollziehbare Änderungen am Ticket</p></div></header>
+                            <ol class="sd-activity-timeline" aria-label="Ticketverlauf">
+                                <template x-for="activity in selectedTicket.activity || []" :key="activity.id">
+                                    <li>
+                                        <span class="sd-activity-icon sd-icon-slot" x-html="iconSvg(activityIcon(activity.action))"></span>
+                                        <div>
+                                            <header>
+                                                <strong x-text="activity.label"></strong>
+                                                <time :datetime="activity.created_at" x-text="formatDateTime(activity.created_at)"></time>
+                                            </header>
+                                            <p>Durch <span x-text="activity.actor"></span></p>
+                                            <p x-show="activitySummary(activity)" x-text="activitySummary(activity)"></p>
+                                            <dl x-show="activity.changes?.length">
+                                                <template x-for="change in activity.changes || []" :key="`${activity.id}-${change.key}`">
+                                                    <div>
+                                                        <dt x-text="change.label"></dt>
+                                                        <dd><span x-text="change.before"></span><i data-feather="arrow-right" aria-hidden="true"></i><strong x-text="change.after"></strong></dd>
+                                                    </div>
+                                                </template>
+                                            </dl>
+                                        </div>
+                                    </li>
+                                </template>
+                            </ol>
+                            <p x-show="!(selectedTicket.activity || []).length" class="sd-empty-inline">Noch keine protokollierten Aktivitäten.</p>
+                        </div>
+                    </section>
+
+                    <aside class="sd-metadata" :class="{ collapsed: metadataCollapsed }">
+                        <button type="button" class="sd-metadata-toggle" @click="metadataCollapsed = !metadataCollapsed" :aria-label="metadataCollapsed ? 'Metadaten einblenden' : 'Metadaten ausblenden'"><span class="sd-icon-slot" x-html="iconSvg(metadataCollapsed ? 'chevron-left' : 'chevron-right')"></span></button>
+                        <div x-show="!metadataCollapsed">
+                            <section><h3>Ticketdetails</h3>
+                                <label>Status<select x-model="selectedTicket.status" x-effect="$nextTick(() => { $el.value = selectedTicket.status || 'open' })" @change="updateTicketField('status', selectedTicket.status)" :disabled="!canUpdateTicket()"><template x-for="item in statuses" :key="item.value"><option :value="item.value" :disabled="statusOptionDisabled(item.value)" x-text="item.label"></option></template></select></label>
+                                <label>Priorität<select x-model="selectedTicket.priority" x-effect="$nextTick(() => { $el.value = selectedTicket.priority || 'normal' })" @change="updateTicketField('priority', selectedTicket.priority)" :disabled="!canUpdateTicket()"><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
+                                <label>Kategorie<select x-model="selectedTicket.category_id" x-effect="$nextTick(() => { $el.value = selectedTicket.category_id || '' })" @change="updateTicketField('category_id', selectedTicket.category_id)" :disabled="!canUpdateTicket() || Boolean(selectedTicket.review_relation)"><option value="">Keine Kategorie</option><template x-for="category in categories" :key="category.id"><option :value="category.id" x-text="category.name"></option></template></select></label>
+                            </section>
+                            <section x-show="selectedTicket.review_relation" class="sd-review-gate">
+                                <h3>Change-Kontrolle</h3>
+                                <a
+                                    :href="selectedTicket.review_relation?.role === 'change' ? `/tickets/${selectedTicket.review_relation.review_ticket_id}` : `/tickets/${selectedTicket.review_relation?.change_ticket_id}`"
+                                    class="sd-review-link"
+                                >
+                                    <span class="sd-icon-slot" x-html="iconSvg(selectedTicket.review_relation?.approved ? 'check-circle' : 'shield')"></span>
+                                    <span>
+                                        <strong x-text="reviewGateLabel()"></strong>
+                                        <small x-show="selectedTicket.review_relation?.role === 'change' && !selectedTicket.review_relation?.approved">Der Change bleibt bis zur Review-Abnahme gesperrt.</small>
+                                        <small x-show="selectedTicket.review_relation?.role === 'change' && selectedTicket.review_relation?.approved">Review abgenommen; Abschluss ist freigegeben.</small>
+                                        <small x-show="selectedTicket.review_relation?.role === 'review'">Zugehörigen Change öffnen.</small>
+                                    </span>
+                                    <span class="sd-icon-slot" x-html="iconSvg('arrow-up-right')"></span>
+                                </a>
+                            </section>
+                            <section><h3>Personen</h3>
+                                <label>Anfragender<input type="text" :value="selectedTicket.requester_name || selectedTicket.created_by" disabled></label>
+                                <label>Zuständig<input type="text" x-model="selectedTicket.assignee" @change="updateTicketField('assignee', selectedTicket.assignee)" placeholder="Nicht zugewiesen" :disabled="!canUpdateTicket()"></label>
+                            </section>
+                            <section><h3>Termine & SLA</h3>
+                                <label>Fälligkeit<input type="date" x-model="selectedTicket.due_date" @change="updateTicketField('due_date', selectedTicket.due_date)" :disabled="!canUpdateTicket()"></label>
+                                <div class="sd-sla-card"><strong x-text="slaState(selectedTicket).label"></strong><span>Reaktionsziel und Lösungszeit gemäß Kategorie-SLA</span></div>
+                            </section>
+                            <section><div class="sd-section-heading"><h3>Assets</h3><button type="button" @click="openAssetPicker('detail')" :disabled="!canUpdateTicket()" aria-label="Assets verknüpfen"><i data-feather="plus"></i></button></div>
+                                <div class="sd-linked-assets"><template x-for="asset in selectedTicket.assets || []" :key="asset.id"><article><i data-feather="monitor"></i><div><strong x-text="asset.name"></strong><small x-text="asset.category_name || 'Asset'"></small></div><button type="button" @click="unlinkAsset(asset.id)" aria-label="Asset entfernen"><i data-feather="x"></i></button></article></template><p x-show="!(selectedTicket.assets || []).length">Keine Assets verknüpft.</p></div>
+                            </section>
+                        </div>
+                    </aside>
+                </div>
             </div>
-        </div>
+        </template>
+    </aside>
+
+    <div x-show="mobileQueuesOpen" x-cloak class="sd-overlay" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeMobileQueues()" aria-label="Queue-Auswahl schließen"></button>
+        <aside class="sd-drawer sd-mobile-queue-drawer" role="dialog" aria-modal="true" aria-labelledby="mobile-queue-title">
+            <header><div><p>Service Desk</p><h2 id="mobile-queue-title">Ticket-Queue auswählen</h2></div><button type="button" @click="closeMobileQueues()" aria-label="Schließen"><i data-feather="x"></i></button></header>
+            <nav class="sd-mobile-queue-list" aria-label="Ticket-Queues">
+                <template x-for="queue in queues" :key="queue.key">
+                    <button type="button" @click="selectQueue(queue); closeMobileQueues()" :class="{ active: activeQueue === queue.key }" :aria-current="activeQueue === queue.key ? 'page' : null">
+                        <span class="sd-icon-slot" x-html="iconSvg(queue.icon)"></span>
+                        <span x-text="queue.label"></span>
+                        <small x-show="queueCounts[queue.key] !== undefined" x-text="queueCounts[queue.key]"></small>
+                    </button>
+                </template>
+            </nav>
+        </aside>
     </div>
 
-    <script src="https://unpkg.com/feather-icons"></script>
-    <script>
-        async function logout() {
-            try {
-                const response = await fetch('/logout', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: { 'Content-Type': 'application/json' }
-                });
+    <div x-show="filterOpen" x-cloak class="sd-overlay" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeFilter()" aria-label="Filter schließen"></button>
+        <aside class="sd-drawer" role="dialog" aria-modal="true" aria-labelledby="filter-title">
+            <header><div><p>Ansicht eingrenzen</p><h2 id="filter-title">Erweiterte Filter</h2></div><button type="button" @click="closeFilter()" aria-label="Schließen"><i data-feather="x"></i></button></header>
+            <div class="sd-drawer-body">
+                <label>Status<select x-model="draftFilters.status"><option value="">Alle Status</option><template x-for="item in statuses" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
+                <label>Priorität<select x-model="draftFilters.priority"><option value="">Alle Prioritäten</option><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label>
+                <label>Kategorie<select x-model="draftFilters.category_id"><option value="">Alle Kategorien</option><template x-for="category in categories" :key="category.id"><option :value="category.id" x-text="category.name"></option></template></select></label>
+                <label>Zuständig<input type="search" x-model="draftFilters.assignee" placeholder="Name oder Team"></label>
+                <label class="sd-checkbox"><input type="checkbox" x-model="draftFilters.mine"><span>Nur meine erstellten Tickets</span></label>
+            </div>
+            <footer><button type="button" class="sd-button" @click="resetDraftFilters()">Zurücksetzen</button><button type="button" class="sd-button sd-button-primary" @click="applyFilters()">Filter anwenden</button></footer>
+        </aside>
+    </div>
 
-                if (response.ok) {
-                    window.location.href = '/login';
-                } else {
-                    const data = await response.json();
-                    alert('Logout failed: ' + (data.error || 'Unknown error'));
-                }
-            } catch (error) {
-                alert('Network error: ' + error.message);
-            }
-        }
-    </script>
-    <script src="/static/tickets.js"></script>
-    <script src="/static/ui.js"></script>
-    <script src="/static/theme.js"></script>
-    {% include 'pondsec_ai_drawer.html' %}
+    <div x-show="createOpen" x-cloak class="sd-modal-layer" @keydown.tab="trapFocus($event)" data-testid="ticket-modal-container">
+        <button class="sd-overlay-dismiss" type="button" @click="closeCreateTicket()" aria-label="Dialog schließen"></button>
+        <section class="sd-modal sd-create-modal" role="dialog" aria-modal="true" aria-labelledby="create-title" data-testid="ticket-modal">
+            <header><div><p>Service Desk</p><h2 id="create-title">Neues Ticket erstellen</h2></div><button type="button" @click="closeCreateTicket()" data-testid="ticket-modal-close" aria-label="Schließen"><i data-feather="x"></i></button></header>
+            <div class="sd-create-grid">
+                <div class="sd-create-main">
+                    <label>Titel <span aria-hidden="true">*</span><input x-ref="createTitle" type="text" x-model="newTicket.title" required placeholder="Kurze, eindeutige Zusammenfassung"></label>
+                    <label>Beschreibung <span aria-hidden="true">*</span><textarea x-model="newTicket.description" rows="7" required placeholder="Was ist passiert, seit wann und welche Auswirkungen gibt es?"></textarea></label>
+                    <div class="sd-form-row"><label>Tickettyp<select x-model="newTicket.type" @change="ticketTypeChanged()"><option value="incident">Incident</option><option value="service_request">Service Request</option><option value="problem">Problem</option><option value="change">Change</option><option value="review">Review</option><option value="improvement">Verbesserung</option><option value="inquiry">Allgemeine Anfrage</option></select></label><label>Kategorie<select x-model="newTicket.category_id" @change="ticketCategoryChanged()"><option value="">Kategorie wählen</option><template x-for="category in categories" :key="category.id"><option :value="category.id" x-text="category.name"></option></template></select></label></div>
+                    <div x-show="creatingReview" class="sd-review-assignment">
+                        <div>
+                            <span class="sd-icon-slot" x-html="iconSvg('git-pull-request')"></span>
+                            <span><strong>Zugehörigen Change auswählen</strong><small>Ein Review kann ohne eindeutigen Change-Bezug nicht erstellt werden.</small></span>
+                        </div>
+                        <label>Change suchen<input type="search" x-model="changeSearch" @input.debounce.300ms="loadReviewableChanges()" placeholder="Ticket-ID oder Titel"></label>
+                        <label>Zugehöriger Change <span aria-hidden="true">*</span>
+                            <select x-model="newTicket.change_ticket_id" :disabled="reviewChangesLoading" required>
+                                <option value="" x-text="reviewChangesLoading ? 'Changes werden geladen …' : 'Change auswählen'"></option>
+                                <template x-for="change in reviewableChanges" :key="change.id">
+                                    <option :value="change.id" x-text="`#${change.id} · ${change.title}`"></option>
+                                </template>
+                            </select>
+                        </label>
+                        <p x-show="!reviewChangesLoading && !reviewableChanges.length">Keine offenen Changes ohne Review gefunden.</p>
+                    </div>
+                    <div x-show="creatingChange" class="sd-form-hint sd-review-hint"><i data-feather="shield"></i><p>Beim Erstellen wird automatisch ein verknüpftes Kontroll-Review angelegt. Gelöst oder geschlossen werden kann der Change erst nach dessen Abnahme.</p></div>
+                    <button type="button" class="sd-asset-summary" @click="openAssetPicker('create')"><i data-feather="monitor"></i><span><strong>Betroffene Assets</strong><small x-text="newTicket.asset_ids.length ? `${newTicket.asset_ids.length} ausgewählt` : 'Assets suchen und verknüpfen'"></small></span><i data-feather="chevron-right"></i></button>
+                </div>
+                <aside><h3>Zuweisung & Planung</h3><label>Priorität<select x-model="newTicket.priority"><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label><label x-show="can('tickets.update')">Zuständig<input type="text" x-model="newTicket.assignee" placeholder="Optional"></label><label x-show="can('tickets.update')">Fälligkeit<input type="date" x-model="newTicket.due_date"></label><div class="sd-form-hint"><i data-feather="info"></i><p>Der Anfragende wird aus deinem angemeldeten Benutzerkonto übernommen. SLA-Ziele folgen der gewählten Kategorie.</p></div></aside>
+            </div>
+            <p x-show="createError" class="sd-form-error" role="alert" x-text="createError"></p>
+            <footer><button type="button" class="sd-button" @click="closeCreateTicket()">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="createTicket()" :disabled="saving"><span x-text="saving ? 'Wird erstellt …' : 'Ticket erstellen'"></span></button></footer>
+        </section>
+    </div>
+
+    <div x-show="assetPickerOpen" x-cloak class="sd-modal-layer" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeAssetPicker()" aria-label="Asset-Picker schließen"></button>
+        <section class="sd-modal sd-asset-modal" role="dialog" aria-modal="true" aria-labelledby="asset-title">
+            <header><div><p>Inventar durchsuchen</p><h2 id="asset-title">Assets verknüpfen</h2></div><button type="button" @click="closeAssetPicker()" aria-label="Schließen"><i data-feather="x"></i></button></header>
+            <div class="sd-asset-search-panel">
+                <label for="asset-search">Assets durchsuchen</label>
+                <div class="sd-asset-search">
+                    <i data-feather="search" aria-hidden="true"></i>
+                    <input id="asset-search" x-ref="assetSearch" type="search" x-model="assetSearch" @input.debounce.350ms="loadAssetOptions()" aria-label="Assets durchsuchen" placeholder="Name, Typ, Hersteller, Standort oder Seriennummer" autocomplete="off">
+                    <button x-show="assetSearch" type="button" @click="assetSearch = ''; loadAssetOptions(); $nextTick(() => $refs.assetSearch.focus())" aria-label="Asset-Suche leeren"><i data-feather="x" aria-hidden="true"></i></button>
+                </div>
+                <p aria-live="polite"><span x-show="assetLoading">Suche läuft …</span><span x-show="!assetLoading" x-text="`${assetOptions.length} Assets angezeigt`"></span></p>
+            </div>
+            <div class="sd-asset-table"><table><thead><tr><th></th><th>Asset</th><th>Typ</th><th>Hersteller</th><th>Standort</th><th>Seriennummer</th></tr></thead><tbody><template x-for="asset in assetOptions" :key="asset.id"><tr @click="toggleAsset(asset.id)"><td><input type="checkbox" :checked="assetSelection.includes(asset.id)" @click.stop="toggleAsset(asset.id)" :aria-label="`${asset.name} auswählen`"></td><td><strong x-text="asset.name"></strong></td><td x-text="asset.category_name || '—'"></td><td x-text="asset.manufacturer || '—'"></td><td x-text="(asset.locations || []).join(', ') || '—'"></td><td x-text="(asset.serial_numbers || []).join(', ') || '—'"></td></tr></template></tbody></table><p x-show="!assetLoading && !assetOptions.length" class="sd-empty-inline">Keine Assets gefunden.</p></div>
+            <footer><span><strong x-text="assetSelection.length"></strong> ausgewählt</span><div><button type="button" class="sd-button" @click="closeAssetPicker()">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="applyAssetSelection()">Übernehmen</button></div></footer>
+        </section>
+    </div>
+
+    <div x-show="saveViewOpen" x-cloak class="sd-modal-layer" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeSaveView()" aria-label="Dialog schließen"></button>
+        <section class="sd-modal sd-small-modal" role="dialog" aria-modal="true" aria-labelledby="save-view-title"><header><div><p>Filter & Sortierung</p><h2 id="save-view-title">Ansicht speichern</h2></div><button type="button" @click="closeSaveView()" aria-label="Schließen"><i data-feather="x"></i></button></header><div class="sd-modal-body"><label>Name<input type="text" x-model="newView.name" placeholder="z. B. Kritische Incidents"></label><label class="sd-checkbox"><input type="checkbox" x-model="newView.is_favorite"><span>Als Favorit anzeigen</span></label><label class="sd-checkbox"><input type="checkbox" x-model="newView.is_default"><span>Als Standardansicht verwenden</span></label></div><footer><button type="button" class="sd-button" @click="closeSaveView()">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="saveView()">Speichern</button></footer></section>
+    </div>
+
+    <div x-show="bulkDialog.open" x-cloak class="sd-modal-layer" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeBulk()" aria-label="Dialog schließen"></button>
+        <section class="sd-modal sd-small-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-dialog-title"><header><div><p>Mehrfachbearbeitung</p><h2 id="bulk-dialog-title" x-text="bulkDialog.title"></h2></div><button type="button" @click="closeBulk()" aria-label="Schließen"><i data-feather="x"></i></button></header><div class="sd-modal-body"><label>Neuer Wert<select x-show="bulkDialog.field === 'status'" x-model="bulkDialog.value"><template x-for="item in statuses" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select><select x-show="bulkDialog.field === 'priority'" x-model="bulkDialog.value"><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select><input x-show="bulkDialog.field === 'assignee'" type="text" x-model="bulkDialog.value" placeholder="Name oder Team"></label></div><footer><button type="button" class="sd-button" @click="closeBulk()">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="applyBulk()">Auf <span x-text="selectedIds.length"></span> Tickets anwenden</button></footer></section>
+    </div>
+
+    <div x-show="showShortcuts" x-cloak class="sd-modal-layer" @keydown.tab="trapFocus($event)">
+        <button class="sd-overlay-dismiss" type="button" @click="closeShortcuts()" aria-label="Dialog schließen"></button>
+        <section class="sd-modal sd-shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title"><header><div><p>Produktivität</p><h2 id="shortcuts-title">Tastaturkürzel</h2></div><button type="button" @click="closeShortcuts()" aria-label="Schließen"><i data-feather="x"></i></button></header><div class="sd-shortcut-grid"><span><kbd>/</kbd>Suche fokussieren</span><span><kbd>C</kbd>Ticket erstellen</span><span><kbd>J</kbd>Nächstes Ticket</span><span><kbd>K</kbd>Vorheriges Ticket</span><span><kbd>Enter</kbd>Ticket öffnen</span><span><kbd>R</kbd>Antworten</span><span><kbd>N</kbd>Interne Notiz</span><span><kbd>Esc</kbd>Dialog schließen</span></div></section>
+    </div>
+
+    <div class="sd-toast-region" aria-live="polite"><template x-for="toast in toasts" :key="toast.id"><div class="sd-toast" :class="toast.type"><span class="sd-icon-slot" x-html="iconSvg(toast.type === 'error' ? 'alert-triangle' : 'check-circle')"></span><span x-text="toast.message"></span></div></template></div>
+
+    <script src="/static/vendor/feather.min.js"></script>
+    <script src="/static/tickets.js?v=service-desk-20260725-6"></script>
 </body>
 </html>

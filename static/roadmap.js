@@ -55,7 +55,7 @@ document.addEventListener('alpine:init', () => {
                     await this.selectRoadmap(match);
                 }
             }
-            this.$nextTick(() => feather.replace());
+            this.refreshIcons();
         },
 
         can(permissionKey) {
@@ -85,7 +85,7 @@ document.addEventListener('alpine:init', () => {
                 this.roadmaps = await response.json();
                 this.updateOverview();
             }
-            this.$nextTick(() => feather.replace());
+            this.refreshIcons();
         },
 
         applyFilters() {
@@ -115,7 +115,7 @@ document.addEventListener('alpine:init', () => {
                 this.selectedRoadmap = roadmapData;
                 this.stepFormOpen = false;
             }
-            this.$nextTick(() => feather.replace());
+            this.refreshIcons();
         },
 
         closeRoadmap() {
@@ -229,6 +229,10 @@ document.addEventListener('alpine:init', () => {
                 const error = await response.json();
                 this.roadmapError = error.error || 'Roadmap konnte nicht erstellt werden.';
             }
+        },
+
+        refreshIcons() {
+            this.$nextTick(() => window.InventoryRefreshIcons?.());
         }
     }));
 });

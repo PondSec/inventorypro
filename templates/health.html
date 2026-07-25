@@ -5,10 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Pro - Health</title>
     <script src="/static/theme.js"></script>
-    <script>
-        tailwind.config = { darkMode: 'class' };
-    </script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/vendor/tailwind.min.css?v=3.4.17">
     <script src="/static/vendor/alpinejs.min.js" defer></script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -68,11 +65,38 @@
                             </span>
                         </a>
                         {% endif %}
-                        {% if 'ai.use' in permissions or 'ai.manage' in permissions %}
-                        <a href="/ai/activity" class="sidebar-link">
+                        {% if 'procurement.view' in permissions or 'procurement.manage' in permissions %}
+                        <a href="/procurement" class="sidebar-link">
                             <span>
-                                <span class="sidebar-link-icon"><i data-feather="message-circle" class="w-4 h-4"></i></span>
-                                PondSec AI
+                                <span class="sidebar-link-icon"><i data-feather="shopping-cart" class="w-4 h-4"></i></span>
+                                Beschaffung
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Inventory Links</p>
+                    <div class="mt-3 space-y-1">
+                        {% if inventory_links %}
+                        {% for link in inventory_links %}
+                        <a href="/inventory-links/{{ link.id }}/portal" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="link-2" class="w-4 h-4"></i></span>
+                                {{ link.displayName }}
+                            </span>
+                            {% if link.healthStatus %}
+                            <span class="text-xs font-semibold rounded-full px-2 py-0.5 {% if link.healthStatus == 'ok' %}bg-emerald-100 text-emerald-700{% elif link.healthStatus == 'unauthorized' %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+                                {{ link.healthStatus }}
+                            </span>
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                        {% else %}
+                        <a href="/settings?section=server#inventory-links" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="plus-circle" class="w-4 h-4"></i></span>
+                                Link hinzufügen
                             </span>
                         </a>
                         {% endif %}
@@ -161,7 +185,6 @@
                         <p class="text-xs text-slate-400">Angemeldet als</p>
                         <p class="text-sm font-semibold text-slate-800">{{ username }}</p>
                     </div>
-                    {% include 'pondsec_ai_button.html' %}
                     <form action="/logout" method="post">
                         <button type="submit" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-800">
                             <i data-feather="log-out" class="h-4 w-4"></i>
@@ -448,7 +471,7 @@
                         <p class="text-xs uppercase text-slate-400">Check Detail</p>
                         <h3 class="text-lg font-semibold text-slate-900" x-text="selectedCheck?.name || ''"></h3>
                     </div>
-                    <button @click="closeDrawer" class="rounded-full border border-slate-200 p-2 text-slate-600 hover:bg-slate-50">
+                    <button @click="closeDrawer" class="rounded-full border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" aria-label="Prüfungsdetails schließen">
                         <i data-feather="x" class="w-4 h-4"></i>
                     </button>
                 </div>
@@ -677,10 +700,9 @@
         }
     </script>
     <script src="/static/ui.js"></script>
-    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="/static/vendor/feather.min.js"></script>
     <script>
         feather.replace();
     </script>
-    {% include 'pondsec_ai_drawer.html' %}
 </body>
 </html>
