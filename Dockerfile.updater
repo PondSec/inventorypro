@@ -1,0 +1,10 @@
+FROM docker:27-cli
+
+RUN apk add --no-cache python3 py3-cryptography
+
+WORKDIR /app
+
+COPY updater.py ./updater.py
+COPY updater/release-public-key.pem ./release-public-key.pem
+
+ENTRYPOINT ["python3", "/app/updater.py"]
