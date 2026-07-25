@@ -5,12 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Pro - Dependency & Impact Graph</title>
     <script src="/static/theme.js"></script>
-    <script>
-        tailwind.config = { darkMode: 'class' };
-    </script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/vendor/tailwind.min.css?v=3.4.17">
     <script src="/static/vendor/alpinejs.min.js" defer></script>
-    <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+    <script src="/static/vendor/cytoscape.min.js?v=3.26.0"></script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="app-body">
@@ -69,11 +66,39 @@
                             </span>
                         </a>
                         {% endif %}
-                        {% if 'ai.use' in permissions or 'ai.manage' in permissions %}
-                        <a href="/ai/activity" class="sidebar-link">
+                        {% if 'procurement.view' in permissions or 'procurement.manage' in permissions %}
+                        <a href="/procurement" class="sidebar-link">
                             <span>
-                                <span class="sidebar-link-icon"><i data-feather="message-circle" class="w-4 h-4"></i></span>
-                                PondSec AI
+                                <span class="sidebar-link-icon"><i data-feather="shopping-cart" class="w-4 h-4"></i></span>
+                                Beschaffung
+                            </span>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="sidebar-panel">
+                    <p class="sidebar-panel-title">Inventory Links</p>
+                    <div class="mt-3 space-y-1">
+                        {% if inventory_links %}
+                        {% for link in inventory_links %}
+                        <a href="/inventory-links/{{ link.id }}/portal" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="link-2" class="w-4 h-4"></i></span>
+                                {{ link.displayName }}
+                            </span>
+                            {% if link.healthStatus %}
+                            <span class="text-xs font-semibold rounded-full px-2 py-0.5 {% if link.healthStatus == 'ok' %}bg-emerald-100 text-emerald-700{% elif link.healthStatus == 'unauthorized' %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+                                {{ link.healthStatus }}
+                            </span>
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                        {% else %}
+                        <a href="/settings?section=server#inventory-links" class="sidebar-link">
+                            <span>
+                                <span class="sidebar-link-icon"><i data-feather="plus-circle" class="w-4 h-4"></i></span>
+                                Link hinzufügen
                             </span>
                         </a>
                         {% endif %}
@@ -162,7 +187,6 @@
                         <p class="text-xs text-slate-400">Angemeldet als</p>
                         <p class="text-sm font-semibold text-slate-800">{{ username }}</p>
                     </div>
-                    {% include 'pondsec_ai_button.html' %}
                     <form action="/logout" method="post">
                         <button type="submit" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-800">
                             <i data-feather="log-out" class="h-4 w-4"></i>
@@ -231,7 +255,7 @@
                         <p class="text-sm text-slate-500">Szenarien simulieren: “Was fällt alles aus, wenn …?”</p>
                         <div class="mt-4 space-y-3">
                             <label class="block text-xs font-semibold text-slate-500">Quelle</label>
-                            <select x-model="impactQuery.sourceKey" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                            <select x-model="impactQuery.sourceKey" aria-label="Quelle der Impact-Analyse" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                                 <option value="">Quelle auswählen</option>
                                 <template x-for="(items, type) in nodeOptions" :key="type">
                                     <optgroup :label="typeLabels[type] || type">
@@ -242,7 +266,7 @@
                                 </template>
                             </select>
                             <label class="block text-xs font-semibold text-slate-500">Tiefe (optional)</label>
-                            <input x-model="impactQuery.depth" type="number" min="1" placeholder="z.B. 3" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                            <input x-model="impactQuery.depth" type="number" min="1" placeholder="z.B. 3" aria-label="Maximale Analysetiefe" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                             <button @click="runImpactAnalysis()" class="w-full rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Analyse starten</button>
                         </div>
                         <div class="mt-6">
@@ -289,24 +313,24 @@
                         <h2 class="text-lg font-semibold text-slate-900">Software-Inventar</h2>
                         <p class="text-sm text-slate-500">Inventarisierung mit Owner-Team, Kritikalität und Support.</p>
                         <div class="mt-4 grid gap-3 md:grid-cols-2">
-                            <input x-model="newSoftware.name" placeholder="Software-Name" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <input x-model="newSoftware.vendor" placeholder="Hersteller" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <input x-model="newSoftware.version" placeholder="Version" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <input x-model="newSoftware.license_type" placeholder="Lizenztyp" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <select x-model="newSoftware.criticality" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newSoftware.name" placeholder="Software-Name" aria-label="Software-Name" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newSoftware.vendor" placeholder="Hersteller" aria-label="Software-Hersteller" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newSoftware.version" placeholder="Version" aria-label="Software-Version" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newSoftware.license_type" placeholder="Lizenztyp" aria-label="Lizenztyp" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newSoftware.criticality" aria-label="Kritikalität der Software" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="low">Niedrig</option>
                                 <option value="medium">Mittel</option>
                                 <option value="high">Hoch</option>
                                 <option value="critical">Kritisch</option>
                             </select>
-                            <select x-model="newSoftware.owner_team_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newSoftware.owner_team_id" aria-label="Verantwortliches Team" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="">Owner-Team auswählen</option>
                                 <template x-for="team in teams" :key="team.id">
                                     <option :value="team.id" x-text="team.name"></option>
                                 </template>
                             </select>
-                            <input x-model="newSoftware.support_contact" placeholder="Support Kontakt" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2">
-                            <textarea x-model="newSoftware.description" placeholder="Beschreibung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"></textarea>
+                            <input x-model="newSoftware.support_contact" placeholder="Support Kontakt" aria-label="Support-Kontakt" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2">
+                            <textarea x-model="newSoftware.description" placeholder="Beschreibung" aria-label="Software-Beschreibung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"></textarea>
                         </div>
                         <button @click="createSoftware()" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Software anlegen</button>
 
@@ -331,36 +355,36 @@
                         <h2 class="text-lg font-semibold text-slate-900">Software-Installationen</h2>
                         <p class="text-sm text-slate-500">Verknüpfung zu Geräten, Assets und Umgebungen.</p>
                         <div class="mt-4 grid gap-3 md:grid-cols-2">
-                            <select x-model="newInstallation.software_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newInstallation.software_id" aria-label="Installierte Software" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="">Software auswählen</option>
                                 <template x-for="item in software" :key="item.id">
                                     <option :value="item.id" x-text="item.name"></option>
                                 </template>
                             </select>
-                            <select x-model="newInstallation.asset_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newInstallation.asset_id" aria-label="Zugeordnetes Asset" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="">Asset auswählen</option>
                                 <template x-for="asset in nodeOptions.asset || []" :key="`asset-${asset.id}`">
                                     <option :value="asset.id" x-text="asset.name"></option>
                                 </template>
                             </select>
-                            <select x-model="newInstallation.device_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newInstallation.device_id" aria-label="Zugeordnetes Gerät" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="">Gerät auswählen</option>
                                 <template x-for="device in nodeOptions.device || []" :key="`device-${device.id}`">
                                     <option :value="device.id" x-text="device.name"></option>
                                 </template>
                             </select>
-                            <input x-model="newInstallation.installed_version" placeholder="Installierte Version" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <select x-model="newInstallation.environment" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newInstallation.installed_version" placeholder="Installierte Version" aria-label="Installierte Version" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newInstallation.environment" aria-label="Installationsumgebung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="production">Production</option>
                                 <option value="staging">Staging</option>
                                 <option value="dev">Development</option>
                             </select>
-                            <select x-model="newInstallation.status" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newInstallation.status" aria-label="Installationsstatus" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="active">Aktiv</option>
                                 <option value="maintenance">Wartung</option>
                                 <option value="deprecated">Veraltet</option>
                             </select>
-                            <textarea x-model="newInstallation.notes" placeholder="Notizen" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"></textarea>
+                            <textarea x-model="newInstallation.notes" placeholder="Notizen" aria-label="Notizen zur Installation" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"></textarea>
                         </div>
                         <button @click="createInstallation()" class="mt-4 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Installation hinzufügen</button>
 
@@ -386,8 +410,8 @@
                     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                         <h2 class="text-lg font-semibold text-slate-900">Teams & Abteilungen</h2>
                         <div class="mt-4 grid gap-3 md:grid-cols-2">
-                            <input x-model="newDepartment.name" placeholder="Abteilung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <input x-model="newDepartment.description" placeholder="Beschreibung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newDepartment.name" placeholder="Abteilung" aria-label="Name der Abteilung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newDepartment.description" placeholder="Beschreibung" aria-label="Beschreibung der Abteilung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                         </div>
                         <button @click="createDepartment()" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Abteilung anlegen</button>
 
@@ -405,15 +429,15 @@
                         </div>
 
                         <div class="mt-6 grid gap-3 md:grid-cols-2">
-                            <input x-model="newTeam.name" placeholder="Team" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <select x-model="newTeam.department_id" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newTeam.name" placeholder="Team" aria-label="Name des Teams" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newTeam.department_id" aria-label="Abteilung des Teams" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="">Abteilung wählen</option>
                                 <template x-for="department in departments" :key="`dept-${department.id}`">
                                     <option :value="department.id" x-text="department.name"></option>
                                 </template>
                             </select>
-                            <input x-model="newTeam.lead_user" placeholder="Team Lead" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <input x-model="newTeam.notes" placeholder="Notizen" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newTeam.lead_user" placeholder="Team Lead" aria-label="Leitung des Teams" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newTeam.notes" placeholder="Notizen" aria-label="Notizen zum Team" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                         </div>
                         <button @click="createTeam()" class="mt-4 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Team anlegen</button>
 
@@ -435,7 +459,7 @@
                         <h2 class="text-lg font-semibold text-slate-900">Abhängigkeiten modellieren</h2>
                         <p class="text-sm text-slate-500">Verknüpfen Sie Assets, Software, Teams, Tickets und Roadmaps.</p>
                         <div class="mt-4 grid gap-3 md:grid-cols-2">
-                            <select x-model="newLink.sourceKey" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newLink.sourceKey" aria-label="Quelle der Abhängigkeit" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="">Quelle</option>
                                 <template x-for="(items, type) in nodeOptions" :key="`source-${type}`">
                                     <optgroup :label="typeLabels[type] || type">
@@ -445,7 +469,7 @@
                                     </optgroup>
                                 </template>
                             </select>
-                            <select x-model="newLink.targetKey" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newLink.targetKey" aria-label="Ziel der Abhängigkeit" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="">Ziel</option>
                                 <template x-for="(items, type) in nodeOptions" :key="`target-${type}`">
                                     <optgroup :label="typeLabels[type] || type">
@@ -455,15 +479,15 @@
                                     </optgroup>
                                 </template>
                             </select>
-                            <input x-model="newLink.relation" placeholder="Relation (z.B. depends_on)" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <select x-model="newLink.criticality" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newLink.relation" placeholder="Relation (z.B. depends_on)" aria-label="Beziehungstyp der Abhängigkeit" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <select x-model="newLink.criticality" aria-label="Kritikalität der Abhängigkeit" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="low">Niedrig</option>
                                 <option value="medium">Mittel</option>
                                 <option value="high">Hoch</option>
                                 <option value="critical">Kritisch</option>
                             </select>
-                            <input x-model="newLink.redundancy_group" placeholder="Redundanz-Gruppe" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                            <input x-model="newLink.notes" placeholder="Notizen" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newLink.redundancy_group" placeholder="Redundanz-Gruppe" aria-label="Redundanzgruppe" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            <input x-model="newLink.notes" placeholder="Notizen" aria-label="Notizen zur Abhängigkeit" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                         </div>
                         <button @click="createDependencyLink()" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Abhängigkeit anlegen</button>
 
@@ -835,7 +859,7 @@
             }
         }
     </script>
-    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="/static/vendor/feather.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             feather.replace();
@@ -843,6 +867,5 @@
     </script>
     <script src="/static/ui.js"></script>
    <script src="/static/theme.js"></script>
-    {% include 'pondsec_ai_drawer.html' %}
 </body>
 </html>

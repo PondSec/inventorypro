@@ -1,17 +1,17 @@
 (() => {
   const root = document.documentElement;
   const stored = localStorage.getItem('theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const initial = stored || (prefersDark ? 'dark' : 'light');
+  const initial = stored || 'light';
   const customizationCacheKey = 'inventorypro.customization.cache';
   const customizationLocalKey = 'inventorypro.customization.local';
   const legacyCustomizationKey = 'inventorypro.customization';
+  let activeCustomization = null;
 
   const defaultCustomization = {
     schemaVersion: 1,
     branding: {
       name: 'Inventory Pro',
-      tagline: 'Smart Asset Hub',
+      tagline: 'Inventarisierung',
       logoDataUrl: '',
     },
     baseTokens: {
@@ -191,6 +191,58 @@
     });
   };
 
+  const applyModeTokens = (customization) => {
+    if (!customization) return;
+    if (!root.classList.contains('dark')) {
+      return;
+    }
+
+    root.style.setProperty('--color-bg', '#0b0f14');
+    root.style.setProperty('--color-surface', '#111820');
+    root.style.setProperty('--color-surface-muted', '#16202a');
+    root.style.setProperty('--color-surface-elevated', '#111820');
+    root.style.setProperty('--color-text', '#e6edf3');
+    root.style.setProperty('--color-text-muted', '#93a4b5');
+    root.style.setProperty('--color-border', '#263442');
+    root.style.setProperty('--color-border-strong', '#344454');
+    root.style.setProperty('--color-accent', '#7aa2f7');
+    root.style.setProperty('--color-accent-strong', '#9ab7ff');
+    root.style.setProperty('--color-accent-soft', 'rgba(122, 162, 247, 0.16)');
+    root.style.setProperty('--focus-ring', 'rgba(122, 162, 247, 0.34)');
+    root.style.setProperty('--input-bg', '#0f151d');
+    root.style.setProperty('--input-text', '#e6edf3');
+    root.style.setProperty('--input-border', '#263442');
+    root.style.setProperty('--input-placeholder', '#718196');
+    root.style.setProperty('--button-bg', '#e6edf3');
+    root.style.setProperty('--button-bg-hover', '#f4f7fb');
+    root.style.setProperty('--button-bg-active', '#cbd5e1');
+    root.style.setProperty('--button-text', '#0b0f14');
+    root.style.setProperty('--button-secondary-bg', '#111820');
+    root.style.setProperty('--button-secondary-bg-hover', '#16202a');
+    root.style.setProperty('--button-secondary-bg-active', '#1c2936');
+    root.style.setProperty('--button-secondary-text', '#e6edf3');
+    root.style.setProperty('--button-secondary-border', '#263442');
+    root.style.setProperty('--card-bg', '#111820');
+    root.style.setProperty('--card-border', '#263442');
+    root.style.setProperty('--table-header-bg', '#16202a');
+    root.style.setProperty('--table-row-bg', '#111820');
+    root.style.setProperty('--table-zebra-bg', '#131c25');
+    root.style.setProperty('--table-border', '#263442');
+    root.style.setProperty('--modal-bg', '#111820');
+    root.style.setProperty('--navbar-bg', '#111820');
+    root.style.setProperty('--navbar-border', '#263442');
+    root.style.setProperty('--navbar-text', '#e6edf3');
+    root.style.setProperty('--sidebar-bg', '#101720');
+    root.style.setProperty('--sidebar-border', '#263442');
+    root.style.setProperty('--sidebar-text', '#e6edf3');
+  };
+
+  const refreshModeAwareTheme = () => {
+    if (!activeCustomization) return;
+    applyThemeToCSSVars(activeCustomization);
+    applyModeTokens(activeCustomization);
+  };
+
   const setTheme = (mode) => {
     if (mode === 'dark') {
       root.classList.add('dark');
@@ -198,6 +250,7 @@
       root.classList.remove('dark');
     }
     localStorage.setItem('theme', mode);
+    refreshModeAwareTheme();
     updateButtons();
   };
 
@@ -476,7 +529,9 @@
 
   const applyCustomization = (data) => {
     const merged = migrateCustomization(data);
+    activeCustomization = merged;
     applyThemeToCSSVars(merged);
+    applyModeTokens(merged);
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => applyBrandingContent(merged), { once: true });
     } else {
@@ -547,7 +602,8 @@
 
     try {
       const response = await fetch('/api/customize', { credentials: 'same-origin' });
-      if (response.ok) {
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
         const serverData = await response.json();
         if (serverData.customization) {
           applied = applyCustomization(serverData.customization);
