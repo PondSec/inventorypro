@@ -12770,6 +12770,138 @@ def search_ticket_assets():
         "pages": max(1, (total + per_page - 1) // per_page),
     })
 
+def ticket_context_terms(ticket):
+    ignored_terms = {
+        "aber", "alle", "auch", "beim", "dass", "deine", "der", "den", "dem", "des", "die",
+        "eine", "einem", "einen", "einer", "eines", "für", "habe", "hier", "ihre", "ihren",
+        "ist", "mit", "nach", "nicht", "noch", "oder", "sich", "sind", "ticket", "und", "von",
+        "wird", "wurde", "zum", "zur",
+    }
+    source = f"{ticket.get('title') or ''} {ticket.get('description') or ''}".casefold()
+    terms = []
+    for term in re.findall(r"[\w-]+", source, flags=re.UNICODE):
+        if len(term) < 4 or term in ignored_terms or term.isdigit() or term in terms:
+            continue
+        terms.append(term)
+        if len(terms) == 6:
+            break
+    return terms
+
+def ticket_context_preview(value, limit=240):
+    compact = " ".join(str(value or "").split())
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[:limit - 1].rstrip()}…"
+
+def build_ticket_work_context(db, ticket, access):
+    """Find reusable, visible knowledge without crossing ticket permission boundaries."""
+    terms = ticket_context_terms(ticket)
+    work_context = {"knowledge_entries": [], "similar_resolved_tickets": []}
+    knowledge_allowed = access["is_superuser"] or bool(
+        {"knowledge.view", "knowledge.manage"}.intersection(access["permissions"])
+    )
+
+    if knowledge_allowed:
+        knowledge_filters = ["ke.related_ticket_id = ?"]
+        knowledge_params = [ticket["id"]]
+        if terms:
+            matching_terms = []
+            for term in terms:
+                matching_terms.append(
+                    "(lower(ke.title) LIKE ? OR lower(ke.summary) LIKE ? OR lower(ke.content) LIKE ?)"
+                )
+                like = f"%{term}%"
+                knowledge_params.extend([like, like, like])
+            knowledge_filters.append("(" + " OR ".join(matching_terms) + ")")
+        knowledge_rows = db.execute(
+            f'''
+            SELECT ke.id, ke.title, ke.summary, ke.content, ke.category_id, ke.related_ticket_id,
+                   ke.created_by, ke.created_at, ke.updated_at, kc.name AS category_name
+            FROM knowledge_entries ke
+            LEFT JOIN knowledge_categories kc ON kc.id = ke.category_id
+            WHERE {' OR '.join(knowledge_filters)}
+            ORDER BY CASE WHEN ke.related_ticket_id = ? THEN 0 ELSE 1 END,
+                     ke.updated_at DESC, ke.created_at DESC
+            LIMIT 60
+            ''',
+            [*knowledge_params, ticket["id"]],
+        ).fetchall()
+        knowledge_entries = []
+        for row in knowledge_rows:
+            haystack = f"{row['title'] or ''} {row['summary'] or ''} {row['content'] or ''}".casefold()
+            score = sum(1 for term in terms if term in haystack)
+            if row["related_ticket_id"] == ticket["id"]:
+                score += 100
+            knowledge_entries.append({
+                "id": row["id"],
+                "title": row["title"],
+                "summary": ticket_context_preview(row["summary"] or row["content"]),
+                "category_name": row["category_name"],
+                "related_ticket_id": row["related_ticket_id"],
+                "updated_at": row["updated_at"] or row["created_at"],
+                "score": score,
+            })
+        knowledge_entries.sort(key=lambda item: (item["score"], item["updated_at"] or "", item["id"]), reverse=True)
+        work_context["knowledge_entries"] = knowledge_entries[:6]
+
+    resolved_filters = ["t.id != ?", "lower(t.status) IN ('resolved', 'closed', 'done')"]
+    resolved_params = [ticket["id"]]
+    term_filters = []
+    for term in terms:
+        term_filters.append("(lower(t.title) LIKE ? OR lower(t.description) LIKE ?)")
+        like = f"%{term}%"
+        resolved_params.extend([like, like])
+    if term_filters:
+        if ticket.get("category_id"):
+            resolved_filters.append("(t.category_id = ? OR " + " OR ".join(term_filters) + ")")
+            resolved_params.insert(1, ticket["category_id"])
+        else:
+            resolved_filters.append("(" + " OR ".join(term_filters) + ")")
+    elif ticket.get("category_id"):
+        resolved_filters.append("t.category_id = ?")
+        resolved_params.append(ticket["category_id"])
+    else:
+        return work_context
+
+    candidate_rows = db.execute(
+        f'''
+        SELECT t.*, c.name AS category_name
+        FROM tickets t
+        LEFT JOIN ticket_categories c ON c.id = t.category_id
+        WHERE {' AND '.join(resolved_filters)}
+        ORDER BY t.updated_at DESC, t.id DESC
+        LIMIT 80
+        ''',
+        resolved_params,
+    ).fetchall()
+    similar_tickets = []
+    for row in candidate_rows:
+        candidate = dict(row)
+        if not ensure_ticket_access(candidate, access):
+            continue
+        haystack = f"{candidate.get('title') or ''} {candidate.get('description') or ''}".casefold()
+        score = sum(1 for term in terms if term in haystack)
+        if ticket.get("category_id") and candidate.get("category_id") == ticket.get("category_id"):
+            score += 1
+        resolution = (
+            candidate.get("resolution_outcome")
+            or candidate.get("resolution_notes")
+            or candidate.get("resolution_action")
+            or "Keine dokumentierte Lösung hinterlegt."
+        )
+        similar_tickets.append({
+            "id": candidate["id"],
+            "title": candidate["title"],
+            "category_name": candidate.get("category_name"),
+            "status": candidate["status"],
+            "resolution": ticket_context_preview(resolution),
+            "updated_at": candidate.get("updated_at"),
+            "score": score,
+        })
+    similar_tickets.sort(key=lambda item: (item["score"], item["updated_at"] or "", item["id"]), reverse=True)
+    work_context["similar_resolved_tickets"] = similar_tickets[:5]
+    return work_context
+
 @app.route('/api/tickets/<int:ticket_id>', methods=['GET', 'PUT', 'DELETE'])
 @login_required
 def ticket_detail(ticket_id):
@@ -12805,6 +12937,7 @@ def ticket_detail(ticket_id):
             roadmap["steps"] = fetch_roadmap_steps(db, roadmap["id"])
         ticket['roadmap'] = roadmap
         ticket['review_relation'] = get_ticket_review_relation(db, ticket_id)
+        ticket['work_context'] = build_ticket_work_context(db, ticket, access)
         activities = db.execute(
             '''
             SELECT id, username, action, details, created_at
