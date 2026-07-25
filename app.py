@@ -1416,6 +1416,56 @@ def validate_inventory_link_target(base_url, allow_private_network):
             raise ValueError("Zieladresse ist nicht erlaubt.")
     return parsed
 
+def is_inventory_link_private_ip(ip_str):
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    if ip_obj.is_loopback:
+        return inventory_links_allow_loopback()
+    return (
+        ip_obj.is_private
+        and not ip_obj.is_link_local
+        and not ip_obj.is_multicast
+        and not ip_obj.is_unspecified
+        and not ip_obj.is_reserved
+    )
+
+def normalize_inventory_link_connection_scope(scope):
+    normalized = (scope or "internet").strip().lower()
+    if normalized not in {"internet", "local"}:
+        raise ValueError("Verbindungsart muss Internet oder lokales Netzwerk sein.")
+    return normalized
+
+def validate_inventory_link_configuration(base_url, connection_scope, verify_tls, allow_private_network):
+    """Validate an inventory connection as a safe Internet or LAN-only route.
+
+    Keeping the two paths explicit avoids ambiguous settings such as a public URL
+    with private-network access enabled. Resolution is repeated for every proxy
+    request to reduce DNS rebinding exposure.
+    """
+    normalized = normalize_inventory_link_base_url(base_url)
+    scope = normalize_inventory_link_connection_scope(connection_scope)
+    parsed = urllib.parse.urlsplit(normalized)
+
+    if scope == "internet":
+        if parsed.scheme != "https":
+            raise ValueError("Internet-Verbindungen benötigen HTTPS.")
+        if not verify_tls:
+            raise ValueError("Internet-Verbindungen müssen das TLS-Zertifikat prüfen.")
+        if allow_private_network:
+            raise ValueError("Internet-Verbindungen dürfen keine privaten Netzwerkziele zulassen.")
+        validate_inventory_link_target(normalized, False)
+        return normalized, scope, True, False
+
+    if not allow_private_network:
+        raise ValueError("Lokale Verbindungen benötigen die Freigabe für private Netzwerkziele.")
+    validate_inventory_link_target(normalized, True)
+    resolved_ips = resolve_inventory_link_ips(parsed.hostname)
+    if not resolved_ips or any(not is_inventory_link_private_ip(ip_str) for ip_str in resolved_ips):
+        raise ValueError("Lokale Verbindungen dürfen nur auf private LAN-Adressen zeigen.")
+    return normalized, scope, bool(verify_tls), True
+
 def parse_inventory_link_login_secret(secret):
     if not secret or ":" not in secret:
         raise ValueError("Login-Secret muss im Format Benutzername:Passwort vorliegen.")
@@ -1508,6 +1558,7 @@ def serialize_inventory_link(row):
         "verifyTls": bool(row["verify_tls"]),
         "authMode": row["auth_mode"],
         "allowPrivateNetwork": bool(row["allow_private_network"]),
+        "connectionScope": row["connection_scope"] or "internet",
         "healthStatus": row["health_status"],
         "lastCheckedAt": row["health_last_checked_at"],
         "createdAt": row["created_at"],
@@ -1517,7 +1568,7 @@ def serialize_inventory_link(row):
 def list_inventory_links(db, user_id):
     rows = db.execute(
         '''
-        SELECT id, display_name, base_url, verify_tls, auth_mode, allow_private_network,
+        SELECT id, display_name, base_url, verify_tls, auth_mode, allow_private_network, connection_scope,
                health_status, health_last_checked_at, created_at, updated_at
         FROM inventory_links
         WHERE user_id = ?
@@ -1978,8 +2029,11 @@ def perform_inventory_link_test(config):
     secret = config.get("secret") or ""
     verify_tls = bool(config.get("verify_tls", True))
     allow_private_network = bool(config.get("allow_private_network", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    connection_scope = config.get("connection_scope") or "internet"
     try:
-        validate_inventory_link_target(base_url, allow_private_network)
+        validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
     except ValueError as exc:
         return {"status": "down", "error": str(exc)}
 
@@ -4597,6 +4651,7 @@ def init_db():
                 auth_mode TEXT DEFAULT 'apiKey',
                 secret_encrypted TEXT,
                 allow_private_network INTEGER DEFAULT 1,
+                connection_scope TEXT DEFAULT 'internet',
                 health_status TEXT,
                 health_last_checked_at TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -4605,6 +4660,14 @@ def init_db():
             )
         ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_inventory_links_user_id ON inventory_links(user_id)')
+        try:
+            c.execute("ALTER TABLE inventory_links ADD COLUMN connection_scope TEXT DEFAULT 'internet'")
+            # Existing plain-HTTP links are treated as LAN links. Other existing
+            # links remain Internet links and must satisfy the stricter policy
+            # on their next request instead of silently broadening access.
+            c.execute("UPDATE inventory_links SET connection_scope = 'local' WHERE lower(base_url) LIKE 'http://%'")
+        except sqlite3.OperationalError:
+            pass
         c.execute('''
             CREATE TABLE IF NOT EXISTS backup_runs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -14707,28 +14770,27 @@ def inventory_links_api():
     auth_mode = data.get("authMode") or "apiKey"
     verify_tls = bool(data.get("verifyTls", True))
     allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    connection_scope = data.get("connectionScope") or "internet"
     secret = data.get("secret") or ""
 
     if not display_name:
         return jsonify({"error": "Display-Name ist erforderlich."}), 400
     if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
-    if auth_mode != "none" and not secret:
+    if auth_mode not in {"none", "login"} and not secret:
         return jsonify({"error": "Secret ist erforderlich."}), 400
-    if auth_mode == "login":
+    if auth_mode == "login" and secret:
         try:
             parse_inventory_link_login_secret(secret)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
     try:
-        normalized = normalize_inventory_link_base_url(base_url)
-        validate_inventory_link_target(normalized, allow_private_network)
+        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-
-    if normalized.startswith("http://"):
-        verify_tls = True
 
     try:
         secret_encrypted = encrypt_inventory_link_secret(secret) if secret else ""
@@ -14740,12 +14802,12 @@ def inventory_links_api():
         '''
         INSERT INTO inventory_links (
             id, user_id, display_name, base_url, verify_tls, auth_mode, secret_encrypted,
-            allow_private_network, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            allow_private_network, connection_scope, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ''',
         (
             link_id, user["id"], display_name, normalized, 1 if verify_tls else 0,
-            auth_mode, secret_encrypted, 1 if allow_private_network else 0
+            auth_mode, secret_encrypted, 1 if allow_private_network else 0, connection_scope
         )
     )
     log_activity(db, "create", "inventory_link", details={"link_id": link_id, "display_name": display_name})
@@ -14766,22 +14828,23 @@ def inventory_links_test_draft():
     auth_mode = data.get("authMode") or "apiKey"
     verify_tls = bool(data.get("verifyTls", True))
     allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    connection_scope = data.get("connectionScope") or "internet"
     secret = data.get("secret") or ""
     if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
     try:
-        normalized = normalize_inventory_link_base_url(base_url)
-        validate_inventory_link_target(normalized, allow_private_network)
+        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    if normalized.startswith("http://"):
-        verify_tls = True
     result = perform_inventory_link_test({
         "base_url": normalized,
         "verify_tls": verify_tls,
         "auth_mode": auth_mode,
         "secret": secret,
-        "allow_private_network": allow_private_network
+        "allow_private_network": allow_private_network,
+        "connection_scope": connection_scope,
     })
     return jsonify(result), 200
 
@@ -14809,15 +14872,14 @@ def inventory_link_detail_api(link_id):
     auth_mode = data.get("authMode") or link["auth_mode"]
     verify_tls = bool(data.get("verifyTls", bool(link["verify_tls"])))
     allow_private_network = bool(data.get("allowPrivateNetwork", bool(link["allow_private_network"])))
+    connection_scope = data.get("connectionScope") or (link["connection_scope"] or "internet")
     secret = data.get("secret")
 
     if not display_name:
         return jsonify({"error": "Display-Name ist erforderlich."}), 400
     if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
         return jsonify({"error": "Ungültiger Auth-Modus."}), 400
-    if auth_mode == "login" and secret is None:
-        if not link["secret_encrypted"]:
-            return jsonify({"error": "Secret ist erforderlich."}), 400
+    if auth_mode == "login" and secret is None and link["secret_encrypted"]:
         try:
             existing_secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
             parse_inventory_link_login_secret(existing_secret)
@@ -14830,17 +14892,15 @@ def inventory_link_detail_api(link_id):
             return jsonify({"error": str(exc)}), 400
 
     try:
-        normalized = normalize_inventory_link_base_url(base_url)
-        validate_inventory_link_target(normalized, allow_private_network)
+        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    if normalized.startswith("http://"):
-        verify_tls = True
-
     secret_encrypted = link["secret_encrypted"]
     if secret is not None:
-        if auth_mode != "none" and not secret and not secret_encrypted:
+        if auth_mode not in {"none", "login"} and not secret and not secret_encrypted:
             return jsonify({"error": "Secret ist erforderlich."}), 400
         if secret:
             try:
@@ -14854,12 +14914,12 @@ def inventory_link_detail_api(link_id):
         '''
         UPDATE inventory_links
         SET display_name = ?, base_url = ?, verify_tls = ?, auth_mode = ?, secret_encrypted = ?,
-            allow_private_network = ?, updated_at = CURRENT_TIMESTAMP
+            allow_private_network = ?, connection_scope = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ? AND user_id = ?
         ''',
         (
             display_name, normalized, 1 if verify_tls else 0, auth_mode, secret_encrypted,
-            1 if allow_private_network else 0, link_id, user["id"]
+            1 if allow_private_network else 0, connection_scope, link_id, user["id"]
         )
     )
     log_activity(db, "update", "inventory_link", details={"link_id": link_id})
@@ -14889,7 +14949,8 @@ def inventory_link_test_api(link_id):
         "verify_tls": bool(link["verify_tls"]),
         "auth_mode": link["auth_mode"],
         "secret": secret,
-        "allow_private_network": bool(link["allow_private_network"])
+        "allow_private_network": bool(link["allow_private_network"]),
+        "connection_scope": link["connection_scope"] or "internet",
     })
     status_label = result.get("status")
     update_inventory_link_health(db, link_id, status_label)
@@ -14931,7 +14992,10 @@ def inventory_link_auth_login(link_id):
     if not username or not password:
         return jsonify({"error": "Benutzername und Passwort erforderlich."}), 400
     try:
-        validate_inventory_link_target(link["base_url"], bool(link["allow_private_network"]))
+        validate_inventory_link_configuration(
+            link["base_url"], link["connection_scope"] or "internet",
+            bool(link["verify_tls"]), bool(link["allow_private_network"])
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     secret = f"{username}:{password}"
@@ -14976,7 +15040,10 @@ def inventory_link_proxy(link_id, subpath):
         return jsonify({"error": "Link nicht gefunden."}), 404
 
     try:
-        validate_inventory_link_target(link["base_url"], bool(link["allow_private_network"]))
+        validate_inventory_link_configuration(
+            link["base_url"], link["connection_scope"] or "internet",
+            bool(link["verify_tls"]), bool(link["allow_private_network"])
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
