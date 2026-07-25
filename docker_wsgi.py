@@ -9,6 +9,7 @@ with inventory_app.app.app_context():
     if not runtime or runtime == inventory_app.DEFAULT_SERVER_SETTINGS["server"]:
         runtime = settings["server"]
         inventory_app.store_runtime_settings(runtime)
+    inventory_app.store_update_policy(settings["updates"])
     inventory_app.RUNTIME_SETTINGS_CACHE = runtime
     inventory_app.schedule_backup_jobs(settings)
     inventory_app.schedule_health_jobs()

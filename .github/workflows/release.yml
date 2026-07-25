@@ -1,0 +1,80 @@
+name: Release Inventory Pro
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: inventorypro-release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare release metadata
+        id: meta
+        shell: bash
+        run: |
+          image_name="ghcr.io/${GITHUB_REPOSITORY,,}"
+          version="0.0.${GITHUB_RUN_NUMBER}"
+          echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate package registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish immutable application image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+          tags: |
+            ${{ steps.meta.outputs.image_name }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image_name }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Create signed update manifest
+        env:
+          INVENTORY_UPDATE_SIGNING_KEY: ${{ secrets.INVENTORY_UPDATE_SIGNING_KEY }}
+        run: |
+          python -m pip install --disable-pip-version-check --quiet cryptography
+          python scripts/sign_release_manifest.py \
+            --version "${{ steps.meta.outputs.version }}" \
+            --image "${{ steps.meta.outputs.image_name }}@${{ steps.image.outputs.digest }}" \
+            --release-url "${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.meta.outputs.version }}" \
+            --output update-manifest.json
+
+      - name: Package deployment source
+        run: |
+          git archive --format=tar.gz --output "inventorypro-${{ steps.meta.outputs.version }}.tar.gz" "${GITHUB_SHA}"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.meta.outputs.version }}" \
+            --target "${GITHUB_SHA}" \
+            --title "Inventory Pro v${{ steps.meta.outputs.version }}" \
+            --generate-notes \
+            update-manifest.json "inventorypro-${{ steps.meta.outputs.version }}.tar.gz"

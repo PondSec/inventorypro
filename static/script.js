@@ -41,6 +41,19 @@ document.addEventListener('alpine:init', () => {
             open: 0,
             overdue: 0
         },
+        enterpriseWorkflow: {
+            score: 100,
+            integration_score: 100,
+            status_label: 'Lädt',
+            signals: [],
+            next_actions: [],
+            summary: {
+                devices: 0,
+                assets: 0,
+                linked_assets: 0,
+                issues: 0
+            }
+        },
         activityFeed: [],
         selectedDevice: null,
         deviceDetailOpen: false,
@@ -187,6 +200,7 @@ document.addEventListener('alpine:init', () => {
             await this.loadPurchaseOrders();
             await this.loadFeatureFlags();
             await this.loadMaintenanceSummary();
+            await this.loadEnterpriseWorkflow();
             await this.loadActivityFeed();
             await this.checkOTPStatus();
             this.loadIconCatalog();
@@ -301,6 +315,17 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async loadEnterpriseWorkflow() {
+            try {
+                const response = await fetch('/api/enterprise/workflow-hub');
+                if (response.ok) {
+                    this.enterpriseWorkflow = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading enterprise workflow hub:', error);
+            }
+        },
+
         async loadActivityFeed() {
             try {
                 const response = await fetch('/api/activity');
@@ -316,6 +341,7 @@ document.addEventListener('alpine:init', () => {
             setInterval(async () => {
                 await this.loadActivityFeed();
                 await this.loadMaintenanceSummary();
+                await this.loadEnterpriseWorkflow();
             }, 15000);
         },
 

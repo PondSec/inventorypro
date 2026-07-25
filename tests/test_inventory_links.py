@@ -5,6 +5,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from cryptography.fernet import Fernet
 
@@ -155,6 +156,37 @@ class InventoryLinksTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             inventory_app.validate_inventory_link_target("http://192.168.1.10:5001", False)
 
+    def test_connection_scope_enforces_separate_internet_and_lan_policies(self):
+        with patch.object(inventory_app, "resolve_inventory_link_ips", return_value=["8.8.8.8"]):
+            normalized, scope, verify_tls, allow_private = inventory_app.validate_inventory_link_configuration(
+                "https://inventory.example", "internet", True, False
+            )
+            self.assertEqual(normalized, "https://inventory.example")
+            self.assertEqual(scope, "internet")
+            self.assertTrue(verify_tls)
+            self.assertFalse(allow_private)
+            with self.assertRaisesRegex(ValueError, "HTTPS"):
+                inventory_app.validate_inventory_link_configuration(
+                    "http://inventory.example", "internet", True, False
+                )
+            with self.assertRaisesRegex(ValueError, "TLS"):
+                inventory_app.validate_inventory_link_configuration(
+                    "https://inventory.example", "internet", False, False
+                )
+
+        with patch.object(inventory_app, "resolve_inventory_link_ips", return_value=["192.168.30.4"]):
+            _, scope, _, allow_private = inventory_app.validate_inventory_link_configuration(
+                "http://192.168.30.4:5050", "local", False, True
+            )
+            self.assertEqual(scope, "local")
+            self.assertTrue(allow_private)
+
+        with patch.object(inventory_app, "resolve_inventory_link_ips", return_value=["8.8.4.4"]):
+            with self.assertRaisesRegex(ValueError, "private LAN"):
+                inventory_app.validate_inventory_link_configuration(
+                    "https://inventory.example", "local", True, True
+                )
+
     def test_proxy_forwards_headers_and_redirects(self):
         inventory_app.os.environ["INVENTORY_LINKS_ALLOW_LOOPBACK"] = "1"
         host_ip = self.get_local_ip()
@@ -170,10 +202,10 @@ class InventoryLinksTestCase(unittest.TestCase):
                     '''
                     INSERT INTO inventory_links (
                         id, user_id, display_name, base_url, verify_tls, auth_mode, secret_encrypted,
-                        allow_private_network
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        allow_private_network, connection_scope
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''',
-                    (link_id, user["id"], "Test", base_url, 1, "apiKey", secret_encrypted, 1)
+                    (link_id, user["id"], "Test", base_url, 1, "apiKey", secret_encrypted, 1, "local")
                 )
                 db.commit()
 
@@ -215,10 +247,10 @@ class InventoryLinksTestCase(unittest.TestCase):
                     '''
                     INSERT INTO inventory_links (
                         id, user_id, display_name, base_url, verify_tls, auth_mode, secret_encrypted,
-                        allow_private_network
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        allow_private_network, connection_scope
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''',
-                    ("rewrite-link", user["id"], "Rewrite", base_url, 1, "none", "", 1)
+                    ("rewrite-link", user["id"], "Rewrite", base_url, 1, "none", "", 1, "local")
                 )
                 db.commit()
 
