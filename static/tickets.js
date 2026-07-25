@@ -98,6 +98,7 @@ document.addEventListener('alpine:init', () => {
         ],
         detailTabs: [
             { key: 'conversation', label: 'Konversation' },
+            { key: 'knowledge', label: 'Wissen & ähnliche Fälle' },
             { key: 'activity', label: 'Aktivitäten' },
             { key: 'attachments', label: 'Anhänge' }
         ],
@@ -1050,6 +1051,10 @@ document.addEventListener('alpine:init', () => {
         tabCount(key) {
             if (!this.selectedTicket) return 0;
             if (key === 'conversation') return (this.selectedTicket.comments || []).length;
+            if (key === 'knowledge') {
+                const context = this.selectedTicket.work_context || {};
+                return (context.knowledge_entries || []).length + (context.similar_resolved_tickets || []).length;
+            }
             if (key === 'attachments') return this.attachments.length;
             if (key === 'activity') return (this.selectedTicket.activity || []).length;
             return 0;
