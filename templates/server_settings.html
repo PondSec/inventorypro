@@ -297,6 +297,46 @@
                             <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
                                 <div class="flex items-center gap-3">
                                     <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                        <i data-feather="refresh-cw" class="h-5 w-5"></i>
+                                    </span>
+                                    <div>
+                                        <h2 class="text-xl font-semibold text-slate-900">Signierte Updates</h2>
+                                        <p class="text-sm text-slate-500">Automatische Updates werden nur aus dem Stable-Kanal akzeptiert, vor dem Wechsel gesichert und nach dem Start geprüft.</p>
+                                    </div>
+                                </div>
+
+                                <label class="mt-6 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                    <input type="checkbox" x-model="settings.updates.autoUpdateEnabled" aria-label="Automatische Updates aktivieren" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                    <div>
+                                        <p class="text-sm font-semibold text-slate-700">Automatische Updates aktivieren</p>
+                                        <p class="text-xs text-slate-500">Nur mit bereitgestelltem Updater-Dienst. Bei Signatur-, Backup- oder Healthcheck-Fehlern bleibt die aktuelle Version aktiv oder wird zurückgesetzt.</p>
+                                    </div>
+                                </label>
+
+                                <div class="mt-6 grid gap-6 md:grid-cols-3">
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Kanal</label>
+                                        <select x-model="settings.updates.channel" aria-label="Update-Kanal" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                            <option value="stable">Stable – signierte Releases</option>
+                                        </select>
+                                        <p class="text-xs text-slate-400">Vorschau- und unsignierte Kanäle sind bewusst gesperrt.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Prüfintervall (Minuten)</label>
+                                        <input type="number" min="15" max="1440" step="15" x-model.number="settings.updates.checkIntervalMinutes" aria-label="Update-Prüfintervall in Minuten" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">Der Updater lädt keine Daten aus der Anwendung hoch.</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-semibold text-slate-700">Wartungsfenster</label>
+                                        <input type="time" x-model="settings.updates.maintenanceWindow" aria-label="Wartungsfenster für Updates" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">Installationen erfolgen nur innerhalb dieses Fensters.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                         <i data-feather="database" class="h-5 w-5"></i>
                                     </span>
                                     <div>
@@ -1401,6 +1441,12 @@
                         notifyEmail: '',
                         encrypt: false
                     },
+                    updates: {
+                        autoUpdateEnabled: false,
+                        channel: 'stable',
+                        checkIntervalMinutes: 360,
+                        maintenanceWindow: '03:30'
+                    },
                     importExport: {
                         exportAllowed: true,
                         importAllowed: false,
@@ -1748,6 +1794,12 @@
                     }
                     if (this.settings.backup.notifyEmail && !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(this.settings.backup.notifyEmail)) {
                         return 'E-Mail-Adresse ist ungültig.';
+                    }
+                    if (!Number.isInteger(this.settings.updates.checkIntervalMinutes) || this.settings.updates.checkIntervalMinutes < 15 || this.settings.updates.checkIntervalMinutes > 1440) {
+                        return 'Update-Prüfintervall muss zwischen 15 und 1440 Minuten liegen.';
+                    }
+                    if (!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(this.settings.updates.maintenanceWindow || '')) {
+                        return 'Update-Wartungsfenster muss im Format HH:MM sein.';
                     }
                     if (!Number.isInteger(this.settings.security.sessionTimeoutMinutes)) {
                         return 'Session-Timeout muss eine Zahl sein.';
