@@ -24,7 +24,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +79,11 @@ def configure_logging() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
+
+
+def utc_now() -> datetime:
+    """Return the current UTC time without timezone metadata for stored state."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def load_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -336,7 +341,7 @@ def backup_database(target_version: str) -> Path:
     database_path = DATA_PATH / "inventory.db"
     if not database_path.exists():
         raise UpdateError("Produktivdatenbank für Update-Backup nicht gefunden.")
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    timestamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
     backup_directory = DATA_PATH / "backups" / "updates" / f"{timestamp}-{target_version}"
     backup_directory.mkdir(parents=True, exist_ok=False)
     os.chmod(backup_directory, 0o700)
@@ -396,7 +401,7 @@ def deploy_image(image: str) -> None:
 
 def write_state(state: dict[str, Any], **changes: Any) -> None:
     state.update(changes)
-    state["updatedAt"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    state["updatedAt"] = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     atomic_write_json(STATE_PATH, state)
 
 
