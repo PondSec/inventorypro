@@ -18,7 +18,6 @@ import time
 import subprocess
 import socket
 import stat
-import http.cookiejar
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -74,6 +73,11 @@ from inventorypro.domains.inventory_links.repository import (
     list_inventory_links,
     serialize_inventory_link,
     update_inventory_link_health,
+)
+from inventorypro.domains.inventory_links.service import (
+    InventoryLinkConnectionError as InventoryLinkServiceConnectionError,
+    InventoryLinkNoRedirect as InventoryLinkServiceNoRedirect,
+    InventoryLinkSessionService,
 )
 from inventorypro.domains.inventory_links.validators import (
     can_manage_local_inventory_links,
@@ -1439,118 +1443,6 @@ def is_ip_allowed(remote_ip, allowlist):
             continue
     return False
 
-def extract_inventory_link_cookie_header(cookie_jar):
-    cookies = []
-    expiry_candidates = []
-    for cookie in cookie_jar:
-        cookies.append(f"{cookie.name}={cookie.value}")
-        if cookie.expires:
-            expiry_candidates.append(cookie.expires)
-    if not cookies:
-        return None, None
-    expires_at = min(expiry_candidates) if expiry_candidates else None
-    return "; ".join(cookies), expires_at
-
-class InventoryLinkConnectionError(RuntimeError):
-    pass
-
-def get_cached_inventory_link_cookie(link, user_id):
-    cache_key = f"{user_id}:{link['id']}"
-    cached = INVENTORY_LINK_LOGIN_SESSION_CACHE.get(cache_key)
-    if not cached:
-        return None
-    if cached["expires_at"] is None or cached["expires_at"] > time.time():
-        return cached["cookie"]
-    INVENTORY_LINK_LOGIN_SESSION_CACHE.pop(cache_key, None)
-    return None
-
-def login_inventory_link_session(base_url, verify_tls, secret):
-    username, password = parse_inventory_link_login_secret(secret)
-    login_url = urllib.parse.urljoin(f"{base_url.rstrip('/')}/", "login")
-    payload = urllib.parse.urlencode({"username": username, "password": password}).encode("utf-8")
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "text/html",
-        "User-Agent": "InventoryPro-Link/1.0"
-    }
-    cookie_jar = http.cookiejar.CookieJar()
-    handlers = [
-        urllib.request.ProxyHandler({}),
-        urllib.request.HTTPCookieProcessor(cookie_jar)
-    ]
-    context = None
-    if base_url.startswith("https://"):
-        context = build_inventory_link_ssl_context(verify_tls)
-        handlers.append(urllib.request.HTTPSHandler(context=context))
-    opener = urllib.request.build_opener(*handlers)
-    req = urllib.request.Request(login_url, data=payload, headers=headers, method="POST")
-    try:
-        opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS).read(1024)
-    except urllib.error.HTTPError as exc:
-        if exc.code in {401, 403}:
-            raise ValueError("Login fehlgeschlagen. Prüfe Benutzername/Passwort.") from exc
-        raise InventoryLinkConnectionError(f"Login fehlgeschlagen (HTTP {exc.code}).") from exc
-    except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
-        reason = getattr(exc, "reason", exc)
-        raise InventoryLinkConnectionError(f"Login-Verbindung fehlgeschlagen: {reason}") from exc
-    cookie_header, expires_at = extract_inventory_link_cookie_header(cookie_jar)
-    return cookie_header, expires_at
-
-def get_inventory_link_login_cookie(link, secret, user_id):
-    cached_cookie = get_cached_inventory_link_cookie(link, user_id)
-    if cached_cookie:
-        return cached_cookie
-    cache_key = f"{user_id}:{link['id']}"
-    cookie_header, expires_at = login_inventory_link_session(
-        link["base_url"],
-        bool(link["verify_tls"]),
-        secret
-    )
-    if not cookie_header:
-        raise ValueError("Login fehlgeschlagen. Prüfe Benutzername/Passwort.")
-    INVENTORY_LINK_LOGIN_SESSION_CACHE.set(cache_key, {
-        "cookie": cookie_header,
-        "expires_at": expires_at or (time.time() + INVENTORY_LINK_LOGIN_TTL_SECONDS)
-    }, INVENTORY_LINK_LOGIN_TTL_SECONDS)
-    return cookie_header
-
-def build_inventory_link_target_url(base_url, subpath, query_string):
-    base = base_url.rstrip("/")
-    if subpath:
-        target = f"{base}/{subpath}"
-    else:
-        target = f"{base}/"
-    if query_string:
-        query = query_string.decode("utf-8") if isinstance(query_string, (bytes, bytearray)) else str(query_string)
-        target = f"{target}?{query}"
-    return target
-
-def build_inventory_link_request_headers(auth_mode, secret, link=None, user_id=None):
-    headers = {}
-    for key, value in request.headers.items():
-        lower = key.lower()
-        if lower in {
-            "host", "origin", "referer", "cookie", "authorization", "proxy-authorization",
-            "content-length", "accept-encoding"
-        }:
-            continue
-        headers[key] = value
-    if auth_mode == "apiKey":
-        headers["X-API-Key"] = secret
-    elif auth_mode == "bearerToken":
-        headers["Authorization"] = f"Bearer {secret}"
-    elif auth_mode == "basic":
-        encoded = base64.b64encode(secret.encode("utf-8")).decode("utf-8")
-        headers["Authorization"] = f"Basic {encoded}"
-    elif auth_mode == "login" and link and user_id:
-        if secret:
-            cookie_header = get_inventory_link_login_cookie(link, secret, user_id)
-        else:
-            cookie_header = get_cached_inventory_link_cookie(link, user_id)
-        if cookie_header:
-            headers["Cookie"] = cookie_header
-    return headers
-
 def rewrite_inventory_link_location(location, link_id, base_url):
     if not location:
         return None
@@ -1904,94 +1796,20 @@ def filter_inventory_link_response_headers(headers, link_id, base_url):
         filtered[key] = value
     return filtered
 
-def build_inventory_link_ssl_context(verify_tls):
-    if verify_tls:
-        return ssl.create_default_context()
-    context = ssl.create_default_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    return context
-
 def stream_inventory_link_response(resp):
     def generate():
         try:
             while True:
-                chunk = resp.read(8192)
+                try:
+                    chunk = resp.read(8192)
+                except OSError:
+                    break
                 if not chunk:
                     break
                 yield chunk
         finally:
             resp.close()
     return generate()
-
-def build_inventory_link_static_headers(auth_mode, secret, base_url=None, verify_tls=True):
-    headers = {"Accept": "application/json"}
-    if auth_mode == "apiKey":
-        headers["X-API-Key"] = secret
-    elif auth_mode == "bearerToken":
-        headers["Authorization"] = f"Bearer {secret}"
-    elif auth_mode == "basic":
-        encoded = base64.b64encode(secret.encode("utf-8")).decode("utf-8")
-        headers["Authorization"] = f"Basic {encoded}"
-    elif auth_mode == "login" and base_url and secret:
-        cookie_header, _ = login_inventory_link_session(base_url, verify_tls, secret)
-        if cookie_header:
-            headers["Cookie"] = cookie_header
-    return headers
-
-def perform_inventory_link_test(config):
-    base_url = config.get("base_url") or ""
-    auth_mode = config.get("auth_mode") or "apiKey"
-    secret = config.get("secret") or ""
-    verify_tls = bool(config.get("verify_tls", True))
-    allow_private_network = bool(config.get("allow_private_network", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
-    connection_scope = config.get("connection_scope") or "internet"
-    try:
-        validate_inventory_link_configuration(
-            base_url, connection_scope, verify_tls, allow_private_network
-        )
-    except ValueError as exc:
-        return {"status": "down", "error": str(exc)}
-
-    try:
-        headers = build_inventory_link_static_headers(auth_mode, secret, base_url=base_url, verify_tls=verify_tls)
-    except ValueError as exc:
-        return {"status": "unauthorized", "error": str(exc)}
-    except InventoryLinkConnectionError as exc:
-        return {"status": "down", "error": str(exc)}
-    paths = ["/api/health/summary", "/"]
-    last_error = None
-    for path in paths:
-        target_url = f"{base_url.rstrip('/')}{path}"
-        req = urllib.request.Request(target_url, headers=headers, method="GET")
-        context = None
-        if base_url.startswith("https://"):
-            context = build_inventory_link_ssl_context(verify_tls)
-        handlers = [urllib.request.ProxyHandler({}), InventoryLinkNoRedirect()]
-        if context is not None:
-            handlers.append(urllib.request.HTTPSHandler(context=context))
-        opener = urllib.request.build_opener(*handlers)
-        try:
-            resp = opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS)
-            status_code = resp.getcode()
-            payload = resp.read(4096)
-            info = {"statusCode": status_code}
-            content_type = resp.headers.get("Content-Type", "")
-            if "application/json" in content_type:
-                try:
-                    info.update(json.loads(payload.decode("utf-8")))
-                except json.JSONDecodeError:
-                    pass
-            return {"status": "ok", "message": "Verbindung erfolgreich.", "info": info}
-        except urllib.error.HTTPError as exc:
-            if exc.code in {401, 403}:
-                return {"status": "unauthorized", "error": "Nicht autorisiert."}
-            last_error = f"HTTP {exc.code}"
-        except ssl.SSLError as exc:
-            return {"status": "down", "error": f"TLS-Fehler: {str(exc)}"}
-        except urllib.error.URLError as exc:
-            last_error = str(exc.reason)
-    return {"status": "down", "error": last_error or "Verbindung fehlgeschlagen."}
 
 REDACT_PATTERNS = [
     re.compile(r"(?i)(password|passphrase|token|secret|api_key|apikey|authorization|bearer|private_key|dsn|connection string)\\s*[:=]\\s*([^\\s,;]+)"),
@@ -14663,10 +14481,6 @@ def server_settings_history():
         })
     return jsonify({"revisions": revisions})
 
-class InventoryLinkNoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
 @app.route('/api/ad/settings', methods=['GET'])
 @login_required
 def ad_settings():
@@ -15818,6 +15632,24 @@ def otp_status():
     user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
     return jsonify({'enabled': bool(user and user['otp_secret'])})
 
+
+INVENTORY_LINK_SESSION_SERVICE = InventoryLinkSessionService(
+    login_session_cache=INVENTORY_LINK_LOGIN_SESSION_CACHE,
+    login_ttl_seconds=INVENTORY_LINK_LOGIN_TTL_SECONDS,
+    proxy_timeout_seconds=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS,
+    allow_private_network_default=INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT,
+)
+extract_inventory_link_cookie_header = INVENTORY_LINK_SESSION_SERVICE.extract_cookie_header
+get_cached_inventory_link_cookie = INVENTORY_LINK_SESSION_SERVICE.get_cached_cookie
+login_inventory_link_session = INVENTORY_LINK_SESSION_SERVICE.login
+get_inventory_link_login_cookie = INVENTORY_LINK_SESSION_SERVICE.get_login_cookie
+build_inventory_link_target_url = INVENTORY_LINK_SESSION_SERVICE.build_target_url
+build_inventory_link_request_headers = INVENTORY_LINK_SESSION_SERVICE.build_request_headers
+build_inventory_link_ssl_context = INVENTORY_LINK_SESSION_SERVICE.build_ssl_context
+build_inventory_link_static_headers = INVENTORY_LINK_SESSION_SERVICE.build_static_headers
+perform_inventory_link_test = INVENTORY_LINK_SESSION_SERVICE.perform_test
+InventoryLinkConnectionError = InventoryLinkServiceConnectionError
+InventoryLinkNoRedirect = InventoryLinkServiceNoRedirect
 
 app.register_blueprint(
     build_backups_blueprint(
