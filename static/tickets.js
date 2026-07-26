@@ -721,8 +721,9 @@ document.addEventListener('alpine:init', () => {
                 ? [...(this.selectedTicket?.asset_ids || [])]
                 : [...this.newTicket.asset_ids];
             this.assetPickerOpen = true;
+            await this.$nextTick();
+            this.$refs.assetSearch?.focus();
             await this.loadAssetOptions();
-            this.$nextTick(() => this.$refs.assetSearch?.focus());
         },
 
         closeAssetPicker() {
