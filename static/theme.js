@@ -172,6 +172,62 @@
       },
       compactSidebar: false,
     },
+    navigation: {
+      groups: {
+        legacyPrimary: 'Hauptbereiche',
+        assetOperations: 'Asset Operations',
+        serviceWorkflow: 'Service & Workflow',
+        legacyAnalysis: 'Auswertung',
+        analysisPlatform: 'Analyse & Plattform',
+        linkedInstances: 'Verknüpfte Instanzen',
+        administration: 'Administration',
+      },
+      items: {
+        dashboard: { label: 'Dashboard', visible: true, order: 10 },
+        devices: { label: 'Geräte', visible: true, order: 20 },
+        assets: { label: 'Assets', visible: true, order: 30 },
+        categories: { label: 'Kategorien', visible: true, order: 40 },
+        locations: { label: 'Standorte', visible: true, order: 50 },
+        tickets: { label: 'Ticketsystem', visible: true, order: 60 },
+        knowledge: { label: 'Wissensbasis', visible: true, order: 70 },
+        roadmap: { label: 'Roadmap', visible: true, order: 80 },
+        procurement: { label: 'Beschaffung', visible: true, order: 90 },
+        statistics: { label: 'Statistiken', visible: true, order: 100 },
+        dependencies: { label: 'Abhängigkeiten', visible: true, order: 110 },
+        timeMachine: { label: 'Zeitmaschine', visible: true, order: 120 },
+        health: { label: 'Health', visible: true, order: 130 },
+        users: { label: 'Benutzer & Rollen', visible: true, order: 140 },
+        settings: { label: 'Einstellungen', visible: true, order: 150 },
+      },
+    },
+  };
+
+  const navigationTargets = {
+    dashboard: ['/', '/?view=overview'],
+    devices: ['/?view=devices'],
+    assets: ['/?view=assets'],
+    categories: ['/?view=taxonomy'],
+    locations: ['/locations'],
+    tickets: ['/tickets'],
+    knowledge: ['/knowledge'],
+    roadmap: ['/roadmap'],
+    procurement: ['/procurement'],
+    statistics: ['/stats'],
+    dependencies: ['/dependencies'],
+    timeMachine: ['/time-machine'],
+    health: ['/health'],
+    users: ['/users'],
+    settings: ['/settings'],
+  };
+
+  const navigationGroupDefaults = {
+    legacyPrimary: 'Hauptbereiche',
+    assetOperations: 'Asset Operations',
+    serviceWorkflow: 'Service & Workflow',
+    legacyAnalysis: 'Auswertung',
+    analysisPlatform: 'Analyse & Plattform',
+    linkedInstances: 'Verknüpfte Instanzen',
+    administration: 'Administration',
   };
 
   if (initial === 'dark') {
@@ -523,6 +579,69 @@
     favicon.href = faviconDataUrl;
   };
 
+  const navigationIdForLink = (link) => {
+    const href = link.getAttribute('href');
+    if (!href || href.startsWith('#')) return null;
+    const target = new URL(href, window.location.origin);
+    const relativeTarget = `${target.pathname}${target.search}`;
+    return Object.entries(navigationTargets).find(([, targets]) => targets.includes(relativeTarget))?.[0] || null;
+  };
+
+  const updateNavigationLabel = (link, label) => {
+    const explicitLabel = link.querySelector('.sidebar-text');
+    if (explicitLabel) {
+      explicitLabel.textContent = label;
+      return;
+    }
+    const icon = link.querySelector('.sidebar-link-icon');
+    const labelContainer = icon && icon.parentElement;
+    if (!labelContainer) return;
+    const textNode = Array.from(labelContainer.childNodes).find((node) => (
+      node.nodeType === Node.TEXT_NODE && node.textContent.trim()
+    ));
+    if (textNode) {
+      textNode.textContent = ` ${label}`;
+    }
+  };
+
+  const applyNavigationCustomization = (customization) => {
+    const navigation = customization.navigation || defaultCustomization.navigation;
+    const itemSettings = navigation.items || {};
+    const groupSettings = navigation.groups || {};
+    const sortableContainers = new Set();
+
+    document.querySelectorAll('.app-sidebar .sidebar-link, .sidebar .sidebar-link').forEach((link) => {
+      const itemId = link.dataset.navigationItem || navigationIdForLink(link);
+      if (!itemId || !itemSettings[itemId]) return;
+      link.dataset.navigationItem = itemId;
+      const item = itemSettings[itemId];
+      link.hidden = item.visible === false;
+      link.setAttribute('aria-hidden', item.visible === false ? 'true' : 'false');
+      updateNavigationLabel(link, item.label);
+      if (link.parentElement) sortableContainers.add(link.parentElement);
+    });
+
+    document.querySelectorAll('.app-sidebar .sidebar-panel, .sidebar .sidebar-panel').forEach((panel) => {
+      const title = panel.querySelector('.sidebar-panel-title');
+      if (!title) return;
+      const groupId = panel.dataset.navigationGroup || Object.entries(navigationGroupDefaults).find(([, label]) => (
+        label === title.textContent.trim()
+      ))?.[0];
+      if (!groupId || !groupSettings[groupId]) return;
+      panel.dataset.navigationGroup = groupId;
+      title.textContent = groupSettings[groupId];
+    });
+
+    sortableContainers.forEach((container) => {
+      const links = Array.from(container.children).filter((child) => (
+        child.matches('.sidebar-link') && child.dataset.navigationItem
+      ));
+      links.sort((left, right) => (
+        itemSettings[left.dataset.navigationItem].order - itemSettings[right.dataset.navigationItem].order
+      )).forEach((link) => container.appendChild(link));
+    });
+  };
+
   const applyBrandingContent = (customization) => {
     const branding = customization.branding;
     document.querySelectorAll('[data-brand-name]').forEach((element) => {
@@ -553,6 +672,7 @@
       }
     });
     applyFavicon(branding.faviconDataUrl || logoForCurrentTheme(branding));
+    applyNavigationCustomization(customization);
     if (branding.name && document.title.includes(defaultCustomization.branding.name)) {
       document.title = document.title.replace(defaultCustomization.branding.name, branding.name);
     }

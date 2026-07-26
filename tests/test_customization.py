@@ -57,6 +57,7 @@ class CustomizationTestCase(unittest.TestCase):
         self.assertEqual(migrated["baseTokens"]["colors"]["primary"], "#111111")
         self.assertEqual(migrated["componentOverrides"]["button"]["primary"]["background"], "#444444")
         self.assertEqual(migrated["layoutPrefs"]["formSpacing"], 18)
+        self.assertEqual(migrated["navigation"]["items"]["dashboard"]["label"], "Dashboard")
 
     def test_validate_customization(self):
         valid, errors = inventory_app.validate_customization(inventory_app.DEFAULT_CUSTOMIZATION)
@@ -83,6 +84,29 @@ class CustomizationTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("branding.faviconDataUrl", response.get_json()["details"][0])
+
+    def test_customize_navigation_is_persisted_and_validated(self):
+        payload = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        payload["navigation"]["items"]["locations"] = {
+            "label": "Niederlassungen",
+            "visible": False,
+            "order": 25,
+        }
+        payload["navigation"]["groups"]["legacyPrimary"] = "Mein Inventar"
+
+        response = self.client.put('/api/customize', json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        saved = response.get_json()["customization"]["navigation"]
+        self.assertEqual(saved["items"]["locations"]["label"], "Niederlassungen")
+        self.assertFalse(saved["items"]["locations"]["visible"])
+        self.assertEqual(saved["items"]["locations"]["order"], 25)
+        self.assertEqual(saved["groups"]["legacyPrimary"], "Mein Inventar")
+
+        payload["navigation"]["items"]["locations"]["order"] = 1000
+        invalid = self.client.put('/api/customize', json=payload)
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("navigation.items.locations.order", invalid.get_json()["details"][0])
 
     def test_customize_persistence(self):
         payload = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)

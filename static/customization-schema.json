@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "InventoryProCustomization",
   "type": "object",
-  "required": ["schemaVersion", "branding", "baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs"],
+  "required": ["schemaVersion", "branding", "baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs", "navigation"],
   "properties": {
     "schemaVersion": { "type": "integer", "const": 1 },
     "branding": {
@@ -30,6 +30,14 @@
     },
     "componentOverrides": { "type": "object" },
     "layoutPrefs": { "type": "object" },
-    "featurePrefs": { "type": "object" }
+    "featurePrefs": { "type": "object" },
+    "navigation": {
+      "type": "object",
+      "required": ["groups", "items"],
+      "properties": {
+        "groups": { "type": "object" },
+        "items": { "type": "object" }
+      }
+    }
   }
 }
