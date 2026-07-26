@@ -60,11 +60,11 @@ from inventorypro.domains.exports.service import (
 )
 from inventorypro.domains.imports.routes import build_import_profiles_blueprint
 from inventorypro.domains.imports.service import (
+    build_preview_proof_arguments,
     ImportPreviewProofService,
     ImportProfileService,
     ImportProfileValidationError,
-    parse_mapping,
-    parse_profile_id,
+    resolve_tabular_import_options,
 )
 from inventorypro.domains.locations.routes import build_locations_blueprint
 from inventorypro.domains.tickets.routes import build_ticket_pages_blueprint
@@ -2867,36 +2867,6 @@ def load_import_file(file_storage):
     file_storage.save(file_path)
     return file_path, None
 
-
-def tabular_import_options(db, form, entity):
-    """Resolve explicit form options and a reusable profile for one import."""
-    profile_id = parse_profile_id(form.get("profileId"))
-    profile_options = IMPORT_PROFILE_SERVICE.resolve(db, profile_id, entity)
-    mapping = (
-        parse_mapping(form.get("mapping"))
-        if form.get("mapping") is not None
-        else profile_options["mapping"]
-    )
-    matching_key = (form.get("matchingKey") or profile_options["matchingKey"] or None)
-    sheet_name = (form.get("sheetName") or profile_options["sheetName"] or None)
-    return {
-        "mapping": mapping,
-        "matchingKey": matching_key,
-        "sheetName": sheet_name,
-        "profileId": profile_options["profileId"],
-    }
-
-
-def preview_proof_arguments(content, filename, entity, options):
-    return {
-        "content": content,
-        "filename": filename,
-        "entity": entity,
-        "mapping": options["mapping"],
-        "matching_key": options["matchingKey"],
-        "sheet_name": options["sheetName"],
-        "actor": session.get("username", "system"),
-    }
 
 def validate_import_file(file_path):
     antivirus_cmd = os.environ.get("INVENTORY_ANTIVIRUS_COMMAND")
@@ -15599,10 +15569,10 @@ def import_data():
         if suffix == ".json" and entity:
             tabular_mode = (request.form.get("mode") or import_mode).strip().lower()
             content = file_path.read_bytes()
-            options = tabular_import_options(db, request.form, entity)
+            options = resolve_tabular_import_options(db, request.form, entity, IMPORT_PROFILE_SERVICE)
             IMPORT_PREVIEW_PROOF_SERVICE.verify(
                 request.form.get("previewToken"),
-                **preview_proof_arguments(content, file_path.name, entity, options),
+                **build_preview_proof_arguments(content, file_path.name, entity, options, session.get("username", "system")),
             )
             summary = import_tabular_file(
                 db,
@@ -15652,10 +15622,10 @@ def import_data():
         elif suffix in {".csv", ".tsv", ".xlsx"}:
             tabular_mode = (request.form.get("mode") or import_mode).strip().lower()
             content = file_path.read_bytes()
-            options = tabular_import_options(db, request.form, entity)
+            options = resolve_tabular_import_options(db, request.form, entity, IMPORT_PROFILE_SERVICE)
             IMPORT_PREVIEW_PROOF_SERVICE.verify(
                 request.form.get("previewToken"),
-                **preview_proof_arguments(content, file_path.name, entity, options),
+                **build_preview_proof_arguments(content, file_path.name, entity, options, session.get("username", "system")),
             )
             summary = import_tabular_file(
                 db,
@@ -15714,7 +15684,7 @@ def preview_import_data():
     try:
         entity = (request.form.get("entity") or "").strip().lower()
         content = file_path.read_bytes()
-        options = tabular_import_options(db, request.form, entity)
+        options = resolve_tabular_import_options(db, request.form, entity, IMPORT_PROFILE_SERVICE)
         parsed = parse_tabular_file(
             content,
             entity,
@@ -15739,7 +15709,13 @@ def preview_import_data():
             "sheetName": parsed.get("sheetName"),
         }
         preview["previewToken"] = IMPORT_PREVIEW_PROOF_SERVICE.issue(
-            **preview_proof_arguments(content, file_path.name, entity, verified_options),
+            **build_preview_proof_arguments(
+                content,
+                file_path.name,
+                entity,
+                verified_options,
+                session.get("username", "system"),
+            ),
         )
         log_activity(
             db,

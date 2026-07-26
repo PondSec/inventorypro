@@ -5,11 +5,13 @@ from unittest.mock import Mock
 from itsdangerous import SignatureExpired
 
 from inventorypro.domains.imports.service import (
+    build_preview_proof_arguments,
     ImportPreviewProofService,
     ImportProfileService,
     ImportProfileValidationError,
     parse_mapping,
     parse_profile_id,
+    resolve_tabular_import_options,
 )
 
 
@@ -154,3 +156,21 @@ class ImportProfileServiceTestCase(TestCase):
                 second["id"],
                 {"name": first["name"], "entity": "assets", "mapping": {}},
             )
+
+    def test_profile_options_and_preview_arguments_bind_explicit_values(self):
+        profile = self.service.create(
+            self.connection,
+            {"name": "Hardware", "entity": "devices", "mapping": {"name": "Computer"}, "matchingKey": "name"},
+            "admin",
+        )
+        options = resolve_tabular_import_options(
+            self.connection,
+            {"profileId": str(profile["id"]), "matchingKey": "name"},
+            "devices",
+            self.service,
+        )
+        self.assertEqual(options["mapping"], {"name": "Computer"})
+        self.assertEqual(options["matchingKey"], "name")
+        proof_arguments = build_preview_proof_arguments(b"name\nedge\n", "devices.csv", "devices", options, "admin")
+        self.assertEqual(proof_arguments["actor"], "admin")
+        self.assertEqual(proof_arguments["matching_key"], "name")
