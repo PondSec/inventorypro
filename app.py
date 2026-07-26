@@ -43,6 +43,7 @@ import smtplib
 
 from inventorypro.config import resolve_application_secret
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
+from inventorypro.domains.backups.routes import build_backups_blueprint
 from inventorypro.domains.locations.routes import build_locations_blueprint
 from inventorypro.domains.tickets.routes import build_ticket_pages_blueprint
 from inventorypro.migrations import MigrationError, apply_migrations
@@ -2672,6 +2673,10 @@ def run_backup_job(db, settings, force=False):
         record_backup_run(db, "failed", backup_path, str(exc))
         send_backup_notification(db, settings, "Backup fehlgeschlagen", f"Backup fehlgeschlagen: {exc}")
         return {"status": "failed", "message": str(exc)}
+
+def load_backup_settings(db):
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    return settings
 
 def backup_manifest_path(backup_path):
     return backup_restore_service.backup_manifest_path(backup_path)
@@ -15300,42 +15305,6 @@ def inventory_link_proxy(link_id, subpath):
         headers=response_headers
     )
 
-@app.route('/api/backups/run', methods=['POST'])
-@login_required
-@require_permission('server_settings.manage')
-def run_backup():
-    db = get_db()
-    settings, _ = serialize_server_settings(get_server_settings(db))
-    data = request.get_json() or {}
-    force = bool(data.get("force"))
-    result = run_backup_job(db, settings, force=force)
-    return jsonify(result)
-
-@app.route('/api/backups/list', methods=['GET'])
-@login_required
-@require_permission('server_settings.manage')
-def list_backups():
-    db = get_db()
-    rows = db.execute(
-        '''
-        SELECT id, status, backup_path, backup_size_bytes, message, created_at
-        FROM backup_runs
-        ORDER BY created_at DESC
-        LIMIT 50
-        '''
-    ).fetchall()
-    backups = []
-    for row in rows:
-        backups.append({
-            "id": row["id"],
-            "status": row["status"],
-            "path": row["backup_path"],
-            "sizeBytes": row["backup_size_bytes"],
-            "message": row["message"],
-            "createdAt": row["created_at"]
-        })
-    return jsonify({"backups": backups})
-
 @app.route('/api/export', methods=['GET'])
 @login_required
 @require_permission('server_settings.manage')
@@ -16830,6 +16799,15 @@ def otp_status():
     return jsonify({'enabled': bool(user and user['otp_secret'])})
 
 
+app.register_blueprint(
+    build_backups_blueprint(
+        get_db=get_db,
+        load_settings=load_backup_settings,
+        login_required=login_required,
+        require_permission=require_permission,
+        run_backup_job=run_backup_job,
+    ),
+)
 app.register_blueprint(
     build_ticket_pages_blueprint(
         ensure_ticket_access=ensure_ticket_access,
