@@ -5,6 +5,8 @@
   const customizationCacheKey = 'inventorypro.customization.cache';
   const legacyCustomizationKey = 'inventorypro.customization';
   let activeCustomization = null;
+  let activeCustomizationRevision = null;
+  let customizationLoadSequence = 0;
 
   const defaultCustomization = {
     schemaVersion: 1,
@@ -230,6 +232,12 @@
     linkedInstances: 'Verknüpfte Instanzen',
     administration: 'Administration',
   };
+
+  const navigationLinkSelector = [
+    '.app-sidebar .sidebar-link',
+    '.sidebar .sidebar-link',
+    '.sd-global-nav [data-navigation-item]',
+  ].join(', ');
 
   if (initial === 'dark') {
     root.classList.add('dark');
@@ -598,6 +606,11 @@
   };
 
   const updateNavigationLabel = (link, label) => {
+    const explicitNavigationLabel = link.querySelector('[data-navigation-label]');
+    if (explicitNavigationLabel) {
+      explicitNavigationLabel.textContent = label;
+      return;
+    }
     const explicitLabel = link.querySelector('.sidebar-text');
     if (explicitLabel) {
       explicitLabel.textContent = label;
@@ -620,7 +633,7 @@
     const groupSettings = navigation.groups || {};
     const sortableContainers = new Set();
 
-    document.querySelectorAll('.app-sidebar .sidebar-link, .sidebar .sidebar-link').forEach((link) => {
+    document.querySelectorAll(navigationLinkSelector).forEach((link) => {
       const itemId = link.dataset.navigationItem || navigationIdForLink(link);
       if (!itemId || !itemSettings[itemId]) return;
       link.dataset.navigationItem = itemId;
@@ -713,6 +726,28 @@
     }
   };
 
+  const normalizeRevisionId = (revisionId) => {
+    const parsed = Number(revisionId);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  };
+
+  const isOlderRevision = (candidateRevision, currentRevision) => (
+    currentRevision !== null && (
+      candidateRevision === null || candidateRevision < currentRevision
+    )
+  );
+
+  const applyCachedCustomization = (payload) => {
+    if (!payload || !payload.customization) return null;
+    const revisionId = normalizeRevisionId(payload.revisionId);
+    if (isOlderRevision(revisionId, activeCustomizationRevision)) return null;
+    const applied = applyCustomization(payload.customization);
+    if (revisionId !== null) {
+      activeCustomizationRevision = revisionId;
+    }
+    return applied;
+  };
+
   const migrateLegacyCustomization = () => {
     const legacy = localStorage.getItem(legacyCustomizationKey);
     if (!legacy) return null;
@@ -729,27 +764,47 @@
   };
 
   const setCachedCustomization = (payload) => {
+    const cached = getCachedCustomization();
+    const revisionId = normalizeRevisionId(payload && payload.revisionId);
+    const cachedRevisionId = normalizeRevisionId(cached && cached.revisionId);
+    const newestRevisionId = activeCustomizationRevision === null
+      ? cachedRevisionId
+      : cachedRevisionId === null
+        ? activeCustomizationRevision
+        : Math.max(activeCustomizationRevision, cachedRevisionId);
+    if (isOlderRevision(revisionId, newestRevisionId)) return false;
     localStorage.setItem(customizationCacheKey, JSON.stringify(payload));
+    if (revisionId !== null) {
+      activeCustomizationRevision = revisionId;
+    }
+    return true;
   };
 
   const loadCustomization = async () => {
-    let applied = applyCustomization(defaultCustomization);
+    const loadSequence = ++customizationLoadSequence;
+    let applied = activeCustomization || applyCustomization(defaultCustomization);
     const legacy = migrateLegacyCustomization();
     if (legacy) {
-      applied = applyCustomization(legacy);
+      applied = applyCachedCustomization({ customization: legacy }) || applied;
     }
     const cached = getCachedCustomization();
-    if (cached && cached.customization) {
-      applied = applyCustomization(cached.customization);
-    }
+    applied = applyCachedCustomization(cached) || applied;
 
     try {
       const response = await fetch('/api/customize', { credentials: 'same-origin' });
       const contentType = response.headers.get('content-type') || '';
       if (response.ok && contentType.includes('application/json')) {
         const serverData = await response.json();
-        if (serverData.customization) {
+        const serverRevisionId = normalizeRevisionId(serverData.revision_id);
+        if (
+          serverData.customization
+          && loadSequence === customizationLoadSequence
+          && !isOlderRevision(serverRevisionId, activeCustomizationRevision)
+        ) {
           applied = applyCustomization(serverData.customization);
+          if (serverRevisionId !== null) {
+            activeCustomizationRevision = serverRevisionId;
+          }
           setCachedCustomization({
             customization: applied,
             updatedAt: serverData.updated_at,

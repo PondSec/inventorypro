@@ -318,6 +318,35 @@ class InventoryLinksTestCase(unittest.TestCase):
         self.assertIn("Zentrale", body)
         self.assertIn('class="sidebar-link active"', body)
 
+    def test_inventory_link_portal_uses_customization_branding_markers(self):
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            user = db.execute("SELECT id FROM users WHERE username = ?", ("tester",)).fetchone()
+            db.execute(
+                '''
+                INSERT INTO inventory_links (
+                    id, user_id, display_name, base_url, verify_tls, auth_mode, secret_encrypted,
+                    allow_private_network
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                ("portal-branding", user["id"], "Werkstatt", "https://werkstatt.example", 1, "none", "", 0),
+            )
+            db.commit()
+
+        self.login()
+        customization = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        customization["branding"]["name"] = "Beispiel Bestand"
+        save_response = self.client.put("/api/customize", json=customization)
+        self.assertEqual(save_response.status_code, 200)
+
+        response = self.client.get("/inventory-links/portal-branding/portal")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('data-brand-logo', body)
+        self.assertIn('data-brand-logo-icon', body)
+        self.assertIn('data-brand-name>Inventory Pro', body)
+        self.assertIn('data-brand-tagline>Verknüpfte Instanz', body)
+
 
 if __name__ == "__main__":
     unittest.main()
