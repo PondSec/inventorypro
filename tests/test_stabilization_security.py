@@ -8,7 +8,7 @@ from cryptography.fernet import Fernet
 
 import app as inventory_app
 from inventorypro.config import ConfigurationError, resolve_application_secret
-from inventorypro.migrations import MigrationError, apply_migrations
+from inventorypro.migrations import MigrationError, apply_migrations, rollback_migrations
 from inventorypro.factory import create_app
 from inventorypro.secrets import (
     EncryptionKeyring,
@@ -281,6 +281,69 @@ class MigrationRunnerTestCase(TestCase):
                 )
             }
             self.assertNotIn("example", tables)
+            connection.close()
+
+    def test_latest_migration_can_be_rolled_back_and_applied_again(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            migration_directory = root / "migrations"
+            migration_directory.mkdir()
+            (migration_directory / "001_create_example.sql").write_text(
+                "CREATE TABLE example (id INTEGER PRIMARY KEY);",
+                encoding="utf-8",
+            )
+            (migration_directory / "001_create_example.down.sql").write_text(
+                "DROP TABLE example;",
+                encoding="utf-8",
+            )
+            connection = sqlite3.connect(root / "database.db")
+
+            self.assertEqual(apply_migrations(connection, migration_directory), ["001_create_example"])
+            self.assertEqual(rollback_migrations(connection, migration_directory), ["001_create_example"])
+            tables = {
+                row[0]
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
+            self.assertNotIn("example", tables)
+            self.assertEqual(connection.execute("SELECT id FROM schema_migrations").fetchall(), [])
+            self.assertEqual(
+                connection.execute(
+                    "SELECT migration_id, action FROM schema_migration_events ORDER BY id"
+                ).fetchall(),
+                [("001_create_example", "applied"), ("001_create_example", "rolled_back")],
+            )
+            self.assertEqual(apply_migrations(connection, migration_directory), ["001_create_example"])
+            connection.close()
+
+    def test_rollback_refuses_missing_or_invalid_down_migrations_atomically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            migration_directory = root / "migrations"
+            migration_directory.mkdir()
+            migration = migration_directory / "001_create_example.sql"
+            migration.write_text("CREATE TABLE example (id INTEGER PRIMARY KEY);", encoding="utf-8")
+            connection = sqlite3.connect(root / "database.db")
+            apply_migrations(connection, migration_directory)
+
+            with self.assertRaisesRegex(MigrationError, "Rückwärtsmigration"):
+                rollback_migrations(connection, migration_directory)
+
+            migration.with_suffix(".down.sql").write_text(
+                "DROP TABLE example;\nTHIS IS NOT VALID SQL;",
+                encoding="utf-8",
+            )
+            with self.assertRaises(MigrationError):
+                rollback_migrations(connection, migration_directory)
+
+            tables = {
+                row[0]
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
+            self.assertIn("example", tables)
+            self.assertEqual(
+                connection.execute("SELECT id FROM schema_migrations").fetchall(),
+                [("001_create_example",)],
+            )
             connection.close()
 
 
