@@ -52,6 +52,11 @@ from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_to
 from inventorypro.domains.backups.routes import build_backups_blueprint
 from inventorypro.domains.customization.repository import get_customization_record, save_customization
 from inventorypro.domains.customization.routes import build_customization_blueprint
+from inventorypro.domains.customization.service import (
+    clone_customization,
+    deep_merge,
+    migrate_customization as migrate_customization_payload,
+)
 from inventorypro.domains.customization.validators import validate_customization as validate_customization_payload
 from inventorypro.domains.exports.routes import build_exports_blueprint
 from inventorypro.domains.health.incidents import (
@@ -2555,66 +2560,8 @@ def import_from_sqlite(db, source_path, mode, tables):
             rows = source.execute(f"SELECT * FROM {table}").fetchall()
             import_table_rows(db, table, [dict(row) for row in rows], mode if mode != "replace" else "append")
 
-def clone_customization(data):
-    return json.loads(json.dumps(data))
-
-def deep_merge(base, override):
-    if not isinstance(base, dict) or not isinstance(override, dict):
-        return override if override is not None else base
-    merged = {**base}
-    for key, value in override.items():
-        if isinstance(value, dict) and isinstance(base.get(key), dict):
-            merged[key] = deep_merge(base[key], value)
-        else:
-            merged[key] = value
-    return merged
-
 def migrate_customization(data):
-    if not isinstance(data, dict):
-        return clone_customization(DEFAULT_CUSTOMIZATION)
-
-    if ("branding" in data or "formStyle" in data) and "baseTokens" not in data:
-        migrated = clone_customization(DEFAULT_CUSTOMIZATION)
-        branding = data.get("branding", {})
-        form_style = data.get("formStyle", {})
-        migrated["branding"]["name"] = branding.get("name", migrated["branding"]["name"])
-        migrated["branding"]["tagline"] = branding.get("tagline", migrated["branding"]["tagline"])
-        migrated["branding"]["logoDataUrl"] = branding.get("logoDataUrl", migrated["branding"]["logoDataUrl"])
-        migrated["branding"]["logoLightDataUrl"] = branding.get(
-            "logoLightDataUrl", migrated["branding"]["logoLightDataUrl"]
-        )
-        migrated["branding"]["logoDarkDataUrl"] = branding.get(
-            "logoDarkDataUrl", migrated["branding"]["logoDarkDataUrl"]
-        )
-        migrated["branding"]["faviconDataUrl"] = branding.get(
-            "faviconDataUrl", migrated["branding"]["faviconDataUrl"]
-        )
-        migrated["branding"]["authBackgroundDataUrl"] = branding.get(
-            "authBackgroundDataUrl", migrated["branding"]["authBackgroundDataUrl"]
-        )
-        migrated["baseTokens"]["colors"]["primary"] = branding.get("primary", migrated["baseTokens"]["colors"]["primary"])
-        migrated["baseTokens"]["colors"]["accent"] = branding.get("accent", migrated["baseTokens"]["colors"]["accent"])
-        migrated["baseTokens"]["colors"]["background"] = branding.get("background", migrated["baseTokens"]["colors"]["background"])
-        migrated["baseTokens"]["spacing"]["radius"]["md"] = branding.get("radius", migrated["baseTokens"]["spacing"]["radius"]["md"])
-        migrated["layoutPrefs"]["density"] = branding.get("density", migrated["layoutPrefs"]["density"])
-        migrated["componentOverrides"]["button"]["primary"]["background"] = form_style.get(
-            "buttonColor", migrated["componentOverrides"]["button"]["primary"]["background"]
-        )
-        migrated["componentOverrides"]["button"]["primary"]["text"] = form_style.get(
-            "buttonText", migrated["componentOverrides"]["button"]["primary"]["text"]
-        )
-        migrated["componentOverrides"]["input"]["background"] = form_style.get(
-            "inputBackground", migrated["componentOverrides"]["input"]["background"]
-        )
-        migrated["componentOverrides"]["input"]["border"] = form_style.get(
-            "inputBorder", migrated["componentOverrides"]["input"]["border"]
-        )
-        migrated["layoutPrefs"]["formSpacing"] = form_style.get("spacing", migrated["layoutPrefs"]["formSpacing"])
-        return migrated
-
-    merged = deep_merge(clone_customization(DEFAULT_CUSTOMIZATION), data)
-    merged["schemaVersion"] = 1
-    return merged
+    return migrate_customization_payload(data, default_customization=DEFAULT_CUSTOMIZATION)
 
 def validate_customization(data):
     return validate_customization_payload(data, max_image_bytes=MAX_CUSTOMIZATION_IMAGE_BYTES)
