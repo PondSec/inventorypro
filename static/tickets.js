@@ -625,11 +625,11 @@ document.addEventListener('alpine:init', () => {
 
         async openCreateTicket() {
             this.createError = '';
-            if (!this.newTicket.category_id) await this.ticketTypeChanged();
             this.rememberFocus();
             this.createOpen = true;
             await this.$nextTick();
             this.$refs.createTitle?.focus();
+            if (!this.newTicket.category_id) await this.ticketTypeChanged();
             this.refreshIcons();
         },
 
