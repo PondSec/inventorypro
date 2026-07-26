@@ -44,6 +44,7 @@ import smtplib
 from inventorypro.config import resolve_application_secret
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
 from inventorypro.migrations import MigrationError, apply_migrations
+from inventorypro import backup_restore as backup_restore_service
 from inventorypro.secrets import (
     EncryptionKeyring,
     SecretConfigurationError,
@@ -2671,45 +2672,19 @@ def run_backup_job(db, settings, force=False):
         return {"status": "failed", "message": str(exc)}
 
 def backup_manifest_path(backup_path):
-    return Path(f"{backup_path}.manifest.json")
+    return backup_restore_service.backup_manifest_path(backup_path)
 
 def file_sha256(path):
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return backup_restore_service.file_sha256(path)
 
 def write_backup_manifest(backup_path):
-    backup_path = Path(backup_path)
-    payload = {
-        "schemaVersion": 1,
-        "artifact": backup_path.name,
-        "sha256": file_sha256(backup_path),
-        "sizeBytes": backup_path.stat().st_size,
-        "createdAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "applicationVersion": os.environ.get("APP_VERSION", "dev"),
-    }
-    manifest_path = backup_manifest_path(backup_path)
-    temporary_path = manifest_path.with_suffix(".tmp")
-    temporary_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
-    os.chmod(temporary_path, stat.S_IRUSR | stat.S_IWUSR)
-    os.replace(temporary_path, manifest_path)
-    return manifest_path
+    return backup_restore_service.write_backup_manifest(
+        backup_path,
+        os.environ.get("APP_VERSION", "dev"),
+    )
 
 def verify_backup_manifest(backup_path):
-    manifest_path = backup_manifest_path(backup_path)
-    if not manifest_path.exists():
-        return False
-    try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as error:
-        raise ValueError("Backup-Manifest ist ungültig.") from error
-    if payload.get("artifact") != Path(backup_path).name:
-        raise ValueError("Backup-Manifest passt nicht zum Artefakt.")
-    if payload.get("sha256") != file_sha256(backup_path):
-        raise ValueError("Backup-Prüfsumme stimmt nicht.")
-    return True
+    return backup_restore_service.verify_backup_manifest(backup_path)
 
 def _copy_restore_source(source, destination):
     copied = 0
@@ -2807,29 +2782,12 @@ def validate_sqlite_backup(database_path):
 
 def restore_sqlite_backup(backup_path, database_path=None):
     """Restore a verified SQLite backup atomically while the application is stopped."""
-    target_path = Path(database_path or DATABASE).resolve()
-    backup_path = Path(backup_path).resolve(strict=True)
-    if backup_path == target_path:
-        raise ValueError("Backup und Zieldatenbank dürfen nicht identisch sein.")
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=target_path.parent, prefix=".restore-") as directory:
-        staging_directory = Path(directory)
-        restore_source = materialize_sqlite_backup(backup_path, staging_directory)
-        restored_path = staging_directory / "restored.db"
-        with sqlite3.connect(f"file:{restore_source}?mode=ro", uri=True) as source:
-            with sqlite3.connect(restored_path) as destination:
-                source.backup(destination)
-        validate_sqlite_backup(restored_path)
-        rollback_path = None
-        if target_path.exists():
-            rollback_path = target_path.with_name(
-                f"{target_path.stem}.pre-restore-{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}{target_path.suffix}"
-            )
-            with sqlite3.connect(f"file:{target_path}?mode=ro", uri=True) as source:
-                with sqlite3.connect(rollback_path) as destination:
-                    source.backup(destination)
-        os.replace(restored_path, target_path)
-    return {"database": str(target_path), "rollback": str(rollback_path) if rollback_path else None}
+    return backup_restore_service.restore_sqlite_backup(
+        backup_path,
+        database_path or DATABASE,
+        get_backup_encryption,
+        MAX_RESTORE_BYTES,
+    )
 
 def schedule_backup_jobs(settings):
     if not SCHEDULER_ENABLED:
