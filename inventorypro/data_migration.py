@@ -378,15 +378,30 @@ def inspect_tabular_conflicts(
     parsed: Mapping[str, Any],
     matching_key: str | None = None,
 ) -> dict[str, Any]:
-    """Return bounded, row-level duplicate information without changing data."""
+    """Return bounded database and source-file duplicates without changing data."""
     selected_matching_key = _matching_key(parsed, matching_key)
     conflicts = []
+    source_values: dict[str, int] = {}
     for row_number, row in enumerate(parsed["rows"], start=2):
+        value = row.get(selected_matching_key)
+        if value:
+            source_line = source_values.get(value)
+            if source_line is not None:
+                conflicts.append(
+                    {
+                        "line": row_number,
+                        "sourceLine": source_line,
+                        "key": selected_matching_key,
+                        "source": "file",
+                    }
+                )
+            else:
+                source_values[value] = row_number
         existing = _find_existing(
             connection,
             parsed["entity"],
             selected_matching_key,
-            row.get(selected_matching_key),
+            value,
         )
         if existing:
             conflicts.append({"line": row_number, "id": existing["id"], "key": selected_matching_key})
@@ -410,7 +425,7 @@ def _import_parsed(
     conflict_report = inspect_tabular_conflicts(connection, parsed, matching_key)
     selected_matching_key = conflict_report["matchingKey"]
     if mode == "abort" and conflict_report["conflictCount"]:
-        raise TabularImportError("Der Import wurde wegen vorhandener Datensätze abgebrochen.")
+        raise TabularImportError("Der Import wurde wegen erkannter Duplikate abgebrochen.")
     created = updated = skipped = 0
     with connection:
         for row in parsed["rows"]:

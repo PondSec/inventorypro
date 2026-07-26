@@ -564,8 +564,11 @@
                                             </div>
                                             <template x-if="migrationPreview.conflicts && migrationPreview.conflicts.length">
                                                 <ul class="space-y-1 text-sm text-amber-700">
-                                                    <template x-for="conflict in migrationPreview.conflicts" :key="`${conflict.line}-${conflict.id}`">
-                                                        <li>Zeile <span x-text="conflict.line"></span> stimmt mit vorhandenem Datensatz <span x-text="conflict.id"></span> überein.</li>
+                                                    <template x-for="conflict in migrationPreview.conflicts" :key="`${conflict.line}-${conflict.id || conflict.sourceLine}`">
+                                                        <li>
+                                                            <span x-show="conflict.source === 'file'">Zeile <span x-text="conflict.line"></span> verwendet denselben Abgleichswert wie Zeile <span x-text="conflict.sourceLine"></span>.</span>
+                                                            <span x-show="conflict.source !== 'file'">Zeile <span x-text="conflict.line"></span> stimmt mit vorhandenem Datensatz <span x-text="conflict.id"></span> überein.</span>
+                                                        </li>
                                                     </template>
                                                 </ul>
                                             </template>

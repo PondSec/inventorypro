@@ -11,6 +11,8 @@ from inventorypro.data_migration import (
     TabularImportError,
     import_tabular_csv,
     import_tabular_file,
+    inspect_tabular_conflicts,
+    parse_tabular_file,
     preview_tabular_file,
     preview_tabular_csv,
 )
@@ -261,3 +263,25 @@ class DataMigrationTestCase(TestCase):
         self.assertIsNone(self.connection.execute("SELECT purchase_cost FROM assets").fetchone()[0])
         with self.assertRaisesRegex(TabularImportError, "CSV, TSV, XLSX und JSON"):
             preview_tabular_file(source, "assets", "assets.xml")
+
+    def test_source_duplicates_are_reported_and_abort_without_writing(self):
+        source = b"name,serial\nfirst,DUP-1\nsecond,DUP-1\n"
+        parsed = parse_tabular_file(source, "devices", "devices.csv")
+
+        report = inspect_tabular_conflicts(self.connection, parsed, "serial_number")
+
+        self.assertEqual(report["conflictCount"], 1)
+        self.assertEqual(
+            report["conflicts"],
+            [{"line": 3, "sourceLine": 2, "key": "serial_number", "source": "file"}],
+        )
+        with self.assertRaisesRegex(TabularImportError, "abgebrochen"):
+            import_tabular_file(
+                self.connection,
+                source,
+                "devices",
+                "abort",
+                "devices.csv",
+                matching_key="serial_number",
+            )
+        self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM devices").fetchone()[0], 0)

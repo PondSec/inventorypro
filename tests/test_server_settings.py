@@ -197,6 +197,26 @@ class ServerSettingsTestCase(unittest.TestCase):
         self.assertEqual(report["rowCount"], 2)
         self.assertIn("Zeile,Fehler\n2,Name ist erforderlich.\n", report["content"])
 
+    def test_tabular_preview_reports_duplicates_within_the_uploaded_file(self):
+        self.login()
+        settings = self.client.get("/api/settings/server").get_json()["settings"]
+        settings["importExport"]["importAllowed"] = True
+        self.assertEqual(self.client.put("/api/settings/server", json=settings).status_code, 200)
+        source = b"name,serial\nfirst,DUP-1\nsecond,DUP-1\n"
+
+        preview = self.client.post(
+            "/api/import/preview",
+            data={"entity": "devices", "file": (io.BytesIO(source), "devices.csv")},
+        )
+
+        self.assertEqual(preview.status_code, 200)
+        payload = preview.get_json()
+        self.assertEqual(payload["conflictCount"], 1)
+        self.assertEqual(
+            payload["conflicts"],
+            [{"line": 3, "sourceLine": 2, "key": "serial_number", "source": "file"}],
+        )
+
     def test_tabular_xlsx_and_json_previews_are_available(self):
         self.login()
         settings = self.client.get("/api/settings/server").get_json()["settings"]
