@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Pro · Service Desk</title>
-    <script src="/static/theme.js?v=inventory-v4-20260726-1"></script>
-    <script src="/static/csrf.js?v=1"></script>
+    <script src="/static/theme.js?v=inventory-v3-20260724-1"></script>
     <script src="/static/vendor/alpinejs.min.js" defer></script>
     <script>
         window.inventoryPermissions = {{ permissions | tojson }};
@@ -21,16 +20,16 @@
     <div class="sd-shell">
         <aside class="sd-global-nav" aria-label="Hauptnavigation">
             <a href="/" class="sd-brand" aria-label="Inventory Pro Startseite">
-                <span class="sd-brand-mark" data-brand-logo><i data-feather="box" data-brand-logo-icon></i></span>
-                <span class="sd-brand-copy"><strong data-brand-name>Inventory Pro</strong><small data-brand-tagline>Smart Asset Hub</small></span>
+                <span class="sd-brand-mark"><i data-feather="box"></i></span>
+                <span class="sd-brand-copy"><strong data-brand-name>Inventory Pro</strong><small>Smart Asset Hub</small></span>
             </a>
             <nav class="sd-global-links">
-                <a href="/" data-navigation-item="dashboard" aria-label="Übersicht"><i data-feather="grid"></i><span data-navigation-label>Übersicht</span></a>
-                <a href="/locations" data-navigation-item="locations" aria-label="Standorte"><i data-feather="map-pin"></i><span data-navigation-label>Standorte</span></a>
-                <a href="/tickets" class="active" data-navigation-item="tickets" aria-current="page" aria-label="Service Desk"><i data-feather="life-buoy"></i><span data-navigation-label>Service Desk</span></a>
-                <a href="/knowledge" data-navigation-item="knowledge" aria-label="Wissen"><i data-feather="book-open"></i><span data-navigation-label>Wissen</span></a>
-                <a href="/roadmap" data-navigation-item="roadmap" aria-label="Roadmap"><i data-feather="git-merge"></i><span data-navigation-label>Roadmap</span></a>
-                <a href="/dependencies" data-navigation-item="dependencies" aria-label="Abhängigkeiten"><i data-feather="share-2"></i><span data-navigation-label>Abhängigkeiten</span></a>
+                <a href="/" aria-label="Übersicht"><i data-feather="grid"></i><span>Übersicht</span></a>
+                <a href="/locations" aria-label="Standorte"><i data-feather="map-pin"></i><span>Standorte</span></a>
+                <a href="/tickets" class="active" aria-current="page" aria-label="Service Desk"><i data-feather="life-buoy"></i><span>Service Desk</span></a>
+                <a href="/knowledge" aria-label="Wissen"><i data-feather="book-open"></i><span>Wissen</span></a>
+                <a href="/roadmap" aria-label="Roadmap"><i data-feather="git-merge"></i><span>Roadmap</span></a>
+                <a href="/dependencies" aria-label="Abhängigkeiten"><i data-feather="share-2"></i><span>Abhängigkeiten</span></a>
             </nav>
             <div class="sd-global-footer">
                 <a x-show="canManageTickets()" href="/admin/tickets/categories" aria-label="Ticket-Administration"><i data-feather="settings"></i><span>Ticket-Admin</span></a>

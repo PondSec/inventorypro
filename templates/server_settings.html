@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Pro - Einstellungen</title>
-    <script src="/static/theme.js?v=inventory-v4-20260726-1"></script>
-    <script src="/static/csrf.js?v=1"></script>
+    <script src="/static/theme.js"></script>
     <link rel="stylesheet" href="/static/vendor/tailwind.min.css?v=3.4.17">
     <script src="/static/vendor/alpinejs.min.js" defer></script>
     <script>
@@ -190,10 +189,6 @@
                 </div>
                 <div class="flex items-center gap-2 sm:gap-3">
                     <span class="hidden text-sm text-slate-500 sm:inline">Angemeldet als {{ username }}</span>
-                    <a href="/account/security" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
-                        <i data-feather="shield" class="w-4 h-4"></i>
-                        <span class="sr-only sm:not-sr-only">Kontosicherheit</span>
-                    </a>
                     <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
                         <span data-theme-icon aria-hidden="true">🌙</span>
                         <span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
@@ -281,12 +276,19 @@
                                     </div>
                                 </div>
 
-                                <div class="mt-6">
+                                <div class="mt-6 grid gap-4 md:grid-cols-2">
                                     <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                                         <input type="checkbox" x-model="settings.server.debug" aria-label="Debug-Modus aktivieren" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
                                         <div>
                                             <p class="text-sm font-semibold text-slate-700">Debug-Modus aktivieren</p>
                                             <p class="text-xs text-slate-500">Aktiviert ausführliche Logs und Fehlerseiten (nur für Entwicklung).</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <input type="checkbox" x-model="settings.proFeaturesEnabled" aria-label="Pro-Funktionen aktivieren" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-700">Pro-Features aktiv</p>
+                                            <p class="text-xs text-slate-500">Steuert, ob erweiterte Module in der UI verfügbar sind.</p>
                                         </div>
                                     </label>
                                 </div>
@@ -325,9 +327,9 @@
                                         <p class="text-xs text-slate-400">Der Updater lädt keine Daten aus der Anwendung hoch.</p>
                                     </div>
                                     <div class="space-y-2">
-                                        <label class="text-sm font-semibold text-slate-700">Wartungsbeginn (Serverzeit)</label>
-                                        <input type="time" x-model="settings.updates.maintenanceWindow" aria-label="Wartungsbeginn für Updates in Serverzeit" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <p class="text-xs text-slate-400">Format HH:MM. Installationen erfolgen nur innerhalb des anschließenden Prüfintervalls.</p>
+                                        <label class="text-sm font-semibold text-slate-700">Wartungsfenster</label>
+                                        <input type="time" x-model="settings.updates.maintenanceWindow" aria-label="Wartungsfenster für Updates" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">Installationen erfolgen nur innerhalb dieses Fensters.</p>
                                     </div>
                                 </div>
                             </div>
@@ -438,7 +440,6 @@
                                             <option value="sqlite">SQLite</option>
                                             <option value="csv">CSV</option>
                                             <option value="json">JSON</option>
-                                            <option value="xlsx">XLSX</option>
                                         </select>
                                         <p class="text-xs text-slate-400">Format für geplante Exporte.</p>
                                     </div>
@@ -458,139 +459,6 @@
                                             <p class="text-xs text-slate-500">Anhänge und Medien mit exportieren.</p>
                                         </div>
                                     </label>
-                                </div>
-
-                                <div class="mt-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
-                                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                                        <div>
-                                            <h3 class="text-lg font-semibold text-slate-900">Datenübernahme</h3>
-                                            <p class="mt-1 text-sm text-slate-500">Übernimm Geräte oder Assets aus CSV, TSV, XLSX oder JSON. Die Vorschau schreibt noch keine Daten.</p>
-                                        </div>
-                                        <button type="button" @click="downloadInventoryExport" :disabled="!settings.importExport.exportAllowed" class="btn-secondary disabled:cursor-not-allowed disabled:opacity-60">
-                                            <i data-feather="download" class="h-4 w-4"></i>
-                                            Export herunterladen
-                                        </button>
-                                    </div>
-
-                                    <div class="mt-5 grid gap-4 md:grid-cols-4">
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Datentyp</label>
-                                            <select x-model="migrationEntity" @change="resetMigrationOptions" aria-label="Datentyp für die Datenübernahme" class="select-field">
-                                                <option value="devices">Geräte</option>
-                                                <option value="assets">Assets</option>
-                                            </select>
-                                        </div>
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Importmodus</label>
-                                            <select x-model="migrationMode" aria-label="Importmodus für tabellarische Daten" class="select-field">
-                                                <option value="merge">Zusammenführen</option>
-                                                <option value="append">Neue anfügen, Konflikte überspringen</option>
-                                                <option value="abort">Bei Konflikt abbrechen</option>
-                                            </select>
-                                        </div>
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Importprofil</label>
-                                            <select x-model="migrationProfileId" @change="selectMigrationProfile" aria-label="Gespeichertes Importprofil auswählen" class="select-field">
-                                                <option value="">Automatische Zuordnung</option>
-                                                <template x-for="profile in migrationProfilesForEntity" :key="profile.id">
-                                                    <option :value="String(profile.id)" x-text="profile.name"></option>
-                                                </template>
-                                            </select>
-                                        </div>
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Datei</label>
-                                            <input type="file" accept=".csv,.tsv,.xlsx,.json,text/csv,text/tab-separated-values,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="selectMigrationFile" aria-label="Importdatei auswählen" class="input-field">
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-5 flex flex-wrap items-center gap-3">
-                                        <button type="button" @click="previewMigration" :disabled="migrationBusy || !migrationFile || !settings.importExport.importAllowed" class="btn-primary disabled:cursor-not-allowed disabled:opacity-60">
-                                            <i data-feather="eye" class="h-4 w-4"></i>
-                                            <span x-text="migrationBusy ? 'Prüfe…' : 'Vorschau erstellen'"></span>
-                                        </button>
-                                        <button type="button" @click="importMigration" :disabled="migrationBusy || !migrationPreview || migrationPreviewStale || migrationPreview.invalidRows > 0 || !migrationPreview.previewToken || !settings.importExport.importAllowed" class="btn-secondary disabled:cursor-not-allowed disabled:opacity-60">
-                                            <i data-feather="upload" class="h-4 w-4"></i>
-                                            Import ausführen
-                                        </button>
-                                        <span class="text-xs text-slate-500" x-text="migrationFile ? migrationFile.name : 'Noch keine Datei ausgewählt'"></span>
-                                    </div>
-
-                                    <p class="mt-3 text-sm text-rose-600" x-show="migrationError" x-text="migrationError"></p>
-                                    <p class="mt-3 text-sm text-emerald-700" x-show="migrationMessage" x-text="migrationMessage"></p>
-
-                                    <template x-if="migrationPreview">
-                                        <div class="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
-                                            <div class="flex flex-wrap items-center gap-3 text-sm">
-                                                <span class="rounded-full bg-emerald-100 px-3 py-1 font-semibold text-emerald-700"><span x-text="migrationPreview.validRows"></span> gültig</span>
-                                                <span class="rounded-full bg-rose-100 px-3 py-1 font-semibold text-rose-700"><span x-text="migrationPreview.invalidRows"></span> fehlerhaft</span>
-                                                <span class="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-700"><span x-text="migrationPreview.conflictCount || 0"></span> Konflikte</span>
-                                                <span class="text-slate-500">Format: <span x-text="migrationPreview.format.toUpperCase()"></span></span>
-                                            </div>
-                                            <p x-show="migrationPreviewStale" class="text-sm font-medium text-amber-700">Zuordnung oder Abgleich wurde geändert. Erstelle vor dem Import erneut die Vorschau.</p>
-                                            <div class="grid gap-4 md:grid-cols-2">
-                                                <div x-show="migrationPreview.availableSheets && migrationPreview.availableSheets.length" class="space-y-2">
-                                                    <label class="text-sm font-semibold text-slate-700">Tabellenblatt</label>
-                                                    <select x-model="migrationSheetName" @change="markMigrationPreviewStale" aria-label="Tabellenblatt für den Import" class="select-field">
-                                                        <template x-for="sheet in migrationPreview.availableSheets" :key="sheet">
-                                                            <option :value="sheet" x-text="sheet"></option>
-                                                        </template>
-                                                    </select>
-                                                </div>
-                                                <div class="space-y-2">
-                                                    <label class="text-sm font-semibold text-slate-700">Abgleichschlüssel</label>
-                                                    <select x-model="migrationMatchingKey" @change="markMigrationPreviewStale" aria-label="Schlüssel zur Duplikaterkennung" class="select-field">
-                                                        <template x-for="key in migrationPreview.matchingKeys" :key="key">
-                                                            <option :value="key" x-text="key"></option>
-                                                        </template>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            <div class="grid gap-4 md:grid-cols-2">
-                                                <template x-for="(source, target) in migrationPreview.mapping" :key="target">
-                                                    <label class="space-y-1 text-sm text-slate-700">
-                                                        <span class="font-semibold" x-text="target"></span>
-                                                        <select x-model="migrationMapping[target]" @change="markMigrationPreviewStale" :aria-label="`Quellspalte für ${target}`" class="select-field">
-                                                            <option value="">Nicht übernehmen</option>
-                                                            <template x-for="header in migrationPreview.headers" :key="header">
-                                                                <option :value="header" x-text="header"></option>
-                                                            </template>
-                                                        </select>
-                                                    </label>
-                                                </template>
-                                            </div>
-                                            <div class="grid gap-4 border-t border-slate-100 pt-4 md:grid-cols-[1fr_auto_auto]">
-                                                <label class="space-y-1 text-sm text-slate-700">
-                                                    <span class="font-semibold">Profilname</span>
-                                                    <input type="text" x-model.trim="migrationProfileName" maxlength="100" placeholder="z. B. Altes Inventarsystem" aria-label="Name des Importprofils" class="input-field">
-                                                </label>
-                                                <button type="button" @click="saveMigrationProfile" :disabled="migrationBusy || !migrationProfileName" class="btn-secondary self-end disabled:cursor-not-allowed disabled:opacity-60">Profil speichern</button>
-                                                <button type="button" @click="deleteMigrationProfile" x-show="migrationProfileId" :disabled="migrationBusy" class="btn-secondary self-end text-rose-700 disabled:cursor-not-allowed disabled:opacity-60">Profil löschen</button>
-                                            </div>
-                                            <template x-if="migrationPreview.conflicts && migrationPreview.conflicts.length">
-                                                <ul class="space-y-1 text-sm text-amber-700">
-                                                    <template x-for="conflict in migrationPreview.conflicts" :key="`${conflict.line}-${conflict.id || conflict.sourceLine}`">
-                                                        <li>
-                                                            <span x-show="conflict.source === 'file'">Zeile <span x-text="conflict.line"></span> verwendet denselben Abgleichswert wie Zeile <span x-text="conflict.sourceLine"></span>.</span>
-                                                            <span x-show="conflict.source !== 'file'">Zeile <span x-text="conflict.line"></span> stimmt mit vorhandenem Datensatz <span x-text="conflict.id"></span> überein.</span>
-                                                        </li>
-                                                    </template>
-                                                </ul>
-                                            </template>
-                                            <template x-if="migrationPreview.errors.length">
-                                                <div class="space-y-2 text-sm text-rose-700">
-                                                    <div class="flex flex-wrap items-center gap-3">
-                                                        <span x-show="migrationPreview.errorReport && migrationPreview.errorReport.rowCount > migrationPreview.errors.length">Es werden die ersten <span x-text="migrationPreview.errors.length"></span> Fehler angezeigt.</span>
-                                                        <button type="button" @click="downloadMigrationErrorReport" x-show="migrationPreview.errorReport && migrationPreview.errorReport.rowCount" class="font-semibold underline underline-offset-2">Vollständigen Fehlerbericht herunterladen</button>
-                                                    </div>
-                                                    <ul class="space-y-1">
-                                                        <template x-for="error in migrationPreview.errors" :key="`${error.line}-${error.error}`">
-                                                            <li>Zeile <span x-text="error.line"></span>: <span x-text="error.error"></span></li>
-                                                        </template>
-                                                    </ul>
-                                                </div>
-                                            </template>
-                                        </div>
-                                    </template>
                                 </div>
                             </div>
 
@@ -618,7 +486,7 @@
                                         <input type="checkbox" x-model="settings.security.requireMfa" aria-label="Mehrfaktor-Authentifizierung erzwingen" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
                                         <div>
                                             <p class="text-sm font-semibold text-slate-700">MFA verpflichtend</p>
-                                            <p class="text-xs text-slate-500">Erfordert TOTP für alle Konten beim nächsten Login.</p>
+                                            <p class="text-xs text-slate-500">Erfordert 2FA für alle Admin-Konten.</p>
                                             <span class="mt-2 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700" x-show="meta.enforcedCapabilities.requireMfa && meta.enforcedCapabilities.requireMfa.enforced">Enforced</span>
                                         </div>
                                     </label>
@@ -899,67 +767,22 @@
                                         </div>
                                     </div>
 
-                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Logo für helle Ansicht</label>
-                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleBrandImageUpload($event, 'logoLightDataUrl')" aria-label="Logo für helle Ansicht hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                                            <p class="text-xs text-slate-500" x-text="customization.branding.logoLightDataUrl || customization.branding.logoDataUrl ? 'Logo geladen' : 'Optional' "></p>
-                                        </div>
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Logo für dunkle Ansicht</label>
-                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleBrandImageUpload($event, 'logoDarkDataUrl')" aria-label="Logo für dunkle Ansicht hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                                            <p class="text-xs text-slate-500" x-text="customization.branding.logoDarkDataUrl || customization.branding.logoDataUrl ? 'Logo geladen' : 'Optional' "></p>
-                                        </div>
-                                        <div class="space-y-2">
-                                            <label class="text-sm font-semibold text-slate-700">Favicon</label>
-                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleBrandImageUpload($event, 'faviconDataUrl')" aria-label="Favicon hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                                            <p class="text-xs text-slate-500" x-text="customization.branding.faviconDataUrl ? 'Favicon geladen' : 'Optional' "></p>
-                                        </div>
-                                        <div class="space-y-2 md:col-span-3">
-                                            <label class="text-sm font-semibold text-slate-700">Hintergrund für Anmeldung</label>
-                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleBrandImageUpload($event, 'authBackgroundDataUrl')" aria-label="Hintergrund für Anmeldung hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                                            <p class="text-xs text-slate-500" x-text="customization.branding.authBackgroundDataUrl ? 'Anmeldehintergrund geladen' : 'Optional – wirkt auf Anmeldung, Passwortwechsel und Zurücksetzen' "></p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="ui-card p-6">
-                                    <div class="flex items-center gap-3">
-                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                                            <i data-feather="menu" class="h-5 w-5"></i>
-                                        </span>
-                                        <div>
-                                            <h2 class="text-xl font-semibold text-slate-900">Linke Navigation</h2>
-                                            <p class="text-sm text-slate-500">Benenne Links um, blende sie aus und lege ihre Reihenfolge innerhalb des Bereichs fest. Berechtigungen bleiben unverändert wirksam.</p>
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
-                                        <template x-for="group in navigationGroups" :key="group.id">
-                                            <div class="space-y-2">
-                                                <label class="text-sm font-semibold text-slate-700" x-text="group.label"></label>
-                                                <input type="text" x-model="customization.navigation.groups[group.id]" :aria-label="`${group.label} umbenennen`" class="input-field">
+                                    <div class="mt-6">
+                                        <label class="text-sm font-semibold text-slate-700">Logo hochladen</label>
+                                        <div class="mt-2 flex flex-col gap-4 md:flex-row md:items-center">
+                                            <input type="file" accept="image/*" @change="handleLogoUpload" aria-label="Markenlogo hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                                            <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                                                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100">
+                                                    <template x-if="customization.branding.logoDataUrl">
+                                                        <img :src="customization.branding.logoDataUrl" alt="Logo" class="h-10 w-10 rounded-2xl object-cover">
+                                                    </template>
+                                                    <template x-if="!customization.branding.logoDataUrl">
+                                                        <i data-feather="image" class="h-4 w-4 text-slate-400"></i>
+                                                    </template>
+                                                </span>
+                                                <span x-text="customization.branding.logoDataUrl ? 'Logo geladen' : 'Noch kein Logo'"></span>
                                             </div>
-                                        </template>
-                                    </div>
-
-                                    <div class="mt-6 space-y-3">
-                                        <template x-for="item in navigationItems" :key="item.id">
-                                            <div class="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-[minmax(0,1fr)_7rem_auto] md:items-end">
-                                                <div class="space-y-2">
-                                                    <label class="text-sm font-semibold text-slate-700" x-text="item.label"></label>
-                                                    <input type="text" x-model="customization.navigation.items[item.id].label" :aria-label="`${item.label} umbenennen`" class="input-field">
-                                                </div>
-                                                <div class="space-y-2">
-                                                    <label class="text-sm font-semibold text-slate-700">Reihenfolge</label>
-                                                    <input type="number" min="0" max="999" step="10" x-model.number="customization.navigation.items[item.id].order" :aria-label="`${item.label} Reihenfolge`" class="input-field">
-                                                </div>
-                                                <label class="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-slate-700">
-                                                    <input type="checkbox" x-model="customization.navigation.items[item.id].visible" :aria-label="`${item.label} anzeigen`" class="rounded border-slate-300 text-emerald-600">
-                                                    Anzeigen
-                                                </label>
-                                            </div>
-                                        </template>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1205,10 +1028,10 @@
                                         <div class="flex items-center justify-between gap-3">
                                             <div class="flex items-center gap-3">
                                                 <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm">
-                                                    <template x-if="customization.branding.logoLightDataUrl || customization.branding.logoDataUrl">
-                                                        <img :src="customization.branding.logoLightDataUrl || customization.branding.logoDataUrl" alt="Logo" class="h-10 w-10 rounded-2xl object-cover">
+                                                    <template x-if="customization.branding.logoDataUrl">
+                                                        <img :src="customization.branding.logoDataUrl" alt="Logo" class="h-10 w-10 rounded-2xl object-cover">
                                                     </template>
-                                                    <template x-if="!customization.branding.logoLightDataUrl && !customization.branding.logoDataUrl">
+                                                    <template x-if="!customization.branding.logoDataUrl">
                                                         <i data-feather="cpu" class="h-4 w-4 text-slate-500"></i>
                                                     </template>
                                                 </span>
@@ -1295,7 +1118,7 @@
                                     <div class="flex items-center justify-between gap-3">
                                         <div>
                                             <h2 class="text-lg font-semibold text-slate-900">Anpassungen sichern</h2>
-                                            <p class="text-sm text-slate-500">Die serverseitige Konfiguration gilt einheitlich für die gesamte Instanz.</p>
+                                            <p class="text-sm text-slate-500">Server ist die Quelle der Wahrheit, lokale Overrides sind optional.</p>
                                         </div>
                                         <div class="flex flex-wrap gap-2">
                                             <button type="button" @click="undoChange" class="btn-secondary">Undo</button>
@@ -1304,6 +1127,10 @@
                                     </div>
 
                                     <div class="mt-4 flex flex-wrap items-center gap-3">
+                                        <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                            <input type="checkbox" x-model="saveLocalOnly" aria-label="Änderungen nur lokal speichern" class="rounded border-slate-300 text-emerald-600">
+                                            Nur lokal speichern (Override)
+                                        </label>
                                         <button type="button" @click="saveCustomization" class="btn-primary">Speichern</button>
                                         <button type="button" @click="resetCustomization" class="btn-secondary">Alles zurücksetzen</button>
                                         <button type="button" @click="resetSection('tokens')" class="btn-secondary">Tokens reset</button>
@@ -1623,6 +1450,7 @@
                 canWriteDb: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.db_write'),
                 settings: {
                     server: { host: '0.0.0.0', port: 5000, debug: false },
+                    proFeaturesEnabled: false,
                     backup: {
                         enabled: false,
                         compress: false,
@@ -1683,20 +1511,6 @@
                 originalSettings: null,
                 ipWhitelistInput: '',
                 terminalAllowlistInput: '',
-                migrationFile: null,
-                migrationEntity: 'devices',
-                migrationMode: 'merge',
-                migrationProfiles: [],
-                migrationProfileId: '',
-                migrationProfileName: '',
-                migrationMapping: {},
-                migrationMatchingKey: '',
-                migrationSheetName: '',
-                migrationPreview: null,
-                migrationPreviewStale: false,
-                migrationBusy: false,
-                migrationError: '',
-                migrationMessage: '',
                 customization: window.InventoryCustomization ? window.InventoryCustomization.defaults() : {},
                 customizationHistory: [],
                 presets: [
@@ -1745,32 +1559,7 @@
                     },
                 ],
                 selectedPreset: '',
-                navigationGroups: [
-                    { id: 'legacyPrimary', label: 'Bereich Hauptbereiche' },
-                    { id: 'assetOperations', label: 'Bereich Asset Operations' },
-                    { id: 'serviceWorkflow', label: 'Bereich Service & Workflow' },
-                    { id: 'legacyAnalysis', label: 'Bereich Auswertung' },
-                    { id: 'analysisPlatform', label: 'Bereich Analyse & Plattform' },
-                    { id: 'linkedInstances', label: 'Bereich Verknüpfte Instanzen' },
-                    { id: 'administration', label: 'Bereich Administration' },
-                ],
-                navigationItems: [
-                    { id: 'dashboard', label: 'Dashboard' },
-                    { id: 'devices', label: 'Geräte' },
-                    { id: 'assets', label: 'Assets' },
-                    { id: 'categories', label: 'Kategorien' },
-                    { id: 'locations', label: 'Standorte' },
-                    { id: 'tickets', label: 'Ticketsystem' },
-                    { id: 'knowledge', label: 'Wissensbasis' },
-                    { id: 'roadmap', label: 'Roadmap' },
-                    { id: 'procurement', label: 'Beschaffung' },
-                    { id: 'statistics', label: 'Statistiken' },
-                    { id: 'dependencies', label: 'Abhängigkeiten' },
-                    { id: 'timeMachine', label: 'Zeitmaschine' },
-                    { id: 'health', label: 'Health' },
-                    { id: 'users', label: 'Benutzer & Rollen' },
-                    { id: 'settings', label: 'Einstellungen' },
-                ],
+                saveLocalOnly: false,
                 loading: false,
                 saving: false,
                 errorMessage: '',
@@ -1808,16 +1597,9 @@
                 future: [],
                 suppressHistory: false,
 
-                get migrationProfilesForEntity() {
-                    return this.migrationProfiles.filter(profile => profile.entity === this.migrationEntity);
-                },
-
                 async init() {
                     await this.fetchSettings();
                     await this.fetchInventoryLinks();
-                    if (this.settings.importExport.importAllowed) {
-                        await this.fetchMigrationProfiles();
-                    }
                     if (this.activeSection === 'terminal' && !this.canViewTerminal) {
                         this.activeSection = 'server';
                     }
@@ -1871,20 +1653,6 @@
                         this.inventoryLinkError = error.message;
                     } finally {
                         this.$nextTick(() => feather.replace());
-                    }
-                },
-
-                async fetchMigrationProfiles() {
-                    try {
-                        const response = await fetch('/api/import/profiles');
-                        if (!response.ok) {
-                            const error = await response.json();
-                            throw new Error(error.error || 'Importprofile konnten nicht geladen werden.');
-                        }
-                        const data = await response.json();
-                        this.migrationProfiles = data.profiles || [];
-                    } catch (error) {
-                        this.migrationError = error.message || 'Importprofile konnten nicht geladen werden.';
                     }
                 },
 
@@ -2060,10 +1828,10 @@
                     if (this.settings.backup.notifyEmail && !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(this.settings.backup.notifyEmail)) {
                         return 'E-Mail-Adresse ist ungültig.';
                     }
-                    if (this.settings.updates.autoUpdateEnabled && (!Number.isInteger(this.settings.updates.checkIntervalMinutes) || this.settings.updates.checkIntervalMinutes < 15 || this.settings.updates.checkIntervalMinutes > 1440)) {
+                    if (!Number.isInteger(this.settings.updates.checkIntervalMinutes) || this.settings.updates.checkIntervalMinutes < 15 || this.settings.updates.checkIntervalMinutes > 1440) {
                         return 'Update-Prüfintervall muss zwischen 15 und 1440 Minuten liegen.';
                     }
-                    if (this.settings.updates.autoUpdateEnabled && !/^([01]\d|2[0-3]):[0-5]\d$/.test(this.settings.updates.maintenanceWindow || '')) {
+                    if (!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(this.settings.updates.maintenanceWindow || '')) {
                         return 'Update-Wartungsfenster muss im Format HH:MM sein.';
                     }
                     if (!Number.isInteger(this.settings.security.sessionTimeoutMinutes)) {
@@ -2381,189 +2149,6 @@
                     }
                 },
 
-                selectMigrationFile(event) {
-                    this.migrationFile = event.target.files?.[0] || null;
-                    this.migrationPreview = null;
-                    this.migrationPreviewStale = false;
-                    this.migrationError = '';
-                    this.migrationMessage = '';
-                },
-
-                resetMigrationOptions() {
-                    this.migrationProfileId = '';
-                    this.migrationProfileName = '';
-                    this.migrationMapping = {};
-                    this.migrationMatchingKey = '';
-                    this.migrationSheetName = '';
-                    this.migrationPreview = null;
-                    this.migrationPreviewStale = false;
-                    this.migrationError = '';
-                    this.migrationMessage = '';
-                },
-
-                selectMigrationProfile() {
-                    const profile = this.migrationProfiles.find(item => String(item.id) === this.migrationProfileId);
-                    if (!profile) {
-                        this.migrationProfileName = '';
-                        this.migrationMapping = {};
-                        this.migrationMatchingKey = '';
-                        this.migrationSheetName = '';
-                    } else {
-                        this.migrationProfileName = profile.name;
-                        this.migrationMapping = { ...(profile.mapping || {}) };
-                        this.migrationMatchingKey = profile.matchingKey || '';
-                        this.migrationSheetName = profile.sheetName || '';
-                    }
-                    this.migrationPreview = null;
-                    this.migrationPreviewStale = false;
-                    this.migrationError = '';
-                    this.migrationMessage = '';
-                },
-
-                markMigrationPreviewStale() {
-                    if (!this.migrationPreview) return;
-                    this.migrationPreviewStale = true;
-                    this.migrationMessage = 'Zuordnung geändert. Bitte Vorschau erneut erstellen.';
-                },
-
-                appendMigrationOptions(formData) {
-                    if (this.migrationProfileId) formData.append('profileId', this.migrationProfileId);
-                    if (Object.keys(this.migrationMapping).length) {
-                        formData.append('mapping', JSON.stringify(this.migrationMapping));
-                    }
-                    if (this.migrationMatchingKey) formData.append('matchingKey', this.migrationMatchingKey);
-                    if (this.migrationSheetName) formData.append('sheetName', this.migrationSheetName);
-                },
-
-                downloadMigrationErrorReport() {
-                    const report = this.migrationPreview?.errorReport;
-                    if (!report?.content || !report?.filename) return;
-                    const url = URL.createObjectURL(new Blob([report.content], { type: 'text/csv;charset=utf-8' }));
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = report.filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
-                    setTimeout(() => URL.revokeObjectURL(url), 0);
-                },
-
-                async previewMigration() {
-                    if (!this.migrationFile) return;
-                    this.migrationBusy = true;
-                    this.migrationError = '';
-                    this.migrationMessage = '';
-                    const formData = new FormData();
-                    formData.append('entity', this.migrationEntity);
-                    this.appendMigrationOptions(formData);
-                    formData.append('file', this.migrationFile);
-                    try {
-                        const response = await fetch('/api/import/preview', {
-                            method: 'POST',
-                            body: formData,
-                        });
-                        const data = await response.json();
-                        if (!response.ok) {
-                            throw new Error(data.error || 'Vorschau konnte nicht erstellt werden.');
-                        }
-                        this.migrationPreview = data;
-                        this.migrationPreviewStale = false;
-                        this.migrationMapping = { ...(data.mapping || {}) };
-                        this.migrationMatchingKey = data.matchingKey || '';
-                        this.migrationSheetName = data.sheetName || '';
-                    } catch (error) {
-                        this.migrationError = error.message || 'Vorschau konnte nicht erstellt werden.';
-                    } finally {
-                        this.migrationBusy = false;
-                    }
-                },
-
-                async importMigration() {
-                    if (!this.migrationFile || !this.migrationPreview || this.migrationPreviewStale || this.migrationPreview.invalidRows > 0) return;
-                    this.migrationBusy = true;
-                    this.migrationError = '';
-                    this.migrationMessage = '';
-                    const formData = new FormData();
-                    formData.append('entity', this.migrationEntity);
-                    formData.append('mode', this.migrationMode);
-                    this.appendMigrationOptions(formData);
-                    formData.append('previewToken', this.migrationPreview.previewToken);
-                    formData.append('file', this.migrationFile);
-                    try {
-                        const response = await fetch('/api/import', {
-                            method: 'POST',
-                            body: formData,
-                        });
-                        const data = await response.json();
-                        if (!response.ok) {
-                            throw new Error(data.error || 'Import konnte nicht ausgeführt werden.');
-                        }
-                        const summary = data.summary || {};
-                        this.migrationMessage = `Import abgeschlossen: ${summary.created || 0} erstellt, ${summary.updated || 0} aktualisiert, ${summary.skipped || 0} übersprungen.`;
-                    } catch (error) {
-                        this.migrationError = error.message || 'Import konnte nicht ausgeführt werden.';
-                    } finally {
-                        this.migrationBusy = false;
-                    }
-                },
-
-                async saveMigrationProfile() {
-                    if (!this.migrationProfileName || !this.migrationPreview) return;
-                    this.migrationBusy = true;
-                    this.migrationError = '';
-                    try {
-                        const payload = {
-                            name: this.migrationProfileName,
-                            entity: this.migrationEntity,
-                            mapping: this.migrationMapping,
-                            matchingKey: this.migrationMatchingKey || null,
-                            sheetName: this.migrationSheetName || null,
-                        };
-                        const isUpdate = Boolean(this.migrationProfileId);
-                        const response = await fetch(
-                            isUpdate ? `/api/import/profiles/${this.migrationProfileId}` : '/api/import/profiles',
-                            {
-                                method: isUpdate ? 'PUT' : 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(payload),
-                            },
-                        );
-                        const data = await response.json();
-                        if (!response.ok) throw new Error(data.error || 'Importprofil konnte nicht gespeichert werden.');
-                        this.migrationProfileId = String(data.profile.id);
-                        this.migrationProfileName = data.profile.name;
-                        await this.fetchMigrationProfiles();
-                        this.migrationMessage = 'Importprofil gespeichert.';
-                    } catch (error) {
-                        this.migrationError = error.message || 'Importprofil konnte nicht gespeichert werden.';
-                    } finally {
-                        this.migrationBusy = false;
-                    }
-                },
-
-                async deleteMigrationProfile() {
-                    if (!this.migrationProfileId || !confirm('Importprofil wirklich löschen?')) return;
-                    this.migrationBusy = true;
-                    this.migrationError = '';
-                    try {
-                        const response = await fetch(`/api/import/profiles/${this.migrationProfileId}`, { method: 'DELETE' });
-                        const data = await response.json();
-                        if (!response.ok) throw new Error(data.error || 'Importprofil konnte nicht gelöscht werden.');
-                        this.migrationProfileId = '';
-                        this.migrationProfileName = '';
-                        await this.fetchMigrationProfiles();
-                        this.migrationMessage = 'Importprofil gelöscht.';
-                    } catch (error) {
-                        this.migrationError = error.message || 'Importprofil konnte nicht gelöscht werden.';
-                    } finally {
-                        this.migrationBusy = false;
-                    }
-                },
-
-                downloadInventoryExport() {
-                    window.location.assign('/api/export');
-                },
-
                 async saveSettings() {
                     this.saving = true;
                     this.errorMessage = '';
@@ -2654,6 +2239,11 @@
                     } catch (error) {
                         this.customizeError = error.message || 'Customize konnte nicht geladen werden.';
                     }
+                    const localOverride = window.InventoryCustomization ? window.InventoryCustomization.getLocalOverride() : null;
+                    if (localOverride) {
+                        this.customization = window.InventoryCustomization.merge(this.customization, localOverride);
+                        this.saveLocalOnly = true;
+                    }
                     this.applyCustomization();
                 },
 
@@ -2691,22 +2281,12 @@
                     return (lighter + 0.05) / (darker + 0.05);
                 },
 
-                handleBrandImageUpload(event, field) {
+                handleLogoUpload(event) {
                     const file = event.target.files[0];
                     if (!file) return;
-                    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
-                    if (!allowedTypes.includes(file.type)) {
-                        this.customizeError = 'Bitte ein PNG-, JPEG-, WebP- oder GIF-Bild auswählen.';
-                        return;
-                    }
-                    if (file.size > 2 * 1024 * 1024) {
-                        this.customizeError = 'Logo- und Favicon-Dateien dürfen höchstens 2 MB groß sein.';
-                        return;
-                    }
                     const reader = new FileReader();
                     reader.onload = () => {
-                        this.customization.branding[field] = reader.result;
-                        this.customizeError = '';
+                        this.customization.branding.logoDataUrl = reader.result;
                     };
                     reader.readAsDataURL(file);
                 },
@@ -2714,6 +2294,10 @@
                 resetCustomization() {
                     const defaults = window.InventoryCustomization ? window.InventoryCustomization.defaults() : {};
                     this.customization = defaults;
+                    this.saveLocalOnly = false;
+                    if (window.InventoryCustomization) {
+                        window.InventoryCustomization.setLocalOverride(null);
+                    }
                     this.customizeMessage = 'Alle Anpassungen wurden zurückgesetzt.';
                     this.customizeError = '';
                     this.resetHistory();
@@ -2739,6 +2323,17 @@
                 async saveCustomization() {
                     this.customizeMessage = '';
                     this.customizeError = '';
+                    if (this.saveLocalOnly) {
+                        if (window.InventoryCustomization) {
+                            window.InventoryCustomization.setLocalOverride(this.customization);
+                        }
+                        this.customizeMessage = 'Lokal gespeichert. Server-Konfiguration bleibt unverändert.';
+                        setTimeout(() => {
+                            this.customizeMessage = '';
+                        }, 3000);
+                        return;
+                    }
+
                     try {
                         const response = await fetch('/api/customize', {
                             method: 'PUT',
@@ -2751,6 +2346,7 @@
                         }
                         this.customization = window.InventoryCustomization.migrate(data.customization || this.customization);
                         if (window.InventoryCustomization) {
+                            window.InventoryCustomization.setLocalOverride(null);
                             window.InventoryCustomization.setCached({
                                 customization: this.customization,
                                 updatedAt: data.updated_at,
@@ -2858,5 +2454,6 @@
         }
     </script>
     <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
 </body>
 </html>
