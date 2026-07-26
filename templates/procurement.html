@@ -8,8 +8,7 @@
         window.inventoryPermissions = {{ permissions | tojson }};
         window.inventoryIsSuperuser = {{ 'true' if is_superuser else 'false' }};
     </script>
-    <script src="/static/theme.js?v=inventory-v4-20260726-1"></script>
-    <script src="/static/csrf.js?v=1"></script>
+    <script src="/static/theme.js"></script>
     <link rel="stylesheet" href="/static/vendor/tailwind.min.css?v=3.4.17">
     <script src="/static/vendor/alpinejs.min.js" defer></script>
     <link rel="stylesheet" href="/static/style.css">
@@ -678,5 +677,6 @@
         });
     </script>
     <script src="/static/ui.js"></script>
+    <script src="/static/theme.js"></script>
 </body>
 </html>

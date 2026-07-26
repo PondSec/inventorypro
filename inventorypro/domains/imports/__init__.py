@@ -1,1 +1,0 @@
-"""Inventory data migration domain."""

@@ -1,10 +1,8 @@
 name: Release Inventory Pro
 
 on:
-  workflow_run:
-    workflows: [CI]
+  push:
     branches: [main]
-    types: [completed]
 
 permissions:
   contents: write
@@ -16,12 +14,10 @@ concurrency:
 
 jobs:
   release:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - name: Prepare release metadata
@@ -29,11 +25,7 @@ jobs:
         shell: bash
         run: |
           image_name="ghcr.io/${GITHUB_REPOSITORY,,}"
-          version="$(tr -d '[:space:]' < VERSION)"
-          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "VERSION must contain a semantic version" >&2
-            exit 1
-          fi
+          version="0.0.${GITHUB_RUN_NUMBER}"
           echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
@@ -60,13 +52,13 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
-            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Create signed update manifest
         env:
           INVENTORY_UPDATE_SIGNING_KEY: ${{ secrets.INVENTORY_UPDATE_SIGNING_KEY }}
         run: |
-          python -m pip install --disable-pip-version-check --quiet cryptography==49.0.0
+          python -m pip install --disable-pip-version-check --quiet cryptography
           python scripts/sign_release_manifest.py \
             --version "${{ steps.meta.outputs.version }}" \
             --image "${{ steps.meta.outputs.image_name }}@${{ steps.image.outputs.digest }}" \
@@ -75,14 +67,14 @@ jobs:
 
       - name: Package deployment source
         run: |
-          git archive --format=tar.gz --output "inventorypro-${{ steps.meta.outputs.version }}.tar.gz" "${{ github.event.workflow_run.head_sha }}"
+          git archive --format=tar.gz --output "inventorypro-${{ steps.meta.outputs.version }}.tar.gz" "${GITHUB_SHA}"
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "v${{ steps.meta.outputs.version }}" \
-            --target "${{ github.event.workflow_run.head_sha }}" \
+            --target "${GITHUB_SHA}" \
             --title "Inventory Pro v${{ steps.meta.outputs.version }}" \
             --generate-notes \
             update-manifest.json "inventorypro-${{ steps.meta.outputs.version }}.tar.gz"
