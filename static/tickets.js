@@ -623,14 +623,16 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        async openCreateTicket() {
+        openCreateTicket() {
             this.createError = '';
-            if (!this.newTicket.category_id) await this.ticketTypeChanged();
             this.rememberFocus();
             this.createOpen = true;
+            if (!this.newTicket.category_id) void this.ticketTypeChanged();
             this.$nextTick(() => {
-                this.$refs.createTitle?.focus();
-                this.refreshIcons();
+                requestAnimationFrame(() => {
+                    this.$refs.createTitle?.focus();
+                    this.refreshIcons();
+                });
             });
         },
 
@@ -722,8 +724,9 @@ document.addEventListener('alpine:init', () => {
                 ? [...(this.selectedTicket?.asset_ids || [])]
                 : [...this.newTicket.asset_ids];
             this.assetPickerOpen = true;
+            await this.$nextTick();
+            this.$refs.assetSearch?.focus();
             await this.loadAssetOptions();
-            this.$nextTick(() => this.$refs.assetSearch?.focus());
         },
 
         closeAssetPicker() {

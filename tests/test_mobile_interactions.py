@@ -116,9 +116,30 @@ class MobileInteractionTestCase(unittest.TestCase):
         page.click('button[type="submit"]')
         page.wait_for_url(f"{self.base_url}/")
 
+    def reset_customization(self, page):
+        response = page.evaluate(
+            """
+            async (customization) => {
+                const response = await fetch('/api/customize', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(customization),
+                });
+                return response.status;
+            }
+            """,
+            inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION),
+        )
+        if response != 200:
+            raise AssertionError(f"Customization reset failed with status {response}.")
+
     def open_modal_and_close(self, page, open_selector, container_selector, panel_selector, close_selector):
         page.click(open_selector)
         page.wait_for_selector(panel_selector, state="visible")
+        page.wait_for_function(
+            "selector => { const modal = document.querySelector(selector); return modal && modal.contains(document.activeElement); }",
+            arg=panel_selector,
+        )
         focus_in_modal = page.evaluate(
             "selector => { const modal = document.querySelector(selector); return modal && modal.contains(document.activeElement); }",
             panel_selector,
@@ -279,6 +300,119 @@ class MobileInteractionTestCase(unittest.TestCase):
 
         context.close()
 
+    def test_custom_branding_and_navigation_apply_in_service_desk(self):
+        context = self.browser.new_context(viewport={"width": 1280, "height": 900})
+        page = context.new_page()
+        self.login(page)
+        self.addCleanup(context.close)
+        self.addCleanup(self.reset_customization, page)
+
+        response = page.evaluate(
+            """
+            async (customization) => {
+                const response = await fetch('/api/customize', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(customization),
+                });
+                return { status: response.status, body: await response.json() };
+            }
+            """,
+            {
+                "branding": {
+                    "name": "Beispiel Bestand",
+                    "tagline": "Verwaltung für Teams",
+                    "logoLightDataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQMgn7DwAClAGcHVtGXwAAAABJRU5ErkJggg==",
+                },
+                "navigation": {
+                    "items": {
+                        "roadmap": {"label": "Planungsboard", "visible": False, "order": 80},
+                        "dependencies": {"label": "Beziehungsgraph", "visible": True, "order": 110},
+                    },
+                },
+            },
+        )
+        self.assertEqual(response["status"], 200)
+
+        page.goto(f"{self.base_url}/tickets")
+        page.wait_for_function(
+            """
+            () => document.querySelector('[data-brand-name]')?.textContent === 'Beispiel Bestand'
+            """
+        )
+
+        self.assertEqual(
+            page.locator("[data-brand-tagline]").inner_text(),
+            "Verwaltung für Teams",
+        )
+        self.assertTrue(
+            page.locator("[data-brand-logo]").evaluate(
+                "element => getComputedStyle(element).backgroundImage.includes('data:image/png;base64')"
+            )
+        )
+        self.assertEqual(
+            page.locator("[data-navigation-item='dependencies'] [data-navigation-label]").inner_text(),
+            "Beziehungsgraph",
+        )
+        self.assertTrue(page.locator("[data-navigation-item='roadmap']").is_hidden())
+
+    def test_customization_cache_rejects_older_revision(self):
+        context = self.browser.new_context(viewport={"width": 1280, "height": 900})
+        page = context.new_page()
+        self.login(page)
+        self.addCleanup(context.close)
+        self.addCleanup(self.reset_customization, page)
+
+        response = page.evaluate(
+            """
+            async () => {
+                const response = await fetch('/api/customize', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ branding: { name: 'Aktueller Bestand' } }),
+                });
+                return { status: response.status, body: await response.json() };
+            }
+            """
+        )
+        self.assertEqual(response["status"], 200)
+        revision_id = response["body"]["revision_id"]
+
+        page.goto(f"{self.base_url}/tickets")
+        page.wait_for_function(
+            """
+            () => document.querySelector('[data-brand-name]')?.textContent === 'Aktueller Bestand'
+            """
+        )
+        cache_result = page.evaluate(
+            """
+            ({ customization, revisionId }) => {
+                const stale = structuredClone(customization);
+                stale.branding.name = 'Veralteter Bestand';
+                const accepted = window.InventoryCustomization.setCached({
+                    customization: stale,
+                    revisionId: revisionId - 1,
+                    cachedAt: new Date().toISOString(),
+                });
+                return {
+                    accepted,
+                    cached: window.InventoryCustomization.getCached(),
+                };
+            }
+            """,
+            {
+                "customization": response["body"]["customization"],
+                "revisionId": revision_id,
+            },
+        )
+
+        self.assertFalse(cache_result["accepted"])
+        self.assertEqual(cache_result["cached"]["revisionId"], revision_id)
+        self.assertEqual(
+            cache_result["cached"]["customization"]["branding"]["name"],
+            "Aktueller Bestand",
+        )
+
     def test_responsive_tables_have_labels(self):
         context = self.browser.new_context(viewport={"width": 320, "height": 900})
         page = context.new_page()
@@ -322,6 +456,7 @@ class MobileInteractionTestCase(unittest.TestCase):
         page.get_by_role("button", name="Assets verknüpfen").click()
 
         asset_search = page.get_by_role("searchbox", name="Assets durchsuchen")
+        asset_search.wait_for(state="visible")
         self.assertTrue(asset_search.is_visible())
         search_box = asset_search.bounding_box()
         self.assertIsNotNone(search_box)

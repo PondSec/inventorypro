@@ -141,7 +141,10 @@ html {
 
 body {
   font-family: var(--font-sans);
-  background: var(--color-bg);
+  background-color: var(--color-bg);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
   color: var(--color-text);
   line-height: var(--line-height-normal);
   font-size: var(--font-size-base);
@@ -1928,8 +1931,7 @@ textarea {
   background-image: none !important;
 }
 
-.sidebar-logo,
-[data-brand-logo] {
+.sidebar-logo:not([data-brand-logo]) {
   background: #111827 !important;
   box-shadow: none !important;
 }
@@ -3422,6 +3424,10 @@ textarea {
   display: grid;
   gap: 3px;
   padding: 14px 10px;
+}
+
+[data-navigation-item][hidden] {
+  display: none !important;
 }
 
 .sd-global-links a,

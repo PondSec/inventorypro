@@ -2,17 +2,36 @@ import json
 import socket
 import tempfile
 import threading
+import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from cryptography.fernet import Fernet
+from flask import Flask
 
 import app as inventory_app
+from inventorypro.domains.inventory_links.routes import build_inventory_links_blueprint
+from inventorypro.domains.inventory_links.service import InventoryLinkSessionService
+from inventorypro.domains.inventory_links import service as inventory_link_service
+from inventorypro.domains.inventory_links import validators as inventory_link_validators
 
 
 class InventoryLinkHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        if self.path.startswith("/login"):
+            payload = b"authenticated"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Set-Cookie", "inventory_session=linked; Path=/")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+        self.send_response(404)
+        self.end_headers()
+
     def do_GET(self):
         if self.path.startswith("/api/health/summary"):
             payload = json.dumps({"status": "OK"}).encode("utf-8")
@@ -149,6 +168,22 @@ class InventoryLinksTestCase(unittest.TestCase):
         thread.start()
         return server
 
+    def create_link(self, base_url, *, auth_mode="none", secret=""):
+        response = self.client.post(
+            "/api/inventory-links",
+            json={
+                "displayName": "Werkstatt",
+                "baseUrl": base_url,
+                "authMode": auth_mode,
+                "secret": secret,
+                "verifyTls": False,
+                "allowPrivateNetwork": True,
+                "connectionScope": "local",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        return response.get_json()
+
     def test_inventory_link_validation(self):
         with self.assertRaises(ValueError):
             inventory_app.validate_inventory_link_target("http://127.0.0.1:5001", True)
@@ -157,7 +192,7 @@ class InventoryLinksTestCase(unittest.TestCase):
             inventory_app.validate_inventory_link_target("http://192.168.1.10:5001", False)
 
     def test_connection_scope_enforces_separate_internet_and_lan_policies(self):
-        with patch.object(inventory_app, "resolve_inventory_link_ips", return_value=["8.8.8.8"]):
+        with patch.object(inventory_link_validators, "resolve_inventory_link_ips", return_value=["8.8.8.8"]):
             normalized, scope, verify_tls, allow_private = inventory_app.validate_inventory_link_configuration(
                 "https://inventory.example", "internet", True, False
             )
@@ -174,18 +209,193 @@ class InventoryLinksTestCase(unittest.TestCase):
                     "https://inventory.example", "internet", False, False
                 )
 
-        with patch.object(inventory_app, "resolve_inventory_link_ips", return_value=["192.168.30.4"]):
+        with patch.object(inventory_link_validators, "resolve_inventory_link_ips", return_value=["192.168.30.4"]):
             _, scope, _, allow_private = inventory_app.validate_inventory_link_configuration(
                 "http://192.168.30.4:5050", "local", False, True
             )
             self.assertEqual(scope, "local")
             self.assertTrue(allow_private)
 
-        with patch.object(inventory_app, "resolve_inventory_link_ips", return_value=["8.8.4.4"]):
+        with patch.object(inventory_link_validators, "resolve_inventory_link_ips", return_value=["8.8.4.4"]):
             with self.assertRaisesRegex(ValueError, "private LAN"):
                 inventory_app.validate_inventory_link_configuration(
                     "https://inventory.example", "local", True, True
                 )
+
+    def test_inventory_link_validator_security_boundaries(self):
+        self.assertEqual(
+            inventory_link_validators.normalize_inventory_link_base_url("https://inventory.example/root/"),
+            "https://inventory.example/root",
+        )
+        for value in (
+            "ftp://inventory.example",
+            "https://operator:secret@inventory.example",
+            "https://inventory.example?token=secret",
+            "https://inventory.example#fragment",
+        ):
+            with self.assertRaises(ValueError):
+                inventory_link_validators.normalize_inventory_link_base_url(value)
+
+        with patch.object(inventory_link_validators, "resolve_inventory_link_ips", return_value=[]):
+            with self.assertRaisesRegex(ValueError, "aufgelöst"):
+                inventory_link_validators.validate_inventory_link_target("https://inventory.example", False)
+        with patch.object(
+            inventory_link_validators,
+            "resolve_inventory_link_ips",
+            return_value=["169.254.169.254"],
+        ):
+            with self.assertRaisesRegex(ValueError, "nicht erlaubt"):
+                inventory_link_validators.validate_inventory_link_target("https://inventory.example", True)
+
+        self.assertTrue(inventory_link_validators.is_inventory_link_ip_blocked("not-an-ip", True))
+        self.assertTrue(inventory_link_validators.is_inventory_link_ip_blocked("224.0.0.1", True))
+        self.assertTrue(inventory_link_validators.is_inventory_link_ip_blocked("169.254.10.1", True))
+        self.assertTrue(inventory_link_validators.is_inventory_link_ip_blocked("10.0.0.1", False))
+        self.assertFalse(inventory_link_validators.is_inventory_link_ip_blocked("8.8.8.8", False))
+        self.assertFalse(inventory_link_validators.is_inventory_link_private_ip("not-an-ip"))
+
+        inventory_app.os.environ["INVENTORY_LINKS_ALLOW_LOOPBACK"] = "1"
+        self.assertTrue(inventory_link_validators.is_inventory_link_private_ip("127.0.0.1"))
+        self.assertTrue(inventory_link_validators.inventory_links_allow_loopback())
+
+        with self.assertRaises(ValueError):
+            inventory_link_validators.normalize_inventory_link_connection_scope("partner")
+        self.assertEqual(inventory_link_validators.normalize_inventory_link_connection_scope(None), "internet")
+        self.assertEqual(
+            inventory_link_validators.enforce_inventory_link_scope_access(
+                {"is_superuser": False, "permissions": set()},
+                "local",
+            ),
+            "Lokale Inventory-Link-Verbindungen benötigen Administratorrechte.",
+        )
+        self.assertIsNone(
+            inventory_link_validators.enforce_inventory_link_scope_access(
+                {"is_superuser": False, "permissions": {"server_settings.manage"}},
+                "local",
+            )
+        )
+        with self.assertRaises(ValueError):
+            inventory_link_validators.parse_inventory_link_login_secret("operator")
+        self.assertEqual(
+            inventory_link_validators.parse_inventory_link_login_secret(" operator :secret"),
+            ("operator", "secret"),
+        )
+
+    def test_inventory_link_session_service_cache_and_headers(self):
+        class Cache:
+            def __init__(self):
+                self.values = {}
+
+            def get(self, key):
+                return self.values.get(key)
+
+            def set(self, key, value, ttl):
+                self.values[key] = value
+
+            def pop(self, key, default=None):
+                return self.values.pop(key, default)
+
+        cache = Cache()
+        service = InventoryLinkSessionService(
+            login_session_cache=cache,
+            login_ttl_seconds=60,
+            proxy_timeout_seconds=1,
+            allow_private_network_default=False,
+        )
+        link = {"id": "service-link", "base_url": "https://inventory.example", "verify_tls": 1}
+        self.assertIsNone(service.get_cached_cookie(link, 1))
+        cache.values["1:service-link"] = {"cookie": "session=active", "expires_at": None}
+        self.assertEqual(service.get_cached_cookie(link, 1), "session=active")
+        cache.values["1:service-link"] = {"cookie": "session=expired", "expires_at": 0}
+        self.assertIsNone(service.get_cached_cookie(link, 1))
+        self.assertEqual(
+            service.build_target_url("https://inventory.example/root/", "devices", b"page=2"),
+            "https://inventory.example/root/devices?page=2",
+        )
+        self.assertEqual(service.build_target_url("https://inventory.example", "", ""), "https://inventory.example/")
+
+        with inventory_app.app.test_request_context("/", headers={"X-Request-ID": "request-1", "Cookie": "local=1"}):
+            api_key_headers = service.build_request_headers("apiKey", "key")
+            self.assertEqual(api_key_headers["X-API-Key"], "key")
+            self.assertEqual(api_key_headers["X-Request-Id"], "request-1")
+            self.assertNotIn("Cookie", api_key_headers)
+            self.assertEqual(service.build_request_headers("bearerToken", "token")["Authorization"], "Bearer token")
+            self.assertTrue(service.build_request_headers("basic", "user:secret")["Authorization"].startswith("Basic "))
+
+        self.assertEqual(service.build_static_headers("apiKey", "key")["X-API-Key"], "key")
+        self.assertEqual(service.build_static_headers("bearerToken", "token")["Authorization"], "Bearer token")
+        self.assertTrue(service.build_static_headers("basic", "user:secret")["Authorization"].startswith("Basic "))
+        self.assertFalse(service.build_ssl_context(False).check_hostname)
+
+    def test_inventory_link_session_service_login_and_diagnostic_failures(self):
+        class Cache:
+            def __init__(self):
+                self.values = {}
+
+            def get(self, key):
+                return self.values.get(key)
+
+            def set(self, key, value, ttl):
+                self.values[key] = value
+
+            def pop(self, key, default=None):
+                return self.values.pop(key, default)
+
+        service = InventoryLinkSessionService(
+            login_session_cache=Cache(),
+            login_ttl_seconds=60,
+            proxy_timeout_seconds=1,
+            allow_private_network_default=False,
+        )
+        cookie = type("Cookie", (), {"name": "session", "value": "active", "expires": 123})()
+        self.assertEqual(service.extract_cookie_header([cookie]), ("session=active", 123))
+        self.assertEqual(service.extract_cookie_header([]), (None, None))
+        link = {"id": "link", "base_url": "https://inventory.example", "verify_tls": 1}
+        with patch.object(service, "login", return_value=(None, None)):
+            with self.assertRaises(ValueError):
+                service.get_login_cookie(link, "operator:secret", 1)
+        with patch.object(service, "login", return_value=("session=active", None)):
+            self.assertEqual(service.get_login_cookie(link, "operator:secret", 1), "session=active")
+        with patch.object(service, "login", return_value=("session=active", None)):
+            self.assertEqual(service.build_static_headers("login", "operator:secret", "https://inventory.example")["Cookie"], "session=active")
+
+        unauthorized = urllib.error.HTTPError("https://inventory.example/login", 401, "Unauthorized", None, None)
+        unauthorized.close = Mock(wraps=unauthorized.close)
+        opener = type("Opener", (), {"open": lambda self, *args, **kwargs: (_ for _ in ()).throw(unauthorized)})()
+        with patch.object(inventory_link_service.urllib.request, "build_opener", return_value=opener):
+            with self.assertRaises(ValueError):
+                service.login("https://inventory.example", True, "operator:secret")
+        unauthorized.close.assert_called_once()
+
+        with patch.object(
+            inventory_link_service,
+            "validate_inventory_link_configuration",
+            side_effect=ValueError("blocked"),
+        ):
+            self.assertEqual(service.perform_test({"base_url": "https://inventory.example"})["status"], "down")
+        with patch.object(
+            inventory_link_service,
+            "validate_inventory_link_configuration",
+            return_value=("https://inventory.example", "internet", True, False),
+        ):
+            with patch.object(service, "build_static_headers", side_effect=ValueError("invalid credentials")):
+                self.assertEqual(service.perform_test({"base_url": "https://inventory.example"})["status"], "unauthorized")
+            with patch.object(service, "build_static_headers", side_effect=inventory_link_service.InventoryLinkConnectionError("offline")):
+                self.assertEqual(service.perform_test({"base_url": "https://inventory.example"})["status"], "down")
+
+    def test_inventory_link_stream_closes_after_remote_disconnect(self):
+        class BrokenResponse:
+            closed = False
+
+            def read(self, size):
+                raise ConnectionResetError("remote connection closed")
+
+            def close(self):
+                self.closed = True
+
+        response = BrokenResponse()
+        self.assertEqual(list(inventory_app.stream_inventory_link_response(response)), [])
+        self.assertTrue(response.closed)
 
     def test_proxy_forwards_headers_and_redirects(self):
         inventory_app.os.environ["INVENTORY_LINKS_ALLOW_LOOPBACK"] = "1"
@@ -317,6 +527,415 @@ class InventoryLinksTestCase(unittest.TestCase):
         self.assertIn("Werkstatt", body)
         self.assertIn("Zentrale", body)
         self.assertIn('class="sidebar-link active"', body)
+
+    def test_inventory_link_portal_uses_customization_branding_markers(self):
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            user = db.execute("SELECT id FROM users WHERE username = ?", ("tester",)).fetchone()
+            db.execute(
+                '''
+                INSERT INTO inventory_links (
+                    id, user_id, display_name, base_url, verify_tls, auth_mode, secret_encrypted,
+                    allow_private_network
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                ("portal-branding", user["id"], "Werkstatt", "https://werkstatt.example", 1, "none", "", 0),
+            )
+            db.commit()
+
+        self.login()
+        customization = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        customization["branding"]["name"] = "Beispiel Bestand"
+        save_response = self.client.put("/api/customize", json=customization)
+        self.assertEqual(save_response.status_code, 200)
+
+        response = self.client.get("/inventory-links/portal-branding/portal")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('data-brand-logo', body)
+        self.assertIn('data-brand-logo-icon', body)
+        self.assertIn('data-brand-name>Inventory Pro', body)
+        self.assertIn('data-brand-tagline>Verknüpfte Instanz', body)
+
+    def test_inventory_link_route_contract(self):
+        expected_routes = {
+            "/api/inventory-links": ("inventory_links_api", {"GET", "POST"}),
+            "/api/inventory-links/test": ("inventory_links_test_draft", {"POST"}),
+            "/api/inventory-links/<link_id>": ("inventory_link_detail_api", {"PATCH", "DELETE"}),
+            "/api/inventory-links/<link_id>/test": ("inventory_link_test_api", {"POST"}),
+            "/api/inventory-links/<link_id>/auth/status": ("inventory_link_auth_status", {"GET"}),
+            "/api/inventory-links/<link_id>/auth/login": ("inventory_link_auth_login", {"POST"}),
+            "/api/inventory-links/<link_id>/proxy/": (
+                "inventory_link_proxy",
+                {"GET", "POST", "PUT", "PATCH", "DELETE"},
+            ),
+            "/api/inventory-links/<link_id>/proxy/<path:subpath>": (
+                "inventory_link_proxy",
+                {"GET", "POST", "PUT", "PATCH", "DELETE"},
+            ),
+            "/inventory-links/<link_id>/portal": ("inventory_link_portal", {"GET"}),
+        }
+        actual_routes = {
+            rule.rule: (rule.endpoint, rule.methods - {"HEAD", "OPTIONS"})
+            for rule in inventory_app.app.url_map.iter_rules()
+            if "inventory-links" in rule.rule
+        }
+        self.assertEqual(actual_routes, expected_routes)
+
+    def test_inventory_link_crud_and_auth_status(self):
+        self.login()
+        empty_response = self.client.get("/api/inventory-links")
+        self.assertEqual(empty_response.status_code, 200)
+        self.assertEqual(empty_response.get_json(), [])
+
+        link = self.create_link("http://192.168.30.4:5050")
+        self.assertEqual(link["displayName"], "Werkstatt")
+        self.assertEqual(link["connectionScope"], "local")
+
+        list_response = self.client.get("/api/inventory-links")
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual([item["id"] for item in list_response.get_json()], [link["id"]])
+
+        update_response = self.client.patch(
+            f"/api/inventory-links/{link['id']}",
+            json={"displayName": "Hauptwerkstatt"},
+        )
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.get_json()["displayName"], "Hauptwerkstatt")
+
+        auth_status = self.client.get(f"/api/inventory-links/{link['id']}/auth/status")
+        self.assertEqual(auth_status.status_code, 200)
+        self.assertEqual(auth_status.get_json(), {"authenticated": True})
+
+        delete_response = self.client.delete(f"/api/inventory-links/{link['id']}")
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertEqual(delete_response.get_json(), {"status": "deleted"})
+
+    def test_inventory_link_draft_and_persisted_health_checks(self):
+        inventory_app.os.environ["INVENTORY_LINKS_ALLOW_LOOPBACK"] = "1"
+        server = self.start_server(self.get_local_ip())
+        try:
+            self.login()
+            base_url = f"http://{self.get_local_ip()}:{server.server_port}"
+            draft_response = self.client.post(
+                "/api/inventory-links/test",
+                json={
+                    "baseUrl": base_url,
+                    "authMode": "none",
+                    "verifyTls": False,
+                    "allowPrivateNetwork": True,
+                    "connectionScope": "local",
+                },
+            )
+            self.assertEqual(draft_response.status_code, 200)
+            self.assertEqual(draft_response.get_json()["status"], "ok")
+
+            link = self.create_link(base_url)
+            persisted_response = self.client.post(f"/api/inventory-links/{link['id']}/test")
+            self.assertEqual(persisted_response.status_code, 200)
+            self.assertEqual(persisted_response.get_json()["status"], "ok")
+            with inventory_app.app.app_context():
+                row = inventory_app.get_db().execute(
+                    "SELECT health_status FROM inventory_links WHERE id = ?",
+                    (link["id"],),
+                ).fetchone()
+            self.assertEqual(row["health_status"], "ok")
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_inventory_link_login_and_proxy_post(self):
+        inventory_app.os.environ["INVENTORY_LINKS_ALLOW_LOOPBACK"] = "1"
+        server = self.start_server(self.get_local_ip())
+        try:
+            self.login()
+            base_url = f"http://{self.get_local_ip()}:{server.server_port}"
+            link = self.create_link(base_url, auth_mode="login", secret="stored:secret")
+
+            missing_credentials = self.client.post(f"/api/inventory-links/{link['id']}/auth/login", json={})
+            self.assertEqual(missing_credentials.status_code, 400)
+
+            login_response = self.client.post(
+                f"/api/inventory-links/{link['id']}/auth/login",
+                json={"username": "operator", "password": "secret"},
+            )
+            self.assertEqual(login_response.status_code, 200)
+            self.assertEqual(login_response.get_json(), {"authenticated": True})
+
+            auth_status = self.client.get(f"/api/inventory-links/{link['id']}/auth/status")
+            self.assertEqual(auth_status.status_code, 200)
+            self.assertEqual(auth_status.get_json(), {"authenticated": True})
+
+            proxy_response = self.client.post(
+                f"/api/inventory-links/{link['id']}/proxy/submit",
+                data=b"payload",
+                headers={"Content-Type": "application/octet-stream"},
+            )
+            self.assertEqual(proxy_response.status_code, 404)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+class InventoryLinkRouteErrorTestCase(unittest.TestCase):
+    link = {
+        "id": "link-1",
+        "base_url": "https://inventory.example",
+        "verify_tls": 1,
+        "auth_mode": "none",
+        "secret_encrypted": "",
+        "allow_private_network": 0,
+        "connection_scope": "internet",
+        "display_name": "Inventory",
+    }
+
+    def build_client(self, **overrides):
+        application = Flask(__name__)
+        application.secret_key = "route-errors"
+        application.add_url_rule("/login", endpoint="login", view_func=lambda: "login")
+        database = type(
+            "Database",
+            (),
+            {
+                "execute": lambda self, *args, **kwargs: None,
+                "commit": lambda self: None,
+            },
+        )()
+        access = {
+            "user": {"id": 1},
+            "permissions": {"server_settings.manage"},
+            "is_superuser": True,
+        }
+        dependencies = {
+            "get_db": lambda: database,
+            "get_user_access": lambda database: access,
+            "get_inventory_link": lambda database, user_id, link_id: self.link,
+            "list_inventory_links": lambda database, user_id: [],
+            "serialize_inventory_link": lambda link: {"id": link["id"]},
+            "validate_inventory_link_configuration": lambda *args: (
+                "https://inventory.example", "internet", True, False
+            ),
+            "enforce_inventory_link_scope_access": lambda access, scope: None,
+            "parse_inventory_link_login_secret": lambda secret: ("operator", "secret"),
+            "encrypt_inventory_link_secret": lambda secret: f"encrypted:{secret}",
+            "decrypt_inventory_link_secret": lambda encrypted: "operator:secret",
+            "perform_inventory_link_test": lambda config: {"status": "ok"},
+            "update_inventory_link_health": lambda database, link_id, status: None,
+            "get_cached_inventory_link_cookie": lambda link, user_id: None,
+            "login_inventory_link_session": lambda base_url, verify_tls, secret: ("cookie=value", None),
+            "connection_error": RuntimeError,
+            "build_inventory_link_target_url": lambda base_url, subpath, query: base_url,
+            "build_inventory_link_request_headers": lambda *args, **kwargs: {},
+            "build_inventory_link_ssl_context": lambda verify_tls: None,
+            "no_redirect_handler": inventory_app.InventoryLinkNoRedirect,
+            "filter_inventory_link_response_headers": lambda headers, link_id, base_url: {},
+            "should_rewrite_inventory_link_response": lambda content_type: False,
+            "rewrite_inventory_link_text_content": lambda body, content_type, link_id, base_url: body,
+            "stream_inventory_link_response": lambda response: (),
+            "should_rate_limit_inventory_proxy": lambda user_id: False,
+            "login_session_cache": type("Cache", (), {"set": lambda *args: None, "pop": lambda *args: None})(),
+            "login_ttl_seconds": 60,
+            "proxy_timeout_seconds": 1,
+            "allow_private_network_default": False,
+            "log_activity": lambda *args, **kwargs: None,
+            "login_required": lambda view: view,
+        }
+        dependencies.update(overrides)
+        application.register_blueprint(build_inventory_links_blueprint(**dependencies))
+        return application.test_client()
+
+    def test_routes_reject_missing_users_and_links(self):
+        no_user = self.build_client(
+            get_user_access=lambda database: {"user": None, "permissions": set(), "is_superuser": False}
+        )
+        self.assertEqual(no_user.get("/inventory-links/link-1/portal").status_code, 302)
+        self.assertEqual(no_user.get("/api/inventory-links").status_code, 401)
+        self.assertEqual(no_user.post("/api/inventory-links/test", json={}).status_code, 401)
+        self.assertEqual(no_user.patch("/api/inventory-links/link-1", json={}).status_code, 401)
+        self.assertEqual(no_user.post("/api/inventory-links/link-1/test").status_code, 401)
+        self.assertEqual(no_user.get("/api/inventory-links/link-1/auth/status").status_code, 401)
+        self.assertEqual(no_user.post("/api/inventory-links/link-1/auth/login", json={}).status_code, 401)
+        self.assertEqual(no_user.get("/api/inventory-links/link-1/proxy/").status_code, 401)
+
+        missing_link = self.build_client(get_inventory_link=lambda database, user_id, link_id: None)
+        self.assertEqual(missing_link.get("/inventory-links/link-1/portal").status_code, 404)
+        self.assertEqual(missing_link.patch("/api/inventory-links/link-1", json={}).status_code, 404)
+        self.assertEqual(missing_link.post("/api/inventory-links/link-1/test").status_code, 404)
+        self.assertEqual(missing_link.get("/api/inventory-links/link-1/auth/status").status_code, 404)
+        self.assertEqual(missing_link.post("/api/inventory-links/link-1/auth/login", json={}).status_code, 404)
+        self.assertEqual(missing_link.get("/api/inventory-links/link-1/proxy/").status_code, 404)
+
+    def test_collection_and_draft_validation_errors(self):
+        client = self.build_client()
+        self.assertEqual(client.post("/api/inventory-links", json={}).status_code, 400)
+        self.assertEqual(
+            client.post("/api/inventory-links", json={"displayName": "x", "authMode": "invalid"}).status_code,
+            400,
+        )
+        self.assertEqual(
+            client.post("/api/inventory-links", json={"displayName": "x", "authMode": "apiKey"}).status_code,
+            400,
+        )
+
+        invalid_secret = self.build_client(
+            parse_inventory_link_login_secret=lambda secret: (_ for _ in ()).throw(ValueError("invalid login secret"))
+        )
+        self.assertEqual(
+            invalid_secret.post(
+                "/api/inventory-links",
+                json={"displayName": "x", "authMode": "login", "secret": "broken"},
+            ).status_code,
+            400,
+        )
+
+        invalid_target = self.build_client(
+            validate_inventory_link_configuration=lambda *args: (_ for _ in ()).throw(ValueError("invalid target"))
+        )
+        self.assertEqual(
+            invalid_target.post("/api/inventory-links", json={"displayName": "x", "authMode": "none"}).status_code,
+            400,
+        )
+        self.assertEqual(
+            invalid_target.post("/api/inventory-links/test", json={"authMode": "none"}).status_code,
+            400,
+        )
+
+        denied_scope = self.build_client(enforce_inventory_link_scope_access=lambda access, scope: "denied")
+        self.assertEqual(
+            denied_scope.post("/api/inventory-links", json={"displayName": "x", "authMode": "none"}).status_code,
+            403,
+        )
+        self.assertEqual(denied_scope.post("/api/inventory-links/test", json={"authMode": "none"}).status_code, 403)
+        self.assertEqual(client.post("/api/inventory-links/test", json={"authMode": "invalid"}).status_code, 400)
+
+        encryption_failure = self.build_client(
+            encrypt_inventory_link_secret=lambda secret: (_ for _ in ()).throw(ValueError("key unavailable"))
+        )
+        self.assertEqual(
+            encryption_failure.post(
+                "/api/inventory-links",
+                json={"displayName": "x", "authMode": "apiKey", "secret": "value"},
+            ).status_code,
+            400,
+        )
+
+    def test_detail_validation_errors(self):
+        client = self.build_client()
+        self.assertEqual(client.patch("/api/inventory-links/link-1", json={"displayName": " "}).status_code, 400)
+        self.assertEqual(client.patch("/api/inventory-links/link-1", json={"authMode": "invalid"}).status_code, 400)
+
+        login_link = dict(self.link, auth_mode="login", secret_encrypted="stored")
+        invalid_login = self.build_client(
+            get_inventory_link=lambda database, user_id, link_id: login_link,
+            parse_inventory_link_login_secret=lambda secret: (_ for _ in ()).throw(ValueError("invalid login secret")),
+        )
+        self.assertEqual(invalid_login.patch("/api/inventory-links/link-1", json={}).status_code, 400)
+        self.assertEqual(
+            invalid_login.patch(
+                "/api/inventory-links/link-1",
+                json={"secret": "broken"},
+            ).status_code,
+            400,
+        )
+
+        invalid_target = self.build_client(
+            validate_inventory_link_configuration=lambda *args: (_ for _ in ()).throw(ValueError("invalid target"))
+        )
+        self.assertEqual(invalid_target.patch("/api/inventory-links/link-1", json={}).status_code, 400)
+        denied_scope = self.build_client(enforce_inventory_link_scope_access=lambda access, scope: "denied")
+        self.assertEqual(denied_scope.patch("/api/inventory-links/link-1", json={}).status_code, 403)
+
+        missing_secret_link = dict(self.link, auth_mode="apiKey", secret_encrypted="")
+        missing_secret = self.build_client(
+            get_inventory_link=lambda database, user_id, link_id: missing_secret_link
+        )
+        self.assertEqual(
+            missing_secret.patch("/api/inventory-links/link-1", json={"authMode": "apiKey", "secret": ""}).status_code,
+            400,
+        )
+
+        encryption_failure = self.build_client(
+            encrypt_inventory_link_secret=lambda secret: (_ for _ in ()).throw(ValueError("key unavailable"))
+        )
+        self.assertEqual(
+            encryption_failure.patch(
+                "/api/inventory-links/link-1",
+                json={"authMode": "apiKey", "secret": "value"},
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            client.patch("/api/inventory-links/link-1", json={"authMode": "none", "secret": ""}).status_code,
+            200,
+        )
+
+    def test_diagnostic_and_login_error_contracts(self):
+        encrypted_link = dict(self.link, auth_mode="apiKey", secret_encrypted="stored")
+        decrypt_failure = self.build_client(
+            get_inventory_link=lambda database, user_id, link_id: encrypted_link,
+            decrypt_inventory_link_secret=lambda encrypted: (_ for _ in ()).throw(ValueError("key unavailable")),
+        )
+        self.assertEqual(decrypt_failure.post("/api/inventory-links/link-1/test").status_code, 400)
+
+        non_login = self.build_client()
+        self.assertEqual(non_login.post("/api/inventory-links/link-1/auth/login", json={}).status_code, 400)
+
+        login_link = dict(self.link, auth_mode="login")
+        invalid_target = self.build_client(
+            get_inventory_link=lambda database, user_id, link_id: login_link,
+            validate_inventory_link_configuration=lambda *args: (_ for _ in ()).throw(ValueError("invalid target")),
+        )
+        self.assertEqual(
+            invalid_target.post(
+                "/api/inventory-links/link-1/auth/login",
+                json={"username": "operator", "password": "secret"},
+            ).status_code,
+            400,
+        )
+        denied_scope = self.build_client(
+            get_inventory_link=lambda database, user_id, link_id: login_link,
+            enforce_inventory_link_scope_access=lambda access, scope: "denied",
+        )
+        self.assertEqual(
+            denied_scope.post(
+                "/api/inventory-links/link-1/auth/login",
+                json={"username": "operator", "password": "secret"},
+            ).status_code,
+            403,
+        )
+        login_value_error = self.build_client(
+            get_inventory_link=lambda database, user_id, link_id: login_link,
+            login_inventory_link_session=lambda base_url, verify_tls, secret: (_ for _ in ()).throw(ValueError("invalid")),
+        )
+        self.assertEqual(
+            login_value_error.post(
+                "/api/inventory-links/link-1/auth/login",
+                json={"username": "operator", "password": "secret"},
+            ).status_code,
+            401,
+        )
+        login_connection_error = self.build_client(
+            get_inventory_link=lambda database, user_id, link_id: login_link,
+            login_inventory_link_session=lambda base_url, verify_tls, secret: (_ for _ in ()).throw(RuntimeError("offline")),
+        )
+        self.assertEqual(
+            login_connection_error.post(
+                "/api/inventory-links/link-1/auth/login",
+                json={"username": "operator", "password": "secret"},
+            ).status_code,
+            502,
+        )
+        no_cookie = self.build_client(
+            get_inventory_link=lambda database, user_id, link_id: login_link,
+            login_inventory_link_session=lambda base_url, verify_tls, secret: (None, None),
+        )
+        self.assertEqual(
+            no_cookie.post(
+                "/api/inventory-links/link-1/auth/login",
+                json={"username": "operator", "password": "secret"},
+            ).status_code,
+            401,
+        )
 
 
 if __name__ == "__main__":

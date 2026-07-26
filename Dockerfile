@@ -16,11 +16,13 @@ WORKDIR /app
 LABEL org.opencontainers.image.title="Inventory Pro" \
       org.opencontainers.image.version="${APP_VERSION}"
 
-COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt gunicorn
+COPY requirements.lock ./requirements.lock
+RUN pip install --no-cache-dir -r requirements.lock
 
 COPY app.py ./app.py
 COPY docker_wsgi.py ./docker_wsgi.py
+COPY inventorypro ./inventorypro
+COPY migrations ./migrations
 COPY static ./static
 COPY templates ./templates
 COPY LICENSE ./LICENSE
