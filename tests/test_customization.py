@@ -150,6 +150,43 @@ class CustomizationTestCase(unittest.TestCase):
         self.assertEqual(second_client.get('/api/customize/history').status_code, 403)
         self.assertEqual(second_client.post(f"/api/customize/rollback/{history_data['revisions'][0]['id']}").status_code, 403)
 
+    def test_customization_rollback_handles_missing_and_restores_revision(self):
+        empty_history = self.client.get('/api/customize/history')
+        self.assertEqual(empty_history.status_code, 200)
+        self.assertEqual(empty_history.get_json()['revisions'], [])
+
+        no_customization = self.client.post('/api/customize/rollback/1')
+        self.assertEqual(no_customization.status_code, 404)
+        self.assertEqual(
+            no_customization.get_json()['error'],
+            'Keine Customize-Konfiguration vorhanden.',
+        )
+
+        original = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        original['branding']['name'] = 'Erste Marke'
+        first_save = self.client.put('/api/customize', json=original)
+        self.assertEqual(first_save.status_code, 200)
+        first_revision_id = first_save.get_json()['revision_id']
+
+        replacement = inventory_app.clone_customization(original)
+        replacement['branding']['name'] = 'Zweite Marke'
+        second_save = self.client.put('/api/customize', json=replacement)
+        self.assertEqual(second_save.status_code, 200)
+
+        missing_revision = self.client.post('/api/customize/rollback/999999')
+        self.assertEqual(missing_revision.status_code, 404)
+        self.assertEqual(missing_revision.get_json()['error'], 'Revision nicht gefunden.')
+
+        rollback = self.client.post(f'/api/customize/rollback/{first_revision_id}')
+        self.assertEqual(rollback.status_code, 200)
+        rollback_data = rollback.get_json()
+        self.assertEqual(rollback_data['customization']['branding']['name'], 'Erste Marke')
+        self.assertGreater(rollback_data['revision_id'], first_revision_id)
+
+        persisted = self.client.get('/api/customize')
+        self.assertEqual(persisted.status_code, 200)
+        self.assertEqual(persisted.get_json()['customization']['branding']['name'], 'Erste Marke')
+
 
 if __name__ == '__main__':
     unittest.main()

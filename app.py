@@ -51,6 +51,7 @@ from inventorypro.data_migration import (
 )
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
 from inventorypro.domains.backups.routes import build_backups_blueprint
+from inventorypro.domains.customization.routes import build_customization_blueprint
 from inventorypro.domains.exports.routes import build_exports_blueprint
 from inventorypro.domains.imports.data_routes import build_data_import_blueprint
 from inventorypro.domains.imports.routes import build_import_profiles_blueprint
@@ -15353,144 +15354,6 @@ def inventory_link_proxy(link_id, subpath):
         headers=response_headers
     )
 
-@app.route('/api/customize', methods=['GET', 'PUT', 'PATCH'])
-@login_required
-def customize_settings():
-    db = get_db()
-    user_id = get_current_user_id(db)
-    if not user_id:
-        return jsonify({"error": "Benutzer nicht gefunden."}), 401
-
-    record = get_customization_record(db, user_id)
-    existing = None
-    if record:
-        existing = json.loads(record["customization_json"])
-
-    if request.method == 'GET':
-        customization = migrate_customization(existing or DEFAULT_CUSTOMIZATION)
-        latest_revision = None
-        if record:
-            latest_revision = db.execute(
-                """
-                SELECT id FROM ui_customization_revisions
-                WHERE customization_id = ?
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (record["id"],),
-            ).fetchone()
-        return jsonify({
-            "customization": customization,
-            "updated_at": record["updated_at"] if record else None,
-            "revision_id": latest_revision["id"] if latest_revision else None,
-        })
-
-    if not user_can('server_settings.manage'):
-        return jsonify({"error": "Keine Berechtigung"}), 403
-    payload = request.get_json() or {}
-    if request.method == 'PATCH':
-        merged = deep_merge(existing or DEFAULT_CUSTOMIZATION, payload)
-    else:
-        merged = payload
-
-    customization = migrate_customization(merged)
-    valid, errors = validate_customization(customization)
-    if not valid:
-        return jsonify({"error": "Ungültige Customize-Daten.", "details": errors}), 400
-
-    customization_id = save_customization(db, user_id, customization, session.get("username", "system"))
-    latest_revision = db.execute(
-        """
-        SELECT id FROM ui_customization_revisions
-        WHERE customization_id = ?
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (customization_id,),
-    ).fetchone()
-    updated_at = db.execute("SELECT updated_at FROM ui_customization WHERE id = ?", (customization_id,)).fetchone()
-    log_activity(db, "update", "ui_customization", entity_id=customization_id)
-    return jsonify({
-        "customization": customization,
-        "updated_at": updated_at["updated_at"] if updated_at else None,
-        "revision_id": latest_revision["id"] if latest_revision else None,
-    })
-
-@app.route('/api/customize/history', methods=['GET'])
-@login_required
-def customize_history():
-    if not user_can('server_settings.manage'):
-        return jsonify({"error": "Keine Berechtigung"}), 403
-    db = get_db()
-    user_id = get_current_user_id(db)
-    if not user_id:
-        return jsonify({"revisions": []})
-    record = get_customization_record(db, user_id)
-    if not record:
-        return jsonify({"revisions": []})
-    rows = db.execute(
-        """
-        SELECT id, created_at, created_by, diff_json
-        FROM ui_customization_revisions
-        WHERE customization_id = ?
-        ORDER BY id DESC
-        LIMIT 20
-        """,
-        (record["id"],),
-    ).fetchall()
-    revisions = []
-    for row in rows:
-        revisions.append({
-            "id": row["id"],
-            "created_at": row["created_at"],
-            "created_by": row["created_by"],
-            "diff": json.loads(row["diff_json"]) if row["diff_json"] else [],
-        })
-    return jsonify({"revisions": revisions})
-
-@app.route('/api/customize/rollback/<int:revision_id>', methods=['POST'])
-@login_required
-def customize_rollback(revision_id):
-    if not user_can('server_settings.manage'):
-        return jsonify({"error": "Keine Berechtigung"}), 403
-    db = get_db()
-    user_id = get_current_user_id(db)
-    if not user_id:
-        return jsonify({"error": "Benutzer nicht gefunden."}), 401
-
-    record = get_customization_record(db, user_id)
-    if not record:
-        return jsonify({"error": "Keine Customize-Konfiguration vorhanden."}), 404
-
-    revision = db.execute(
-        """
-        SELECT revision_json FROM ui_customization_revisions
-        WHERE id = ? AND customization_id = ?
-        """,
-        (revision_id, record["id"]),
-    ).fetchone()
-    if not revision:
-        return jsonify({"error": "Revision nicht gefunden."}), 404
-
-    customization = migrate_customization(json.loads(revision["revision_json"]))
-    customization_id = save_customization(db, user_id, customization, session.get("username", "system"))
-    latest_revision = db.execute(
-        """
-        SELECT id FROM ui_customization_revisions
-        WHERE customization_id = ?
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (customization_id,),
-    ).fetchone()
-    updated_at = db.execute("SELECT updated_at FROM ui_customization WHERE id = ?", (customization_id,)).fetchone()
-    log_activity(db, "rollback", "ui_customization", entity_id=customization_id)
-    return jsonify({
-        "customization": customization,
-        "updated_at": updated_at["updated_at"] if updated_at else None,
-        "revision_id": latest_revision["id"] if latest_revision else None,
-    })
-
 @app.route('/api/ad/settings', methods=['GET'])
 @login_required
 def ad_settings():
@@ -16723,6 +16586,22 @@ app.register_blueprint(
         log_activity=log_activity,
         login_required=login_required,
         require_permission=require_permission,
+    ),
+)
+app.register_blueprint(
+    build_customization_blueprint(
+        get_db=get_db,
+        get_current_user_id=get_current_user_id,
+        get_customization_record=get_customization_record,
+        default_customization=DEFAULT_CUSTOMIZATION,
+        migrate_customization=migrate_customization,
+        deep_merge=deep_merge,
+        validate_customization=validate_customization,
+        save_customization=save_customization,
+        current_actor=lambda: session.get("username", "system"),
+        log_activity=log_activity,
+        user_can=user_can,
+        login_required=login_required,
     ),
 )
 app.register_blueprint(
