@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>2FA Verifizierung | Inventory Pro</title>
     <script src="/static/theme.js"></script>
+    <script src="/static/csrf.js?v=1"></script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="auth-body">
@@ -34,6 +35,7 @@
         {% endif %}
 
         <form method="POST" class="stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="field">
                 <label class="label" for="otp">6-stelliger Code</label>
                 <input type="text" id="otp" name="otp" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" required class="input" placeholder="123456">
