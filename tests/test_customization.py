@@ -63,14 +63,41 @@ class CustomizationTestCase(unittest.TestCase):
         self.assertTrue(valid)
         self.assertEqual(errors, [])
 
+    def test_rejects_invalid_branding_images(self):
+        payload = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        payload["branding"]["logoLightDataUrl"] = "data:image/svg+xml;base64,PHN2Zz4="
+
+        valid, errors = inventory_app.validate_customization(payload)
+
+        self.assertFalse(valid)
+        self.assertIn(
+            "branding.logoLightDataUrl muss ein PNG-, JPEG-, WebP- oder GIF-Data-URL sein.",
+            errors,
+        )
+
+    def test_customize_api_rejects_invalid_branding_image(self):
+        payload = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        payload["branding"]["faviconDataUrl"] = "https://example.invalid/favicon.png"
+
+        response = self.client.put('/api/customize', json=payload)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("branding.faviconDataUrl", response.get_json()["details"][0])
+
     def test_customize_persistence(self):
         payload = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
         payload["branding"]["name"] = "Persisted"
+        payload["branding"]["logoLightDataUrl"] = "data:image/png;base64,bGlnaHQ="
+        payload["branding"]["logoDarkDataUrl"] = "data:image/png;base64,ZGFyaw=="
+        payload["branding"]["faviconDataUrl"] = "data:image/png;base64,aWNvbg=="
 
         response = self.client.put('/api/customize', json=payload)
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data["customization"]["branding"]["name"], "Persisted")
+        self.assertEqual(data["customization"]["branding"]["logoLightDataUrl"], payload["branding"]["logoLightDataUrl"])
+        self.assertEqual(data["customization"]["branding"]["logoDarkDataUrl"], payload["branding"]["logoDarkDataUrl"])
+        self.assertEqual(data["customization"]["branding"]["faviconDataUrl"], payload["branding"]["faviconDataUrl"])
 
         response = self.client.get('/api/customize')
         self.assertEqual(response.status_code, 200)
@@ -91,6 +118,8 @@ class CustomizationTestCase(unittest.TestCase):
         self.assertEqual(shared.get_json()["customization"]["branding"]["name"], "Persisted")
         denied = second_client.put('/api/customize', json=payload)
         self.assertEqual(denied.status_code, 403)
+        self.assertEqual(second_client.get('/api/customize/history').status_code, 403)
+        self.assertEqual(second_client.post(f"/api/customize/rollback/{history_data['revisions'][0]['id']}").status_code, 403)
 
 
 if __name__ == '__main__':

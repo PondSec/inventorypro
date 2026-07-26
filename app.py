@@ -105,6 +105,7 @@ MAX_IMPORT_EXPANDED_BYTES = int(
 )
 MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_BYTES))
 MAX_RESTORE_BYTES = int(os.environ.get("INVENTORY_MAX_RESTORE_BYTES", 5 * 1024 * 1024 * 1024))
+MAX_CUSTOMIZATION_IMAGE_BYTES = int(os.environ.get("INVENTORY_MAX_CUSTOMIZATION_IMAGE_BYTES", 2 * 1024 * 1024))
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
 BLOCKED_ATTACHMENT_EXTENSIONS = {".exe", ".js", ".html", ".htm", ".bat", ".sh", ".ps1"}
@@ -648,6 +649,9 @@ DEFAULT_CUSTOMIZATION = {
         "name": "Inventory Pro",
         "tagline": "Inventarisierung",
         "logoDataUrl": "",
+        "logoLightDataUrl": "",
+        "logoDarkDataUrl": "",
+        "faviconDataUrl": "",
     },
     "baseTokens": {
         "colors": {
@@ -2934,6 +2938,15 @@ def migrate_customization(data):
         migrated["branding"]["name"] = branding.get("name", migrated["branding"]["name"])
         migrated["branding"]["tagline"] = branding.get("tagline", migrated["branding"]["tagline"])
         migrated["branding"]["logoDataUrl"] = branding.get("logoDataUrl", migrated["branding"]["logoDataUrl"])
+        migrated["branding"]["logoLightDataUrl"] = branding.get(
+            "logoLightDataUrl", migrated["branding"]["logoLightDataUrl"]
+        )
+        migrated["branding"]["logoDarkDataUrl"] = branding.get(
+            "logoDarkDataUrl", migrated["branding"]["logoDarkDataUrl"]
+        )
+        migrated["branding"]["faviconDataUrl"] = branding.get(
+            "faviconDataUrl", migrated["branding"]["faviconDataUrl"]
+        )
         migrated["baseTokens"]["colors"]["primary"] = branding.get("primary", migrated["baseTokens"]["colors"]["primary"])
         migrated["baseTokens"]["colors"]["accent"] = branding.get("accent", migrated["baseTokens"]["colors"]["accent"])
         migrated["baseTokens"]["colors"]["background"] = branding.get("background", migrated["baseTokens"]["colors"]["background"])
@@ -2967,6 +2980,30 @@ def validate_customization(data):
     for key in ("baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs", "branding"):
         if key not in data:
             errors.append(f"{key} fehlt.")
+
+    branding = data.get("branding")
+    if isinstance(branding, dict):
+        for key in ("name", "tagline", "logoDataUrl", "logoLightDataUrl", "logoDarkDataUrl", "faviconDataUrl"):
+            value = branding.get(key)
+            if not isinstance(value, str):
+                errors.append(f"branding.{key} muss ein Textwert sein.")
+        for key in ("logoDataUrl", "logoLightDataUrl", "logoDarkDataUrl", "faviconDataUrl"):
+            value = branding.get(key)
+            if not isinstance(value, str) or not value:
+                continue
+            match = re.fullmatch(r"data:image/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})", value)
+            if not match:
+                errors.append(f"branding.{key} muss ein PNG-, JPEG-, WebP- oder GIF-Data-URL sein.")
+                continue
+            try:
+                image_bytes = base64.b64decode(match.group(2), validate=True)
+            except ValueError:
+                errors.append(f"branding.{key} enthält ungültige Base64-Daten.")
+                continue
+            if len(image_bytes) > MAX_CUSTOMIZATION_IMAGE_BYTES:
+                errors.append(f"branding.{key} überschreitet die Größenbegrenzung von 2 MB.")
+    elif branding is not None:
+        errors.append("branding muss ein Objekt sein.")
     return len(errors) == 0, errors
 
 def compute_customization_diff(old, new, path=""):
@@ -15566,6 +15603,8 @@ def customize_settings():
 @app.route('/api/customize/history', methods=['GET'])
 @login_required
 def customize_history():
+    if not user_can('server_settings.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     db = get_db()
     user_id = get_current_user_id(db)
     if not user_id:
@@ -15596,6 +15635,8 @@ def customize_history():
 @app.route('/api/customize/rollback/<int:revision_id>', methods=['POST'])
 @login_required
 def customize_rollback(revision_id):
+    if not user_can('server_settings.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     db = get_db()
     user_id = get_current_user_id(db)
     if not user_id:

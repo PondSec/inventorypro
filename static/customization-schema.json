@@ -7,11 +7,14 @@
     "schemaVersion": { "type": "integer", "const": 1 },
     "branding": {
       "type": "object",
-      "required": ["name", "tagline", "logoDataUrl"],
+      "required": ["name", "tagline", "logoDataUrl", "logoLightDataUrl", "logoDarkDataUrl", "faviconDataUrl"],
       "properties": {
         "name": { "type": "string" },
         "tagline": { "type": "string" },
-        "logoDataUrl": { "type": "string" }
+        "logoDataUrl": { "type": "string" },
+        "logoLightDataUrl": { "type": "string" },
+        "logoDarkDataUrl": { "type": "string" },
+        "faviconDataUrl": { "type": "string" }
       }
     },
     "baseTokens": {
