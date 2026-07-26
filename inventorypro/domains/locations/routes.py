@@ -7,13 +7,21 @@ of the compatibility module.
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Callable
 from typing import Any
 
 from flask import Blueprint, jsonify, render_template, request, session
 
 from inventorypro.web.blueprints import stable_route
+
+from .repository import LocationRepository
+from .service import (
+    LocationAlreadyExistsError,
+    LocationInUseError,
+    LocationNotFoundError,
+    LocationService,
+)
+from .validators import LocationValidationError
 
 
 def build_locations_blueprint(
@@ -27,6 +35,7 @@ def build_locations_blueprint(
 ) -> Blueprint:
     """Create the location domain blueprint with stable public endpoints."""
     blueprint = Blueprint("locations", __name__)
+    service = LocationService(LocationRepository(), log_activity)
 
     @stable_route(blueprint, "/locations")
     @login_required
@@ -47,29 +56,17 @@ def build_locations_blueprint(
         if request.method == "POST":
             if not user_can("locations.manage"):
                 return jsonify({"error": "Keine Berechtigung"}), 403
-            data = request.get_json()
-            name = (data.get("name") or "").strip()
-            description = (data.get("description") or "").strip()
-            if not name:
-                return jsonify({"error": "Name ist erforderlich"}), 400
             try:
-                db.execute(
-                    """
-                    INSERT INTO locations (name, description)
-                    VALUES (?, ?)
-                    """,
-                    (name, description),
-                )
-                log_activity(db, "create", "location", details={"name": name})
-                db.commit()
-                return jsonify({"status": "created"}), 201
-            except sqlite3.IntegrityError:
+                service.create(db, request.get_json())
+            except LocationValidationError as error:
+                return jsonify({"error": str(error)}), 400
+            except LocationAlreadyExistsError:
                 return jsonify({"error": "Standort existiert bereits"}), 400
+            return jsonify({"status": "created"}), 201
 
         if not (user_can("locations.view") or user_can("locations.manage")):
             return jsonify({"error": "Keine Berechtigung"}), 403
-        locations = db.execute("SELECT * FROM locations ORDER BY name").fetchall()
-        return jsonify([dict(row) for row in locations])
+        return jsonify(service.list_locations(db))
 
     @stable_route(
         blueprint,
@@ -82,59 +79,35 @@ def build_locations_blueprint(
         if request.method == "PUT":
             if not user_can("locations.manage"):
                 return jsonify({"error": "Keine Berechtigung"}), 403
-            data = request.get_json()
-            name = (data.get("name") or "").strip()
-            description = (data.get("description") or "").strip()
-            if not name:
-                return jsonify({"error": "Name ist erforderlich"}), 400
-            result = db.execute(
-                """
-                UPDATE locations
-                SET name = ?, description = ?
-                WHERE id = ?
-                """,
-                (name, description, location_id),
-            )
-            if result.rowcount == 0:
+            try:
+                service.update(db, location_id, request.get_json())
+            except LocationValidationError as error:
+                return jsonify({"error": str(error)}), 400
+            except LocationNotFoundError:
                 return jsonify({"error": "Standort nicht gefunden"}), 404
-            log_activity(db, "update", "location", location_id, {"name": name})
-            db.commit()
             return jsonify({"status": "updated"}), 200
 
         if not user_can("locations.manage"):
             return jsonify({"error": "Keine Berechtigung"}), 403
-        location = db.execute(
-            "SELECT id, name FROM locations WHERE id = ?", (location_id,)
-        ).fetchone()
-        if not location:
+        try:
+            service.delete(db, location_id)
+        except LocationNotFoundError:
             return jsonify({"error": "Standort nicht gefunden"}), 404
-        device_count = db.execute(
-            "SELECT COUNT(*) FROM devices WHERE location_id = ?", (location_id,)
-        ).fetchone()[0]
-        assignment_count = db.execute(
-            "SELECT COUNT(*) FROM asset_assignments WHERE location_id = ?",
-            (location_id,),
-        ).fetchone()[0]
-        if device_count or assignment_count:
+        except LocationInUseError as error:
             return jsonify(
                 {
                     "error": (
-                        f"Standort „{location['name']}“ wird noch verwendet. "
+                        f"Standort „{error.location_name}“ wird noch verwendet. "
                         "Ordne Geräte und Asset-Zuweisungen vor dem Löschen einem "
                         "anderen Standort zu."
                     ),
                     "code": "location_in_use",
                     "references": {
-                        "devices": device_count,
-                        "asset_assignments": assignment_count,
+                        "devices": error.devices,
+                        "asset_assignments": error.assignments,
                     },
                 }
             ), 409
-        result = db.execute("DELETE FROM locations WHERE id = ?", (location_id,))
-        if result.rowcount == 0:
-            return jsonify({"error": "Standort nicht gefunden"}), 404
-        log_activity(db, "delete", "location", location_id)
-        db.commit()
         return jsonify({"status": "deleted"}), 200
 
     return blueprint
