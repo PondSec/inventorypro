@@ -42,6 +42,7 @@ from email.message import EmailMessage
 import smtplib
 
 from inventorypro.config import resolve_application_secret
+from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
 from inventorypro.domains.backups.routes import build_backups_blueprint
 from inventorypro.domains.locations.routes import build_locations_blueprint
@@ -181,7 +182,8 @@ TERMINAL_LOG_MAX_BYTES = 150 * 1024
 TERMINAL_DB_MAX_ROWS = 100
 TERMINAL_DB_MAX_BYTES = 150 * 1024
 TERMINAL_REAUTH_WINDOW_SECONDS = 10 * 60
-TERMINAL_RATE_LIMIT_CACHE = {}
+CACHE_MAX_ENTRIES = int(os.environ.get("INVENTORY_CACHE_MAX_ENTRIES", "10000"))
+TERMINAL_RATE_LIMIT_CACHE = SlidingWindowRateLimiter(CACHE_MAX_ENTRIES)
 PRO_FEATURES = [
     "maintenance_schedule",
     "csv_export",
@@ -196,9 +198,9 @@ FREE_FEATURES = [
 RUNTIME_SETTINGS_CACHE = None
 BACKUP_SCHEDULER = BackgroundScheduler()
 HEALTH_SCHEDULER = BackgroundScheduler()
-RATE_LIMIT_CACHE = {}
-INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE = {}
-INVENTORY_LINK_LOGIN_SESSION_CACHE = {}
+RATE_LIMIT_CACHE = SlidingWindowRateLimiter(CACHE_MAX_ENTRIES)
+INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE = SlidingWindowRateLimiter(CACHE_MAX_ENTRIES)
+INVENTORY_LINK_LOGIN_SESSION_CACHE = BoundedTTLCache(CACHE_MAX_ENTRIES)
 
 HEALTH_STATUS_ORDER = {
     "OK": 0,
@@ -1334,42 +1336,27 @@ def get_password_min_length(db):
     return settings_row["password_min_length"] or DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"]
 
 def should_rate_limit(key):
-    now = time.time()
-    window_start = now - RATE_LIMIT_WINDOW_SECONDS
-    entries = RATE_LIMIT_CACHE.get(key, [])
-    entries = [timestamp for timestamp in entries if timestamp >= window_start]
-    if len(entries) >= RATE_LIMIT_MAX_REQUESTS:
-        RATE_LIMIT_CACHE[key] = entries
-        return True
-    entries.append(now)
-    RATE_LIMIT_CACHE[key] = entries
-    return False
+    return RATE_LIMIT_CACHE.is_limited(
+        key,
+        window_seconds=RATE_LIMIT_WINDOW_SECONDS,
+        max_requests=RATE_LIMIT_MAX_REQUESTS,
+    )
 
 def should_rate_limit_terminal(user_id):
-    now = time.time()
-    window_start = now - TERMINAL_RATE_LIMIT_WINDOW_SECONDS
     key = f"terminal:{user_id}"
-    entries = TERMINAL_RATE_LIMIT_CACHE.get(key, [])
-    entries = [timestamp for timestamp in entries if timestamp >= window_start]
-    if len(entries) >= TERMINAL_RATE_LIMIT_MAX_REQUESTS:
-        TERMINAL_RATE_LIMIT_CACHE[key] = entries
-        return True
-    entries.append(now)
-    TERMINAL_RATE_LIMIT_CACHE[key] = entries
-    return False
+    return TERMINAL_RATE_LIMIT_CACHE.is_limited(
+        key,
+        window_seconds=TERMINAL_RATE_LIMIT_WINDOW_SECONDS,
+        max_requests=TERMINAL_RATE_LIMIT_MAX_REQUESTS,
+    )
 
 def should_rate_limit_inventory_proxy(user_id):
-    now = time.time()
-    window_start = now - INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS
     key = f"inventory_links_proxy:{user_id}"
-    entries = INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE.get(key, [])
-    entries = [timestamp for timestamp in entries if timestamp >= window_start]
-    if len(entries) >= INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS:
-        INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE[key] = entries
-        return True
-    entries.append(now)
-    INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE[key] = entries
-    return False
+    return INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE.is_limited(
+        key,
+        window_seconds=INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS,
+        max_requests=INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS,
+    )
 
 def get_remote_ip():
     return get_client_ip()
@@ -1587,10 +1574,10 @@ def get_inventory_link_login_cookie(link, secret, user_id):
     )
     if not cookie_header:
         raise ValueError("Login fehlgeschlagen. Prüfe Benutzername/Passwort.")
-    INVENTORY_LINK_LOGIN_SESSION_CACHE[cache_key] = {
+    INVENTORY_LINK_LOGIN_SESSION_CACHE.set(cache_key, {
         "cookie": cookie_header,
         "expires_at": expires_at or (time.time() + INVENTORY_LINK_LOGIN_TTL_SECONDS)
-    }
+    }, INVENTORY_LINK_LOGIN_TTL_SECONDS)
     return cookie_header
 
 def serialize_inventory_link(row):
@@ -15197,10 +15184,10 @@ def inventory_link_auth_login(link_id):
     if not cookie_header:
         return jsonify({"error": "Login fehlgeschlagen. Prüfe Benutzername/Passwort."}), 401
     cache_key = f"{user['id']}:{link['id']}"
-    INVENTORY_LINK_LOGIN_SESSION_CACHE[cache_key] = {
+    INVENTORY_LINK_LOGIN_SESSION_CACHE.set(cache_key, {
         "cookie": cookie_header,
         "expires_at": expires_at or (time.time() + INVENTORY_LINK_LOGIN_TTL_SECONDS)
-    }
+    }, INVENTORY_LINK_LOGIN_TTL_SECONDS)
     update_inventory_link_health(db, link_id, "ok")
     db.commit()
     return jsonify({"authenticated": True}), 200
