@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import sqlite3
 import json
+import hashlib
 from datetime import datetime, timedelta
 from functools import wraps
 import os
@@ -40,9 +41,28 @@ from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
 import smtplib
 
+from inventorypro.config import resolve_application_secret
+from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
+from inventorypro.migrations import MigrationError, apply_migrations
+from inventorypro.secrets import (
+    EncryptionKeyring,
+    SecretConfigurationError,
+    SecretDecryptionError,
+    decrypt_secret,
+    encrypt_secret,
+    is_plaintext_secret,
+    migrate_plaintext_secret,
+)
+
 INVENTORY_INSTANCE_PATH = os.environ.get("INVENTORY_INSTANCE_PATH") or None
 app = Flask(__name__, instance_path=INVENTORY_INSTANCE_PATH) if INVENTORY_INSTANCE_PATH else Flask(__name__)
-app.secret_key = os.environ.get("APP_SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY") or os.urandom(24).hex()
+APPLICATION_SECRET = resolve_application_secret()
+app.secret_key = APPLICATION_SECRET.value
+if APPLICATION_SECRET.generated_for_development:
+    app.logger.warning(
+        "APP_SECRET_KEY fehlt; ein nicht persistenter Schlüssel wurde nur für %s erzeugt.",
+        APPLICATION_SECRET.environment,
+    )
 ALLOWED_CORS_ORIGINS = tuple(
     origin.strip().rstrip("/")
     for origin in (os.environ.get("INVENTORY_ALLOWED_ORIGINS") or "").split(",")
@@ -61,6 +81,10 @@ app.config.update(
         os.environ.get("INVENTORY_SECURE_COOKIES", "0").strip().lower()
         in {"1", "true", "yes", "on"}
     ),
+    INVENTORY_CSRF_ENABLED=(
+        os.environ.get("INVENTORY_CSRF_ENABLED", "1").strip().lower()
+        not in {"0", "false", "no", "off"}
+    ),
 )
 
 DATABASE = os.environ.get("INVENTORY_DATABASE_PATH") or "inventory.db"
@@ -74,6 +98,8 @@ MAX_IMPORT_EXPANDED_BYTES = int(
     os.environ.get("INVENTORY_MAX_IMPORT_EXPANDED_BYTES", MAX_IMPORT_BYTES * 4)
 )
 MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_BYTES))
+MAX_RESTORE_BYTES = int(os.environ.get("INVENTORY_MAX_RESTORE_BYTES", 5 * 1024 * 1024 * 1024))
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
 BLOCKED_ATTACHMENT_EXTENSIONS = {".exe", ".js", ".html", ".htm", ".bat", ".sh", ".ps1"}
 BINPACKING_DIMENSIONS = ("width", "height", "depth")
@@ -127,12 +153,18 @@ INVENTORY_LINK_PROXY_REWRITE_PATH_PREFIXES = (
     "settings",
     "inventory-links",
 )
-INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT = os.environ.get("INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS", "1").lower() not in {"0", "false", "no"}
+INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT = os.environ.get("INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS", "0").lower() in {"1", "true", "yes"}
 INVENTORY_LINK_LOGIN_TTL_SECONDS = int(os.environ.get("INVENTORY_LINK_LOGIN_TTL_SECONDS", 30 * 60))
-INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS = os.environ.get(
-    "INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS",
-    "1"
-).lower() in {"1", "true", "yes"}
+TRUSTED_PROXY_NETWORKS = tuple(
+    entry.strip()
+    for entry in (os.environ.get("INVENTORY_TRUSTED_PROXY_NETWORKS") or "").split(",")
+    if entry.strip()
+)
+PUBLIC_ORIGIN = (os.environ.get("INVENTORY_PUBLIC_ORIGIN") or "").strip().rstrip("/")
+SCHEDULER_ENABLED = os.environ.get(
+    "INVENTORY_SCHEDULER_ENABLED",
+    "0" if APPLICATION_SECRET.environment == "production" else "1",
+).strip().lower() in {"1", "true", "yes", "on"}
 PRO_ENABLED = True
 APP_START_TIME = time.time()
 TERMINAL_RATE_LIMIT_WINDOW_SECONDS = 60
@@ -1336,8 +1368,7 @@ def should_rate_limit_inventory_proxy(user_id):
     return False
 
 def get_remote_ip():
-    remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
-    return (remote_ip or "").split(",")[0].strip()
+    return get_client_ip()
 
 def is_ip_allowed(remote_ip, allowlist):
     if not allowlist:
@@ -1465,6 +1496,14 @@ def validate_inventory_link_configuration(base_url, connection_scope, verify_tls
     if not resolved_ips or any(not is_inventory_link_private_ip(ip_str) for ip_str in resolved_ips):
         raise ValueError("Lokale Verbindungen dürfen nur auf private LAN-Adressen zeigen.")
     return normalized, scope, bool(verify_tls), True
+
+def can_manage_local_inventory_links(access):
+    return bool(access.get("is_superuser") or "server_settings.manage" in access.get("permissions", set()))
+
+def enforce_inventory_link_scope_access(access, connection_scope):
+    if connection_scope == "local" and not can_manage_local_inventory_links(access):
+        return "Lokale Inventory-Link-Verbindungen benötigen Administratorrechte."
+    return None
 
 def parse_inventory_link_login_secret(secret):
     if not secret or ":" not in secret:
@@ -2486,37 +2525,58 @@ def get_backup_encryption():
         return None
 
 def get_inventory_links_encryption():
-    key = os.environ.get("INVENTORY_LINKS_ENCRYPTION_KEY")
-    if not key:
-        return None
     try:
-        return Fernet(key)
-    except (ValueError, TypeError):
+        return EncryptionKeyring.from_environ()
+    except SecretConfigurationError:
         return None
 
 def encrypt_inventory_link_secret(secret):
-    if secret is None:
-        return None
-    if secret == "":
-        return ""
-    cipher = get_inventory_links_encryption()
-    if cipher is None:
-        if not INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS:
-            raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
-        return f"plain:{secret}"
-    return cipher.encrypt(secret.encode("utf-8")).decode("utf-8")
+    try:
+        return encrypt_secret(secret)
+    except SecretConfigurationError as error:
+        raise ValueError(str(error)) from error
 
 def decrypt_inventory_link_secret(secret_encrypted):
-    if not secret_encrypted:
-        return ""
-    if secret_encrypted.startswith("plain:"):
-        return secret_encrypted.removeprefix("plain:")
-    cipher = get_inventory_links_encryption()
-    if cipher is None:
-        if not INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS:
-            raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
-        return secret_encrypted
-    return cipher.decrypt(secret_encrypted.encode("utf-8")).decode("utf-8")
+    try:
+        return decrypt_secret(secret_encrypted)
+    except (SecretConfigurationError, SecretDecryptionError) as error:
+        raise ValueError(str(error)) from error
+
+def migrate_inventory_link_secrets(db, reencrypt_all=False):
+    """Encrypt legacy values and re-encrypt values after a key rotation.
+
+    Callers must run this as an explicit maintenance action with a valid primary
+    key. Values are never included in the result, logs or raised messages.
+    """
+    try:
+        keyring = EncryptionKeyring.from_environ()
+    except SecretConfigurationError as error:
+        raise ValueError(str(error)) from error
+
+    rows = db.execute(
+        "SELECT id, secret_encrypted FROM inventory_links WHERE secret_encrypted IS NOT NULL AND secret_encrypted != ''"
+    ).fetchall()
+    migrated = 0
+    skipped = 0
+    for row in rows:
+        stored_value = row["secret_encrypted"]
+        try:
+            if is_plaintext_secret(stored_value):
+                encrypted_value = migrate_plaintext_secret(stored_value)
+            elif reencrypt_all or not stored_value.startswith("fernet:v1:"):
+                encrypted_value = keyring.encrypt(keyring.decrypt(stored_value))
+            else:
+                continue
+        except (SecretConfigurationError, SecretDecryptionError):
+            skipped += 1
+            continue
+        db.execute(
+            "UPDATE inventory_links SET secret_encrypted = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (encrypted_value, row["id"]),
+        )
+        migrated += 1
+    db.commit()
+    return {"migrated": migrated, "skipped": skipped}
 
 def run_sqlite_backup(target_path):
     with sqlite3.connect(DATABASE) as source:
@@ -2600,6 +2660,7 @@ def run_backup_job(db, settings, force=False):
             final_path.unlink(missing_ok=True)
             final_path = Path(encrypted_path)
 
+        write_backup_manifest(final_path)
         cleanup_old_backups(backup_dir, settings["backup"]["retentionDays"])
         record_backup_run(db, "success", str(final_path))
         send_backup_notification(db, settings, "Backup erfolgreich", f"Backup erstellt: {final_path.name}")
@@ -2609,7 +2670,171 @@ def run_backup_job(db, settings, force=False):
         send_backup_notification(db, settings, "Backup fehlgeschlagen", f"Backup fehlgeschlagen: {exc}")
         return {"status": "failed", "message": str(exc)}
 
+def backup_manifest_path(backup_path):
+    return Path(f"{backup_path}.manifest.json")
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+def write_backup_manifest(backup_path):
+    backup_path = Path(backup_path)
+    payload = {
+        "schemaVersion": 1,
+        "artifact": backup_path.name,
+        "sha256": file_sha256(backup_path),
+        "sizeBytes": backup_path.stat().st_size,
+        "createdAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "applicationVersion": os.environ.get("APP_VERSION", "dev"),
+    }
+    manifest_path = backup_manifest_path(backup_path)
+    temporary_path = manifest_path.with_suffix(".tmp")
+    temporary_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    os.chmod(temporary_path, stat.S_IRUSR | stat.S_IWUSR)
+    os.replace(temporary_path, manifest_path)
+    return manifest_path
+
+def verify_backup_manifest(backup_path):
+    manifest_path = backup_manifest_path(backup_path)
+    if not manifest_path.exists():
+        return False
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ValueError("Backup-Manifest ist ungültig.") from error
+    if payload.get("artifact") != Path(backup_path).name:
+        raise ValueError("Backup-Manifest passt nicht zum Artefakt.")
+    if payload.get("sha256") != file_sha256(backup_path):
+        raise ValueError("Backup-Prüfsumme stimmt nicht.")
+    return True
+
+def _copy_restore_source(source, destination):
+    copied = 0
+    with source, destination.open("wb") as output:
+        while chunk := source.read(1024 * 1024):
+            copied += len(chunk)
+            if copied > MAX_RESTORE_BYTES:
+                raise ValueError("Backup überschreitet die konfigurierte Restore-Größe.")
+            output.write(chunk)
+
+def materialize_sqlite_backup(backup_path, staging_directory):
+    backup_path = Path(backup_path).resolve(strict=True)
+    verify_backup_manifest(backup_path)
+    staging_directory = Path(staging_directory)
+    staging_directory.mkdir(parents=True, exist_ok=True)
+    raw_path = backup_path
+    temporary_paths = []
+    try:
+        if backup_path.suffix == ".enc":
+            fernet = get_backup_encryption()
+            if not fernet:
+                raise ValueError("BACKUP_ENCRYPTION_KEY fehlt oder ist ungültig.")
+            encrypted_data = backup_path.read_bytes()
+            if len(encrypted_data) > MAX_RESTORE_BYTES:
+                raise ValueError("Verschlüsseltes Backup überschreitet die konfigurierte Restore-Größe.")
+            try:
+                decrypted_data = fernet.decrypt(encrypted_data)
+            except Exception as error:
+                raise ValueError("Backup kann mit dem konfigurierten Schlüssel nicht entschlüsselt werden.") from error
+            if len(decrypted_data) > MAX_RESTORE_BYTES:
+                raise ValueError("Entschlüsseltes Backup überschreitet die konfigurierte Restore-Größe.")
+            raw_path = staging_directory / f"decrypted-backup{Path(backup_path.stem).suffix}"
+            raw_path.write_bytes(decrypted_data)
+            os.chmod(raw_path, stat.S_IRUSR | stat.S_IWUSR)
+            temporary_paths.append(raw_path)
+
+        restore_source = staging_directory / "restore-source.db"
+        if raw_path.suffix == ".zip" or backup_path.name.endswith(".zip.enc"):
+            with zipfile.ZipFile(raw_path) as archive:
+                database_members = validate_backup_archive(archive)
+                if len(database_members) != 1:
+                    raise ValueError("Backup-Archiv muss genau eine SQLite-Datenbank enthalten.")
+                source_info = database_members[0]
+                with archive.open(source_info) as source:
+                    _copy_restore_source(source, restore_source)
+        elif raw_path.suffix == ".db":
+            if raw_path.stat().st_size > MAX_RESTORE_BYTES:
+                raise ValueError("Backup überschreitet die konfigurierte Restore-Größe.")
+            shutil.copyfile(raw_path, restore_source)
+        else:
+            raise ValueError("Nur SQLite-Backupdateien (.db, .zip oder .enc) können wiederhergestellt werden.")
+        validate_sqlite_backup(restore_source)
+        return restore_source
+    except Exception:
+        for path in temporary_paths:
+            path.unlink(missing_ok=True)
+        raise
+
+def validate_backup_archive(archive):
+    database_members = []
+    total_uncompressed = 0
+    for info in archive.infolist():
+        member_path = PurePosixPath(info.filename)
+        if (
+            not info.filename
+            or "\x00" in info.filename
+            or "\\" in info.filename
+            or member_path.is_absolute()
+            or any(part in {"", ".", ".."} for part in member_path.parts)
+        ):
+            raise ValueError("Backup-Archiv enthält einen unsicheren Pfad.")
+        unix_mode = info.external_attr >> 16
+        if unix_mode and stat.S_ISLNK(unix_mode):
+            raise ValueError("Backup-Archiv enthält einen symbolischen Link.")
+        if info.is_dir():
+            continue
+        total_uncompressed += max(0, info.file_size)
+        if total_uncompressed > MAX_RESTORE_BYTES:
+            raise ValueError("Entpacktes Backup überschreitet die konfigurierte Restore-Größe.")
+        if member_path.suffix.lower() == ".db":
+            database_members.append(info)
+    return database_members
+
+def validate_sqlite_backup(database_path):
+    database_path = Path(database_path)
+    try:
+        connection = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+        result = connection.execute("PRAGMA integrity_check").fetchone()[0]
+        connection.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
+        connection.close()
+    except sqlite3.Error as error:
+        raise ValueError("Backup ist keine lesbare SQLite-Datenbank.") from error
+    if result.lower() != "ok":
+        raise ValueError("SQLite-Integritätsprüfung des Backups ist fehlgeschlagen.")
+
+def restore_sqlite_backup(backup_path, database_path=None):
+    """Restore a verified SQLite backup atomically while the application is stopped."""
+    target_path = Path(database_path or DATABASE).resolve()
+    backup_path = Path(backup_path).resolve(strict=True)
+    if backup_path == target_path:
+        raise ValueError("Backup und Zieldatenbank dürfen nicht identisch sein.")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=target_path.parent, prefix=".restore-") as directory:
+        staging_directory = Path(directory)
+        restore_source = materialize_sqlite_backup(backup_path, staging_directory)
+        restored_path = staging_directory / "restored.db"
+        with sqlite3.connect(f"file:{restore_source}?mode=ro", uri=True) as source:
+            with sqlite3.connect(restored_path) as destination:
+                source.backup(destination)
+        validate_sqlite_backup(restored_path)
+        rollback_path = None
+        if target_path.exists():
+            rollback_path = target_path.with_name(
+                f"{target_path.stem}.pre-restore-{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}{target_path.suffix}"
+            )
+            with sqlite3.connect(f"file:{target_path}?mode=ro", uri=True) as source:
+                with sqlite3.connect(rollback_path) as destination:
+                    source.backup(destination)
+        os.replace(restored_path, target_path)
+    return {"database": str(target_path), "rollback": str(rollback_path) if rollback_path else None}
+
 def schedule_backup_jobs(settings):
+    if not SCHEDULER_ENABLED:
+        app.logger.info("In-Process-Backup-Scheduler ist für diesen Worker deaktiviert.")
+        return
     if not BACKUP_SCHEDULER.running:
         BACKUP_SCHEDULER.start()
     BACKUP_SCHEDULER.remove_all_jobs()
@@ -2629,7 +2854,11 @@ def schedule_backup_jobs(settings):
         "cron",
         hour=hour,
         minute=minute,
-        id="daily_backup"
+        id="daily_backup",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
     )
 
 def load_import_file(file_storage):
@@ -3142,6 +3371,13 @@ def get_user_access(db):
         "is_superuser": is_superuser
     }
     return g.user_access
+
+@app.context_processor
+def inject_security_context():
+    return {
+        "csrf_token": get_csrf_token(session),
+        "csrf_header_name": CSRF_HEADER_NAME,
+    }
 
 @app.context_processor
 def inject_inventory_links():
@@ -5251,6 +5487,10 @@ def init_db():
         ensure_default_roles(db)
         ensure_admin_user(db)
         seed_health_checks(db)
+        try:
+            apply_migrations(db, Path(__file__).with_name("migrations"))
+        except MigrationError as error:
+            raise RuntimeError("Datenbankmigration konnte nicht sicher angewendet werden.") from error
         db.commit()
 
 # Setup-Funktion zum Benutzer erstellen
@@ -5681,10 +5921,22 @@ def scheduled_health_run():
         db.commit()
 
 def schedule_health_jobs():
+    if not SCHEDULER_ENABLED:
+        app.logger.info("In-Process-Health-Scheduler ist für diesen Worker deaktiviert.")
+        return
     if not HEALTH_SCHEDULER.running:
         HEALTH_SCHEDULER.start()
     HEALTH_SCHEDULER.remove_all_jobs()
-    HEALTH_SCHEDULER.add_job(scheduled_health_run, "interval", seconds=60, id="health_checks")
+    HEALTH_SCHEDULER.add_job(
+        scheduled_health_run,
+        "interval",
+        seconds=60,
+        id="health_checks",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
+    )
 
 def fetch_latest_health_results(db):
     return db.execute(
@@ -6319,6 +6571,31 @@ def record_login_failure(db, username, max_failed, lockout_minutes):
 def clear_login_failures(db, username):
     db.execute('DELETE FROM login_attempts WHERE username = ?', (username,))
 
+def request_comes_from_trusted_proxy():
+    if not TRUSTED_PROXY_NETWORKS:
+        return False
+    remote_address = request.remote_addr or ""
+    try:
+        remote_ip = ipaddress.ip_address(remote_address)
+    except ValueError:
+        return False
+    for entry in TRUSTED_PROXY_NETWORKS:
+        try:
+            if remote_ip in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            app.logger.error("Ungültiges Netzwerk in INVENTORY_TRUSTED_PROXY_NETWORKS konfiguriert.")
+    return False
+
+def trusted_forwarded_header(name):
+    if not request_comes_from_trusted_proxy():
+        return ""
+    return (request.headers.get(name) or "").split(",")[0].strip()
+
+def get_client_ip():
+    forwarded_for = trusted_forwarded_header("X-Forwarded-For")
+    return forwarded_for or request.remote_addr or ""
+
 def request_origin():
     origin = (request.headers.get("Origin") or "").strip().rstrip("/")
     if origin:
@@ -6332,11 +6609,13 @@ def request_origin():
     return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
 
 def expected_request_origins():
-    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
-    forwarded_host = (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()
+    forwarded_proto = trusted_forwarded_header("X-Forwarded-Proto")
+    forwarded_host = trusted_forwarded_header("X-Forwarded-Host")
     scheme = forwarded_proto or request.scheme
     host = forwarded_host or request.host
     origins = {f"{scheme}://{host}".rstrip("/"), request.host_url.rstrip("/")}
+    if PUBLIC_ORIGIN:
+        origins.add(PUBLIC_ORIGIN)
     origins.update(ALLOWED_CORS_ORIGINS)
     return origins
 
@@ -6353,6 +6632,20 @@ def enforce_same_origin_writes():
     if origin and origin not in expected_request_origins():
         return jsonify({"error": "Anfrageursprung ist nicht zulässig."}), 403
     return None
+
+@app.before_request
+def enforce_csrf_protection():
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    if not app.config["INVENTORY_CSRF_ENABLED"] or app.testing:
+        return None
+    if not validate_csrf_token(request, session):
+        return jsonify({"error": "CSRF-Token fehlt oder ist ungültig."}), 403
+    return None
+
+@app.route('/api/csrf-token', methods=['GET'])
+def csrf_token_api():
+    return jsonify({"csrfToken": get_csrf_token(session), "headerName": CSRF_HEADER_NAME})
 
 @app.after_request
 def apply_security_headers(response):
@@ -6383,11 +6676,19 @@ def apply_security_headers(response):
     )
     if request.path.startswith("/api/"):
         response.headers.setdefault("Cache-Control", "no-store")
-    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+    forwarded_proto = trusted_forwarded_header("X-Forwarded-Proto")
     if request.is_secure or forwarded_proto == "https":
         response.headers.setdefault(
             "Strict-Transport-Security",
             "max-age=31536000; includeSubDomains",
+        )
+    if request.endpoint != "static":
+        response.set_cookie(
+            "csrf_token",
+            get_csrf_token(session),
+            secure=app.config["SESSION_COOKIE_SECURE"],
+            httponly=False,
+            samesite="Lax",
         )
     return response
 
@@ -6400,7 +6701,7 @@ def enforce_security_policies():
     settings, _ = serialize_server_settings(settings_row)
 
     if settings["security"]["forceHttps"]:
-        forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
+        forwarded_proto = trusted_forwarded_header("X-Forwarded-Proto")
         if not request.is_secure and forwarded_proto != "https":
             if request.path.startswith("/api"):
                 return jsonify({"error": "HTTPS erforderlich."}), 403
@@ -6408,8 +6709,7 @@ def enforce_security_policies():
 
     ip_whitelist = settings["security"]["ipWhitelist"]
     if ip_whitelist:
-        remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
-        remote_ip = (remote_ip or "").split(",")[0].strip()
+        remote_ip = get_client_ip()
         allowed = False
         for entry in ip_whitelist:
             try:
@@ -8769,8 +9069,40 @@ def is_attachment_extension_allowed(filename):
 
 def build_attachment_storage_path(entity_type, entity_id):
     target_dir = UPLOADS_DIR / "attachments" / entity_type / str(entity_id)
-    target_dir.mkdir(parents=True, exist_ok=True)
+    target_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(target_dir, stat.S_IRWXU)
     return target_dir
+
+def validate_attachment_content(file_path, extension):
+    signatures = {
+        ".pdf": b"%PDF-",
+        ".png": b"\x89PNG\r\n\x1a\n",
+        ".jpg": b"\xff\xd8\xff",
+        ".jpeg": b"\xff\xd8\xff",
+    }
+    with Path(file_path).open("rb") as handle:
+        sample = handle.read(8192)
+    required_signature = signatures.get(extension)
+    if required_signature and not sample.startswith(required_signature):
+        return "Dateiinhalt passt nicht zum erlaubten Dateityp."
+    if extension in {".txt", ".csv"}:
+        if b"\x00" in sample:
+            return "Textdatei enthält unzulässige Binärdaten."
+        try:
+            sample.decode("utf-8")
+        except UnicodeDecodeError:
+            return "Textdatei muss UTF-8-kodiert sein."
+    return None
+
+def attachment_mime_type(extension):
+    return {
+        ".pdf": "application/pdf",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".txt": "text/plain; charset=utf-8",
+        ".csv": "text/csv; charset=utf-8",
+    }.get(extension, "application/octet-stream")
 
 def store_attachment_file(file_storage, entity_type, entity_id):
     if not file_storage:
@@ -8785,6 +9117,7 @@ def store_attachment_file(file_storage, entity_type, entity_id):
     target_dir = build_attachment_storage_path(entity_type, entity_id)
     file_path = target_dir / stored_filename
     file_storage.save(file_path)
+    os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
     size_bytes = file_path.stat().st_size
     if size_bytes > MAX_UPLOAD_BYTES:
         file_path.unlink(missing_ok=True)
@@ -8793,10 +9126,14 @@ def store_attachment_file(file_storage, entity_type, entity_id):
     if antivirus_error:
         file_path.unlink(missing_ok=True)
         return None, antivirus_error
+    content_error = validate_attachment_content(file_path, extension)
+    if content_error:
+        file_path.unlink(missing_ok=True)
+        return None, content_error
     return {
         "original_filename": original_filename,
         "stored_filename": stored_filename,
-        "mime_type": file_storage.mimetype,
+        "mime_type": attachment_mime_type(extension),
         "size_bytes": size_bytes,
         "file_path": file_path,
     }, None
@@ -14791,6 +15128,9 @@ def inventory_links_api():
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    scope_error = enforce_inventory_link_scope_access(access, connection_scope)
+    if scope_error:
+        return jsonify({"error": scope_error}), 403
 
     try:
         secret_encrypted = encrypt_inventory_link_secret(secret) if secret else ""
@@ -14838,6 +15178,9 @@ def inventory_links_test_draft():
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    scope_error = enforce_inventory_link_scope_access(access, connection_scope)
+    if scope_error:
+        return jsonify({"error": scope_error}), 403
     result = perform_inventory_link_test({
         "base_url": normalized,
         "verify_tls": verify_tls,
@@ -14897,6 +15240,9 @@ def inventory_link_detail_api(link_id):
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    scope_error = enforce_inventory_link_scope_access(access, connection_scope)
+    if scope_error:
+        return jsonify({"error": scope_error}), 403
 
     secret_encrypted = link["secret_encrypted"]
     if secret is not None:
@@ -14998,6 +15344,9 @@ def inventory_link_auth_login(link_id):
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    scope_error = enforce_inventory_link_scope_access(access, link["connection_scope"] or "internet")
+    if scope_error:
+        return jsonify({"error": scope_error}), 403
     secret = f"{username}:{password}"
     try:
         cookie_header, expires_at = login_inventory_link_session(
@@ -15046,6 +15395,9 @@ def inventory_link_proxy(link_id, subpath):
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    scope_error = enforce_inventory_link_scope_access(access, link["connection_scope"] or "internet")
+    if scope_error:
+        return jsonify({"error": scope_error}), 403
 
     if link["auth_mode"] != "none":
         try:
