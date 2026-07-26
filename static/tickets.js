@@ -628,10 +628,9 @@ document.addEventListener('alpine:init', () => {
             if (!this.newTicket.category_id) await this.ticketTypeChanged();
             this.rememberFocus();
             this.createOpen = true;
-            this.$nextTick(() => {
-                this.$refs.createTitle?.focus();
-                this.refreshIcons();
-            });
+            await this.$nextTick();
+            this.$refs.createTitle?.focus();
+            this.refreshIcons();
         },
 
         closeCreateTicket() {
