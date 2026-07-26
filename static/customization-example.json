@@ -6,7 +6,8 @@
     "logoDataUrl": "",
     "logoLightDataUrl": "",
     "logoDarkDataUrl": "",
-    "faviconDataUrl": ""
+    "faviconDataUrl": "",
+    "authBackgroundDataUrl": ""
   },
   "baseTokens": {
     "colors": {

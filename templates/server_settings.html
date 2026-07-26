@@ -771,18 +771,23 @@
                                     <div class="mt-6 grid gap-4 md:grid-cols-3">
                                         <div class="space-y-2">
                                             <label class="text-sm font-semibold text-slate-700">Logo für helle Ansicht</label>
-                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleLogoUpload($event, 'logoLightDataUrl')" aria-label="Logo für helle Ansicht hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleBrandImageUpload($event, 'logoLightDataUrl')" aria-label="Logo für helle Ansicht hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
                                             <p class="text-xs text-slate-500" x-text="customization.branding.logoLightDataUrl || customization.branding.logoDataUrl ? 'Logo geladen' : 'Optional' "></p>
                                         </div>
                                         <div class="space-y-2">
                                             <label class="text-sm font-semibold text-slate-700">Logo für dunkle Ansicht</label>
-                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleLogoUpload($event, 'logoDarkDataUrl')" aria-label="Logo für dunkle Ansicht hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleBrandImageUpload($event, 'logoDarkDataUrl')" aria-label="Logo für dunkle Ansicht hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
                                             <p class="text-xs text-slate-500" x-text="customization.branding.logoDarkDataUrl || customization.branding.logoDataUrl ? 'Logo geladen' : 'Optional' "></p>
                                         </div>
                                         <div class="space-y-2">
                                             <label class="text-sm font-semibold text-slate-700">Favicon</label>
-                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleLogoUpload($event, 'faviconDataUrl')" aria-label="Favicon hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleBrandImageUpload($event, 'faviconDataUrl')" aria-label="Favicon hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
                                             <p class="text-xs text-slate-500" x-text="customization.branding.faviconDataUrl ? 'Favicon geladen' : 'Optional' "></p>
+                                        </div>
+                                        <div class="space-y-2 md:col-span-3">
+                                            <label class="text-sm font-semibold text-slate-700">Hintergrund für Anmeldung</label>
+                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleBrandImageUpload($event, 'authBackgroundDataUrl')" aria-label="Hintergrund für Anmeldung hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                                            <p class="text-xs text-slate-500" x-text="customization.branding.authBackgroundDataUrl ? 'Anmeldehintergrund geladen' : 'Optional – wirkt auf Anmeldung, Passwortwechsel und Zurücksetzen' "></p>
                                         </div>
                                     </div>
                                 </div>
@@ -2338,7 +2343,7 @@
                     return (lighter + 0.05) / (darker + 0.05);
                 },
 
-                handleLogoUpload(event, field) {
+                handleBrandImageUpload(event, field) {
                     const file = event.target.files[0];
                     if (!file) return;
                     const allowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];

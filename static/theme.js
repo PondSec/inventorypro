@@ -15,6 +15,7 @@
       logoLightDataUrl: '',
       logoDarkDataUrl: '',
       faviconDataUrl: '',
+      authBackgroundDataUrl: '',
     },
     baseTokens: {
       colors: {
@@ -377,6 +378,7 @@
       migrated.branding.logoLightDataUrl = branding.logoLightDataUrl || migrated.branding.logoLightDataUrl;
       migrated.branding.logoDarkDataUrl = branding.logoDarkDataUrl || migrated.branding.logoDarkDataUrl;
       migrated.branding.faviconDataUrl = branding.faviconDataUrl || migrated.branding.faviconDataUrl;
+      migrated.branding.authBackgroundDataUrl = branding.authBackgroundDataUrl || migrated.branding.authBackgroundDataUrl;
       migrated.baseTokens.colors.primary = branding.primary || migrated.baseTokens.colors.primary;
       migrated.baseTokens.colors.accent = branding.accent || migrated.baseTokens.colors.accent;
       migrated.baseTokens.colors.background = branding.background || migrated.baseTokens.colors.background;
@@ -579,6 +581,14 @@
     favicon.href = faviconDataUrl;
   };
 
+  const applyAuthenticationBackground = (authBackgroundDataUrl) => {
+    document.querySelectorAll('.auth-body').forEach((element) => {
+      element.style.backgroundImage = authBackgroundDataUrl
+        ? `linear-gradient(rgba(246, 247, 251, 0.72), rgba(246, 247, 251, 0.72)), url(${JSON.stringify(authBackgroundDataUrl)})`
+        : '';
+    });
+  };
+
   const navigationIdForLink = (link) => {
     const href = link.getAttribute('href');
     if (!href || href.startsWith('#')) return null;
@@ -672,6 +682,7 @@
       }
     });
     applyFavicon(branding.faviconDataUrl || logoForCurrentTheme(branding));
+    applyAuthenticationBackground(branding.authBackgroundDataUrl);
     applyNavigationCustomization(customization);
     if (branding.name && document.title.includes(defaultCustomization.branding.name)) {
       document.title = document.title.replace(defaultCustomization.branding.name, branding.name);

@@ -5,6 +5,7 @@ export interface BrandingConfig {
   logoLightDataUrl: string;
   logoDarkDataUrl: string;
   faviconDataUrl: string;
+  authBackgroundDataUrl: string;
 }
 
 export interface ColorTokens {

@@ -114,6 +114,7 @@ class CustomizationTestCase(unittest.TestCase):
         payload["branding"]["logoLightDataUrl"] = "data:image/png;base64,bGlnaHQ="
         payload["branding"]["logoDarkDataUrl"] = "data:image/png;base64,ZGFyaw=="
         payload["branding"]["faviconDataUrl"] = "data:image/png;base64,aWNvbg=="
+        payload["branding"]["authBackgroundDataUrl"] = "data:image/png;base64,YXV0aA=="
 
         response = self.client.put('/api/customize', json=payload)
         self.assertEqual(response.status_code, 200)
@@ -122,6 +123,10 @@ class CustomizationTestCase(unittest.TestCase):
         self.assertEqual(data["customization"]["branding"]["logoLightDataUrl"], payload["branding"]["logoLightDataUrl"])
         self.assertEqual(data["customization"]["branding"]["logoDarkDataUrl"], payload["branding"]["logoDarkDataUrl"])
         self.assertEqual(data["customization"]["branding"]["faviconDataUrl"], payload["branding"]["faviconDataUrl"])
+        self.assertEqual(
+            data["customization"]["branding"]["authBackgroundDataUrl"],
+            payload["branding"]["authBackgroundDataUrl"],
+        )
 
         response = self.client.get('/api/customize')
         self.assertEqual(response.status_code, 200)
