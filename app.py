@@ -44,6 +44,7 @@ import smtplib
 from inventorypro.config import resolve_application_secret
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
 from inventorypro.domains.locations.routes import build_locations_blueprint
+from inventorypro.domains.tickets.routes import build_ticket_pages_blueprint
 from inventorypro.migrations import MigrationError, apply_migrations
 from inventorypro import backup_restore as backup_restore_service
 from inventorypro.secrets import (
@@ -9660,45 +9661,6 @@ def inventory_link_portal(link_id):
         active_link_id=link_id
     )
 
-@app.route('/tickets')
-@login_required
-@require_permissions('tickets.view_all', 'tickets.view_own', 'tickets.create')
-def tickets_page():
-    access = get_user_access(get_db())
-    return render_template('tickets.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
-
-@app.route('/tickets/<int:ticket_id>')
-@login_required
-@require_permissions('tickets.view_all', 'tickets.view_own')
-def ticket_workspace_page(ticket_id):
-    ticket = fetch_ticket(get_db(), ticket_id)
-    access = get_user_access(get_db())
-    if not ticket:
-        return Response("Ticket nicht gefunden", status=404, content_type="text/plain; charset=utf-8")
-    if not ensure_ticket_access(ticket, access):
-        return jsonify({"error": "Keine Berechtigung"}), 403
-    return render_template(
-        'tickets.html',
-        username=session.get('username'),
-        permissions=sorted(access["permissions"]),
-        is_superuser=access["is_superuser"],
-        initial_ticket_id=ticket_id,
-    )
-
-@app.route('/admin/tickets')
-@app.route('/admin/tickets/<section>')
-@login_required
-@require_permissions('ticket_categories.manage', 'ticket_alerts.manage', 'notifications.manage')
-def ticket_admin_page(section='general'):
-    access = get_user_access(get_db())
-    return render_template(
-        'ticket_admin.html',
-        username=session.get('username'),
-        permissions=sorted(access["permissions"]),
-        is_superuser=access["is_superuser"],
-        section=section,
-    )
-
 @app.route('/knowledge')
 @login_required
 @require_permissions('knowledge.view', 'knowledge.manage')
@@ -16869,6 +16831,16 @@ def otp_status():
 
 
 app.register_blueprint(
+    build_ticket_pages_blueprint(
+        ensure_ticket_access=ensure_ticket_access,
+        fetch_ticket=fetch_ticket,
+        get_db=get_db,
+        get_user_access=get_user_access,
+        login_required=login_required,
+        require_permissions=require_permissions,
+    ),
+)
+app.register_blueprint(
     build_locations_blueprint(
         get_db=get_db,
         get_user_access=get_user_access,
@@ -16877,7 +16849,6 @@ app.register_blueprint(
         require_permissions=require_permissions,
         user_can=user_can,
     ),
-    name="",
 )
 
 

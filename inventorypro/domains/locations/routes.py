@@ -13,6 +13,8 @@ from typing import Any
 
 from flask import Blueprint, jsonify, render_template, request, session
 
+from inventorypro.web.blueprints import stable_route
+
 
 def build_locations_blueprint(
     *,
@@ -26,7 +28,7 @@ def build_locations_blueprint(
     """Create the location domain blueprint with stable public endpoints."""
     blueprint = Blueprint("locations", __name__)
 
-    @blueprint.route("/locations")
+    @stable_route(blueprint, "/locations")
     @login_required
     @require_permissions("locations.view", "locations.manage")
     def locations_page():
@@ -38,7 +40,7 @@ def build_locations_blueprint(
             is_superuser=access["is_superuser"],
         )
 
-    @blueprint.route("/api/locations", methods=["GET", "POST"])
+    @stable_route(blueprint, "/api/locations", methods=["GET", "POST"])
     @login_required
     def manage_locations():
         db = get_db()
@@ -69,7 +71,11 @@ def build_locations_blueprint(
         locations = db.execute("SELECT * FROM locations ORDER BY name").fetchall()
         return jsonify([dict(row) for row in locations])
 
-    @blueprint.route("/api/locations/<int:location_id>", methods=["PUT", "DELETE"])
+    @stable_route(
+        blueprint,
+        "/api/locations/<int:location_id>",
+        methods=["PUT", "DELETE"],
+    )
     @login_required
     def update_location(location_id: int):
         db = get_db()
