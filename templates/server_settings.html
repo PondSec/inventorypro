@@ -570,11 +570,17 @@
                                                 </ul>
                                             </template>
                                             <template x-if="migrationPreview.errors.length">
-                                                <ul class="space-y-1 text-sm text-rose-700">
-                                                    <template x-for="error in migrationPreview.errors" :key="`${error.line}-${error.error}`">
-                                                        <li>Zeile <span x-text="error.line"></span>: <span x-text="error.error"></span></li>
-                                                    </template>
-                                                </ul>
+                                                <div class="space-y-2 text-sm text-rose-700">
+                                                    <div class="flex flex-wrap items-center gap-3">
+                                                        <span x-show="migrationPreview.errorReport && migrationPreview.errorReport.rowCount > migrationPreview.errors.length">Es werden die ersten <span x-text="migrationPreview.errors.length"></span> Fehler angezeigt.</span>
+                                                        <button type="button" @click="downloadMigrationErrorReport" x-show="migrationPreview.errorReport && migrationPreview.errorReport.rowCount" class="font-semibold underline underline-offset-2">Vollständigen Fehlerbericht herunterladen</button>
+                                                    </div>
+                                                    <ul class="space-y-1">
+                                                        <template x-for="error in migrationPreview.errors" :key="`${error.line}-${error.error}`">
+                                                            <li>Zeile <span x-text="error.line"></span>: <span x-text="error.error"></span></li>
+                                                        </template>
+                                                    </ul>
+                                                </div>
                                             </template>
                                         </div>
                                     </template>
@@ -2420,6 +2426,19 @@
                     }
                     if (this.migrationMatchingKey) formData.append('matchingKey', this.migrationMatchingKey);
                     if (this.migrationSheetName) formData.append('sheetName', this.migrationSheetName);
+                },
+
+                downloadMigrationErrorReport() {
+                    const report = this.migrationPreview?.errorReport;
+                    if (!report?.content || !report?.filename) return;
+                    const url = URL.createObjectURL(new Blob([report.content], { type: 'text/csv;charset=utf-8' }));
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = report.filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 0);
                 },
 
                 async previewMigration() {
