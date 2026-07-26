@@ -277,19 +277,12 @@
                                     </div>
                                 </div>
 
-                                <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                <div class="mt-6">
                                     <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                                         <input type="checkbox" x-model="settings.server.debug" aria-label="Debug-Modus aktivieren" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
                                         <div>
                                             <p class="text-sm font-semibold text-slate-700">Debug-Modus aktivieren</p>
                                             <p class="text-xs text-slate-500">Aktiviert ausführliche Logs und Fehlerseiten (nur für Entwicklung).</p>
-                                        </div>
-                                    </label>
-                                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                                        <input type="checkbox" x-model="settings.proFeaturesEnabled" aria-label="Pro-Funktionen aktivieren" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-                                        <div>
-                                            <p class="text-sm font-semibold text-slate-700">Pro-Features aktiv</p>
-                                            <p class="text-xs text-slate-500">Steuert, ob erweiterte Module in der UI verfügbar sind.</p>
                                         </div>
                                     </label>
                                 </div>
@@ -1492,7 +1485,6 @@
                 canWriteDb: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.db_write'),
                 settings: {
                     server: { host: '0.0.0.0', port: 5000, debug: false },
-                    proFeaturesEnabled: false,
                     backup: {
                         enabled: false,
                         compress: false,

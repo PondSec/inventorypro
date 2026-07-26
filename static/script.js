@@ -29,15 +29,9 @@ document.addEventListener('alpine:init', () => {
         specQuery: '',
         sortDropdownOpen: false,
         filtersOpen: false,
-        featureFlags: {
-            pro_enabled: false,
-            pro_features: [],
-            free_features: []
-        },
         userPermissions: window.inventoryPermissions || [],
         isSuperuser: window.inventoryIsSuperuser || false,
         maintenanceSummary: {
-            pro_locked: true,
             open: 0,
             overdue: 0
         },
@@ -198,7 +192,6 @@ document.addEventListener('alpine:init', () => {
             await this.loadRelationTypes();
             await this.loadVendors();
             await this.loadPurchaseOrders();
-            await this.loadFeatureFlags();
             await this.loadMaintenanceSummary();
             await this.loadEnterpriseWorkflow();
             await this.loadActivityFeed();
@@ -291,17 +284,6 @@ document.addEventListener('alpine:init', () => {
 
         can(permissionKey) {
             return this.isSuperuser || this.userPermissions.includes(permissionKey);
-        },
-
-        async loadFeatureFlags() {
-            try {
-                const response = await fetch('/api/features');
-                if (response.ok) {
-                    this.featureFlags = await response.json();
-                }
-            } catch (error) {
-                console.error('Error loading feature flags:', error);
-            }
         },
 
         async loadMaintenanceSummary() {
