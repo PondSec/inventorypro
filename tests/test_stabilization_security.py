@@ -199,6 +199,90 @@ class MigrationRunnerTestCase(TestCase):
                 apply_migrations(connection, migration_directory)
             connection.close()
 
+    def test_failed_migration_rolls_back_schema_and_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            migration_directory = root / "migrations"
+            migration_directory.mkdir()
+            (migration_directory / "001_broken.sql").write_text(
+                "CREATE TABLE should_not_exist (id INTEGER PRIMARY KEY);\n"
+                "THIS IS NOT VALID SQL;",
+                encoding="utf-8",
+            )
+            connection = sqlite3.connect(root / "database.db")
+            with self.assertRaises(MigrationError):
+                apply_migrations(connection, migration_directory)
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            self.assertNotIn("should_not_exist", tables)
+            self.assertNotIn("schema_migrations", tables)
+            connection.close()
+
+    def test_missing_applied_migration_is_detected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            migration_directory = root / "migrations"
+            migration_directory.mkdir()
+            migration = migration_directory / "001_create_example.sql"
+            migration.write_text("CREATE TABLE example (id INTEGER PRIMARY KEY);", encoding="utf-8")
+            connection = sqlite3.connect(root / "database.db")
+            apply_migrations(connection, migration_directory)
+            migration.unlink()
+            with self.assertRaisesRegex(MigrationError, "fehlt"):
+                apply_migrations(connection, migration_directory)
+            connection.close()
+
+    def test_migrations_respect_an_existing_transaction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            migration_directory = root / "migrations"
+            migration_directory.mkdir()
+            (migration_directory / "001_create_example.sql").write_text(
+                "CREATE TABLE example (id INTEGER PRIMARY KEY);",
+                encoding="utf-8",
+            )
+            connection = sqlite3.connect(root / "database.db")
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("CREATE TABLE outer_change (id INTEGER PRIMARY KEY)")
+            self.assertEqual(apply_migrations(connection, migration_directory), ["001_create_example"])
+            self.assertTrue(connection.in_transaction)
+            connection.rollback()
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            self.assertNotIn("outer_change", tables)
+            self.assertNotIn("example", tables)
+            self.assertNotIn("schema_migrations", tables)
+            connection.close()
+
+    def test_migration_cannot_control_its_own_transaction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            migration_directory = root / "migrations"
+            migration_directory.mkdir()
+            (migration_directory / "001_transaction_control.sql").write_text(
+                "-- The runner owns the transaction.\nBEGIN;\nCREATE TABLE example (id INTEGER);",
+                encoding="utf-8",
+            )
+            connection = sqlite3.connect(root / "database.db")
+            with self.assertRaisesRegex(MigrationError, "Transaktionsbefehle"):
+                apply_migrations(connection, migration_directory)
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            self.assertNotIn("example", tables)
+            connection.close()
+
 
 class BackupRestoreTestCase(TestCase):
     def test_restore_validates_manifest_and_keeps_rollback_snapshot(self):
