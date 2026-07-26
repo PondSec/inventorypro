@@ -59,3 +59,17 @@ class TicketPagesTestCase(unittest.TestCase):
         administration = self.client.get("/admin/tickets/notifications")
         self.assertEqual(administration.status_code, 200)
         self.assertIn(b"notifications", administration.data)
+
+    def test_ticket_administration_exposes_customization_branding_markers(self):
+        self.client.post(
+            "/login",
+            data={"username": "ticket_admin", "password": "secret1234"},
+        )
+
+        administration = self.client.get("/admin/tickets")
+
+        self.assertEqual(administration.status_code, 200)
+        self.assertIn(b"data-brand-logo", administration.data)
+        self.assertIn(b"data-brand-logo-icon", administration.data)
+        self.assertIn(b"data-brand-name", administration.data)
+        self.assertIn(b"data-brand-tagline", administration.data)
