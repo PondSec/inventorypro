@@ -4,7 +4,7 @@ Stand: 2026-07-26. Diese Matrix dokumentiert ausschließlich nachweisbare Ergebn
 
 | Gate | Status | Implementierung und Testnachweis | Manuelle Prüfung | Commit | Einschränkung / offenes Risiko |
 | --- | --- | --- | --- | --- | --- |
-| Soll-Ist-Abgleich | teilweise erfüllt | Route-Snapshot: 168 Routen, 165 Endpunkte; lokale Suite zuletzt 166 Tests und 11 Browser-Subtests; Gesamtcoverage 65 % | Struktur- und CI-Status geprüft | `2b72df6` | Vollständige Inventur aller Restdomänen steht aus |
+| Soll-Ist-Abgleich | teilweise erfüllt | Route-Snapshot: 168 Routen, 165 Endpunkte; lokale Suite zuletzt 166 Tests und 11 Browser-Subtests; Gesamtcoverage 65 %; Remote-CI erfolgreich | Struktur- und CI-Status geprüft | `be4071f` | Vollständige Inventur aller Restdomänen steht aus |
 | Architektur | teilweise erfüllt | Backups, Customizing, Exports, Imports, Locations, Tickets und Inventar-Links sind teilweise als Domänenpakete extrahiert; Sitzungs- und Diagnose-Service der Inventar-Links ist extrahiert | Route-Snapshots vor und nach jeder Extraktion | `2b72df6` | `app.py` enthält weiterhin umfangreiche Fachlogik; Proxy-Umschreibung der Inventar-Links verbleibt vorerst dort |
 | Berechtigungen | teilweise erfüllt | Dekoratoren und einzelne negative Tests vorhanden | Direkte API-Prüfungen einzelner Bereiche | bestehend | Zentrale Policy-Schicht und Ressourcenmatrix fehlen |
 | Datenbank und Migrationen | teilweise erfüllt | Versionierte Migrationen und Migrationstests vorhanden | Migrationspfade noch nicht vollständig gegen alle geforderten Störungen geprüft | bestehend | Inline-Schemapfade und vollständige Recovery-Nachweise prüfen |
@@ -18,13 +18,13 @@ Stand: 2026-07-26. Diese Matrix dokumentiert ausschließlich nachweisbare Ergebn
 | Datenbankstrategie | teilweise erfüllt | SQLite-Repositories in neuen Domänen vorhanden | Keine PostgreSQL-Freigabe behauptet | `e78f1b2` | SQLite-Grenzen, Konkurrenztests und Skalierungsdokumentation offen |
 | Observability | teilweise erfüllt | Health-Modul und Tests vorhanden | Basis-Health geprüft | bestehend | Readiness, strukturierte Logs, Metriken und Request-Korrelation offen |
 | Backup und Restore | teilweise erfüllt | Manifest-, Integritäts- und Restore-Tests vorhanden | Wiederherstellungspfad teilweise geprüft | bestehend | Vollständige Störfallmatrix offen |
-| Test- und Quality-Gates | nicht erfüllt | Neue Inventar-Link-Module erreichen mindestens 90 % direkte Coverage | Lokale Suite erfolgreich; Remote-CI zuletzt für `e78f1b2` erfolgreich, für `2b72df6` noch ausstehend | `2b72df6` | Gesamtcoverage 65 %, Branch-Coverage und CI-Schwelle 80 % fehlen |
+| Test- und Quality-Gates | nicht erfüllt | Neue Inventar-Link-Module erreichen mindestens 90 % direkte Coverage | Lokale Suite und Remote-CI-Lauf `30202728396` erfolgreich | `be4071f` | Gesamtcoverage 65 %, Branch-Coverage und CI-Schwelle 80 % fehlen |
 | Browser-End-to-End-Tests | teilweise erfüllt | Playwright-Mobiltests laufen lokal und in CI | Mobile Navigation und Dialoge geprüft | `7210186` | Geforderte vollständige Kernablaufabdeckung fehlt |
 | Linting und Typen | nicht erfüllt | Keine verbindliche vollständige Toolkette nachgewiesen | — | — | Ruff, Format-, Typ-, Import-, JS-, JSON-, YAML- und Template-Gates offen |
-| CI-Security und Supply Chain | nicht erfüllt | Remote-Container-Build läuft | Build nach Push geprüft | `e78f1b2` | Audit, Secret Scan, SAST, SBOM, Container-Scan und Attestation offen |
+| CI-Security und Supply Chain | nicht erfüllt | Remote-Container-Build läuft erfolgreich | Build nach Push im CI-Lauf `30202728396` geprüft | `be4071f` | Audit, Secret Scan, SAST, SBOM, Container-Scan und Attestation offen; GitHub meldet noch Node-20-Deprecation für verwendete Actions |
 | Release-Prozess | teilweise erfüllt | Versions- und Updateartefakte vorhanden | Release-Ablauf nicht vollständig geprüft | bestehend | Tag-Gate, Signatur- und Artefaktnachweise offen |
 | Performance | nicht erfüllt | Keine vollständige synthetische Lastbasis nachgewiesen | — | — | Messungen, Indizes und Grenzwertdokumentation offen |
-| Deployment und Betrieb | teilweise erfüllt | Remote-Image-Build erfolgreich | Lokaler Docker-Daemon nicht verfügbar und nicht als Erfolg gewertet | `e78f1b2` | Container-Scan und vollständige Betriebsstörfälle offen |
+| Deployment und Betrieb | teilweise erfüllt | Remote-Image-Build im CI-Lauf `30202728396` erfolgreich | Lokaler Docker-Daemon nicht verfügbar und nicht als Erfolg gewertet | `be4071f` | Container-Scan und vollständige Betriebsstörfälle offen |
 | Datenschutz und Datenlebenszyklus | nicht erfüllt | Keine vollständige Nachweisführung | — | — | Retention, Lösch- und Pseudonymisierungskonzept offen |
 | Dokumentation und Review | nicht erfüllt | Bestehende Dokumente noch nicht gegen aktuellen Stand geprüft | — | — | Abschlussdokumentation und mehrperspektivischer Review offen |
 
@@ -38,4 +38,4 @@ Stand: 2026-07-26. Diese Matrix dokumentiert ausschließlich nachweisbare Ergebn
 
 | Phase | Status | Relevante Commits | Ausgeführte Tests | Testergebnis | Coverage | Manuelle Prüfungen | Bekannte Einschränkungen | Offene Punkte |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1.1 Inventar-Link: Sitzung und Diagnose | abgeschlossen | `2b72df6` | 18 Link-Tests; Proxy-POST dreimal wiederholt; vollständige Suite mit 166 Tests und 11 Browser-Subtests; CSS-Build | alle lokalen Prüfungen erfolgreich | Service 90 %, Inventar-Link-Domäne 91 %, gesamt 65 % | Vollständiger Routensnapshot vor und nach der Extraktion identisch: 168 Routen | Lokaler Docker-Daemon nicht verfügbar; Container-Test lokal nicht ausgeführt; Remote-CI für diesen Commit steht noch aus | Proxy-Umschreibung bleibt in `app.py`; globale 80-%-Coverage und weitere Gates offen |
+| 1.1 Inventar-Link: Sitzung und Diagnose | abgeschlossen | `2b72df6`, `be4071f` | 18 Link-Tests; Proxy-POST dreimal wiederholt; vollständige Suite mit 166 Tests und 11 Browser-Subtests; CSS-Build; Remote-CI | alle lokalen Prüfungen sowie Remote-Test und Image-Build erfolgreich | Service 90 %, Inventar-Link-Domäne 91 %, gesamt 65 % | Vollständiger Routensnapshot vor und nach der Extraktion identisch: 168 Routen | Lokaler Docker-Daemon nicht verfügbar; Container-Test lokal nicht ausgeführt | Proxy-Umschreibung bleibt in `app.py`; globale 80-%-Coverage und weitere Gates offen |
