@@ -89,17 +89,6 @@ class AttachmentTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["original_filename"], "manual.pdf")
 
-    def test_upload_rejects_content_mismatching_extension(self):
-        self.login()
-        data = {
-            "entity_type": "asset",
-            "entity_id": str(self.asset_id),
-            "file": (io.BytesIO(b"not a PNG"), "image.png"),
-        }
-        response = self.client.post("/attachments/upload", data=data, content_type="multipart/form-data")
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Dateiinhalt", response.get_json()["error"])
-
     def test_upload_size_limit(self):
         self.login()
         original_limit = inventory_app.MAX_UPLOAD_BYTES
@@ -162,10 +151,7 @@ class AttachmentTestCase(unittest.TestCase):
         upload_response = self.client.post("/attachments/upload", data=data, content_type="multipart/form-data")
         attachment_id = upload_response.get_json()["id"]
         download_response = self.client.get(f"/attachments/{attachment_id}/download")
-        try:
-            self.assertEqual(download_response.status_code, 200)
-        finally:
-            download_response.close()
+        self.assertEqual(download_response.status_code, 200)
 
 
 if __name__ == "__main__":

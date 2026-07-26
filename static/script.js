@@ -29,9 +29,15 @@ document.addEventListener('alpine:init', () => {
         specQuery: '',
         sortDropdownOpen: false,
         filtersOpen: false,
+        featureFlags: {
+            pro_enabled: false,
+            pro_features: [],
+            free_features: []
+        },
         userPermissions: window.inventoryPermissions || [],
         isSuperuser: window.inventoryIsSuperuser || false,
         maintenanceSummary: {
+            pro_locked: true,
             open: 0,
             overdue: 0
         },
@@ -93,6 +99,11 @@ document.addEventListener('alpine:init', () => {
             due_date: ''
         },
         currentSort: { field: null, direction: null },
+        otpModalOpen: false,
+        otpSecret: '',
+        otpQrCode: '',
+        otpEnabled: false,
+        
         // Modals
         isCategoryModalOpen: false,
         isAssetCategoryModalOpen: false,
@@ -187,9 +198,11 @@ document.addEventListener('alpine:init', () => {
             await this.loadRelationTypes();
             await this.loadVendors();
             await this.loadPurchaseOrders();
+            await this.loadFeatureFlags();
             await this.loadMaintenanceSummary();
             await this.loadEnterpriseWorkflow();
             await this.loadActivityFeed();
+            await this.checkOTPStatus();
             this.loadIconCatalog();
             this.$watch('searchQuery', () => this.searchDevices());
             this.$watch('categorySearchQuery', () => this.filterCategories());
@@ -280,6 +293,17 @@ document.addEventListener('alpine:init', () => {
             return this.isSuperuser || this.userPermissions.includes(permissionKey);
         },
 
+        async loadFeatureFlags() {
+            try {
+                const response = await fetch('/api/features');
+                if (response.ok) {
+                    this.featureFlags = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading feature flags:', error);
+            }
+        },
+
         async loadMaintenanceSummary() {
             try {
                 const response = await fetch('/api/maintenance/summary');
@@ -321,7 +345,58 @@ document.addEventListener('alpine:init', () => {
             }, 15000);
         },
 
-		// Data Loading
+        async checkOTPStatus() {
+            try {
+                const response = await fetch('/api/otp/status', {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+                const data = await response.json();
+                this.otpEnabled = data.enabled;
+            } catch (error) {
+                console.error('Fehler beim Abrufen des 2FA-Status:', error);
+            }
+        },
+
+        async setupOTP() {
+            try {
+                const response = await fetch('/api/otp/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+                const data = await response.json();
+
+                if (data.enabled) {
+                    const confirmed = confirm('2FA ist bereits aktiviert. Möchten Sie es deaktivieren?');
+                    if (confirmed) {
+                        const disableResponse = await fetch('/api/otp/disable', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include'
+                        });
+                        const disableData = await disableResponse.json();
+                        if (disableData.disabled) {
+                            this.otpEnabled = false;
+                            alert('2FA wurde deaktiviert.');
+                        } else {
+                            alert('Fehler beim Deaktivieren von 2FA.');
+                        }
+                    }
+                    return;
+                }
+
+                this.otpSecret = data.secret;
+                this.otpQrCode = data.qr_code;
+                this.otpModalOpen = true;
+            } catch (error) {
+                console.error('Fehler:', error);
+                alert('Ein Fehler ist aufgetreten');
+            }
+        },
+		
+        // Data Loading
         async loadCategories() {
             const response = await fetch('/api/categories');
             if (response.ok) {

@@ -3,10 +3,9 @@
   const stored = localStorage.getItem('theme');
   const initial = stored || 'light';
   const customizationCacheKey = 'inventorypro.customization.cache';
+  const customizationLocalKey = 'inventorypro.customization.local';
   const legacyCustomizationKey = 'inventorypro.customization';
   let activeCustomization = null;
-  let activeCustomizationRevision = null;
-  let customizationLoadSequence = 0;
 
   const defaultCustomization = {
     schemaVersion: 1,
@@ -14,10 +13,6 @@
       name: 'Inventory Pro',
       tagline: 'Inventarisierung',
       logoDataUrl: '',
-      logoLightDataUrl: '',
-      logoDarkDataUrl: '',
-      faviconDataUrl: '',
-      authBackgroundDataUrl: '',
     },
     baseTokens: {
       colors: {
@@ -175,69 +170,7 @@
       },
       compactSidebar: false,
     },
-    navigation: {
-      groups: {
-        legacyPrimary: 'Hauptbereiche',
-        assetOperations: 'Asset Operations',
-        serviceWorkflow: 'Service & Workflow',
-        legacyAnalysis: 'Auswertung',
-        analysisPlatform: 'Analyse & Plattform',
-        linkedInstances: 'Verknüpfte Instanzen',
-        administration: 'Administration',
-      },
-      items: {
-        dashboard: { label: 'Dashboard', visible: true, order: 10 },
-        devices: { label: 'Geräte', visible: true, order: 20 },
-        assets: { label: 'Assets', visible: true, order: 30 },
-        categories: { label: 'Kategorien', visible: true, order: 40 },
-        locations: { label: 'Standorte', visible: true, order: 50 },
-        tickets: { label: 'Ticketsystem', visible: true, order: 60 },
-        knowledge: { label: 'Wissensbasis', visible: true, order: 70 },
-        roadmap: { label: 'Roadmap', visible: true, order: 80 },
-        procurement: { label: 'Beschaffung', visible: true, order: 90 },
-        statistics: { label: 'Statistiken', visible: true, order: 100 },
-        dependencies: { label: 'Abhängigkeiten', visible: true, order: 110 },
-        timeMachine: { label: 'Zeitmaschine', visible: true, order: 120 },
-        health: { label: 'Health', visible: true, order: 130 },
-        users: { label: 'Benutzer & Rollen', visible: true, order: 140 },
-        settings: { label: 'Einstellungen', visible: true, order: 150 },
-      },
-    },
   };
-
-  const navigationTargets = {
-    dashboard: ['/', '/?view=overview'],
-    devices: ['/?view=devices'],
-    assets: ['/?view=assets'],
-    categories: ['/?view=taxonomy'],
-    locations: ['/locations'],
-    tickets: ['/tickets'],
-    knowledge: ['/knowledge'],
-    roadmap: ['/roadmap'],
-    procurement: ['/procurement'],
-    statistics: ['/stats'],
-    dependencies: ['/dependencies'],
-    timeMachine: ['/time-machine'],
-    health: ['/health'],
-    users: ['/users'],
-    settings: ['/settings'],
-  };
-
-  const navigationGroupDefaults = {
-    legacyPrimary: 'Hauptbereiche',
-    assetOperations: 'Asset Operations',
-    serviceWorkflow: 'Service & Workflow',
-    legacyAnalysis: 'Auswertung',
-    analysisPlatform: 'Analyse & Plattform',
-    linkedInstances: 'Verknüpfte Instanzen',
-    administration: 'Administration',
-  };
-
-  const navigationLinkSelector = [
-    '.app-sidebar .sidebar-link',
-    '.sidebar .sidebar-link',
-    '.sd-global-nav [data-navigation-item]',
-  ].join(', ');
 
   if (initial === 'dark') {
     root.classList.add('dark');
@@ -308,7 +241,6 @@
     if (!activeCustomization) return;
     applyThemeToCSSVars(activeCustomization);
     applyModeTokens(activeCustomization);
-    applyBrandingContent(activeCustomization);
   };
 
   const setTheme = (mode) => {
@@ -383,10 +315,6 @@
       migrated.branding.name = branding.name || migrated.branding.name;
       migrated.branding.tagline = branding.tagline || migrated.branding.tagline;
       migrated.branding.logoDataUrl = branding.logoDataUrl || migrated.branding.logoDataUrl;
-      migrated.branding.logoLightDataUrl = branding.logoLightDataUrl || migrated.branding.logoLightDataUrl;
-      migrated.branding.logoDarkDataUrl = branding.logoDarkDataUrl || migrated.branding.logoDarkDataUrl;
-      migrated.branding.faviconDataUrl = branding.faviconDataUrl || migrated.branding.faviconDataUrl;
-      migrated.branding.authBackgroundDataUrl = branding.authBackgroundDataUrl || migrated.branding.authBackgroundDataUrl;
       migrated.baseTokens.colors.primary = branding.primary || migrated.baseTokens.colors.primary;
       migrated.baseTokens.colors.accent = branding.accent || migrated.baseTokens.colors.accent;
       migrated.baseTokens.colors.background = branding.background || migrated.baseTokens.colors.background;
@@ -571,100 +499,6 @@
     root.style.setProperty('--table-row-height', `${rowHeight}px`);
   };
 
-  const logoForCurrentTheme = (branding) => {
-    if (root.classList.contains('dark')) {
-      return branding.logoDarkDataUrl || branding.logoDataUrl || branding.logoLightDataUrl;
-    }
-    return branding.logoLightDataUrl || branding.logoDataUrl || branding.logoDarkDataUrl;
-  };
-
-  const applyFavicon = (faviconDataUrl) => {
-    if (!faviconDataUrl) return;
-    let favicon = document.querySelector('link[rel~="icon"]');
-    if (!favicon) {
-      favicon = document.createElement('link');
-      favicon.rel = 'icon';
-      document.head.appendChild(favicon);
-    }
-    favicon.href = faviconDataUrl;
-  };
-
-  const applyAuthenticationBackground = (authBackgroundDataUrl) => {
-    document.querySelectorAll('.auth-body').forEach((element) => {
-      element.style.backgroundImage = authBackgroundDataUrl
-        ? `linear-gradient(rgba(246, 247, 251, 0.72), rgba(246, 247, 251, 0.72)), url(${JSON.stringify(authBackgroundDataUrl)})`
-        : '';
-    });
-  };
-
-  const navigationIdForLink = (link) => {
-    const href = link.getAttribute('href');
-    if (!href || href.startsWith('#')) return null;
-    const target = new URL(href, window.location.origin);
-    const relativeTarget = `${target.pathname}${target.search}`;
-    return Object.entries(navigationTargets).find(([, targets]) => targets.includes(relativeTarget))?.[0] || null;
-  };
-
-  const updateNavigationLabel = (link, label) => {
-    const explicitNavigationLabel = link.querySelector('[data-navigation-label]');
-    if (explicitNavigationLabel) {
-      explicitNavigationLabel.textContent = label;
-      return;
-    }
-    const explicitLabel = link.querySelector('.sidebar-text');
-    if (explicitLabel) {
-      explicitLabel.textContent = label;
-      return;
-    }
-    const icon = link.querySelector('.sidebar-link-icon');
-    const labelContainer = icon && icon.parentElement;
-    if (!labelContainer) return;
-    const textNode = Array.from(labelContainer.childNodes).find((node) => (
-      node.nodeType === Node.TEXT_NODE && node.textContent.trim()
-    ));
-    if (textNode) {
-      textNode.textContent = ` ${label}`;
-    }
-  };
-
-  const applyNavigationCustomization = (customization) => {
-    const navigation = customization.navigation || defaultCustomization.navigation;
-    const itemSettings = navigation.items || {};
-    const groupSettings = navigation.groups || {};
-    const sortableContainers = new Set();
-
-    document.querySelectorAll(navigationLinkSelector).forEach((link) => {
-      const itemId = link.dataset.navigationItem || navigationIdForLink(link);
-      if (!itemId || !itemSettings[itemId]) return;
-      link.dataset.navigationItem = itemId;
-      const item = itemSettings[itemId];
-      link.hidden = item.visible === false;
-      link.setAttribute('aria-hidden', item.visible === false ? 'true' : 'false');
-      updateNavigationLabel(link, item.label);
-      if (link.parentElement) sortableContainers.add(link.parentElement);
-    });
-
-    document.querySelectorAll('.app-sidebar .sidebar-panel, .sidebar .sidebar-panel').forEach((panel) => {
-      const title = panel.querySelector('.sidebar-panel-title');
-      if (!title) return;
-      const groupId = panel.dataset.navigationGroup || Object.entries(navigationGroupDefaults).find(([, label]) => (
-        label === title.textContent.trim()
-      ))?.[0];
-      if (!groupId || !groupSettings[groupId]) return;
-      panel.dataset.navigationGroup = groupId;
-      title.textContent = groupSettings[groupId];
-    });
-
-    sortableContainers.forEach((container) => {
-      const links = Array.from(container.children).filter((child) => (
-        child.matches('.sidebar-link') && child.dataset.navigationItem
-      ));
-      links.sort((left, right) => (
-        itemSettings[left.dataset.navigationItem].order - itemSettings[right.dataset.navigationItem].order
-      )).forEach((link) => container.appendChild(link));
-    });
-  };
-
   const applyBrandingContent = (customization) => {
     const branding = customization.branding;
     document.querySelectorAll('[data-brand-name]').forEach((element) => {
@@ -674,29 +508,20 @@
       element.textContent = branding.tagline || defaultCustomization.branding.tagline;
     });
     document.querySelectorAll('[data-brand-logo]').forEach((element) => {
-      const logo = logoForCurrentTheme(branding);
+      const logo = branding.logoDataUrl;
       const icon = element.querySelector('[data-brand-logo-icon]');
       if (logo) {
-        element.style.backgroundImage = `url(${JSON.stringify(logo)})`;
-        element.style.backgroundPosition = 'center';
-        element.style.backgroundRepeat = 'no-repeat';
-        element.style.backgroundSize = 'cover';
+        element.style.background = `url(${logo}) center/cover no-repeat`;
         if (icon) {
           icon.style.display = 'none';
         }
       } else {
-        element.style.backgroundImage = '';
-        element.style.backgroundPosition = '';
-        element.style.backgroundRepeat = '';
-        element.style.backgroundSize = '';
+        element.style.background = '';
         if (icon) {
           icon.style.display = '';
         }
       }
     });
-    applyFavicon(branding.faviconDataUrl || logoForCurrentTheme(branding));
-    applyAuthenticationBackground(branding.authBackgroundDataUrl);
-    applyNavigationCustomization(customization);
     if (branding.name && document.title.includes(defaultCustomization.branding.name)) {
       document.title = document.title.replace(defaultCustomization.branding.name, branding.name);
     }
@@ -726,28 +551,6 @@
     }
   };
 
-  const normalizeRevisionId = (revisionId) => {
-    const parsed = Number(revisionId);
-    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
-  };
-
-  const isOlderRevision = (candidateRevision, currentRevision) => (
-    currentRevision !== null && (
-      candidateRevision === null || candidateRevision < currentRevision
-    )
-  );
-
-  const applyCachedCustomization = (payload) => {
-    if (!payload || !payload.customization) return null;
-    const revisionId = normalizeRevisionId(payload.revisionId);
-    if (isOlderRevision(revisionId, activeCustomizationRevision)) return null;
-    const applied = applyCustomization(payload.customization);
-    if (revisionId !== null) {
-      activeCustomizationRevision = revisionId;
-    }
-    return applied;
-  };
-
   const migrateLegacyCustomization = () => {
     const legacy = localStorage.getItem(legacyCustomizationKey);
     if (!legacy) return null;
@@ -764,50 +567,46 @@
   };
 
   const setCachedCustomization = (payload) => {
-    const cached = getCachedCustomization();
-    const revisionId = normalizeRevisionId(payload && payload.revisionId);
-    const cachedRevisionId = normalizeRevisionId(cached && cached.revisionId);
-    const newestRevisionId = activeCustomizationRevision === null
-      ? cachedRevisionId
-      : cachedRevisionId === null
-        ? activeCustomizationRevision
-        : Math.max(activeCustomizationRevision, cachedRevisionId);
-    if (isOlderRevision(revisionId, newestRevisionId)) return false;
     localStorage.setItem(customizationCacheKey, JSON.stringify(payload));
-    if (revisionId !== null) {
-      activeCustomizationRevision = revisionId;
+  };
+
+  const getLocalOverride = () => {
+    const storedOverride = localStorage.getItem(customizationLocalKey);
+    if (!storedOverride) return null;
+    try {
+      return JSON.parse(storedOverride);
+    } catch (error) {
+      console.warn('Customize override could not be loaded', error);
+      return null;
     }
-    return true;
+  };
+
+  const setLocalOverride = (override) => {
+    if (!override) {
+      localStorage.removeItem(customizationLocalKey);
+      return;
+    }
+    localStorage.setItem(customizationLocalKey, JSON.stringify(override));
   };
 
   const loadCustomization = async () => {
-    const loadSequence = ++customizationLoadSequence;
-    let applied = activeCustomization || applyCustomization(defaultCustomization);
+    let applied = applyCustomization(defaultCustomization);
     const legacy = migrateLegacyCustomization();
     if (legacy) {
-      applied = applyCachedCustomization({ customization: legacy }) || applied;
+      applied = applyCustomization(legacy);
     }
     const cached = getCachedCustomization();
-    applied = applyCachedCustomization(cached) || applied;
+    if (cached && cached.customization) {
+      applied = applyCustomization(cached.customization);
+    }
 
     try {
-      const response = await fetch('/api/customize', {
-        credentials: 'same-origin',
-        cache: 'no-store',
-      });
+      const response = await fetch('/api/customize', { credentials: 'same-origin' });
       const contentType = response.headers.get('content-type') || '';
       if (response.ok && contentType.includes('application/json')) {
         const serverData = await response.json();
-        const serverRevisionId = normalizeRevisionId(serverData.revision_id);
-        if (
-          serverData.customization
-          && loadSequence === customizationLoadSequence
-          && !isOlderRevision(serverRevisionId, activeCustomizationRevision)
-        ) {
+        if (serverData.customization) {
           applied = applyCustomization(serverData.customization);
-          if (serverRevisionId !== null) {
-            activeCustomizationRevision = serverRevisionId;
-          }
           setCachedCustomization({
             customization: applied,
             updatedAt: serverData.updated_at,
@@ -818,6 +617,11 @@
       }
     } catch (error) {
       console.warn('Customize settings could not be loaded', error);
+    }
+
+    const localOverride = getLocalOverride();
+    if (localOverride) {
+      applied = applyCustomization(deepMerge(applied, localOverride));
     }
 
     return applied;
@@ -841,19 +645,14 @@
     load: loadCustomization,
     getCached: getCachedCustomization,
     setCached: setCachedCustomization,
+    getLocalOverride,
+    setLocalOverride,
   };
 
-  const startCustomization = () => {
-    loadCustomization();
-    updateButtons();
-  };
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startCustomization, { once: true });
-  } else {
-    startCustomization();
-  }
+  loadCustomization();
+  document.addEventListener('DOMContentLoaded', updateButtons);
   window.addEventListener('storage', (event) => {
-    if (event.key === customizationCacheKey) {
+    if (event.key === customizationCacheKey || event.key === customizationLocalKey) {
       loadCustomization();
     }
   });
