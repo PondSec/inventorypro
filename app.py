@@ -53,6 +53,11 @@ from inventorypro.data_migration import (
 )
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
 from inventorypro.domains.backups.routes import build_backups_blueprint
+from inventorypro.domains.exports.service import (
+    build_export_metadata,
+    protect_spreadsheet_record,
+    protect_spreadsheet_row,
+)
 from inventorypro.domains.imports.routes import build_import_profiles_blueprint
 from inventorypro.domains.imports.service import (
     ImportPreviewProofService,
@@ -15473,6 +15478,7 @@ def export_data():
                 archive_path = db_path
         elif export_format == "json":
             payload = export_tables(db, tables)
+            payload["_metadata"] = build_export_metadata(export_format, tables)
             data_path = temp_dir / "inventory_export.json"
             data_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
             if include_uploads and UPLOADS_DIR.exists():
@@ -15487,12 +15493,16 @@ def export_data():
         elif export_format == "xlsx":
             data_path = temp_dir / "inventory_export.xlsx"
             workbook = Workbook(write_only=True)
+            metadata_sheet = workbook.create_sheet(title="metadata")
+            metadata_sheet.append(["key", "value"])
+            for key, value in build_export_metadata(export_format, tables).items():
+                metadata_sheet.append([key, json.dumps(value, ensure_ascii=False) if isinstance(value, list) else value])
             for table in tables:
                 worksheet = workbook.create_sheet(title=table[:31])
                 columns = [column["name"] for column in db.execute(f"PRAGMA table_info({table})").fetchall()]
                 worksheet.append(columns)
                 for row in db.execute(f"SELECT * FROM {table}").fetchall():
-                    worksheet.append([row[column] for column in columns])
+                    worksheet.append(protect_spreadsheet_row(row[column] for column in columns))
             workbook.save(data_path)
             if include_uploads and UPLOADS_DIR.exists():
                 archive_path = temp_dir / "inventory_export.zip"
@@ -15515,7 +15525,7 @@ def export_data():
                             writer = csv.DictWriter(handle, fieldnames=fieldnames)
                             writer.writeheader()
                             for row in rows:
-                                writer.writerow(dict(row))
+                                writer.writerow(protect_spreadsheet_record(dict(row)))
                     else:
                         csv_path.write_text("", encoding="utf-8")
                     archive.write(csv_path, arcname=f"{table}.csv")
@@ -15533,6 +15543,13 @@ def export_data():
                 if export_format == "xlsx"
                 else "application/octet-stream"
             )
+        log_activity(
+            db,
+            "export_created",
+            "server_settings",
+            details={"format": export_format, "includeUploads": include_uploads, "tables": tables},
+        )
+        db.commit()
         return Response(
             archive_path.read_bytes(),
             mimetype=mimetype,
@@ -16198,15 +16215,17 @@ def export_devices():
     writer = csv.writer(output)
     writer.writerow(["ID", "Name", "Kategorie", "Besitzer", "Spezifikationen", "Erstellt"])
     for device in devices:
-        writer.writerow([
+        writer.writerow(protect_spreadsheet_row([
             device['id'],
             device['name'],
             device['category_name'],
             device['serial_number'] or '',
             device['specs'] or '',
             device['created_at']
-        ])
+        ]))
     output.seek(0)
+    log_activity(db, "export_created", "device", details={"format": "csv", "count": len(devices)})
+    db.commit()
     return Response(
         output.getvalue(),
         mimetype='text/csv',

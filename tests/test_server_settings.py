@@ -1,6 +1,7 @@
 import json
 import io
 import tempfile
+import zipfile
 from pathlib import Path
 import unittest
 
@@ -361,6 +362,51 @@ class ServerSettingsTestCase(unittest.TestCase):
         self.assertEqual(next(sheet.values)[0], "id")
         self.assertIn("Testgerät", [row[1] for row in sheet.iter_rows(values_only=True)])
         workbook.close()
+
+    def test_inventory_exports_escape_spreadsheet_formulas_and_record_metadata(self):
+        self.login()
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            db.execute("UPDATE devices SET name = ? WHERE id = ?", ("=HYPERLINK(\"https://example.test\")", self.device_id))
+            db.commit()
+
+        settings = self.client.get("/api/settings/server").get_json()["settings"]
+        settings["importExport"].update({"exportFormat": "csv", "includeUploads": False})
+        self.assertEqual(self.client.put("/api/settings/server", json=settings).status_code, 200)
+        csv_export = self.client.get("/api/export")
+        self.assertEqual(csv_export.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(csv_export.data)) as archive:
+            device_csv = archive.read("devices.csv").decode("utf-8")
+        self.assertIn("'=HYPERLINK", device_csv)
+
+        settings["importExport"]["exportFormat"] = "xlsx"
+        self.assertEqual(self.client.put("/api/settings/server", json=settings).status_code, 200)
+        xlsx_export = self.client.get("/api/export")
+        workbook = load_workbook(io.BytesIO(xlsx_export.data), read_only=True, data_only=False)
+        self.assertIn("metadata", workbook.sheetnames)
+        self.assertTrue(
+            any(
+                isinstance(value, str) and value.startswith("'=HYPERLINK")
+                for value in [row[1] for row in workbook["devices"].iter_rows(values_only=True)]
+            )
+        )
+        self.assertEqual(next(workbook["metadata"].iter_rows(values_only=True)), ("key", "value"))
+        workbook.close()
+
+        settings["importExport"]["exportFormat"] = "json"
+        self.assertEqual(self.client.put("/api/settings/server", json=settings).status_code, 200)
+        json_export = self.client.get("/api/export")
+        payload = json.loads(json_export.data)
+        self.assertEqual(payload["_metadata"]["format"], "json")
+        self.assertIn("exportedAt", payload["_metadata"])
+
+        device_export = self.client.get("/api/export/devices")
+        self.assertEqual(device_export.status_code, 200)
+        self.assertIn("'=HYPERLINK", device_export.get_data(as_text=True))
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            actions = [row["action"] for row in db.execute("SELECT action FROM activity_log ORDER BY id").fetchall()]
+        self.assertIn("export_created", actions)
 
     def test_all_built_in_features_are_available_without_license_flags(self):
         self.login()
