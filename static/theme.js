@@ -619,11 +619,6 @@
       console.warn('Customize settings could not be loaded', error);
     }
 
-    const localOverride = getLocalOverride();
-    if (localOverride) {
-      applied = applyCustomization(deepMerge(applied, localOverride));
-    }
-
     return applied;
   };
 

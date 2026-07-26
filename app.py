@@ -806,6 +806,7 @@ DEFAULT_CUSTOMIZATION = {
         "compactSidebar": False,
     },
 }
+INSTANCE_CUSTOMIZATION_WORKSPACE_ID = 0
 
 DEFAULT_ROLES = [
     {
@@ -2988,9 +2989,14 @@ def get_current_user_id(db):
 
 def get_customization_record(db, user_id, workspace_id=None):
     if workspace_id is None:
+        record = db.execute(
+            "SELECT * FROM ui_customization WHERE workspace_id = ? ORDER BY id LIMIT 1",
+            (INSTANCE_CUSTOMIZATION_WORKSPACE_ID,),
+        ).fetchone()
+        if record:
+            return record
         return db.execute(
-            "SELECT * FROM ui_customization WHERE user_id = ? AND workspace_id IS NULL",
-            (user_id,),
+            "SELECT * FROM ui_customization WHERE workspace_id IS NULL ORDER BY updated_at DESC, id DESC LIMIT 1"
         ).fetchone()
     return db.execute(
         "SELECT * FROM ui_customization WHERE user_id = ? AND workspace_id = ?",
@@ -3004,10 +3010,10 @@ def save_customization(db, user_id, customization, updated_by, workspace_id=None
         db.execute(
             """
             UPDATE ui_customization
-            SET customization_json = ?, schema_version = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
+            SET workspace_id = ?, customization_json = ?, schema_version = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
             WHERE id = ?
             """,
-            (serialized, customization["schemaVersion"], updated_by, existing["id"]),
+            (INSTANCE_CUSTOMIZATION_WORKSPACE_ID, serialized, customization["schemaVersion"], updated_by, existing["id"]),
         )
         customization_id = existing["id"]
     else:
@@ -3016,7 +3022,7 @@ def save_customization(db, user_id, customization, updated_by, workspace_id=None
             INSERT INTO ui_customization (user_id, workspace_id, schema_version, customization_json, updated_by)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (user_id, workspace_id, customization["schemaVersion"], serialized, updated_by),
+            (user_id, INSTANCE_CUSTOMIZATION_WORKSPACE_ID, customization["schemaVersion"], serialized, updated_by),
         )
         customization_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -15526,6 +15532,8 @@ def customize_settings():
             "revision_id": latest_revision["id"] if latest_revision else None,
         })
 
+    if not user_can('server_settings.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     payload = request.get_json() or {}
     if request.method == 'PATCH':
         merged = deep_merge(existing or DEFAULT_CUSTOMIZATION, payload)
