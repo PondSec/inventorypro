@@ -152,11 +152,25 @@ class ServerSettingsTestCase(unittest.TestCase):
         )
         self.assertEqual(preview.status_code, 200)
         self.assertEqual(preview.get_json()["validRows"], 1)
+        preview_data = preview.get_json()
+        direct_import = self.client.post(
+            "/api/import",
+            data={
+                "entity": "devices",
+                "mode": "append",
+                "file": (io.BytesIO(csv_content), "devices.csv"),
+            },
+        )
+        self.assertEqual(direct_import.status_code, 400)
+        self.assertIn("Vorschau", direct_import.get_json()["error"])
         imported = self.client.post(
             "/api/import",
             data={
                 "entity": "devices",
                 "mode": "append",
+                "previewToken": preview_data["previewToken"],
+                "mapping": json.dumps(preview_data["mapping"]),
+                "matchingKey": preview_data["matchingKey"],
                 "file": (io.BytesIO(csv_content), "devices.csv"),
             },
         )
@@ -183,9 +197,18 @@ class ServerSettingsTestCase(unittest.TestCase):
         )
         self.assertEqual(preview.status_code, 200)
         self.assertEqual(preview.get_json()["format"], "xlsx")
+        xlsx_preview = preview.get_json()
         imported = self.client.post(
             "/api/import",
-            data={"entity": "devices", "mode": "append", "file": (io.BytesIO(xlsx_content), "devices.xlsx")},
+            data={
+                "entity": "devices",
+                "mode": "append",
+                "previewToken": xlsx_preview["previewToken"],
+                "mapping": json.dumps(xlsx_preview["mapping"]),
+                "matchingKey": xlsx_preview["matchingKey"],
+                "sheetName": xlsx_preview["sheetName"],
+                "file": (io.BytesIO(xlsx_content), "devices.xlsx"),
+            },
         )
         self.assertEqual(imported.status_code, 200)
         self.assertEqual(imported.get_json()["summary"]["created"], 1)
@@ -197,6 +220,126 @@ class ServerSettingsTestCase(unittest.TestCase):
         )
         self.assertEqual(json_preview.status_code, 200)
         self.assertEqual(json_preview.get_json()["format"], "json")
+
+    def test_import_profiles_persist_mapping_and_reject_foreign_entities(self):
+        self.login()
+        settings = self.client.get("/api/settings/server").get_json()["settings"]
+        settings["importExport"]["importAllowed"] = True
+        self.assertEqual(self.client.put("/api/settings/server", json=settings).status_code, 200)
+
+        invalid_create = self.client.post(
+            "/api/import/profiles",
+            json={"name": "Ungültig", "entity": "devices", "mapping": {"name": 123}},
+        )
+        self.assertEqual(invalid_create.status_code, 400)
+
+        created = self.client.post(
+            "/api/import/profiles",
+            json={
+                "name": "Altes Inventar",
+                "entity": "devices",
+                "mapping": {"name": "Computer", "serial_number": "Asset Tag"},
+                "matchingKey": "serial_number",
+                "sheetName": "Hardware",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        profile = created.get_json()["profile"]
+        self.assertEqual(profile["mapping"]["name"], "Computer")
+
+        listed = self.client.get("/api/import/profiles?entity=devices")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual([entry["id"] for entry in listed.get_json()["profiles"]], [profile["id"]])
+        self.assertEqual(self.client.get("/api/import/profiles?entity=vendors").status_code, 400)
+
+        updated = self.client.put(
+            f"/api/import/profiles/{profile['id']}",
+            json={
+                "name": "Altes Inventar v2",
+                "entity": "devices",
+                "mapping": {"name": "Computer", "serial_number": "Asset Tag"},
+                "matchingKey": "serial_number",
+            },
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.get_json()["profile"]["name"], "Altes Inventar v2")
+        self.assertEqual(
+            self.client.put(
+                f"/api/import/profiles/{profile['id']}",
+                json={"name": "Ungültig", "entity": "devices", "mapping": {"name": 123}},
+            ).status_code,
+            400,
+        )
+
+        source = b"Computer,Asset Tag\nedge-1,EDGE-1\n"
+        preview = self.client.post(
+            "/api/import/preview",
+            data={
+                "entity": "devices",
+                "profileId": str(profile["id"]),
+                "file": (io.BytesIO(source), "legacy.csv"),
+            },
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.get_json()["profileId"], profile["id"])
+        self.assertEqual(preview.get_json()["matchingKey"], "serial_number")
+
+        wrong_entity = self.client.post(
+            "/api/import/preview",
+            data={
+                "entity": "assets",
+                "profileId": str(profile["id"]),
+                "file": (io.BytesIO(source), "legacy.csv"),
+            },
+        )
+        self.assertEqual(wrong_entity.status_code, 400)
+
+        deleted = self.client.delete(f"/api/import/profiles/{profile['id']}")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(self.client.get("/api/import/profiles").get_json()["profiles"], [])
+        self.assertEqual(self.client.delete(f"/api/import/profiles/{profile['id']}").status_code, 404)
+        self.assertEqual(self.client.put("/api/import/profiles/999", json={"name": "Fehlt", "entity": "devices", "mapping": {}}).status_code, 404)
+
+    def test_import_profiles_require_administrative_permission(self):
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            db.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                ("reader", inventory_app.generate_password_hash("reader-password")),
+            )
+            db.commit()
+        self.client.get("/logout")
+        self.login("reader", "reader-password")
+
+        response = self.client.get("/api/import/profiles")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_import_profile_routes_respect_import_disable_switch(self):
+        self.login()
+
+        self.assertEqual(self.client.get("/api/import/profiles").status_code, 403)
+        self.assertEqual(
+            self.client.post("/api/import/profiles", json={"name": "Profil", "entity": "devices", "mapping": {}}).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.put("/api/import/profiles/1", json={"name": "Profil", "entity": "devices", "mapping": {}}).status_code,
+            403,
+        )
+        self.assertEqual(self.client.delete("/api/import/profiles/1").status_code, 403)
+
+    def test_import_profile_schema_migration_is_recorded_once(self):
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            migration = db.execute(
+                "SELECT id FROM schema_migrations WHERE id = ?",
+                ("002_import_profiles",),
+            ).fetchall()
+            columns = [row["name"] for row in db.execute("PRAGMA table_info(import_profiles)").fetchall()]
+
+        self.assertEqual([row["id"] for row in migration], ["002_import_profiles"])
+        self.assertIn("mapping_json", columns)
 
     def test_xlsx_export_contains_inventory_sheets(self):
         self.login()

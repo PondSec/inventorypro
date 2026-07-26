@@ -145,3 +145,105 @@ class DataMigrationTestCase(TestCase):
             preview_tabular_file(b'["not-an-object"]', "devices", "devices.json")
         with self.assertRaisesRegex(TabularImportError, "keine Kopfzeile"):
             preview_tabular_file(b"[]", "devices", "devices.json")
+
+    def test_custom_mapping_sheet_selection_and_matching_key_are_enforced(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Nicht verwenden"
+        worksheet.append(["Name", "Seriennummer"])
+        worksheet.append(["falsches Gerät", "WRONG"])
+        hardware = workbook.create_sheet("Hardware")
+        hardware.append(["Computer", "Asset Tag", "Lieferant"])
+        hardware.append(["edge-1", "EDGE-1", "Pond"])
+        buffer = BytesIO()
+        workbook.save(buffer)
+
+        mapping = {"name": "Computer", "serial_number": "Asset Tag"}
+        preview = preview_tabular_file(
+            buffer.getvalue(),
+            "devices",
+            "legacy.xlsx",
+            mapping_override=mapping,
+            sheet_name="Hardware",
+        )
+        self.assertEqual(preview["sheetName"], "Hardware")
+        self.assertEqual(preview["availableSheets"], ["Nicht verwenden", "Hardware"])
+        self.assertEqual(preview["sample"][0]["specs"], {"Lieferant": "Pond"})
+
+        imported = import_tabular_file(
+            self.connection,
+            buffer.getvalue(),
+            "devices",
+            "append",
+            "legacy.xlsx",
+            mapping_override=mapping,
+            matching_key="serial_number",
+            sheet_name="Hardware",
+        )
+        self.assertEqual(imported["created"], 1)
+        with self.assertRaisesRegex(TabularImportError, "abgebrochen"):
+            import_tabular_file(
+                self.connection,
+                buffer.getvalue(),
+                "devices",
+                "abort",
+                "legacy.xlsx",
+                mapping_override=mapping,
+                matching_key="serial_number",
+                sheet_name="Hardware",
+            )
+        self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM devices").fetchone()[0], 1)
+
+    def test_mapping_and_matching_validation_rejects_unsafe_or_missing_choices(self):
+        source = b"Computer,Asset Tag\nedge-1,EDGE-1\n"
+        with self.assertRaisesRegex(TabularImportError, "Objekt"):
+            preview_tabular_file(source, "devices", "devices.csv", mapping_override=["not-a-mapping"])
+        with self.assertRaisesRegex(TabularImportError, "unbekannte Zielfelder"):
+            preview_tabular_file(source, "devices", "devices.csv", mapping_override={"owner": "Computer"})
+        with self.assertRaisesRegex(TabularImportError, "nicht vorhanden"):
+            preview_tabular_file(source, "devices", "devices.csv", mapping_override={"name": "Nicht da"})
+        with self.assertRaisesRegex(TabularImportError, "nur einem Zielfeld"):
+            preview_tabular_file(
+                source,
+                "devices",
+                "devices.csv",
+                mapping_override={"name": "Computer", "serial_number": "Computer"},
+            )
+        with self.assertRaisesRegex(TabularImportError, "Abgleichschlüssel"):
+            import_tabular_file(
+                self.connection,
+                source,
+                "devices",
+                "append",
+                "devices.csv",
+                mapping_override={"name": "Computer", "serial_number": "Asset Tag"},
+                matching_key="invoice_number",
+            )
+        with self.assertRaisesRegex(TabularImportError, "zugeordnet"):
+            import_tabular_file(
+                self.connection,
+                source,
+                "devices",
+                "append",
+                "devices.csv",
+                mapping_override={"name": "Computer", "serial_number": None},
+                matching_key="serial_number",
+            )
+        with self.assertRaisesRegex(TabularImportError, "Tabellenblatt"):
+            workbook = Workbook()
+            workbook.active.append(["Name"])
+            buffer = BytesIO()
+            workbook.save(buffer)
+            preview_tabular_file(buffer.getvalue(), "devices", "devices.xlsx", sheet_name="Fehlt")
+
+    def test_asset_conflicts_skip_and_reuse_existing_location(self):
+        self.connection.execute("INSERT INTO locations (name) VALUES ('Berlin')")
+        import_tabular_csv(self.connection, b"name,serial,location\nedge-1,S-1,Berlin\n", "devices", "append")
+        import_tabular_csv(self.connection, b"name,serial,location\nedge-2,S-2,Berlin\n", "devices", "append")
+        self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM locations").fetchone()[0], 1)
+        source = b"asset,invoice,price\nNotebook,INV-1,\n"
+        self.assertEqual(import_tabular_csv(self.connection, source, "assets", "append")["created"], 1)
+        self.assertEqual(import_tabular_csv(self.connection, source, "assets", "append")["skipped"], 1)
+        self.assertIsNone(self.connection.execute("SELECT purchase_cost FROM assets").fetchone()[0])
+        with self.assertRaisesRegex(TabularImportError, "CSV, TSV, XLSX und JSON"):
+            preview_tabular_file(source, "assets", "assets.xml")

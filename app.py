@@ -44,9 +44,23 @@ import smtplib
 
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
-from inventorypro.data_migration import TabularImportError, import_tabular_file, preview_tabular_file
+from inventorypro.data_migration import (
+    TabularImportError,
+    import_tabular_file,
+    inspect_tabular_conflicts,
+    parse_tabular_file,
+    preview_tabular_file,
+)
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
 from inventorypro.domains.backups.routes import build_backups_blueprint
+from inventorypro.domains.imports.routes import build_import_profiles_blueprint
+from inventorypro.domains.imports.service import (
+    ImportPreviewProofService,
+    ImportProfileService,
+    ImportProfileValidationError,
+    parse_mapping,
+    parse_profile_id,
+)
 from inventorypro.domains.locations.routes import build_locations_blueprint
 from inventorypro.domains.tickets.routes import build_ticket_pages_blueprint
 from inventorypro.migrations import MigrationError, apply_migrations
@@ -93,6 +107,8 @@ app.config.update(
         not in {"0", "false", "no", "off"}
     ),
 )
+IMPORT_PROFILE_SERVICE = ImportProfileService()
+IMPORT_PREVIEW_PROOF_SERVICE = ImportPreviewProofService(app.secret_key)
 
 DATABASE = os.environ.get("INVENTORY_DATABASE_PATH") or "inventory.db"
 SETTINGS_SCHEMA_VERSION = 1
@@ -2845,6 +2861,37 @@ def load_import_file(file_storage):
     file_path = temp_dir / filename
     file_storage.save(file_path)
     return file_path, None
+
+
+def tabular_import_options(db, form, entity):
+    """Resolve explicit form options and a reusable profile for one import."""
+    profile_id = parse_profile_id(form.get("profileId"))
+    profile_options = IMPORT_PROFILE_SERVICE.resolve(db, profile_id, entity)
+    mapping = (
+        parse_mapping(form.get("mapping"))
+        if form.get("mapping") is not None
+        else profile_options["mapping"]
+    )
+    matching_key = (form.get("matchingKey") or profile_options["matchingKey"] or None)
+    sheet_name = (form.get("sheetName") or profile_options["sheetName"] or None)
+    return {
+        "mapping": mapping,
+        "matchingKey": matching_key,
+        "sheetName": sheet_name,
+        "profileId": profile_options["profileId"],
+    }
+
+
+def preview_proof_arguments(content, filename, entity, options):
+    return {
+        "content": content,
+        "filename": filename,
+        "entity": entity,
+        "mapping": options["mapping"],
+        "matching_key": options["matchingKey"],
+        "sheet_name": options["sheetName"],
+        "actor": session.get("username", "system"),
+    }
 
 def validate_import_file(file_path):
     antivirus_cmd = os.environ.get("INVENTORY_ANTIVIRUS_COMMAND")
@@ -15534,7 +15581,22 @@ def import_data():
         entity = (request.form.get("entity") or "").strip().lower()
         if suffix == ".json" and entity:
             tabular_mode = (request.form.get("mode") or import_mode).strip().lower()
-            summary = import_tabular_file(db, file_path.read_bytes(), entity, tabular_mode, file_path.name)
+            content = file_path.read_bytes()
+            options = tabular_import_options(db, request.form, entity)
+            IMPORT_PREVIEW_PROOF_SERVICE.verify(
+                request.form.get("previewToken"),
+                **preview_proof_arguments(content, file_path.name, entity, options),
+            )
+            summary = import_tabular_file(
+                db,
+                content,
+                entity,
+                tabular_mode,
+                file_path.name,
+                mapping_override=options["mapping"],
+                matching_key=options["matchingKey"],
+                sheet_name=options["sheetName"],
+            )
         elif suffix == ".json":
             payload = json.loads(file_path.read_text(encoding="utf-8"))
             with db:
@@ -15572,19 +15634,50 @@ def import_data():
                             shutil.copyfileobj(source, target)
         elif suffix in {".csv", ".tsv", ".xlsx"}:
             tabular_mode = (request.form.get("mode") or import_mode).strip().lower()
-            summary = import_tabular_file(db, file_path.read_bytes(), entity, tabular_mode, file_path.name)
+            content = file_path.read_bytes()
+            options = tabular_import_options(db, request.form, entity)
+            IMPORT_PREVIEW_PROOF_SERVICE.verify(
+                request.form.get("previewToken"),
+                **preview_proof_arguments(content, file_path.name, entity, options),
+            )
+            summary = import_tabular_file(
+                db,
+                content,
+                entity,
+                tabular_mode,
+                file_path.name,
+                mapping_override=options["mapping"],
+                matching_key=options["matchingKey"],
+                sheet_name=options["sheetName"],
+            )
         elif suffix in {".db", ".sqlite"}:
             with db:
                 import_from_sqlite(db, file_path, import_mode, tables)
         else:
             return jsonify({"error": "Unbekanntes Import-Format."}), 400
-        log_activity(db, "import", "server_settings", details={"mode": import_mode})
+        log_activity(
+            db,
+            "import_completed",
+            "server_settings",
+            details={
+                "mode": tabular_mode if "tabular_mode" in locals() else import_mode,
+                "entity": entity or None,
+                "summary": summary if "summary" in locals() else None,
+            },
+        )
         db.commit()
         response = {"status": "success"}
         if suffix in {".csv", ".tsv", ".xlsx"} or (suffix == ".json" and entity):
             response["summary"] = summary
         return jsonify(response)
-    except TabularImportError as error:
+    except (TabularImportError, ImportProfileValidationError) as error:
+        log_activity(
+            db,
+            "import_rejected",
+            "server_settings",
+            details={"entity": (request.form.get("entity") or "").strip().lower() or None, "reason": str(error)},
+        )
+        db.commit()
         return jsonify({"error": str(error)}), 400
     finally:
         shutil.rmtree(file_path.parent, ignore_errors=True)
@@ -15603,8 +15696,49 @@ def preview_import_data():
         return jsonify({"error": error}), 400
     try:
         entity = (request.form.get("entity") or "").strip().lower()
-        return jsonify(preview_tabular_file(file_path.read_bytes(), entity, file_path.name))
-    except TabularImportError as error:
+        content = file_path.read_bytes()
+        options = tabular_import_options(db, request.form, entity)
+        parsed = parse_tabular_file(
+            content,
+            entity,
+            file_path.name,
+            mapping_override=options["mapping"],
+            sheet_name=options["sheetName"],
+        )
+        preview = preview_tabular_file(
+            content,
+            entity,
+            file_path.name,
+            mapping_override=options["mapping"],
+            sheet_name=options["sheetName"],
+        )
+        conflict_report = inspect_tabular_conflicts(db, parsed, options["matchingKey"])
+        preview.update(conflict_report)
+        preview["profileId"] = options["profileId"]
+        verified_options = {
+            **options,
+            "mapping": parsed["mapping"],
+            "matchingKey": conflict_report["matchingKey"],
+            "sheetName": parsed.get("sheetName"),
+        }
+        preview["previewToken"] = IMPORT_PREVIEW_PROOF_SERVICE.issue(
+            **preview_proof_arguments(content, file_path.name, entity, verified_options),
+        )
+        log_activity(
+            db,
+            "import_previewed",
+            "server_settings",
+            details={
+                "entity": entity,
+                "format": preview["format"],
+                "validRows": preview["validRows"],
+                "invalidRows": preview["invalidRows"],
+                "conflictCount": preview["conflictCount"],
+            },
+        )
+        db.commit()
+        return jsonify(preview)
+    except (TabularImportError, ImportProfileValidationError) as error:
         return jsonify({"error": str(error)}), 400
     finally:
         shutil.rmtree(file_path.parent, ignore_errors=True)
@@ -16960,6 +17094,16 @@ app.register_blueprint(
         login_required=login_required,
         require_permissions=require_permissions,
         user_can=user_can,
+    ),
+)
+app.register_blueprint(
+    build_import_profiles_blueprint(
+        get_db=get_db,
+        imports_enabled=lambda db: serialize_server_settings(get_server_settings(db))[0]["importExport"]["importAllowed"],
+        current_actor=lambda: session.get("username", "system"),
+        log_activity=log_activity,
+        login_required=login_required,
+        require_permission=require_permission,
     ),
 )
 

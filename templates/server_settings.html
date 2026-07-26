@@ -468,10 +468,10 @@
                                         </button>
                                     </div>
 
-                                    <div class="mt-5 grid gap-4 md:grid-cols-3">
+                                    <div class="mt-5 grid gap-4 md:grid-cols-4">
                                         <div class="space-y-2">
                                             <label class="text-sm font-semibold text-slate-700">Datentyp</label>
-                                            <select x-model="migrationEntity" aria-label="Datentyp für die Datenübernahme" class="select-field">
+                                            <select x-model="migrationEntity" @change="resetMigrationOptions" aria-label="Datentyp für die Datenübernahme" class="select-field">
                                                 <option value="devices">Geräte</option>
                                                 <option value="assets">Assets</option>
                                             </select>
@@ -480,7 +480,17 @@
                                             <label class="text-sm font-semibold text-slate-700">Importmodus</label>
                                             <select x-model="migrationMode" aria-label="Importmodus für tabellarische Daten" class="select-field">
                                                 <option value="merge">Zusammenführen</option>
-                                                <option value="append">Nur anfügen</option>
+                                                <option value="append">Neue anfügen, Konflikte überspringen</option>
+                                                <option value="abort">Bei Konflikt abbrechen</option>
+                                            </select>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Importprofil</label>
+                                            <select x-model="migrationProfileId" @change="selectMigrationProfile" aria-label="Gespeichertes Importprofil auswählen" class="select-field">
+                                                <option value="">Automatische Zuordnung</option>
+                                                <template x-for="profile in migrationProfilesForEntity" :key="profile.id">
+                                                    <option :value="String(profile.id)" x-text="profile.name"></option>
+                                                </template>
                                             </select>
                                         </div>
                                         <div class="space-y-2">
@@ -494,7 +504,7 @@
                                             <i data-feather="eye" class="h-4 w-4"></i>
                                             <span x-text="migrationBusy ? 'Prüfe…' : 'Vorschau erstellen'"></span>
                                         </button>
-                                        <button type="button" @click="importMigration" :disabled="migrationBusy || !migrationPreview || migrationPreview.invalidRows > 0 || !settings.importExport.importAllowed" class="btn-secondary disabled:cursor-not-allowed disabled:opacity-60">
+                                        <button type="button" @click="importMigration" :disabled="migrationBusy || !migrationPreview || migrationPreviewStale || migrationPreview.invalidRows > 0 || !migrationPreview.previewToken || !settings.importExport.importAllowed" class="btn-secondary disabled:cursor-not-allowed disabled:opacity-60">
                                             <i data-feather="upload" class="h-4 w-4"></i>
                                             Import ausführen
                                         </button>
@@ -509,13 +519,56 @@
                                             <div class="flex flex-wrap items-center gap-3 text-sm">
                                                 <span class="rounded-full bg-emerald-100 px-3 py-1 font-semibold text-emerald-700"><span x-text="migrationPreview.validRows"></span> gültig</span>
                                                 <span class="rounded-full bg-rose-100 px-3 py-1 font-semibold text-rose-700"><span x-text="migrationPreview.invalidRows"></span> fehlerhaft</span>
+                                                <span class="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-700"><span x-text="migrationPreview.conflictCount || 0"></span> Konflikte</span>
                                                 <span class="text-slate-500">Format: <span x-text="migrationPreview.format.toUpperCase()"></span></span>
                                             </div>
-                                            <div class="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
+                                            <p x-show="migrationPreviewStale" class="text-sm font-medium text-amber-700">Zuordnung oder Abgleich wurde geändert. Erstelle vor dem Import erneut die Vorschau.</p>
+                                            <div class="grid gap-4 md:grid-cols-2">
+                                                <div x-show="migrationPreview.availableSheets && migrationPreview.availableSheets.length" class="space-y-2">
+                                                    <label class="text-sm font-semibold text-slate-700">Tabellenblatt</label>
+                                                    <select x-model="migrationSheetName" @change="markMigrationPreviewStale" aria-label="Tabellenblatt für den Import" class="select-field">
+                                                        <template x-for="sheet in migrationPreview.availableSheets" :key="sheet">
+                                                            <option :value="sheet" x-text="sheet"></option>
+                                                        </template>
+                                                    </select>
+                                                </div>
+                                                <div class="space-y-2">
+                                                    <label class="text-sm font-semibold text-slate-700">Abgleichschlüssel</label>
+                                                    <select x-model="migrationMatchingKey" @change="markMigrationPreviewStale" aria-label="Schlüssel zur Duplikaterkennung" class="select-field">
+                                                        <template x-for="key in migrationPreview.matchingKeys" :key="key">
+                                                            <option :value="key" x-text="key"></option>
+                                                        </template>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="grid gap-4 md:grid-cols-2">
                                                 <template x-for="(source, target) in migrationPreview.mapping" :key="target">
-                                                    <p><span class="font-semibold" x-text="target"></span>: <span x-text="source || 'nicht zugeordnet'"></span></p>
+                                                    <label class="space-y-1 text-sm text-slate-700">
+                                                        <span class="font-semibold" x-text="target"></span>
+                                                        <select x-model="migrationMapping[target]" @change="markMigrationPreviewStale" :aria-label="`Quellspalte für ${target}`" class="select-field">
+                                                            <option value="">Nicht übernehmen</option>
+                                                            <template x-for="header in migrationPreview.headers" :key="header">
+                                                                <option :value="header" x-text="header"></option>
+                                                            </template>
+                                                        </select>
+                                                    </label>
                                                 </template>
                                             </div>
+                                            <div class="grid gap-4 border-t border-slate-100 pt-4 md:grid-cols-[1fr_auto_auto]">
+                                                <label class="space-y-1 text-sm text-slate-700">
+                                                    <span class="font-semibold">Profilname</span>
+                                                    <input type="text" x-model.trim="migrationProfileName" maxlength="100" placeholder="z. B. Altes Inventarsystem" aria-label="Name des Importprofils" class="input-field">
+                                                </label>
+                                                <button type="button" @click="saveMigrationProfile" :disabled="migrationBusy || !migrationProfileName" class="btn-secondary self-end disabled:cursor-not-allowed disabled:opacity-60">Profil speichern</button>
+                                                <button type="button" @click="deleteMigrationProfile" x-show="migrationProfileId" :disabled="migrationBusy" class="btn-secondary self-end text-rose-700 disabled:cursor-not-allowed disabled:opacity-60">Profil löschen</button>
+                                            </div>
+                                            <template x-if="migrationPreview.conflicts && migrationPreview.conflicts.length">
+                                                <ul class="space-y-1 text-sm text-amber-700">
+                                                    <template x-for="conflict in migrationPreview.conflicts" :key="`${conflict.line}-${conflict.id}`">
+                                                        <li>Zeile <span x-text="conflict.line"></span> stimmt mit vorhandenem Datensatz <span x-text="conflict.id"></span> überein.</li>
+                                                    </template>
+                                                </ul>
+                                            </template>
                                             <template x-if="migrationPreview.errors.length">
                                                 <ul class="space-y-1 text-sm text-rose-700">
                                                     <template x-for="error in migrationPreview.errors" :key="`${error.line}-${error.error}`">
@@ -1620,7 +1673,14 @@
                 migrationFile: null,
                 migrationEntity: 'devices',
                 migrationMode: 'merge',
+                migrationProfiles: [],
+                migrationProfileId: '',
+                migrationProfileName: '',
+                migrationMapping: {},
+                migrationMatchingKey: '',
+                migrationSheetName: '',
                 migrationPreview: null,
+                migrationPreviewStale: false,
                 migrationBusy: false,
                 migrationError: '',
                 migrationMessage: '',
@@ -1735,9 +1795,16 @@
                 future: [],
                 suppressHistory: false,
 
+                get migrationProfilesForEntity() {
+                    return this.migrationProfiles.filter(profile => profile.entity === this.migrationEntity);
+                },
+
                 async init() {
                     await this.fetchSettings();
                     await this.fetchInventoryLinks();
+                    if (this.settings.importExport.importAllowed) {
+                        await this.fetchMigrationProfiles();
+                    }
                     if (this.activeSection === 'terminal' && !this.canViewTerminal) {
                         this.activeSection = 'server';
                     }
@@ -1791,6 +1858,20 @@
                         this.inventoryLinkError = error.message;
                     } finally {
                         this.$nextTick(() => feather.replace());
+                    }
+                },
+
+                async fetchMigrationProfiles() {
+                    try {
+                        const response = await fetch('/api/import/profiles');
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Importprofile konnten nicht geladen werden.');
+                        }
+                        const data = await response.json();
+                        this.migrationProfiles = data.profiles || [];
+                    } catch (error) {
+                        this.migrationError = error.message || 'Importprofile konnten nicht geladen werden.';
                     }
                 },
 
@@ -2290,8 +2371,55 @@
                 selectMigrationFile(event) {
                     this.migrationFile = event.target.files?.[0] || null;
                     this.migrationPreview = null;
+                    this.migrationPreviewStale = false;
                     this.migrationError = '';
                     this.migrationMessage = '';
+                },
+
+                resetMigrationOptions() {
+                    this.migrationProfileId = '';
+                    this.migrationProfileName = '';
+                    this.migrationMapping = {};
+                    this.migrationMatchingKey = '';
+                    this.migrationSheetName = '';
+                    this.migrationPreview = null;
+                    this.migrationPreviewStale = false;
+                    this.migrationError = '';
+                    this.migrationMessage = '';
+                },
+
+                selectMigrationProfile() {
+                    const profile = this.migrationProfiles.find(item => String(item.id) === this.migrationProfileId);
+                    if (!profile) {
+                        this.migrationProfileName = '';
+                        this.migrationMapping = {};
+                        this.migrationMatchingKey = '';
+                        this.migrationSheetName = '';
+                    } else {
+                        this.migrationProfileName = profile.name;
+                        this.migrationMapping = { ...(profile.mapping || {}) };
+                        this.migrationMatchingKey = profile.matchingKey || '';
+                        this.migrationSheetName = profile.sheetName || '';
+                    }
+                    this.migrationPreview = null;
+                    this.migrationPreviewStale = false;
+                    this.migrationError = '';
+                    this.migrationMessage = '';
+                },
+
+                markMigrationPreviewStale() {
+                    if (!this.migrationPreview) return;
+                    this.migrationPreviewStale = true;
+                    this.migrationMessage = 'Zuordnung geändert. Bitte Vorschau erneut erstellen.';
+                },
+
+                appendMigrationOptions(formData) {
+                    if (this.migrationProfileId) formData.append('profileId', this.migrationProfileId);
+                    if (Object.keys(this.migrationMapping).length) {
+                        formData.append('mapping', JSON.stringify(this.migrationMapping));
+                    }
+                    if (this.migrationMatchingKey) formData.append('matchingKey', this.migrationMatchingKey);
+                    if (this.migrationSheetName) formData.append('sheetName', this.migrationSheetName);
                 },
 
                 async previewMigration() {
@@ -2301,6 +2429,7 @@
                     this.migrationMessage = '';
                     const formData = new FormData();
                     formData.append('entity', this.migrationEntity);
+                    this.appendMigrationOptions(formData);
                     formData.append('file', this.migrationFile);
                     try {
                         const response = await fetch('/api/import/preview', {
@@ -2312,6 +2441,10 @@
                             throw new Error(data.error || 'Vorschau konnte nicht erstellt werden.');
                         }
                         this.migrationPreview = data;
+                        this.migrationPreviewStale = false;
+                        this.migrationMapping = { ...(data.mapping || {}) };
+                        this.migrationMatchingKey = data.matchingKey || '';
+                        this.migrationSheetName = data.sheetName || '';
                     } catch (error) {
                         this.migrationError = error.message || 'Vorschau konnte nicht erstellt werden.';
                     } finally {
@@ -2320,13 +2453,15 @@
                 },
 
                 async importMigration() {
-                    if (!this.migrationFile || !this.migrationPreview || this.migrationPreview.invalidRows > 0) return;
+                    if (!this.migrationFile || !this.migrationPreview || this.migrationPreviewStale || this.migrationPreview.invalidRows > 0) return;
                     this.migrationBusy = true;
                     this.migrationError = '';
                     this.migrationMessage = '';
                     const formData = new FormData();
                     formData.append('entity', this.migrationEntity);
                     formData.append('mode', this.migrationMode);
+                    this.appendMigrationOptions(formData);
+                    formData.append('previewToken', this.migrationPreview.previewToken);
                     formData.append('file', this.migrationFile);
                     try {
                         const response = await fetch('/api/import', {
@@ -2341,6 +2476,59 @@
                         this.migrationMessage = `Import abgeschlossen: ${summary.created || 0} erstellt, ${summary.updated || 0} aktualisiert, ${summary.skipped || 0} übersprungen.`;
                     } catch (error) {
                         this.migrationError = error.message || 'Import konnte nicht ausgeführt werden.';
+                    } finally {
+                        this.migrationBusy = false;
+                    }
+                },
+
+                async saveMigrationProfile() {
+                    if (!this.migrationProfileName || !this.migrationPreview) return;
+                    this.migrationBusy = true;
+                    this.migrationError = '';
+                    try {
+                        const payload = {
+                            name: this.migrationProfileName,
+                            entity: this.migrationEntity,
+                            mapping: this.migrationMapping,
+                            matchingKey: this.migrationMatchingKey || null,
+                            sheetName: this.migrationSheetName || null,
+                        };
+                        const isUpdate = Boolean(this.migrationProfileId);
+                        const response = await fetch(
+                            isUpdate ? `/api/import/profiles/${this.migrationProfileId}` : '/api/import/profiles',
+                            {
+                                method: isUpdate ? 'PUT' : 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload),
+                            },
+                        );
+                        const data = await response.json();
+                        if (!response.ok) throw new Error(data.error || 'Importprofil konnte nicht gespeichert werden.');
+                        this.migrationProfileId = String(data.profile.id);
+                        this.migrationProfileName = data.profile.name;
+                        await this.fetchMigrationProfiles();
+                        this.migrationMessage = 'Importprofil gespeichert.';
+                    } catch (error) {
+                        this.migrationError = error.message || 'Importprofil konnte nicht gespeichert werden.';
+                    } finally {
+                        this.migrationBusy = false;
+                    }
+                },
+
+                async deleteMigrationProfile() {
+                    if (!this.migrationProfileId || !confirm('Importprofil wirklich löschen?')) return;
+                    this.migrationBusy = true;
+                    this.migrationError = '';
+                    try {
+                        const response = await fetch(`/api/import/profiles/${this.migrationProfileId}`, { method: 'DELETE' });
+                        const data = await response.json();
+                        if (!response.ok) throw new Error(data.error || 'Importprofil konnte nicht gelöscht werden.');
+                        this.migrationProfileId = '';
+                        this.migrationProfileName = '';
+                        await this.fetchMigrationProfiles();
+                        this.migrationMessage = 'Importprofil gelöscht.';
+                    } catch (error) {
+                        this.migrationError = error.message || 'Importprofil konnte nicht gelöscht werden.';
                     } finally {
                         this.migrationBusy = false;
                     }
