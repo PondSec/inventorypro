@@ -59,6 +59,7 @@ from inventorypro.domains.authorization.service import (
     normalize_identifier_list,
     resolve_user_access,
 )
+from inventorypro.domains.audit.service import record_activity
 from inventorypro.domains.backups.routes import build_backups_blueprint
 from inventorypro.domains.customization.repository import get_customization_record, save_customization
 from inventorypro.domains.customization.routes import build_customization_blueprint
@@ -4605,18 +4606,6 @@ def init_db():
         ''')
 
         c.execute('''
-            CREATE TABLE IF NOT EXISTS activity_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT,
-                action TEXT NOT NULL,
-                entity_type TEXT NOT NULL,
-                entity_id INTEGER,
-                details TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        c.execute('''
             CREATE TABLE IF NOT EXISTS roadmaps (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ticket_id INTEGER UNIQUE,
@@ -6116,10 +6105,7 @@ def enforce_security_policies():
 
 def log_activity(db, action, entity_type, entity_id=None, details=None):
     username = session.get('username', 'system')
-    db.execute('''
-        INSERT INTO activity_log (username, action, entity_type, entity_id, details)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (username, action, entity_type, entity_id, json.dumps(details or {})))
+    record_activity(db, username, action, entity_type, entity_id, details)
 
 def parse_time_machine_timestamp(value):
     if not value:
