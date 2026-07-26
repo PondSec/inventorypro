@@ -45,7 +45,6 @@ import smtplib
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
 from inventorypro.data_migration import (
-    TabularImportError,
     import_tabular_file,
     inspect_tabular_conflicts,
     parse_tabular_file,
@@ -58,12 +57,12 @@ from inventorypro.domains.exports.service import (
     protect_spreadsheet_record,
     protect_spreadsheet_row,
 )
+from inventorypro.domains.imports.data_routes import build_data_import_blueprint
 from inventorypro.domains.imports.routes import build_import_profiles_blueprint
 from inventorypro.domains.imports.service import (
     build_preview_proof_arguments,
     ImportPreviewProofService,
     ImportProfileService,
-    ImportProfileValidationError,
     resolve_tabular_import_options,
 )
 from inventorypro.domains.imports.storage import (
@@ -15481,225 +15480,6 @@ def export_data():
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-@app.route('/api/import', methods=['POST'])
-@login_required
-@require_permission('server_settings.manage')
-def import_data():
-    db = get_db()
-    settings, _ = serialize_server_settings(get_server_settings(db))
-    if not settings["importExport"]["importAllowed"]:
-        return jsonify({"error": "Import ist deaktiviert."}), 403
-    if should_rate_limit(f"import:{session.get('username')}"):
-        return jsonify({"error": "Zu viele Import-Anfragen."}), 429
-    import_mode = settings["importExport"]["importMode"]
-    file_storage = request.files.get("file")
-    file_path, error = save_import_file(
-        file_storage,
-        content_length=request.content_length,
-        max_import_bytes=MAX_IMPORT_BYTES,
-    )
-    if error:
-        return jsonify({"error": error}), 400
-    antivirus_error = validate_import_file(file_path)
-    if antivirus_error:
-        shutil.rmtree(file_path.parent, ignore_errors=True)
-        return jsonify({"error": antivirus_error}), 400
-    tables = [
-        "categories",
-        "asset_categories",
-        "locations",
-        "devices",
-        "assets",
-        "maintenance_tasks",
-        "asset_assignment_history",
-        "vendors",
-        "contracts",
-        "purchase_orders",
-        "purchase_order_items",
-        "attachments",
-    ]
-    try:
-        if import_mode == "replace":
-            run_backup_job(db, settings, force=True)
-        suffix = file_path.suffix.lower()
-        entity = (request.form.get("entity") or "").strip().lower()
-        if suffix == ".json" and entity:
-            tabular_mode = (request.form.get("mode") or import_mode).strip().lower()
-            content = file_path.read_bytes()
-            options = resolve_tabular_import_options(db, request.form, entity, IMPORT_PROFILE_SERVICE)
-            IMPORT_PREVIEW_PROOF_SERVICE.verify(
-                request.form.get("previewToken"),
-                **build_preview_proof_arguments(content, file_path.name, entity, options, session.get("username", "system")),
-            )
-            summary = import_tabular_file(
-                db,
-                content,
-                entity,
-                tabular_mode,
-                file_path.name,
-                mapping_override=options["mapping"],
-                matching_key=options["matchingKey"],
-                sheet_name=options["sheetName"],
-            )
-        elif suffix == ".json":
-            payload = json.loads(file_path.read_text(encoding="utf-8"))
-            with db:
-                import_data_payload(db, payload, import_mode, tables)
-        elif file_path.suffix == ".zip":
-            with zipfile.ZipFile(file_path, "r") as archive:
-                try:
-                    upload_members = validate_import_archive(
-                        archive,
-                        max_expanded_bytes=MAX_IMPORT_EXPANDED_BYTES,
-                    )
-                except ValueError as exc:
-                    return jsonify({"error": str(exc)}), 400
-                members = archive.namelist()
-                data_files = [name for name in members if name.endswith(".csv")]
-                if data_files:
-                    with db:
-                        if import_mode == "replace":
-                            for table in tables:
-                                db.execute(f"DELETE FROM {table}")
-                        for data_file in data_files:
-                            table_name = Path(data_file).stem
-                            if table_name not in tables:
-                                continue
-                            with archive.open(data_file) as handle:
-                                content = handle.read().decode("utf-8")
-                                reader = csv.DictReader(StringIO(content))
-                                import_table_rows(db, table_name, list(reader), import_mode if import_mode != "replace" else "append")
-                db.commit()
-                if settings["importExport"]["includeUploads"] and upload_members:
-                    uploads_root = UPLOADS_DIR.resolve()
-                    for member_info, relative_path in upload_members:
-                        target_path = (uploads_root / relative_path).resolve()
-                        if not target_path.is_relative_to(uploads_root):
-                            return jsonify({"error": "ZIP-Archiv enthält einen unsicheren Upload-Pfad."}), 400
-                        target_path.parent.mkdir(parents=True, exist_ok=True)
-                        with archive.open(member_info) as source, open(target_path, "wb") as target:
-                            shutil.copyfileobj(source, target)
-        elif suffix in {".csv", ".tsv", ".xlsx"}:
-            tabular_mode = (request.form.get("mode") or import_mode).strip().lower()
-            content = file_path.read_bytes()
-            options = resolve_tabular_import_options(db, request.form, entity, IMPORT_PROFILE_SERVICE)
-            IMPORT_PREVIEW_PROOF_SERVICE.verify(
-                request.form.get("previewToken"),
-                **build_preview_proof_arguments(content, file_path.name, entity, options, session.get("username", "system")),
-            )
-            summary = import_tabular_file(
-                db,
-                content,
-                entity,
-                tabular_mode,
-                file_path.name,
-                mapping_override=options["mapping"],
-                matching_key=options["matchingKey"],
-                sheet_name=options["sheetName"],
-            )
-        elif suffix in {".db", ".sqlite"}:
-            with db:
-                import_from_sqlite(db, file_path, import_mode, tables)
-        else:
-            return jsonify({"error": "Unbekanntes Import-Format."}), 400
-        log_activity(
-            db,
-            "import_completed",
-            "server_settings",
-            details={
-                "mode": tabular_mode if "tabular_mode" in locals() else import_mode,
-                "entity": entity or None,
-                "summary": summary if "summary" in locals() else None,
-            },
-        )
-        db.commit()
-        response = {"status": "success"}
-        if suffix in {".csv", ".tsv", ".xlsx"} or (suffix == ".json" and entity):
-            response["summary"] = summary
-        return jsonify(response)
-    except (TabularImportError, ImportProfileValidationError) as error:
-        log_activity(
-            db,
-            "import_rejected",
-            "server_settings",
-            details={"entity": (request.form.get("entity") or "").strip().lower() or None, "reason": str(error)},
-        )
-        db.commit()
-        return jsonify({"error": str(error)}), 400
-    finally:
-        shutil.rmtree(file_path.parent, ignore_errors=True)
-
-@app.route('/api/import/preview', methods=['POST'])
-@login_required
-@require_permission('server_settings.manage')
-def preview_import_data():
-    db = get_db()
-    settings, _ = serialize_server_settings(get_server_settings(db))
-    if not settings["importExport"]["importAllowed"]:
-        return jsonify({"error": "Import ist deaktiviert."}), 403
-    file_storage = request.files.get("file")
-    file_path, error = save_import_file(
-        file_storage,
-        content_length=request.content_length,
-        max_import_bytes=MAX_IMPORT_BYTES,
-    )
-    if error:
-        return jsonify({"error": error}), 400
-    try:
-        entity = (request.form.get("entity") or "").strip().lower()
-        content = file_path.read_bytes()
-        options = resolve_tabular_import_options(db, request.form, entity, IMPORT_PROFILE_SERVICE)
-        parsed = parse_tabular_file(
-            content,
-            entity,
-            file_path.name,
-            mapping_override=options["mapping"],
-            sheet_name=options["sheetName"],
-        )
-        preview = preview_tabular_file(
-            content,
-            entity,
-            file_path.name,
-            mapping_override=options["mapping"],
-            sheet_name=options["sheetName"],
-        )
-        conflict_report = inspect_tabular_conflicts(db, parsed, options["matchingKey"])
-        preview.update(conflict_report)
-        preview["profileId"] = options["profileId"]
-        verified_options = {
-            **options,
-            "mapping": parsed["mapping"],
-            "matchingKey": conflict_report["matchingKey"],
-            "sheetName": parsed.get("sheetName"),
-        }
-        preview["previewToken"] = IMPORT_PREVIEW_PROOF_SERVICE.issue(
-            **build_preview_proof_arguments(
-                content,
-                file_path.name,
-                entity,
-                verified_options,
-                session.get("username", "system"),
-            ),
-        )
-        log_activity(
-            db,
-            "import_previewed",
-            "server_settings",
-            details={
-                "entity": entity,
-                "format": preview["format"],
-                "validRows": preview["validRows"],
-                "invalidRows": preview["invalidRows"],
-                "conflictCount": preview["conflictCount"],
-            },
-        )
-        db.commit()
-        return jsonify(preview)
-    except (TabularImportError, ImportProfileValidationError) as error:
-        return jsonify({"error": str(error)}), 400
-    finally:
-        shutil.rmtree(file_path.parent, ignore_errors=True)
-
 @app.route('/api/customize', methods=['GET', 'PUT', 'PATCH'])
 @login_required
 def customize_settings():
@@ -17060,6 +16840,49 @@ app.register_blueprint(
         get_db=get_db,
         imports_enabled=lambda db: serialize_server_settings(get_server_settings(db))[0]["importExport"]["importAllowed"],
         current_actor=lambda: session.get("username", "system"),
+        log_activity=log_activity,
+        login_required=login_required,
+        require_permission=require_permission,
+    ),
+)
+app.register_blueprint(
+    build_data_import_blueprint(
+        get_db=get_db,
+        get_import_settings=lambda db: serialize_server_settings(get_server_settings(db))[0],
+        should_rate_limit=should_rate_limit,
+        current_actor=lambda: session.get("username", "system"),
+        max_import_bytes=MAX_IMPORT_BYTES,
+        max_import_expanded_bytes=MAX_IMPORT_EXPANDED_BYTES,
+        uploads_dir=UPLOADS_DIR,
+        import_tables=(
+            "categories",
+            "asset_categories",
+            "locations",
+            "devices",
+            "assets",
+            "maintenance_tasks",
+            "asset_assignment_history",
+            "vendors",
+            "contracts",
+            "purchase_orders",
+            "purchase_order_items",
+            "attachments",
+        ),
+        run_backup_job=run_backup_job,
+        save_import_file=save_import_file,
+        validate_import_file=validate_import_file,
+        resolve_tabular_import_options=resolve_tabular_import_options,
+        import_profile_service=IMPORT_PROFILE_SERVICE,
+        preview_proof_service=IMPORT_PREVIEW_PROOF_SERVICE,
+        build_preview_proof_arguments=build_preview_proof_arguments,
+        import_tabular_file=import_tabular_file,
+        import_data_payload=import_data_payload,
+        validate_import_archive=validate_import_archive,
+        import_table_rows=import_table_rows,
+        import_from_sqlite=import_from_sqlite,
+        parse_tabular_file=parse_tabular_file,
+        preview_tabular_file=preview_tabular_file,
+        inspect_tabular_conflicts=inspect_tabular_conflicts,
         log_activity=log_activity,
         login_required=login_required,
         require_permission=require_permission,
