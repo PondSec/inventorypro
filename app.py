@@ -29,7 +29,6 @@ from itertools import permutations
 from pathlib import Path, PurePosixPath
 from apscheduler.schedulers.background import BackgroundScheduler
 from cryptography.fernet import Fernet
-from openpyxl import Workbook
 import pyotp
 import qrcode
 import qrcode.image.svg
@@ -52,11 +51,7 @@ from inventorypro.data_migration import (
 )
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
 from inventorypro.domains.backups.routes import build_backups_blueprint
-from inventorypro.domains.exports.service import (
-    build_export_metadata,
-    protect_spreadsheet_record,
-    protect_spreadsheet_row,
-)
+from inventorypro.domains.exports.routes import build_exports_blueprint
 from inventorypro.domains.imports.data_routes import build_data_import_blueprint
 from inventorypro.domains.imports.routes import build_import_profiles_blueprint
 from inventorypro.domains.imports.service import (
@@ -15358,128 +15353,6 @@ def inventory_link_proxy(link_id, subpath):
         headers=response_headers
     )
 
-@app.route('/api/export', methods=['GET'])
-@login_required
-@require_permission('server_settings.manage')
-def export_data():
-    db = get_db()
-    settings, _ = serialize_server_settings(get_server_settings(db))
-    if not settings["importExport"]["exportAllowed"]:
-        return jsonify({"error": "Export ist deaktiviert."}), 403
-    export_format = settings["importExport"]["exportFormat"]
-    include_uploads = settings["importExport"]["includeUploads"]
-    tables = [
-        "categories",
-        "asset_categories",
-        "locations",
-        "devices",
-        "assets",
-        "asset_devices",
-        "maintenance_tasks",
-        "asset_assignment_history",
-        "vendors",
-        "contracts",
-        "purchase_orders",
-        "purchase_order_items",
-        "attachments",
-    ]
-    temp_dir = Path(tempfile.mkdtemp(prefix="inventory_export_"))
-    archive_path = None
-    try:
-        if export_format == "sqlite":
-            db_path = temp_dir / "inventory.db"
-            run_sqlite_backup(db_path)
-            if include_uploads and UPLOADS_DIR.exists():
-                archive_path = temp_dir / "inventory_export.zip"
-                with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-                    archive.write(db_path, arcname="inventory.db")
-                    for path in UPLOADS_DIR.rglob("*"):
-                        if path.is_file():
-                            archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
-            else:
-                archive_path = db_path
-        elif export_format == "json":
-            payload = export_tables(db, tables)
-            payload["_metadata"] = build_export_metadata(export_format, tables)
-            data_path = temp_dir / "inventory_export.json"
-            data_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            if include_uploads and UPLOADS_DIR.exists():
-                archive_path = temp_dir / "inventory_export.zip"
-                with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-                    archive.write(data_path, arcname="inventory_export.json")
-                    for path in UPLOADS_DIR.rglob("*"):
-                        if path.is_file():
-                            archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
-            else:
-                archive_path = data_path
-        elif export_format == "xlsx":
-            data_path = temp_dir / "inventory_export.xlsx"
-            workbook = Workbook(write_only=True)
-            metadata_sheet = workbook.create_sheet(title="metadata")
-            metadata_sheet.append(["key", "value"])
-            for key, value in build_export_metadata(export_format, tables).items():
-                metadata_sheet.append([key, json.dumps(value, ensure_ascii=False) if isinstance(value, list) else value])
-            for table in tables:
-                worksheet = workbook.create_sheet(title=table[:31])
-                columns = [column["name"] for column in db.execute(f"PRAGMA table_info({table})").fetchall()]
-                worksheet.append(columns)
-                for row in db.execute(f"SELECT * FROM {table}").fetchall():
-                    worksheet.append(protect_spreadsheet_row(row[column] for column in columns))
-            workbook.save(data_path)
-            if include_uploads and UPLOADS_DIR.exists():
-                archive_path = temp_dir / "inventory_export.zip"
-                with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-                    archive.write(data_path, arcname="inventory_export.xlsx")
-                    for path in UPLOADS_DIR.rglob("*"):
-                        if path.is_file():
-                            archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
-            else:
-                archive_path = data_path
-        else:
-            archive_path = temp_dir / "inventory_export.zip"
-            with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-                for table in tables:
-                    rows = db.execute(f"SELECT * FROM {table}").fetchall()
-                    csv_path = temp_dir / f"{table}.csv"
-                    if rows:
-                        fieldnames = rows[0].keys()
-                        with open(csv_path, "w", newline="", encoding="utf-8") as handle:
-                            writer = csv.DictWriter(handle, fieldnames=fieldnames)
-                            writer.writeheader()
-                            for row in rows:
-                                writer.writerow(protect_spreadsheet_record(dict(row)))
-                    else:
-                        csv_path.write_text("", encoding="utf-8")
-                    archive.write(csv_path, arcname=f"{table}.csv")
-                if include_uploads and UPLOADS_DIR.exists():
-                    for path in UPLOADS_DIR.rglob("*"):
-                        if path.is_file():
-                            archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
-        if (export_format in {"sqlite", "json", "xlsx"} and include_uploads) or export_format == "csv":
-            filename = "inventory_export.zip"
-            mimetype = "application/zip"
-        else:
-            filename = f"inventory_export.{archive_path.suffix.lstrip('.')}"
-            mimetype = (
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                if export_format == "xlsx"
-                else "application/octet-stream"
-            )
-        log_activity(
-            db,
-            "export_created",
-            "server_settings",
-            details={"format": export_format, "includeUploads": include_uploads, "tables": tables},
-        )
-        db.commit()
-        return Response(
-            archive_path.read_bytes(),
-            mimetype=mimetype,
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
 @app.route('/api/customize', methods=['GET', 'PUT', 'PATCH'])
 @login_required
 def customize_settings():
@@ -15915,42 +15788,6 @@ def maintenance_summary():
         WHERE status = 'open' AND due_date != '' AND date(due_date) < date('now')
     ''').fetchone()[0]
     return jsonify({"open": open_count, "overdue": overdue_count})
-
-@app.route('/api/export/devices', methods=['GET'])
-@login_required
-def export_devices():
-    db = get_db()
-    if not (user_can('devices.view') or user_can('devices.manage')):
-        return jsonify({"error": "Keine Berechtigung"}), 403
-    settings, _ = serialize_server_settings(get_server_settings(db))
-    if not settings["importExport"]["exportAllowed"]:
-        return jsonify({"error": "Export ist deaktiviert."}), 403
-    devices = db.execute('''
-        SELECT d.id, d.name, d.serial_number, d.specs, d.created_at, c.name as category_name
-        FROM devices d
-        JOIN categories c ON d.category_id = c.id
-        ORDER BY d.created_at DESC
-    ''').fetchall()
-    output = StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["ID", "Name", "Kategorie", "Besitzer", "Spezifikationen", "Erstellt"])
-    for device in devices:
-        writer.writerow(protect_spreadsheet_row([
-            device['id'],
-            device['name'],
-            device['category_name'],
-            device['serial_number'] or '',
-            device['specs'] or '',
-            device['created_at']
-        ]))
-    output.seek(0)
-    log_activity(db, "export_created", "device", details={"format": "csv", "count": len(devices)})
-    db.commit()
-    return Response(
-        output.getvalue(),
-        mimetype='text/csv',
-        headers={'Content-Disposition': 'attachment; filename=devices.csv'}
-    )
 
 @app.route('/stats')
 @login_required
@@ -16884,6 +16721,19 @@ app.register_blueprint(
         preview_tabular_file=preview_tabular_file,
         inspect_tabular_conflicts=inspect_tabular_conflicts,
         log_activity=log_activity,
+        login_required=login_required,
+        require_permission=require_permission,
+    ),
+)
+app.register_blueprint(
+    build_exports_blueprint(
+        get_db=get_db,
+        get_export_settings=lambda db: serialize_server_settings(get_server_settings(db))[0],
+        uploads_dir=UPLOADS_DIR,
+        export_tables=export_tables,
+        run_sqlite_backup=run_sqlite_backup,
+        log_activity=log_activity,
+        user_can=user_can,
         login_required=login_required,
         require_permission=require_permission,
     ),
