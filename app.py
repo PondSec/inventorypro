@@ -66,6 +66,11 @@ from inventorypro.domains.imports.service import (
     ImportProfileValidationError,
     resolve_tabular_import_options,
 )
+from inventorypro.domains.imports.storage import (
+    save_import_file,
+    validate_import_archive,
+    validate_import_file,
+)
 from inventorypro.domains.locations.routes import build_locations_blueprint
 from inventorypro.domains.tickets.routes import build_ticket_pages_blueprint
 from inventorypro.migrations import MigrationError, apply_migrations
@@ -2853,58 +2858,6 @@ def schedule_backup_jobs(settings):
         coalesce=True,
         misfire_grace_time=300,
     )
-
-def load_import_file(file_storage):
-    if not file_storage:
-        return None, "Keine Datei hochgeladen."
-    if request.content_length and request.content_length > MAX_IMPORT_BYTES:
-        return None, "Datei ist zu groß."
-    filename = secure_filename(file_storage.filename or "")
-    if not filename:
-        return None, "Ungültiger Dateiname."
-    temp_dir = Path(tempfile.mkdtemp(prefix="inventory_import_"))
-    file_path = temp_dir / filename
-    file_storage.save(file_path)
-    return file_path, None
-
-
-def validate_import_file(file_path):
-    antivirus_cmd = os.environ.get("INVENTORY_ANTIVIRUS_COMMAND")
-    if not antivirus_cmd:
-        return None
-    result = subprocess.run(
-        [antivirus_cmd, str(file_path)],
-        capture_output=True,
-        text=True,
-        check=False
-    )
-    if result.returncode != 0:
-        return result.stderr.strip() or "Datei konnte nicht geprüft werden."
-    return None
-
-def validate_import_archive(archive):
-    total_uncompressed = 0
-    upload_members = []
-    for info in archive.infolist():
-        member_name = info.filename
-        if not member_name or "\x00" in member_name or "\\" in member_name:
-            raise ValueError("ZIP-Archiv enthält einen ungültigen Pfad.")
-        member_path = PurePosixPath(member_name)
-        if member_path.is_absolute() or any(part in {"", ".", ".."} for part in member_path.parts):
-            raise ValueError("ZIP-Archiv enthält einen unsicheren Pfad.")
-        unix_mode = info.external_attr >> 16
-        if unix_mode and stat.S_ISLNK(unix_mode):
-            raise ValueError("Symbolische Links sind in Importarchiven nicht zulässig.")
-        total_uncompressed += max(0, info.file_size)
-        if total_uncompressed > MAX_IMPORT_EXPANDED_BYTES:
-            raise ValueError("Entpackter Inhalt überschreitet die zulässige Größe.")
-        if info.is_dir() or not member_path.parts or member_path.parts[0] != "uploads":
-            continue
-        relative_parts = member_path.parts[1:]
-        if not relative_parts:
-            continue
-        upload_members.append((info, Path(*relative_parts)))
-    return upload_members
 
 def export_tables(db, tables):
     export_data = {}
@@ -15540,7 +15493,11 @@ def import_data():
         return jsonify({"error": "Zu viele Import-Anfragen."}), 429
     import_mode = settings["importExport"]["importMode"]
     file_storage = request.files.get("file")
-    file_path, error = load_import_file(file_storage)
+    file_path, error = save_import_file(
+        file_storage,
+        content_length=request.content_length,
+        max_import_bytes=MAX_IMPORT_BYTES,
+    )
     if error:
         return jsonify({"error": error}), 400
     antivirus_error = validate_import_file(file_path)
@@ -15591,7 +15548,10 @@ def import_data():
         elif file_path.suffix == ".zip":
             with zipfile.ZipFile(file_path, "r") as archive:
                 try:
-                    upload_members = validate_import_archive(archive)
+                    upload_members = validate_import_archive(
+                        archive,
+                        max_expanded_bytes=MAX_IMPORT_EXPANDED_BYTES,
+                    )
                 except ValueError as exc:
                     return jsonify({"error": str(exc)}), 400
                 members = archive.namelist()
@@ -15678,7 +15638,11 @@ def preview_import_data():
     if not settings["importExport"]["importAllowed"]:
         return jsonify({"error": "Import ist deaktiviert."}), 403
     file_storage = request.files.get("file")
-    file_path, error = load_import_file(file_storage)
+    file_path, error = save_import_file(
+        file_storage,
+        content_length=request.content_length,
+        max_import_bytes=MAX_IMPORT_BYTES,
+    )
     if error:
         return jsonify({"error": error}), 400
     try:
