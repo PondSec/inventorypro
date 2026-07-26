@@ -51,7 +51,9 @@ from inventorypro.data_migration import (
 )
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
 from inventorypro.domains.backups.routes import build_backups_blueprint
+from inventorypro.domains.customization.repository import get_customization_record, save_customization
 from inventorypro.domains.customization.routes import build_customization_blueprint
+from inventorypro.domains.customization.validators import validate_customization as validate_customization_payload
 from inventorypro.domains.exports.routes import build_exports_blueprint
 from inventorypro.domains.imports.data_routes import build_data_import_blueprint
 from inventorypro.domains.imports.routes import build_import_profiles_blueprint
@@ -2959,91 +2961,7 @@ def migrate_customization(data):
     return merged
 
 def validate_customization(data):
-    errors = []
-    if not isinstance(data, dict):
-        return False, ["Customization muss ein Objekt sein."]
-    if not isinstance(data.get("schemaVersion"), int):
-        errors.append("schemaVersion fehlt oder ist ungültig.")
-    for key in ("baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs", "branding", "navigation"):
-        if key not in data:
-            errors.append(f"{key} fehlt.")
-
-    branding = data.get("branding")
-    if isinstance(branding, dict):
-        for key in (
-            "name",
-            "tagline",
-            "logoDataUrl",
-            "logoLightDataUrl",
-            "logoDarkDataUrl",
-            "faviconDataUrl",
-            "authBackgroundDataUrl",
-        ):
-            value = branding.get(key)
-            if not isinstance(value, str):
-                errors.append(f"branding.{key} muss ein Textwert sein.")
-        for key in ("logoDataUrl", "logoLightDataUrl", "logoDarkDataUrl", "faviconDataUrl", "authBackgroundDataUrl"):
-            value = branding.get(key)
-            if not isinstance(value, str) or not value:
-                continue
-            match = re.fullmatch(r"data:image/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})", value)
-            if not match:
-                errors.append(f"branding.{key} muss ein PNG-, JPEG-, WebP- oder GIF-Data-URL sein.")
-                continue
-            try:
-                image_bytes = base64.b64decode(match.group(2), validate=True)
-            except ValueError:
-                errors.append(f"branding.{key} enthält ungültige Base64-Daten.")
-                continue
-            if len(image_bytes) > MAX_CUSTOMIZATION_IMAGE_BYTES:
-                errors.append(f"branding.{key} überschreitet die Größenbegrenzung von 2 MB.")
-    elif branding is not None:
-        errors.append("branding muss ein Objekt sein.")
-
-    navigation = data.get("navigation")
-    if not isinstance(navigation, dict):
-        errors.append("navigation muss ein Objekt sein.")
-    else:
-        groups = navigation.get("groups")
-        items = navigation.get("items")
-        if not isinstance(groups, dict):
-            errors.append("navigation.groups muss ein Objekt sein.")
-        else:
-            for group_key, label in groups.items():
-                if not isinstance(group_key, str) or not isinstance(label, str) or not label.strip() or len(label) > 80:
-                    errors.append("navigation.groups enthält eine ungültige Gruppenbezeichnung.")
-                    break
-        if not isinstance(items, dict):
-            errors.append("navigation.items muss ein Objekt sein.")
-        else:
-            for item_key, item in items.items():
-                if not isinstance(item_key, str) or not isinstance(item, dict):
-                    errors.append("navigation.items enthält einen ungültigen Navigationseintrag.")
-                    break
-                label = item.get("label")
-                visible = item.get("visible")
-                order = item.get("order")
-                if not isinstance(label, str) or not label.strip() or len(label) > 80:
-                    errors.append(f"navigation.items.{item_key}.label ist ungültig.")
-                    break
-                if not isinstance(visible, bool):
-                    errors.append(f"navigation.items.{item_key}.visible muss wahr oder falsch sein.")
-                    break
-                if not isinstance(order, int) or not 0 <= order <= 999:
-                    errors.append(f"navigation.items.{item_key}.order muss zwischen 0 und 999 liegen.")
-                    break
-    return len(errors) == 0, errors
-
-def compute_customization_diff(old, new, path=""):
-    changes = []
-    if isinstance(old, dict) and isinstance(new, dict):
-        all_keys = set(old.keys()) | set(new.keys())
-        for key in sorted(all_keys):
-            next_path = f"{path}.{key}" if path else key
-            changes.extend(compute_customization_diff(old.get(key), new.get(key), next_path))
-    elif old != new:
-        changes.append({"path": path, "from": old, "to": new})
-    return changes
+    return validate_customization_payload(data, max_image_bytes=MAX_CUSTOMIZATION_IMAGE_BYTES)
 
 def get_current_user_id(db):
     username = session.get("username")
@@ -3051,58 +2969,6 @@ def get_current_user_id(db):
         return None
     row = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
     return row["id"] if row else None
-
-def get_customization_record(db, user_id, workspace_id=None):
-    if workspace_id is None:
-        record = db.execute(
-            "SELECT * FROM ui_customization WHERE workspace_id = ? ORDER BY id LIMIT 1",
-            (INSTANCE_CUSTOMIZATION_WORKSPACE_ID,),
-        ).fetchone()
-        if record:
-            return record
-        return db.execute(
-            "SELECT * FROM ui_customization WHERE workspace_id IS NULL ORDER BY updated_at DESC, id DESC LIMIT 1"
-        ).fetchone()
-    return db.execute(
-        "SELECT * FROM ui_customization WHERE user_id = ? AND workspace_id = ?",
-        (user_id, workspace_id),
-    ).fetchone()
-
-def save_customization(db, user_id, customization, updated_by, workspace_id=None):
-    existing = get_customization_record(db, user_id, workspace_id)
-    serialized = json.dumps(customization)
-    if existing:
-        db.execute(
-            """
-            UPDATE ui_customization
-            SET workspace_id = ?, customization_json = ?, schema_version = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
-            WHERE id = ?
-            """,
-            (INSTANCE_CUSTOMIZATION_WORKSPACE_ID, serialized, customization["schemaVersion"], updated_by, existing["id"]),
-        )
-        customization_id = existing["id"]
-    else:
-        db.execute(
-            """
-            INSERT INTO ui_customization (user_id, workspace_id, schema_version, customization_json, updated_by)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (user_id, INSTANCE_CUSTOMIZATION_WORKSPACE_ID, customization["schemaVersion"], serialized, updated_by),
-        )
-        customization_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-    diff = []
-    if existing:
-        diff = compute_customization_diff(json.loads(existing["customization_json"]), customization)
-    db.execute(
-        """
-        INSERT INTO ui_customization_revisions (customization_id, revision_json, diff_json, created_by)
-        VALUES (?, ?, ?, ?)
-        """,
-        (customization_id, serialized, json.dumps(diff), updated_by),
-    )
-    db.commit()
-    return customization_id
 
 def seed_permissions(db):
     for perm in PERMISSIONS:
