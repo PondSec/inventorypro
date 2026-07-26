@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
+
+from inventorypro.time import utc_now
 
 
 def serialize_inventory_link(row: Any) -> dict[str, Any]:
@@ -54,5 +55,5 @@ def update_inventory_link_health(database: Any, link_id: str, status: str) -> No
         SET health_status = ?, health_last_checked_at = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
-        (status, datetime.utcnow().isoformat(), link_id),
+        (status, utc_now().isoformat(), link_id),
     )

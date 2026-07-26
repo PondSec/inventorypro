@@ -121,6 +121,7 @@ from inventorypro.domains.tickets.routes import build_ticket_pages_blueprint
 from inventorypro.domains.updates.policy import normalize_update_settings
 from inventorypro.migrations import MigrationError, apply_migrations
 from inventorypro import backup_restore as backup_restore_service
+from inventorypro.time import utc_now
 from inventorypro.secrets import (
     EncryptionKeyring,
     SecretConfigurationError,
@@ -1068,7 +1069,7 @@ def store_update_policy(update_settings):
         "channel": update_settings.get("channel") or "stable",
         "checkIntervalMinutes": int(update_settings.get("checkIntervalMinutes") or 360),
         "maintenanceWindow": update_settings.get("maintenanceWindow") or "03:30",
-        "updatedAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "updatedAt": utc_now().strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     temporary_path = None
     try:
@@ -2187,14 +2188,14 @@ def get_terminal_session(db, session_id, user_id):
     if not row:
         return None
     expires_at = row["expires_at"]
-    if expires_at and datetime.fromisoformat(expires_at) < datetime.utcnow():
+    if expires_at and datetime.fromisoformat(expires_at) < utc_now():
         db.execute('UPDATE terminal_sessions SET active = 0 WHERE id = ?', (session_id,))
         db.commit()
         return None
     return row
 
 def create_terminal_session(db, user_id, mode, ip, user_agent):
-    expires_at = datetime.utcnow() + timedelta(seconds=TERMINAL_SESSION_TTL_SECONDS)
+    expires_at = utc_now() + timedelta(seconds=TERMINAL_SESSION_TTL_SECONDS)
     db.execute(
         '''
         INSERT INTO terminal_sessions (user_id, expires_at, mode, ip, user_agent)
@@ -2340,7 +2341,7 @@ def run_backup_job(db, settings, force=False):
     if not settings["backup"]["enabled"] and not force:
         return {"status": "skipped", "message": "Backups sind deaktiviert."}
     backup_dir = ensure_backup_directory(settings["backup"]["directory"])
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = utc_now().strftime("%Y%m%d_%H%M%S")
     backup_base = backup_dir / f"inventory_backup_{timestamp}"
     db_type = os.environ.get("DATABASE_URL")
     backup_path = None
@@ -5010,7 +5011,7 @@ def safe_sql_identifier(identifier):
     return None
 
 def health_now():
-    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    return utc_now().strftime("%Y-%m-%d %H:%M:%S")
 
 def register_health_check(name):
     def decorator(fn):
@@ -5230,7 +5231,7 @@ def run_health_checks_async(check_ids, initiated_by, run_id):
         run_health_checks(db, check_ids=check_ids, triggered_by="manual", initiated_by=initiated_by, run_id=run_id)
 
 def fetch_due_health_checks(db):
-    now = datetime.utcnow()
+    now = utc_now()
     rows = db.execute(
         '''
         SELECT *
@@ -5255,7 +5256,7 @@ def fetch_due_health_checks(db):
     return due
 
 def cleanup_health_retention(db):
-    cutoff = datetime.utcnow() - timedelta(days=HEALTH_DEFAULT_RETENTION_DAYS)
+    cutoff = utc_now() - timedelta(days=HEALTH_DEFAULT_RETENTION_DAYS)
     cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
     db.execute('DELETE FROM health_check_results WHERE observed_at < ?', (cutoff_str,))
     db.execute('DELETE FROM health_check_runs WHERE started_at < ?', (cutoff_str,))
@@ -5770,7 +5771,7 @@ def health_check_queue_depth(config, db, timeout_seconds):
         if heartbeat_row and heartbeat_row["heartbeat"]:
             try:
                 last_heartbeat = datetime.strptime(heartbeat_row["heartbeat"], "%Y-%m-%d %H:%M:%S")
-                heartbeat_age = (datetime.utcnow() - last_heartbeat).total_seconds()
+                heartbeat_age = (utc_now() - last_heartbeat).total_seconds()
             except ValueError:
                 heartbeat_age = None
     if heartbeat_age is not None and heartbeat_age > max_age_seconds:
@@ -5899,7 +5900,7 @@ def is_user_locked(db, username):
         locked_until = datetime.fromisoformat(attempt["locked_until"])
     except ValueError:
         return False
-    return locked_until > datetime.utcnow()
+    return locked_until > utc_now()
 
 def record_login_failure(db, username, max_failed, lockout_minutes):
     attempt = get_login_attempt(db, username)
@@ -5907,7 +5908,7 @@ def record_login_failure(db, username, max_failed, lockout_minutes):
     failed_count += 1
     locked_until = None
     if failed_count >= max_failed:
-        locked_until = (datetime.utcnow() + timedelta(minutes=lockout_minutes)).isoformat()
+        locked_until = (utc_now() + timedelta(minutes=lockout_minutes)).isoformat()
         failed_count = 0
     if attempt:
         db.execute(
@@ -6783,7 +6784,7 @@ def render_ticket_email(event_type, ticket, changes=None, actor=None, comment=No
             change_lines = ["- Ticket wurde erstellt."]
         else:
             change_lines = ["- Ticket wurde aktualisiert."]
-    timestamp = datetime.utcnow().strftime("%d.%m.%Y %H:%M UTC")
+    timestamp = utc_now().strftime("%d.%m.%Y %H:%M UTC")
     text_lines = [
         f"Ticket #{ticket['id']} – {ticket['title']}",
         f"Link: {ticket_url}",
@@ -8125,7 +8126,7 @@ def create_roadmap_for_ticket(db, ticket, category_name=None, created_by=None):
     title = f"Roadmap: {ticket['title']}"
     objective = f"Umsetzungsplan für Ticket #{ticket['id']}: {ticket['title']}"
     owner = ticket.get("assignee") or ticket.get("created_by")
-    start_date = datetime.utcnow().strftime("%Y-%m-%d")
+    start_date = utc_now().strftime("%Y-%m-%d")
     target_date = ticket.get("due_date") or None
     roadmap_cursor = db.execute('''
         INSERT INTO roadmaps (ticket_id, title, objective, status, owner, start_date, target_date, created_by)
@@ -8186,7 +8187,7 @@ def warranty_status(warranty_end):
     parsed = parse_date(warranty_end)
     if not parsed:
         return "Unbekannt"
-    today = datetime.utcnow().date()
+    today = utc_now().date()
     return "Aktiv" if parsed >= today else "Abgelaufen"
 
 def extract_manufacturer(specs):
@@ -8567,7 +8568,7 @@ def fetch_ticket_assets(db, ticket_id):
 
 def merge_ticket_records(db, target_ticket, source_tickets, actor=None, note=None):
     merged_ticket_ids = []
-    merged_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    merged_at = utc_now().strftime("%Y-%m-%d %H:%M:%S")
     actor_name = actor or session.get('username') or "System"
 
     for source_ticket in source_tickets:
@@ -9901,7 +9902,7 @@ def assign_asset(asset_id):
     ):
         status = "transferred"
     created_by_user_id = get_current_user_id(db)
-    now = datetime.utcnow().isoformat()
+    now = utc_now().isoformat()
     db.execute('''
         INSERT INTO asset_assignment_history (
             asset_id, assigned_to_user_id, assigned_to_team_id, status, note, created_by_user_id, created_at
@@ -9954,7 +9955,7 @@ def checkout_asset(asset_id):
     if error:
         return jsonify({"error": error}), 400
     created_by_user_id = get_current_user_id(db)
-    now = datetime.utcnow().isoformat()
+    now = utc_now().isoformat()
     db.execute('''
         INSERT INTO asset_assignment_history (
             asset_id, assigned_to_user_id, assigned_to_team_id, status,
@@ -10000,7 +10001,7 @@ def checkin_asset(asset_id):
     if transition_error:
         return jsonify({"error": transition_error}), 400
     created_by_user_id = get_current_user_id(db)
-    now = datetime.utcnow().isoformat()
+    now = utc_now().isoformat()
     db.execute('''
         INSERT INTO asset_assignment_history (
             asset_id, assigned_to_user_id, assigned_to_team_id, status,
@@ -10042,7 +10043,7 @@ def unassign_asset(asset_id):
     if transition_error:
         return jsonify({"error": transition_error}), 400
     created_by_user_id = get_current_user_id(db)
-    now = datetime.utcnow().isoformat()
+    now = utc_now().isoformat()
     db.execute('''
         INSERT INTO asset_assignment_history (
             asset_id, assigned_to_user_id, assigned_to_team_id, status, note, created_by_user_id, created_at
@@ -10192,7 +10193,7 @@ def delete_attachment(attachment_id):
     if error:
         message, status = error
         return jsonify({"error": message}), status
-    deleted_at = datetime.utcnow().isoformat()
+    deleted_at = utc_now().isoformat()
     db.execute('UPDATE attachments SET deleted_at = ? WHERE id = ?', (deleted_at, attachment_id))
     log_activity(db, "ATTACHMENT_DELETED", "attachment", attachment_id, {
         "entity_type": row["entity_type"],
@@ -11267,7 +11268,7 @@ def procurement_renewals():
         days = int(request.args.get('days', 90))
     except (TypeError, ValueError):
         days = 90
-    today = datetime.utcnow().date()
+    today = utc_now().date()
     cutoff = today + timedelta(days=days)
 
     contract_rows = db.execute('''
@@ -11730,7 +11731,7 @@ def health_run_now():
 def health_history():
     db = get_db()
     days = int(request.args.get("days") or 1)
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    cutoff = (utc_now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     events = db.execute(
         '''
         SELECT observed_at, current_status
@@ -11804,7 +11805,7 @@ def health_incident_mute(incident_id):
     db = get_db()
     data = request.get_json() or {}
     minutes = int(data.get("minutes") or 30)
-    muted_until = (datetime.utcnow() + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    muted_until = (utc_now() + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
     db.execute(
         '''
         UPDATE health_incidents
@@ -11878,7 +11879,7 @@ def tickets():
         tags = json.dumps(data.get('tags') or [])
         custom_fields = json.dumps(data.get('custom_fields') or [])
         asset_ids = data.get('asset_ids') or []
-        resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
+        resolved_at = utc_now().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
         field_errors = {}
         if not title:
             field_errors["title"] = "Titel ist erforderlich"
@@ -12215,7 +12216,7 @@ def bulk_update_tickets():
     if requested_status:
         assignments += ", resolved_at = ?"
         resolved_at = (
-            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            utc_now().strftime("%Y-%m-%d %H:%M:%S")
             if is_closed_status(requested_status)
             else None
         )
@@ -12643,7 +12644,7 @@ def ticket_detail(ticket_id):
         resolved_at = ticket.get('resolved_at')
         if status_changed:
             if is_closed_status(status):
-                resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                resolved_at = utc_now().strftime("%Y-%m-%d %H:%M:%S")
             else:
                 resolved_at = None
         changes = build_ticket_changes(ticket, {
@@ -13481,7 +13482,7 @@ def time_machine_changes():
 
     timestamps = [parse_time_machine_timestamp(change["timestamp"]) for change in changes]
     timestamps = [ts for ts in timestamps if ts]
-    now = datetime.utcnow()
+    now = utc_now()
     range_start = min(timestamps) if timestamps else now
     range_end = max(timestamps) if timestamps else now
 
@@ -13501,7 +13502,7 @@ def time_machine_changes():
 def time_machine_state():
     db = get_db()
     timestamp_raw = request.args.get('timestamp')
-    timestamp = parse_time_machine_timestamp(timestamp_raw) or datetime.utcnow()
+    timestamp = parse_time_machine_timestamp(timestamp_raw) or utc_now()
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
     assets = db.execute('''
@@ -14720,7 +14721,7 @@ def stats():
         ORDER BY month
     ''').fetchall()
     monthly_counts = {row['month']: row['device_count'] for row in monthly_rows}
-    now = datetime.utcnow()
+    now = utc_now()
     current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     months = []
     for offset in range(-5, 1):
@@ -14869,7 +14870,7 @@ def stats():
         LIMIT 8
     ''').fetchall()
     asset_ticket_stats = []
-    today = datetime.utcnow().date()
+    today = utc_now().date()
     ticket_counts = []
     for row in asset_ticket_rows:
         commissioning_date = parse_date(row['commissioning_date']) or parse_date(row['acquisition_date'])
@@ -14964,7 +14965,7 @@ def stats():
         if not created_at:
             continue
         sla_hours = row["sla_hours"] or 72
-        age_hours = (datetime.utcnow() - created_at).total_seconds() / 3600
+        age_hours = (utc_now() - created_at).total_seconds() / 3600
         if age_hours > sla_hours:
             sla_risks.append(row)
     if sla_risks:

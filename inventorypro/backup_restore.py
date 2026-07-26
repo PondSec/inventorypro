@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import hashlib
 import json
 import os
@@ -12,6 +11,8 @@ import sqlite3
 import stat
 import tempfile
 import zipfile
+
+from inventorypro.time import utc_now
 
 
 def backup_manifest_path(backup_path: str | Path) -> Path:
@@ -33,7 +34,7 @@ def write_backup_manifest(backup_path: str | Path, application_version: str) -> 
         "artifact": artifact_path.name,
         "sha256": file_sha256(artifact_path),
         "sizeBytes": artifact_path.stat().st_size,
-        "createdAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "createdAt": utc_now().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "applicationVersion": application_version,
     }
     manifest_path = backup_manifest_path(artifact_path)
@@ -178,7 +179,7 @@ def restore_sqlite_backup(backup_path, database_path, encryption_provider, maxim
         rollback_path = None
         if target_path.exists():
             rollback_path = target_path.with_name(
-                f"{target_path.stem}.pre-restore-{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}{target_path.suffix}"
+                f"{target_path.stem}.pre-restore-{utc_now().strftime('%Y%m%d_%H%M%S')}{target_path.suffix}"
             )
             with sqlite3.connect(f"file:{target_path}?mode=ro", uri=True) as source:
                 with sqlite3.connect(rollback_path) as destination:
