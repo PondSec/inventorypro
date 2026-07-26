@@ -791,7 +791,10 @@
     applied = applyCachedCustomization(cached) || applied;
 
     try {
-      const response = await fetch('/api/customize', { credentials: 'same-origin' });
+      const response = await fetch('/api/customize', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
       const contentType = response.headers.get('content-type') || '';
       if (response.ok && contentType.includes('application/json')) {
         const serverData = await response.json();
@@ -840,8 +843,15 @@
     setCached: setCachedCustomization,
   };
 
-  loadCustomization();
-  document.addEventListener('DOMContentLoaded', updateButtons);
+  const startCustomization = () => {
+    loadCustomization();
+    updateButtons();
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startCustomization, { once: true });
+  } else {
+    startCustomization();
+  }
   window.addEventListener('storage', (event) => {
     if (event.key === customizationCacheKey) {
       loadCustomization();
