@@ -172,7 +172,6 @@ SCHEDULER_ENABLED = os.environ.get(
     "INVENTORY_SCHEDULER_ENABLED",
     "0" if APPLICATION_SECRET.environment == "production" else "1",
 ).strip().lower() in {"1", "true", "yes", "on"}
-PRO_ENABLED = True
 APP_START_TIME = time.time()
 TERMINAL_RATE_LIMIT_WINDOW_SECONDS = 60
 TERMINAL_RATE_LIMIT_MAX_REQUESTS = 12
@@ -186,17 +185,6 @@ TERMINAL_DB_MAX_BYTES = 150 * 1024
 TERMINAL_REAUTH_WINDOW_SECONDS = 10 * 60
 CACHE_MAX_ENTRIES = int(os.environ.get("INVENTORY_CACHE_MAX_ENTRIES", "10000"))
 TERMINAL_RATE_LIMIT_CACHE = SlidingWindowRateLimiter(CACHE_MAX_ENTRIES)
-PRO_FEATURES = [
-    "maintenance_schedule",
-    "csv_export",
-    "advanced_analytics"
-]
-FREE_FEATURES = [
-    "tags",
-    "notes",
-    "activity_feed"
-]
-
 RUNTIME_SETTINGS_CACHE = None
 BACKUP_SCHEDULER = BackgroundScheduler()
 HEALTH_SCHEDULER = BackgroundScheduler()
@@ -226,7 +214,6 @@ DEFAULT_SERVER_SETTINGS = {
         "port": 5000,
         "debug": False
     },
-    "proFeaturesEnabled": False,
     "backup": {
         "enabled": False,
         "compress": False,
@@ -1082,7 +1069,6 @@ def serialize_server_settings(settings_row):
                 "port": settings_row["port"] or DEFAULT_SERVER_SETTINGS["server"]["port"],
                 "debug": bool(settings_row["debug_mode"])
             },
-            "proFeaturesEnabled": bool(settings_row["pro_enabled"]),
             "backup": {
                 "enabled": bool(settings_row["backup_enabled"]),
                 "compress": bool(settings_row["backup_compress"]),
@@ -1286,7 +1272,6 @@ def persist_server_settings(db, settings, updated_by):
         SET host = ?,
             port = ?,
             debug_mode = ?,
-            pro_enabled = ?,
             backup_enabled = ?,
             backup_schedule = ?,
             backup_time = ?,
@@ -1323,7 +1308,6 @@ def persist_server_settings(db, settings, updated_by):
             settings["server"]["host"],
             settings["server"]["port"],
             1 if settings["server"]["debug"] else 0,
-            1 if settings["proFeaturesEnabled"] else 0,
             1 if settings["backup"]["enabled"] else 0,
             settings["backup"]["schedule"],
             settings["backup"]["time"],
@@ -4904,7 +4888,6 @@ def init_db():
                 host TEXT DEFAULT '0.0.0.0',
                 port INTEGER DEFAULT 5000,
                 debug_mode INTEGER DEFAULT 0,
-                pro_enabled INTEGER DEFAULT 0,
                 backup_enabled INTEGER DEFAULT 0,
                 backup_schedule TEXT DEFAULT 'daily',
                 backup_time TEXT DEFAULT '02:00',
@@ -7284,15 +7267,6 @@ def calculate_spof_nodes(db):
     spof.sort(key=lambda item: item["dependent_count"], reverse=True)
     return spof
 
-def pro_required(f):
-    @wraps(f)
-    def wrapped(*args, **kwargs):
-        settings_row = get_server_settings(get_db())
-        if not settings_row or not settings_row["pro_enabled"]:
-            return jsonify({"error": "Pro-Feature ist deaktiviert."}), 403
-        return f(*args, **kwargs)
-    return wrapped
-
 def parse_email_list(value):
     if not value:
         return []
@@ -9425,7 +9399,6 @@ def serialize_server_settings_flat(settings):
             "host": DEFAULT_SERVER_SETTINGS["server"]["host"],
             "port": DEFAULT_SERVER_SETTINGS["server"]["port"],
             "debug": DEFAULT_SERVER_SETTINGS["server"]["debug"],
-            "pro_enabled": DEFAULT_SERVER_SETTINGS["proFeaturesEnabled"],
             "backup_enabled": DEFAULT_SERVER_SETTINGS["backup"]["enabled"],
             "backup_schedule": DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
             "backup_time": DEFAULT_SERVER_SETTINGS["backup"]["time"],
@@ -9457,7 +9430,6 @@ def serialize_server_settings_flat(settings):
         "host": settings["host"] or DEFAULT_SERVER_SETTINGS["server"]["host"],
         "port": settings["port"] or DEFAULT_SERVER_SETTINGS["server"]["port"],
         "debug": bool(settings["debug_mode"]),
-        "pro_enabled": bool(settings["pro_enabled"]),
         "backup_enabled": bool(settings["backup_enabled"]),
         "backup_schedule": settings["backup_schedule"] or DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
         "backup_time": settings["backup_time"] or DEFAULT_SERVER_SETTINGS["backup"]["time"],
@@ -14058,12 +14030,15 @@ def notification_test():
 @app.route('/api/features', methods=['GET'])
 @login_required
 def feature_flags():
-    settings_row = get_server_settings(get_db())
-    settings, _ = serialize_server_settings(settings_row)
     return jsonify({
-        "pro_enabled": bool(settings["proFeaturesEnabled"]),
-        "pro_features": PRO_FEATURES,
-        "free_features": FREE_FEATURES
+        "features": [
+            "maintenance_schedule",
+            "csv_export",
+            "advanced_analytics",
+            "tags",
+            "notes",
+            "activity_feed",
+        ]
     })
 
 @app.route('/api/time-machine/changes', methods=['GET'])
@@ -14907,7 +14882,6 @@ def server_settings():
                 "port": data.get("port"),
                 "debug": data.get("debug")
             },
-            "proFeaturesEnabled": data.get("pro_enabled"),
             "backup": {
                 "enabled": data.get("backup_enabled"),
                 "compress": data.get("backup_compress"),
@@ -15975,7 +15949,6 @@ def delete_device_note(device_id, note_id):
 
 @app.route('/api/maintenance', methods=['GET', 'POST'])
 @login_required
-@pro_required
 def maintenance_tasks():
     db = get_db()
     if request.method == 'POST':
@@ -16013,7 +15986,6 @@ def maintenance_tasks():
 
 @app.route('/api/maintenance/<int:task_id>', methods=['PATCH'])
 @login_required
-@pro_required
 def update_maintenance(task_id):
     db = get_db()
     if not user_can('maintenance.manage'):
@@ -16039,9 +16011,6 @@ def maintenance_summary():
     db = get_db()
     if not (user_can('maintenance.view') or user_can('maintenance.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
-    settings, _ = serialize_server_settings(get_server_settings(db))
-    if not settings["proFeaturesEnabled"]:
-        return jsonify({"pro_locked": True, "open": 0, "overdue": 0})
     open_count = db.execute('''
         SELECT COUNT(*) FROM maintenance_tasks WHERE status = 'open'
     ''').fetchone()[0]
@@ -16049,11 +16018,10 @@ def maintenance_summary():
         SELECT COUNT(*) FROM maintenance_tasks
         WHERE status = 'open' AND due_date != '' AND date(due_date) < date('now')
     ''').fetchone()[0]
-    return jsonify({"pro_locked": False, "open": open_count, "overdue": overdue_count})
+    return jsonify({"open": open_count, "overdue": overdue_count})
 
 @app.route('/api/export/devices', methods=['GET'])
 @login_required
-@pro_required
 def export_devices():
     db = get_db()
     if not (user_can('devices.view') or user_can('devices.manage')):

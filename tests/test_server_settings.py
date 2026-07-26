@@ -31,6 +31,14 @@ class ServerSettingsTestCase(unittest.TestCase):
             admin_role = db.execute("SELECT id FROM roles WHERE name = 'Admin'").fetchone()
             if admin_role:
                 inventory_app.assign_user_role(db, cursor.lastrowid, "Admin")
+            category_id = db.execute(
+                "INSERT INTO categories (name) VALUES (?)",
+                ("Testkategorie",),
+            ).lastrowid
+            self.device_id = db.execute(
+                "INSERT INTO devices (name, category_id, serial_number, specs) VALUES (?, ?, ?, ?)",
+                ("Testgerät", category_id, "SER-001", "{}"),
+            ).lastrowid
             db.commit()
         self.client = inventory_app.app.test_client()
 
@@ -152,6 +160,33 @@ class ServerSettingsTestCase(unittest.TestCase):
         )
         self.assertEqual(imported.status_code, 200)
         self.assertEqual(imported.get_json()["summary"]["created"], 1)
+
+    def test_all_built_in_features_are_available_without_license_flags(self):
+        self.login()
+
+        catalog = self.client.get("/api/features")
+        self.assertEqual(catalog.status_code, 200)
+        self.assertEqual(
+            set(catalog.get_json()),
+            {"features"},
+        )
+        self.assertIn("maintenance_schedule", catalog.get_json()["features"])
+        self.assertIn("csv_export", catalog.get_json()["features"])
+
+        created = self.client.post(
+            "/api/maintenance",
+            json={"device_id": self.device_id, "title": "Sicherheitsprüfung", "due_date": "2026-08-01"},
+        )
+        self.assertEqual(created.status_code, 201)
+        summary = self.client.get("/api/maintenance/summary")
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(summary.get_json()["open"], 1)
+        self.assertEqual(set(summary.get_json()), {"open", "overdue"})
+
+        export = self.client.get("/api/export/devices")
+        self.assertEqual(export.status_code, 200)
+        self.assertEqual(export.mimetype, "text/csv")
+        self.assertIn("Testgerät", export.get_data(as_text=True))
 
     def test_login_lockout(self):
         for _ in range(5):
