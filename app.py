@@ -652,6 +652,7 @@ DEFAULT_CUSTOMIZATION = {
         "logoLightDataUrl": "",
         "logoDarkDataUrl": "",
         "faviconDataUrl": "",
+        "authBackgroundDataUrl": "",
     },
     "baseTokens": {
         "colors": {
@@ -2975,6 +2976,9 @@ def migrate_customization(data):
         migrated["branding"]["faviconDataUrl"] = branding.get(
             "faviconDataUrl", migrated["branding"]["faviconDataUrl"]
         )
+        migrated["branding"]["authBackgroundDataUrl"] = branding.get(
+            "authBackgroundDataUrl", migrated["branding"]["authBackgroundDataUrl"]
+        )
         migrated["baseTokens"]["colors"]["primary"] = branding.get("primary", migrated["baseTokens"]["colors"]["primary"])
         migrated["baseTokens"]["colors"]["accent"] = branding.get("accent", migrated["baseTokens"]["colors"]["accent"])
         migrated["baseTokens"]["colors"]["background"] = branding.get("background", migrated["baseTokens"]["colors"]["background"])
@@ -3011,11 +3015,19 @@ def validate_customization(data):
 
     branding = data.get("branding")
     if isinstance(branding, dict):
-        for key in ("name", "tagline", "logoDataUrl", "logoLightDataUrl", "logoDarkDataUrl", "faviconDataUrl"):
+        for key in (
+            "name",
+            "tagline",
+            "logoDataUrl",
+            "logoLightDataUrl",
+            "logoDarkDataUrl",
+            "faviconDataUrl",
+            "authBackgroundDataUrl",
+        ):
             value = branding.get(key)
             if not isinstance(value, str):
                 errors.append(f"branding.{key} muss ein Textwert sein.")
-        for key in ("logoDataUrl", "logoLightDataUrl", "logoDarkDataUrl", "faviconDataUrl"):
+        for key in ("logoDataUrl", "logoLightDataUrl", "logoDarkDataUrl", "faviconDataUrl", "authBackgroundDataUrl"):
             value = branding.get(key)
             if not isinstance(value, str) or not value:
                 continue
