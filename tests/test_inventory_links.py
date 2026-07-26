@@ -12,6 +12,7 @@ from flask import Flask
 
 import app as inventory_app
 from inventorypro.domains.inventory_links.routes import build_inventory_links_blueprint
+from inventorypro.domains.inventory_links import validators as inventory_link_validators
 
 
 class InventoryLinkHandler(BaseHTTPRequestHandler):
@@ -188,7 +189,7 @@ class InventoryLinksTestCase(unittest.TestCase):
             inventory_app.validate_inventory_link_target("http://192.168.1.10:5001", False)
 
     def test_connection_scope_enforces_separate_internet_and_lan_policies(self):
-        with patch.object(inventory_app, "resolve_inventory_link_ips", return_value=["8.8.8.8"]):
+        with patch.object(inventory_link_validators, "resolve_inventory_link_ips", return_value=["8.8.8.8"]):
             normalized, scope, verify_tls, allow_private = inventory_app.validate_inventory_link_configuration(
                 "https://inventory.example", "internet", True, False
             )
@@ -205,18 +206,77 @@ class InventoryLinksTestCase(unittest.TestCase):
                     "https://inventory.example", "internet", False, False
                 )
 
-        with patch.object(inventory_app, "resolve_inventory_link_ips", return_value=["192.168.30.4"]):
+        with patch.object(inventory_link_validators, "resolve_inventory_link_ips", return_value=["192.168.30.4"]):
             _, scope, _, allow_private = inventory_app.validate_inventory_link_configuration(
                 "http://192.168.30.4:5050", "local", False, True
             )
             self.assertEqual(scope, "local")
             self.assertTrue(allow_private)
 
-        with patch.object(inventory_app, "resolve_inventory_link_ips", return_value=["8.8.4.4"]):
+        with patch.object(inventory_link_validators, "resolve_inventory_link_ips", return_value=["8.8.4.4"]):
             with self.assertRaisesRegex(ValueError, "private LAN"):
                 inventory_app.validate_inventory_link_configuration(
                     "https://inventory.example", "local", True, True
                 )
+
+    def test_inventory_link_validator_security_boundaries(self):
+        self.assertEqual(
+            inventory_link_validators.normalize_inventory_link_base_url("https://inventory.example/root/"),
+            "https://inventory.example/root",
+        )
+        for value in (
+            "ftp://inventory.example",
+            "https://operator:secret@inventory.example",
+            "https://inventory.example?token=secret",
+            "https://inventory.example#fragment",
+        ):
+            with self.assertRaises(ValueError):
+                inventory_link_validators.normalize_inventory_link_base_url(value)
+
+        with patch.object(inventory_link_validators, "resolve_inventory_link_ips", return_value=[]):
+            with self.assertRaisesRegex(ValueError, "aufgelöst"):
+                inventory_link_validators.validate_inventory_link_target("https://inventory.example", False)
+        with patch.object(
+            inventory_link_validators,
+            "resolve_inventory_link_ips",
+            return_value=["169.254.169.254"],
+        ):
+            with self.assertRaisesRegex(ValueError, "nicht erlaubt"):
+                inventory_link_validators.validate_inventory_link_target("https://inventory.example", True)
+
+        self.assertTrue(inventory_link_validators.is_inventory_link_ip_blocked("not-an-ip", True))
+        self.assertTrue(inventory_link_validators.is_inventory_link_ip_blocked("224.0.0.1", True))
+        self.assertTrue(inventory_link_validators.is_inventory_link_ip_blocked("169.254.10.1", True))
+        self.assertTrue(inventory_link_validators.is_inventory_link_ip_blocked("10.0.0.1", False))
+        self.assertFalse(inventory_link_validators.is_inventory_link_ip_blocked("8.8.8.8", False))
+        self.assertFalse(inventory_link_validators.is_inventory_link_private_ip("not-an-ip"))
+
+        inventory_app.os.environ["INVENTORY_LINKS_ALLOW_LOOPBACK"] = "1"
+        self.assertTrue(inventory_link_validators.is_inventory_link_private_ip("127.0.0.1"))
+        self.assertTrue(inventory_link_validators.inventory_links_allow_loopback())
+
+        with self.assertRaises(ValueError):
+            inventory_link_validators.normalize_inventory_link_connection_scope("partner")
+        self.assertEqual(inventory_link_validators.normalize_inventory_link_connection_scope(None), "internet")
+        self.assertEqual(
+            inventory_link_validators.enforce_inventory_link_scope_access(
+                {"is_superuser": False, "permissions": set()},
+                "local",
+            ),
+            "Lokale Inventory-Link-Verbindungen benötigen Administratorrechte.",
+        )
+        self.assertIsNone(
+            inventory_link_validators.enforce_inventory_link_scope_access(
+                {"is_superuser": False, "permissions": {"server_settings.manage"}},
+                "local",
+            )
+        )
+        with self.assertRaises(ValueError):
+            inventory_link_validators.parse_inventory_link_login_secret("operator")
+        self.assertEqual(
+            inventory_link_validators.parse_inventory_link_login_secret(" operator :secret"),
+            ("operator", "secret"),
+        )
 
     def test_proxy_forwards_headers_and_redirects(self):
         inventory_app.os.environ["INVENTORY_LINKS_ALLOW_LOOPBACK"] = "1"
