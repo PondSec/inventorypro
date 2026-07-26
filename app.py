@@ -5976,16 +5976,46 @@ def normalized_origin(scheme, host):
     return f"{scheme}://{netloc}".rstrip("/")
 
 
+def forwarded_origin_candidates(origin):
+    """Return proxy-advertised origins that exactly match the browser origin host.
+
+    Some Docker/reverse-proxy setups preserve the public browser Origin but do
+    not configure INVENTORY_TRUSTED_PROXY_NETWORKS yet.  A normal browser CSRF
+    request cannot set X-Forwarded-* headers, so accepting only candidates whose
+    forwarded host equals the supplied Origin host keeps the write guard useful
+    while avoiding false rejections of legitimate same-origin deployments.
+    """
+    if not origin:
+        return set()
+    parsed_origin = urllib.parse.urlsplit(origin)
+    if not parsed_origin.scheme or not parsed_origin.hostname:
+        return set()
+    forwarded_host = (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()
+    if not forwarded_host:
+        return set()
+    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+    candidate_scheme = forwarded_proto or parsed_origin.scheme
+    if candidate_scheme not in {"http", "https"}:
+        return set()
+    try:
+        candidate = normalized_origin(candidate_scheme, forwarded_host)
+    except ValueError:
+        return set()
+    return {candidate} if candidate == origin else set()
+
+
 def expected_request_origins():
     forwarded_proto = trusted_forwarded_header("X-Forwarded-Proto")
     forwarded_host = trusted_forwarded_header("X-Forwarded-Host")
     scheme = forwarded_proto or request.scheme
     host = forwarded_host or request.host
+    origin = request_origin()
     origins = {
         normalized_origin(scheme, host),
         normalized_origin(request.scheme, request.host),
         request.host_url.rstrip("/"),
     }
+    origins.update(forwarded_origin_candidates(origin))
     if PUBLIC_ORIGIN:
         origins.add(PUBLIC_ORIGIN)
     origins.update(ALLOWED_CORS_ORIGINS)
