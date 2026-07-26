@@ -4,6 +4,7 @@ from pathlib import Path
 import unittest
 
 import app as inventory_app
+from inventorypro.domains.health import incidents as health_incidents
 
 
 class HealthModuleTestCase(unittest.TestCase):
@@ -121,6 +122,10 @@ class HealthModuleTestCase(unittest.TestCase):
             self.assertGreaterEqual(ticket["sla_hours"], 1)
             self.assertTrue(ticket["due_date"])
             self.assertIn("automatic", json.loads(ticket["tags"]))
+            self.assertEqual(
+                inventory_app.create_health_incident_ticket(db, incident["id"]),
+                incident["ticket_id"],
+            )
             inventory_app.record_health_result(
                 db,
                 run_id,
@@ -207,6 +212,99 @@ class HealthModuleTestCase(unittest.TestCase):
 
         self.assertIsNotNone(incident["ticket_id"])
         self.assertEqual(ticket["priority"], "high")
+
+    def test_incident_service_creates_categories_and_deduplicates_concurrent_opens(self):
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            check_id = db.execute(
+                '''
+                INSERT INTO health_check_definitions (
+                    name, slug, category, check_type, config_json, interval_seconds, timeout_seconds, enabled
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    "Service",
+                    "incident-service-test",
+                    "System",
+                    "service_unit",
+                    "{}",
+                    60,
+                    5,
+                    1,
+                ),
+            ).lastrowid
+            db.execute("DELETE FROM ticket_categories WHERE LOWER(name) = 'incident'")
+            category = health_incidents.get_health_incident_ticket_category(db)
+            existing_category = health_incidents.get_health_incident_ticket_category(db)
+            self.assertEqual(category["id"], existing_category["id"])
+            with self.assertRaisesRegex(ValueError, "Health-Incident nicht gefunden"):
+                health_incidents.create_health_incident_ticket(db, 999999)
+
+            observed_at = "2026-07-26 12:00:00"
+            incident_id = db.execute(
+                '''
+                INSERT INTO health_incidents (
+                    check_id, status, summary, opened_at, last_status, last_observed_at
+                )
+                VALUES (?, 'open', ?, ?, ?, ?)
+                ''',
+                (check_id, "bereits geöffnet", observed_at, "CRIT", observed_at),
+            ).lastrowid
+            returned_incident_id = health_incidents.record_health_incident(
+                db,
+                check_id,
+                "zweiter Öffnungsversuch",
+                observed_at,
+                "CRIT",
+            )
+            ticket_id = db.execute(
+                "SELECT ticket_id FROM health_incidents WHERE id = ?",
+                (incident_id,),
+            ).fetchone()["ticket_id"]
+            unlinked_check_id = db.execute(
+                '''
+                INSERT INTO health_check_definitions (
+                    name, slug, category, check_type, config_json, interval_seconds, timeout_seconds, enabled
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    "Unlinked",
+                    "unlinked-incident-service-test",
+                    "System",
+                    "service_unit",
+                    "{}",
+                    60,
+                    5,
+                    1,
+                ),
+            ).lastrowid
+            unlinked_incident_id = db.execute(
+                '''
+                INSERT INTO health_incidents (
+                    check_id, status, summary, opened_at, last_status, last_observed_at
+                )
+                VALUES (?, 'open', ?, ?, ?, ?)
+                ''',
+                (unlinked_check_id, "ohne Ticket", observed_at, "WARN", observed_at),
+            ).lastrowid
+            health_incidents.update_health_incident_state(
+                db,
+                unlinked_check_id,
+                "WARN",
+                observed_at,
+                {"incident_open_after_minutes": 0},
+                "nachträglich verknüpfen",
+            )
+            unlinked_ticket_id = db.execute(
+                "SELECT ticket_id FROM health_incidents WHERE id = ?",
+                (unlinked_incident_id,),
+            ).fetchone()["ticket_id"]
+
+        self.assertEqual(returned_incident_id, incident_id)
+        self.assertIsNotNone(ticket_id)
+        self.assertIsNotNone(unlinked_ticket_id)
 
 
 if __name__ == "__main__":
