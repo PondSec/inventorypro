@@ -4,7 +4,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import sqlite3
 import json
-import hashlib
 from datetime import datetime, timedelta
 from functools import wraps
 import os
@@ -18,6 +17,7 @@ import time
 import subprocess
 import socket
 import stat
+import http.cookiejar
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -40,112 +40,9 @@ from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
 import smtplib
 
-from inventorypro.config import resolve_application_secret
-from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
-from inventorypro.data_migration import (
-    import_tabular_file,
-    inspect_tabular_conflicts,
-    parse_tabular_file,
-    preview_tabular_file,
-)
-from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
-from inventorypro.domains.authorization.service import (
-    assign_user_role as assign_user_role_record,
-    can_assign_roles,
-    can_manage_role_permissions,
-    ensure_default_roles as ensure_default_roles_record,
-    get_permission_keys_by_ids,
-    get_roles_by_ids,
-    normalize_identifier_list,
-    resolve_user_access,
-)
-from inventorypro.domains.audit.service import record_activity
-from inventorypro.domains.backups.routes import build_backups_blueprint
-from inventorypro.domains.customization.repository import get_customization_record, save_customization
-from inventorypro.domains.customization.routes import build_customization_blueprint
-from inventorypro.domains.customization.service import (
-    clone_customization,
-    deep_merge,
-    migrate_customization as migrate_customization_payload,
-)
-from inventorypro.domains.customization.validators import validate_customization as validate_customization_payload
-from inventorypro.domains.exports.routes import build_exports_blueprint
-from inventorypro.domains.health.incidents import (
-    close_health_incident,
-    create_health_incident_ticket,
-    get_health_incident_ticket_category,
-    normalize_health_status,
-    record_health_incident,
-    update_health_incident_state,
-)
-from inventorypro.domains.imports.data_routes import build_data_import_blueprint
-from inventorypro.domains.imports.routes import build_import_profiles_blueprint
-from inventorypro.domains.imports.service import (
-    build_preview_proof_arguments,
-    ImportPreviewProofService,
-    ImportProfileService,
-    resolve_tabular_import_options,
-)
-from inventorypro.domains.imports.storage import (
-    save_import_file,
-    validate_import_archive,
-    validate_import_file,
-)
-from inventorypro.domains.inventory_links.routes import build_inventory_links_blueprint
-from inventorypro.domains.inventory_links.repository import (
-    get_inventory_link,
-    list_inventory_links,
-    serialize_inventory_link,
-    update_inventory_link_health,
-)
-from inventorypro.domains.inventory_links.service import (
-    InventoryLinkConnectionError as InventoryLinkServiceConnectionError,
-    InventoryLinkNoRedirect as InventoryLinkServiceNoRedirect,
-    InventoryLinkSessionService,
-)
-from inventorypro.domains.inventory_links.validators import (
-    can_manage_local_inventory_links,
-    enforce_inventory_link_scope_access,
-    inventory_links_allow_loopback,
-    is_inventory_link_ip_blocked,
-    is_inventory_link_private_ip,
-    normalize_inventory_link_base_url,
-    normalize_inventory_link_connection_scope,
-    parse_inventory_link_login_secret,
-    resolve_inventory_link_ips,
-    validate_inventory_link_configuration,
-    validate_inventory_link_target,
-)
-from inventorypro.domains.locations.routes import build_locations_blueprint
-from inventorypro.domains.tickets.routes import build_ticket_pages_blueprint
-from inventorypro.domains.updates.policy import normalize_update_settings
-from inventorypro.migrations import MigrationError, apply_migrations
-from inventorypro import backup_restore as backup_restore_service
-from inventorypro.time import utc_now
-from inventorypro.secrets import (
-    EncryptionKeyring,
-    SecretConfigurationError,
-    SecretDecryptionError,
-    decrypt_secret,
-    encrypt_secret,
-    is_plaintext_secret,
-    migrate_plaintext_secret,
-)
-
 INVENTORY_INSTANCE_PATH = os.environ.get("INVENTORY_INSTANCE_PATH") or None
 app = Flask(__name__, instance_path=INVENTORY_INSTANCE_PATH) if INVENTORY_INSTANCE_PATH else Flask(__name__)
-
-@app.before_request
-def assign_request_id():
-    g.request_id = uuid.uuid4().hex
-
-APPLICATION_SECRET = resolve_application_secret()
-app.secret_key = APPLICATION_SECRET.value
-if APPLICATION_SECRET.generated_for_development:
-    app.logger.warning(
-        "APP_SECRET_KEY fehlt; ein nicht persistenter Schlüssel wurde nur für %s erzeugt.",
-        APPLICATION_SECRET.environment,
-    )
+app.secret_key = os.environ.get("APP_SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY") or os.urandom(24).hex()
 ALLOWED_CORS_ORIGINS = tuple(
     origin.strip().rstrip("/")
     for origin in (os.environ.get("INVENTORY_ALLOWED_ORIGINS") or "").split(",")
@@ -164,13 +61,7 @@ app.config.update(
         os.environ.get("INVENTORY_SECURE_COOKIES", "0").strip().lower()
         in {"1", "true", "yes", "on"}
     ),
-    INVENTORY_CSRF_ENABLED=(
-        os.environ.get("INVENTORY_CSRF_ENABLED", "1").strip().lower()
-        not in {"0", "false", "no", "off"}
-    ),
 )
-IMPORT_PROFILE_SERVICE = ImportProfileService()
-IMPORT_PREVIEW_PROOF_SERVICE = ImportPreviewProofService(app.secret_key)
 
 DATABASE = os.environ.get("INVENTORY_DATABASE_PATH") or "inventory.db"
 SETTINGS_SCHEMA_VERSION = 1
@@ -183,9 +74,6 @@ MAX_IMPORT_EXPANDED_BYTES = int(
     os.environ.get("INVENTORY_MAX_IMPORT_EXPANDED_BYTES", MAX_IMPORT_BYTES * 4)
 )
 MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_BYTES))
-MAX_RESTORE_BYTES = int(os.environ.get("INVENTORY_MAX_RESTORE_BYTES", 5 * 1024 * 1024 * 1024))
-MAX_CUSTOMIZATION_IMAGE_BYTES = int(os.environ.get("INVENTORY_MAX_CUSTOMIZATION_IMAGE_BYTES", 2 * 1024 * 1024))
-app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
 BLOCKED_ATTACHMENT_EXTENSIONS = {".exe", ".js", ".html", ".htm", ".bat", ".sh", ".ps1"}
 BINPACKING_DIMENSIONS = ("width", "height", "depth")
@@ -239,18 +127,13 @@ INVENTORY_LINK_PROXY_REWRITE_PATH_PREFIXES = (
     "settings",
     "inventory-links",
 )
-INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT = os.environ.get("INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS", "0").lower() in {"1", "true", "yes"}
+INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT = os.environ.get("INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS", "1").lower() not in {"0", "false", "no"}
 INVENTORY_LINK_LOGIN_TTL_SECONDS = int(os.environ.get("INVENTORY_LINK_LOGIN_TTL_SECONDS", 30 * 60))
-TRUSTED_PROXY_NETWORKS = tuple(
-    entry.strip()
-    for entry in (os.environ.get("INVENTORY_TRUSTED_PROXY_NETWORKS") or "").split(",")
-    if entry.strip()
-)
-PUBLIC_ORIGIN = (os.environ.get("INVENTORY_PUBLIC_ORIGIN") or "").strip().rstrip("/")
-SCHEDULER_ENABLED = os.environ.get(
-    "INVENTORY_SCHEDULER_ENABLED",
-    "0" if APPLICATION_SECRET.environment == "production" else "1",
-).strip().lower() in {"1", "true", "yes", "on"}
+INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS = os.environ.get(
+    "INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS",
+    "1"
+).lower() in {"1", "true", "yes"}
+PRO_ENABLED = True
 APP_START_TIME = time.time()
 TERMINAL_RATE_LIMIT_WINDOW_SECONDS = 60
 TERMINAL_RATE_LIMIT_MAX_REQUESTS = 12
@@ -262,15 +145,24 @@ TERMINAL_LOG_MAX_BYTES = 150 * 1024
 TERMINAL_DB_MAX_ROWS = 100
 TERMINAL_DB_MAX_BYTES = 150 * 1024
 TERMINAL_REAUTH_WINDOW_SECONDS = 10 * 60
-OTP_ENROLLMENT_TTL_SECONDS = 10 * 60
-CACHE_MAX_ENTRIES = int(os.environ.get("INVENTORY_CACHE_MAX_ENTRIES", "10000"))
-TERMINAL_RATE_LIMIT_CACHE = SlidingWindowRateLimiter(CACHE_MAX_ENTRIES)
+TERMINAL_RATE_LIMIT_CACHE = {}
+PRO_FEATURES = [
+    "maintenance_schedule",
+    "csv_export",
+    "advanced_analytics"
+]
+FREE_FEATURES = [
+    "tags",
+    "notes",
+    "activity_feed"
+]
+
 RUNTIME_SETTINGS_CACHE = None
 BACKUP_SCHEDULER = BackgroundScheduler()
 HEALTH_SCHEDULER = BackgroundScheduler()
-RATE_LIMIT_CACHE = SlidingWindowRateLimiter(CACHE_MAX_ENTRIES)
-INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE = SlidingWindowRateLimiter(CACHE_MAX_ENTRIES)
-INVENTORY_LINK_LOGIN_SESSION_CACHE = BoundedTTLCache(CACHE_MAX_ENTRIES)
+RATE_LIMIT_CACHE = {}
+INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE = {}
+INVENTORY_LINK_LOGIN_SESSION_CACHE = {}
 
 HEALTH_STATUS_ORDER = {
     "OK": 0,
@@ -279,6 +171,8 @@ HEALTH_STATUS_ORDER = {
     "UNKNOWN": 3
 }
 HEALTH_DEFAULT_RETENTION_DAYS = 14
+HEALTH_INCIDENT_OPEN_MINUTES = 5
+HEALTH_INCIDENT_CLOSE_MINUTES = 5
 HEALTH_REDACT_KEYS = {
     "password", "secret", "token", "api_key", "apikey", "key", "authorization", "bearer", "dsn"
 }
@@ -292,6 +186,7 @@ DEFAULT_SERVER_SETTINGS = {
         "port": 5000,
         "debug": False
     },
+    "proFeaturesEnabled": False,
     "backup": {
         "enabled": False,
         "compress": False,
@@ -714,10 +609,6 @@ DEFAULT_CUSTOMIZATION = {
         "name": "Inventory Pro",
         "tagline": "Inventarisierung",
         "logoDataUrl": "",
-        "logoLightDataUrl": "",
-        "logoDarkDataUrl": "",
-        "faviconDataUrl": "",
-        "authBackgroundDataUrl": "",
     },
     "baseTokens": {
         "colors": {
@@ -875,36 +766,7 @@ DEFAULT_CUSTOMIZATION = {
         },
         "compactSidebar": False,
     },
-    "navigation": {
-        "groups": {
-            "legacyPrimary": "Hauptbereiche",
-            "assetOperations": "Asset Operations",
-            "serviceWorkflow": "Service & Workflow",
-            "legacyAnalysis": "Auswertung",
-            "analysisPlatform": "Analyse & Plattform",
-            "linkedInstances": "Verknüpfte Instanzen",
-            "administration": "Administration",
-        },
-        "items": {
-            "dashboard": {"label": "Dashboard", "visible": True, "order": 10},
-            "devices": {"label": "Geräte", "visible": True, "order": 20},
-            "assets": {"label": "Assets", "visible": True, "order": 30},
-            "categories": {"label": "Kategorien", "visible": True, "order": 40},
-            "locations": {"label": "Standorte", "visible": True, "order": 50},
-            "tickets": {"label": "Ticketsystem", "visible": True, "order": 60},
-            "knowledge": {"label": "Wissensbasis", "visible": True, "order": 70},
-            "roadmap": {"label": "Roadmap", "visible": True, "order": 80},
-            "procurement": {"label": "Beschaffung", "visible": True, "order": 90},
-            "statistics": {"label": "Statistiken", "visible": True, "order": 100},
-            "dependencies": {"label": "Abhängigkeiten", "visible": True, "order": 110},
-            "timeMachine": {"label": "Zeitmaschine", "visible": True, "order": 120},
-            "health": {"label": "Health", "visible": True, "order": 130},
-            "users": {"label": "Benutzer & Rollen", "visible": True, "order": 140},
-            "settings": {"label": "Einstellungen", "visible": True, "order": 150},
-        },
-    },
 }
-INSTANCE_CUSTOMIZATION_WORKSPACE_ID = 0
 
 DEFAULT_ROLES = [
     {
@@ -1069,7 +931,7 @@ def store_update_policy(update_settings):
         "channel": update_settings.get("channel") or "stable",
         "checkIntervalMinutes": int(update_settings.get("checkIntervalMinutes") or 360),
         "maintenanceWindow": update_settings.get("maintenanceWindow") or "03:30",
-        "updatedAt": utc_now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "updatedAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     temporary_path = None
     try:
@@ -1147,6 +1009,7 @@ def serialize_server_settings(settings_row):
                 "port": settings_row["port"] or DEFAULT_SERVER_SETTINGS["server"]["port"],
                 "debug": bool(settings_row["debug_mode"])
             },
+            "proFeaturesEnabled": bool(settings_row["pro_enabled"]),
             "backup": {
                 "enabled": bool(settings_row["backup_enabled"]),
                 "compress": bool(settings_row["backup_compress"]),
@@ -1247,15 +1110,25 @@ def validate_settings_payload(payload, partial=False):
     if backup.get("encrypt") and not os.environ.get("BACKUP_ENCRYPTION_KEY"):
         errors["backup.encrypt"] = "BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung kann nicht aktiviert werden."
 
-    updates, update_errors = normalize_update_settings(
-        merged.get("updates", {}),
-        DEFAULT_SERVER_SETTINGS["updates"],
-    )
-    errors.update(update_errors)
+    updates = merged.get("updates", {})
+    update_channel = (updates.get("channel") or "").strip().lower()
+    if update_channel != "stable":
+        errors["updates.channel"] = "Nur der signierte Stable-Kanal ist zulässig."
+    update_interval = updates.get("checkIntervalMinutes")
+    try:
+        update_interval = int(update_interval)
+    except (TypeError, ValueError):
+        errors["updates.checkIntervalMinutes"] = "Prüfintervall muss eine Zahl sein."
+    else:
+        if update_interval < 15 or update_interval > 1440:
+            errors["updates.checkIntervalMinutes"] = "Prüfintervall muss zwischen 15 und 1440 Minuten liegen."
+    update_window = (updates.get("maintenanceWindow") or "").strip()
+    if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', update_window):
+        errors["updates.maintenanceWindow"] = "Wartungsfenster muss im Format HH:MM sein."
 
     import_export = merged.get("importExport", {})
     export_format = (import_export.get("exportFormat") or "").lower()
-    if export_format not in {"sqlite", "csv", "json", "xlsx"}:
+    if export_format not in {"sqlite", "csv", "json"}:
         errors["importExport.exportFormat"] = "Export-Format ist ungültig."
     import_mode = (import_export.get("importMode") or "").lower()
     if import_mode not in {"merge", "replace", "append"}:
@@ -1313,7 +1186,10 @@ def validate_settings_payload(payload, partial=False):
     merged["backup"]["time"] = time_value
     merged["backup"]["retentionDays"] = retention
     merged["backup"]["notifyEmail"] = notify_email
-    merged["updates"] = updates
+    merged["updates"]["autoUpdateEnabled"] = bool(updates.get("autoUpdateEnabled"))
+    merged["updates"]["channel"] = update_channel
+    merged["updates"]["checkIntervalMinutes"] = update_interval
+    merged["updates"]["maintenanceWindow"] = update_window
     merged["importExport"]["exportFormat"] = export_format
     merged["importExport"]["importMode"] = import_mode
     merged["security"]["sessionTimeoutMinutes"] = session_timeout
@@ -1337,6 +1213,7 @@ def persist_server_settings(db, settings, updated_by):
         SET host = ?,
             port = ?,
             debug_mode = ?,
+            pro_enabled = ?,
             backup_enabled = ?,
             backup_schedule = ?,
             backup_time = ?,
@@ -1373,6 +1250,7 @@ def persist_server_settings(db, settings, updated_by):
             settings["server"]["host"],
             settings["server"]["port"],
             1 if settings["server"]["debug"] else 0,
+            1 if settings["proFeaturesEnabled"] else 0,
             1 if settings["backup"]["enabled"] else 0,
             settings["backup"]["schedule"],
             settings["backup"]["time"],
@@ -1420,30 +1298,46 @@ def get_password_min_length(db):
     return settings_row["password_min_length"] or DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"]
 
 def should_rate_limit(key):
-    return RATE_LIMIT_CACHE.is_limited(
-        key,
-        window_seconds=RATE_LIMIT_WINDOW_SECONDS,
-        max_requests=RATE_LIMIT_MAX_REQUESTS,
-    )
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW_SECONDS
+    entries = RATE_LIMIT_CACHE.get(key, [])
+    entries = [timestamp for timestamp in entries if timestamp >= window_start]
+    if len(entries) >= RATE_LIMIT_MAX_REQUESTS:
+        RATE_LIMIT_CACHE[key] = entries
+        return True
+    entries.append(now)
+    RATE_LIMIT_CACHE[key] = entries
+    return False
 
 def should_rate_limit_terminal(user_id):
+    now = time.time()
+    window_start = now - TERMINAL_RATE_LIMIT_WINDOW_SECONDS
     key = f"terminal:{user_id}"
-    return TERMINAL_RATE_LIMIT_CACHE.is_limited(
-        key,
-        window_seconds=TERMINAL_RATE_LIMIT_WINDOW_SECONDS,
-        max_requests=TERMINAL_RATE_LIMIT_MAX_REQUESTS,
-    )
+    entries = TERMINAL_RATE_LIMIT_CACHE.get(key, [])
+    entries = [timestamp for timestamp in entries if timestamp >= window_start]
+    if len(entries) >= TERMINAL_RATE_LIMIT_MAX_REQUESTS:
+        TERMINAL_RATE_LIMIT_CACHE[key] = entries
+        return True
+    entries.append(now)
+    TERMINAL_RATE_LIMIT_CACHE[key] = entries
+    return False
 
 def should_rate_limit_inventory_proxy(user_id):
+    now = time.time()
+    window_start = now - INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS
     key = f"inventory_links_proxy:{user_id}"
-    return INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE.is_limited(
-        key,
-        window_seconds=INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS,
-        max_requests=INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS,
-    )
+    entries = INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE.get(key, [])
+    entries = [timestamp for timestamp in entries if timestamp >= window_start]
+    if len(entries) >= INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS:
+        INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE[key] = entries
+        return True
+    entries.append(now)
+    INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE[key] = entries
+    return False
 
 def get_remote_ip():
-    return get_client_ip()
+    remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+    return (remote_ip or "").split(",")[0].strip()
 
 def is_ip_allowed(remote_ip, allowlist):
     if not allowlist:
@@ -1459,6 +1353,287 @@ def is_ip_allowed(remote_ip, allowlist):
         except ValueError:
             continue
     return False
+
+def normalize_inventory_link_base_url(base_url):
+    if not base_url:
+        raise ValueError("Base URL fehlt.")
+    candidate = base_url.strip()
+    parsed = urllib.parse.urlsplit(candidate)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Base URL muss mit http oder https beginnen.")
+    if not parsed.netloc:
+        raise ValueError("Base URL benötigt einen Host.")
+    if parsed.username or parsed.password:
+        raise ValueError("Base URL darf keine Zugangsdaten enthalten.")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Base URL darf keine Query oder Fragmente enthalten.")
+    path = (parsed.path or "").rstrip("/")
+    if path == "/":
+        path = ""
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+def resolve_inventory_link_ips(hostname):
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return []
+    ips = []
+    for info in infos:
+        sockaddr = info[4]
+        if sockaddr:
+            ips.append(sockaddr[0])
+    return list(dict.fromkeys(ips))
+
+def inventory_links_allow_loopback():
+    return os.environ.get("INVENTORY_LINKS_ALLOW_LOOPBACK", "0").lower() in {"1", "true", "yes"}
+
+def is_inventory_link_ip_blocked(ip_str, allow_private_network):
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True
+    if ip_obj.is_loopback and not inventory_links_allow_loopback():
+        return True
+    if ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified or ip_obj.is_reserved:
+        return True
+    if str(ip_obj) == "169.254.169.254":
+        return True
+    if ip_obj.is_private and not allow_private_network:
+        return True
+    return False
+
+def validate_inventory_link_target(base_url, allow_private_network):
+    normalized = normalize_inventory_link_base_url(base_url)
+    parsed = urllib.parse.urlsplit(normalized)
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("Base URL Host konnte nicht gelesen werden.")
+    resolved_ips = resolve_inventory_link_ips(hostname)
+    if not resolved_ips:
+        raise ValueError("Host konnte nicht aufgelöst werden.")
+    for ip_str in resolved_ips:
+        if is_inventory_link_ip_blocked(ip_str, allow_private_network):
+            raise ValueError("Zieladresse ist nicht erlaubt.")
+    return parsed
+
+def is_inventory_link_private_ip(ip_str):
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    if ip_obj.is_loopback:
+        return inventory_links_allow_loopback()
+    return (
+        ip_obj.is_private
+        and not ip_obj.is_link_local
+        and not ip_obj.is_multicast
+        and not ip_obj.is_unspecified
+        and not ip_obj.is_reserved
+    )
+
+def normalize_inventory_link_connection_scope(scope):
+    normalized = (scope or "internet").strip().lower()
+    if normalized not in {"internet", "local"}:
+        raise ValueError("Verbindungsart muss Internet oder lokales Netzwerk sein.")
+    return normalized
+
+def validate_inventory_link_configuration(base_url, connection_scope, verify_tls, allow_private_network):
+    """Validate an inventory connection as a safe Internet or LAN-only route.
+
+    Keeping the two paths explicit avoids ambiguous settings such as a public URL
+    with private-network access enabled. Resolution is repeated for every proxy
+    request to reduce DNS rebinding exposure.
+    """
+    normalized = normalize_inventory_link_base_url(base_url)
+    scope = normalize_inventory_link_connection_scope(connection_scope)
+    parsed = urllib.parse.urlsplit(normalized)
+
+    if scope == "internet":
+        if parsed.scheme != "https":
+            raise ValueError("Internet-Verbindungen benötigen HTTPS.")
+        if not verify_tls:
+            raise ValueError("Internet-Verbindungen müssen das TLS-Zertifikat prüfen.")
+        if allow_private_network:
+            raise ValueError("Internet-Verbindungen dürfen keine privaten Netzwerkziele zulassen.")
+        validate_inventory_link_target(normalized, False)
+        return normalized, scope, True, False
+
+    if not allow_private_network:
+        raise ValueError("Lokale Verbindungen benötigen die Freigabe für private Netzwerkziele.")
+    validate_inventory_link_target(normalized, True)
+    resolved_ips = resolve_inventory_link_ips(parsed.hostname)
+    if not resolved_ips or any(not is_inventory_link_private_ip(ip_str) for ip_str in resolved_ips):
+        raise ValueError("Lokale Verbindungen dürfen nur auf private LAN-Adressen zeigen.")
+    return normalized, scope, bool(verify_tls), True
+
+def parse_inventory_link_login_secret(secret):
+    if not secret or ":" not in secret:
+        raise ValueError("Login-Secret muss im Format Benutzername:Passwort vorliegen.")
+    username, password = secret.split(":", 1)
+    username = username.strip()
+    if not username or not password:
+        raise ValueError("Login-Secret muss Benutzername und Passwort enthalten.")
+    return username, password
+
+def extract_inventory_link_cookie_header(cookie_jar):
+    cookies = []
+    expiry_candidates = []
+    for cookie in cookie_jar:
+        cookies.append(f"{cookie.name}={cookie.value}")
+        if cookie.expires:
+            expiry_candidates.append(cookie.expires)
+    if not cookies:
+        return None, None
+    expires_at = min(expiry_candidates) if expiry_candidates else None
+    return "; ".join(cookies), expires_at
+
+class InventoryLinkConnectionError(RuntimeError):
+    pass
+
+def get_cached_inventory_link_cookie(link, user_id):
+    cache_key = f"{user_id}:{link['id']}"
+    cached = INVENTORY_LINK_LOGIN_SESSION_CACHE.get(cache_key)
+    if not cached:
+        return None
+    if cached["expires_at"] is None or cached["expires_at"] > time.time():
+        return cached["cookie"]
+    INVENTORY_LINK_LOGIN_SESSION_CACHE.pop(cache_key, None)
+    return None
+
+def login_inventory_link_session(base_url, verify_tls, secret):
+    username, password = parse_inventory_link_login_secret(secret)
+    login_url = urllib.parse.urljoin(f"{base_url.rstrip('/')}/", "login")
+    payload = urllib.parse.urlencode({"username": username, "password": password}).encode("utf-8")
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "text/html",
+        "User-Agent": "InventoryPro-Link/1.0"
+    }
+    cookie_jar = http.cookiejar.CookieJar()
+    handlers = [
+        urllib.request.ProxyHandler({}),
+        urllib.request.HTTPCookieProcessor(cookie_jar)
+    ]
+    context = None
+    if base_url.startswith("https://"):
+        context = build_inventory_link_ssl_context(verify_tls)
+        handlers.append(urllib.request.HTTPSHandler(context=context))
+    opener = urllib.request.build_opener(*handlers)
+    req = urllib.request.Request(login_url, data=payload, headers=headers, method="POST")
+    try:
+        opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS).read(1024)
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise ValueError("Login fehlgeschlagen. Prüfe Benutzername/Passwort.") from exc
+        raise InventoryLinkConnectionError(f"Login fehlgeschlagen (HTTP {exc.code}).") from exc
+    except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+        reason = getattr(exc, "reason", exc)
+        raise InventoryLinkConnectionError(f"Login-Verbindung fehlgeschlagen: {reason}") from exc
+    cookie_header, expires_at = extract_inventory_link_cookie_header(cookie_jar)
+    return cookie_header, expires_at
+
+def get_inventory_link_login_cookie(link, secret, user_id):
+    cached_cookie = get_cached_inventory_link_cookie(link, user_id)
+    if cached_cookie:
+        return cached_cookie
+    cache_key = f"{user_id}:{link['id']}"
+    cookie_header, expires_at = login_inventory_link_session(
+        link["base_url"],
+        bool(link["verify_tls"]),
+        secret
+    )
+    if not cookie_header:
+        raise ValueError("Login fehlgeschlagen. Prüfe Benutzername/Passwort.")
+    INVENTORY_LINK_LOGIN_SESSION_CACHE[cache_key] = {
+        "cookie": cookie_header,
+        "expires_at": expires_at or (time.time() + INVENTORY_LINK_LOGIN_TTL_SECONDS)
+    }
+    return cookie_header
+
+def serialize_inventory_link(row):
+    return {
+        "id": row["id"],
+        "displayName": row["display_name"],
+        "baseUrl": row["base_url"],
+        "verifyTls": bool(row["verify_tls"]),
+        "authMode": row["auth_mode"],
+        "allowPrivateNetwork": bool(row["allow_private_network"]),
+        "connectionScope": row["connection_scope"] or "internet",
+        "healthStatus": row["health_status"],
+        "lastCheckedAt": row["health_last_checked_at"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+def list_inventory_links(db, user_id):
+    rows = db.execute(
+        '''
+        SELECT id, display_name, base_url, verify_tls, auth_mode, allow_private_network, connection_scope,
+               health_status, health_last_checked_at, created_at, updated_at
+        FROM inventory_links
+        WHERE user_id = ?
+        ORDER BY display_name
+        ''',
+        (user_id,)
+    ).fetchall()
+    return [serialize_inventory_link(row) for row in rows]
+
+def get_inventory_link(db, user_id, link_id):
+    return db.execute(
+        '''
+        SELECT *
+        FROM inventory_links
+        WHERE id = ? AND user_id = ?
+        ''',
+        (link_id, user_id)
+    ).fetchone()
+
+def update_inventory_link_health(db, link_id, status):
+    db.execute(
+        '''
+        UPDATE inventory_links
+        SET health_status = ?, health_last_checked_at = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        ''',
+        (status, datetime.utcnow().isoformat(), link_id)
+    )
+
+def build_inventory_link_target_url(base_url, subpath, query_string):
+    base = base_url.rstrip("/")
+    if subpath:
+        target = f"{base}/{subpath}"
+    else:
+        target = f"{base}/"
+    if query_string:
+        query = query_string.decode("utf-8") if isinstance(query_string, (bytes, bytearray)) else str(query_string)
+        target = f"{target}?{query}"
+    return target
+
+def build_inventory_link_request_headers(auth_mode, secret, link=None, user_id=None):
+    headers = {}
+    for key, value in request.headers.items():
+        lower = key.lower()
+        if lower in {
+            "host", "origin", "referer", "cookie", "authorization", "proxy-authorization",
+            "content-length", "accept-encoding"
+        }:
+            continue
+        headers[key] = value
+    if auth_mode == "apiKey":
+        headers["X-API-Key"] = secret
+    elif auth_mode == "bearerToken":
+        headers["Authorization"] = f"Bearer {secret}"
+    elif auth_mode == "basic":
+        encoded = base64.b64encode(secret.encode("utf-8")).decode("utf-8")
+        headers["Authorization"] = f"Basic {encoded}"
+    elif auth_mode == "login" and link and user_id:
+        if secret:
+            cookie_header = get_inventory_link_login_cookie(link, secret, user_id)
+        else:
+            cookie_header = get_cached_inventory_link_cookie(link, user_id)
+        if cookie_header:
+            headers["Cookie"] = cookie_header
+    return headers
 
 def rewrite_inventory_link_location(location, link_id, base_url):
     if not location:
@@ -1813,20 +1988,94 @@ def filter_inventory_link_response_headers(headers, link_id, base_url):
         filtered[key] = value
     return filtered
 
+def build_inventory_link_ssl_context(verify_tls):
+    if verify_tls:
+        return ssl.create_default_context()
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
 def stream_inventory_link_response(resp):
     def generate():
         try:
             while True:
-                try:
-                    chunk = resp.read(8192)
-                except OSError:
-                    break
+                chunk = resp.read(8192)
                 if not chunk:
                     break
                 yield chunk
         finally:
             resp.close()
     return generate()
+
+def build_inventory_link_static_headers(auth_mode, secret, base_url=None, verify_tls=True):
+    headers = {"Accept": "application/json"}
+    if auth_mode == "apiKey":
+        headers["X-API-Key"] = secret
+    elif auth_mode == "bearerToken":
+        headers["Authorization"] = f"Bearer {secret}"
+    elif auth_mode == "basic":
+        encoded = base64.b64encode(secret.encode("utf-8")).decode("utf-8")
+        headers["Authorization"] = f"Basic {encoded}"
+    elif auth_mode == "login" and base_url and secret:
+        cookie_header, _ = login_inventory_link_session(base_url, verify_tls, secret)
+        if cookie_header:
+            headers["Cookie"] = cookie_header
+    return headers
+
+def perform_inventory_link_test(config):
+    base_url = config.get("base_url") or ""
+    auth_mode = config.get("auth_mode") or "apiKey"
+    secret = config.get("secret") or ""
+    verify_tls = bool(config.get("verify_tls", True))
+    allow_private_network = bool(config.get("allow_private_network", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    connection_scope = config.get("connection_scope") or "internet"
+    try:
+        validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
+    except ValueError as exc:
+        return {"status": "down", "error": str(exc)}
+
+    try:
+        headers = build_inventory_link_static_headers(auth_mode, secret, base_url=base_url, verify_tls=verify_tls)
+    except ValueError as exc:
+        return {"status": "unauthorized", "error": str(exc)}
+    except InventoryLinkConnectionError as exc:
+        return {"status": "down", "error": str(exc)}
+    paths = ["/api/health/summary", "/"]
+    last_error = None
+    for path in paths:
+        target_url = f"{base_url.rstrip('/')}{path}"
+        req = urllib.request.Request(target_url, headers=headers, method="GET")
+        context = None
+        if base_url.startswith("https://"):
+            context = build_inventory_link_ssl_context(verify_tls)
+        handlers = [urllib.request.ProxyHandler({}), InventoryLinkNoRedirect()]
+        if context is not None:
+            handlers.append(urllib.request.HTTPSHandler(context=context))
+        opener = urllib.request.build_opener(*handlers)
+        try:
+            resp = opener.open(req, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS)
+            status_code = resp.getcode()
+            payload = resp.read(4096)
+            info = {"statusCode": status_code}
+            content_type = resp.headers.get("Content-Type", "")
+            if "application/json" in content_type:
+                try:
+                    info.update(json.loads(payload.decode("utf-8")))
+                except json.JSONDecodeError:
+                    pass
+            return {"status": "ok", "message": "Verbindung erfolgreich.", "info": info}
+        except urllib.error.HTTPError as exc:
+            if exc.code in {401, 403}:
+                return {"status": "unauthorized", "error": "Nicht autorisiert."}
+            last_error = f"HTTP {exc.code}"
+        except ssl.SSLError as exc:
+            return {"status": "down", "error": f"TLS-Fehler: {str(exc)}"}
+        except urllib.error.URLError as exc:
+            last_error = str(exc.reason)
+    return {"status": "down", "error": last_error or "Verbindung fehlgeschlagen."}
 
 REDACT_PATTERNS = [
     re.compile(r"(?i)(password|passphrase|token|secret|api_key|apikey|authorization|bearer|private_key|dsn|connection string)\\s*[:=]\\s*([^\\s,;]+)"),
@@ -2188,14 +2437,14 @@ def get_terminal_session(db, session_id, user_id):
     if not row:
         return None
     expires_at = row["expires_at"]
-    if expires_at and datetime.fromisoformat(expires_at) < utc_now():
+    if expires_at and datetime.fromisoformat(expires_at) < datetime.utcnow():
         db.execute('UPDATE terminal_sessions SET active = 0 WHERE id = ?', (session_id,))
         db.commit()
         return None
     return row
 
 def create_terminal_session(db, user_id, mode, ip, user_agent):
-    expires_at = utc_now() + timedelta(seconds=TERMINAL_SESSION_TTL_SECONDS)
+    expires_at = datetime.utcnow() + timedelta(seconds=TERMINAL_SESSION_TTL_SECONDS)
     db.execute(
         '''
         INSERT INTO terminal_sessions (user_id, expires_at, mode, ip, user_agent)
@@ -2237,69 +2486,42 @@ def get_backup_encryption():
         return None
 
 def get_inventory_links_encryption():
+    key = os.environ.get("INVENTORY_LINKS_ENCRYPTION_KEY")
+    if not key:
+        return None
     try:
-        return EncryptionKeyring.from_environ()
-    except SecretConfigurationError:
+        return Fernet(key)
+    except (ValueError, TypeError):
         return None
 
 def encrypt_inventory_link_secret(secret):
-    try:
-        return encrypt_secret(secret)
-    except SecretConfigurationError as error:
-        raise ValueError(str(error)) from error
+    if secret is None:
+        return None
+    if secret == "":
+        return ""
+    cipher = get_inventory_links_encryption()
+    if cipher is None:
+        if not INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS:
+            raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
+        return f"plain:{secret}"
+    return cipher.encrypt(secret.encode("utf-8")).decode("utf-8")
 
 def decrypt_inventory_link_secret(secret_encrypted):
-    try:
-        return decrypt_secret(secret_encrypted)
-    except (SecretConfigurationError, SecretDecryptionError) as error:
-        raise ValueError(str(error)) from error
-
-def migrate_inventory_link_secrets(db, reencrypt_all=False):
-    """Encrypt legacy values and re-encrypt values after a key rotation.
-
-    Callers must run this as an explicit maintenance action with a valid primary
-    key. Values are never included in the result, logs or raised messages.
-    """
-    try:
-        keyring = EncryptionKeyring.from_environ()
-    except SecretConfigurationError as error:
-        raise ValueError(str(error)) from error
-
-    rows = db.execute(
-        "SELECT id, secret_encrypted FROM inventory_links WHERE secret_encrypted IS NOT NULL AND secret_encrypted != ''"
-    ).fetchall()
-    migrated = 0
-    skipped = 0
-    for row in rows:
-        stored_value = row["secret_encrypted"]
-        try:
-            if is_plaintext_secret(stored_value):
-                encrypted_value = migrate_plaintext_secret(stored_value)
-            elif reencrypt_all or not stored_value.startswith("fernet:v1:"):
-                encrypted_value = keyring.encrypt(keyring.decrypt(stored_value))
-            else:
-                continue
-        except (SecretConfigurationError, SecretDecryptionError):
-            skipped += 1
-            continue
-        db.execute(
-            "UPDATE inventory_links SET secret_encrypted = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (encrypted_value, row["id"]),
-        )
-        migrated += 1
-    db.commit()
-    return {"migrated": migrated, "skipped": skipped}
+    if not secret_encrypted:
+        return ""
+    if secret_encrypted.startswith("plain:"):
+        return secret_encrypted.removeprefix("plain:")
+    cipher = get_inventory_links_encryption()
+    if cipher is None:
+        if not INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS:
+            raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
+        return secret_encrypted
+    return cipher.decrypt(secret_encrypted.encode("utf-8")).decode("utf-8")
 
 def run_sqlite_backup(target_path):
-    source = sqlite3.connect(DATABASE)
-    try:
-        dest = sqlite3.connect(target_path)
-        try:
+    with sqlite3.connect(DATABASE) as source:
+        with sqlite3.connect(target_path) as dest:
             source.backup(dest)
-        finally:
-            dest.close()
-    finally:
-        source.close()
 
 def run_postgres_backup(target_path):
     database_url = os.environ.get("DATABASE_URL")
@@ -2347,7 +2569,7 @@ def run_backup_job(db, settings, force=False):
     if not settings["backup"]["enabled"] and not force:
         return {"status": "skipped", "message": "Backups sind deaktiviert."}
     backup_dir = ensure_backup_directory(settings["backup"]["directory"])
-    timestamp = utc_now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     backup_base = backup_dir / f"inventory_backup_{timestamp}"
     db_type = os.environ.get("DATABASE_URL")
     backup_path = None
@@ -2378,7 +2600,6 @@ def run_backup_job(db, settings, force=False):
             final_path.unlink(missing_ok=True)
             final_path = Path(encrypted_path)
 
-        write_backup_manifest(final_path)
         cleanup_old_backups(backup_dir, settings["backup"]["retentionDays"])
         record_backup_run(db, "success", str(final_path))
         send_backup_notification(db, settings, "Backup erfolgreich", f"Backup erstellt: {final_path.name}")
@@ -2388,132 +2609,7 @@ def run_backup_job(db, settings, force=False):
         send_backup_notification(db, settings, "Backup fehlgeschlagen", f"Backup fehlgeschlagen: {exc}")
         return {"status": "failed", "message": str(exc)}
 
-def load_backup_settings(db):
-    settings, _ = serialize_server_settings(get_server_settings(db))
-    return settings
-
-def backup_manifest_path(backup_path):
-    return backup_restore_service.backup_manifest_path(backup_path)
-
-def file_sha256(path):
-    return backup_restore_service.file_sha256(path)
-
-def write_backup_manifest(backup_path):
-    return backup_restore_service.write_backup_manifest(
-        backup_path,
-        os.environ.get("APP_VERSION", "dev"),
-    )
-
-def verify_backup_manifest(backup_path):
-    return backup_restore_service.verify_backup_manifest(backup_path)
-
-def _copy_restore_source(source, destination):
-    copied = 0
-    with source, destination.open("wb") as output:
-        while chunk := source.read(1024 * 1024):
-            copied += len(chunk)
-            if copied > MAX_RESTORE_BYTES:
-                raise ValueError("Backup überschreitet die konfigurierte Restore-Größe.")
-            output.write(chunk)
-
-def materialize_sqlite_backup(backup_path, staging_directory):
-    backup_path = Path(backup_path).resolve(strict=True)
-    verify_backup_manifest(backup_path)
-    staging_directory = Path(staging_directory)
-    staging_directory.mkdir(parents=True, exist_ok=True)
-    raw_path = backup_path
-    temporary_paths = []
-    try:
-        if backup_path.suffix == ".enc":
-            fernet = get_backup_encryption()
-            if not fernet:
-                raise ValueError("BACKUP_ENCRYPTION_KEY fehlt oder ist ungültig.")
-            encrypted_data = backup_path.read_bytes()
-            if len(encrypted_data) > MAX_RESTORE_BYTES:
-                raise ValueError("Verschlüsseltes Backup überschreitet die konfigurierte Restore-Größe.")
-            try:
-                decrypted_data = fernet.decrypt(encrypted_data)
-            except Exception as error:
-                raise ValueError("Backup kann mit dem konfigurierten Schlüssel nicht entschlüsselt werden.") from error
-            if len(decrypted_data) > MAX_RESTORE_BYTES:
-                raise ValueError("Entschlüsseltes Backup überschreitet die konfigurierte Restore-Größe.")
-            raw_path = staging_directory / f"decrypted-backup{Path(backup_path.stem).suffix}"
-            raw_path.write_bytes(decrypted_data)
-            os.chmod(raw_path, stat.S_IRUSR | stat.S_IWUSR)
-            temporary_paths.append(raw_path)
-
-        restore_source = staging_directory / "restore-source.db"
-        if raw_path.suffix == ".zip" or backup_path.name.endswith(".zip.enc"):
-            with zipfile.ZipFile(raw_path) as archive:
-                database_members = validate_backup_archive(archive)
-                if len(database_members) != 1:
-                    raise ValueError("Backup-Archiv muss genau eine SQLite-Datenbank enthalten.")
-                source_info = database_members[0]
-                with archive.open(source_info) as source:
-                    _copy_restore_source(source, restore_source)
-        elif raw_path.suffix == ".db":
-            if raw_path.stat().st_size > MAX_RESTORE_BYTES:
-                raise ValueError("Backup überschreitet die konfigurierte Restore-Größe.")
-            shutil.copyfile(raw_path, restore_source)
-        else:
-            raise ValueError("Nur SQLite-Backupdateien (.db, .zip oder .enc) können wiederhergestellt werden.")
-        validate_sqlite_backup(restore_source)
-        return restore_source
-    except Exception:
-        for path in temporary_paths:
-            path.unlink(missing_ok=True)
-        raise
-
-def validate_backup_archive(archive):
-    database_members = []
-    total_uncompressed = 0
-    for info in archive.infolist():
-        member_path = PurePosixPath(info.filename)
-        if (
-            not info.filename
-            or "\x00" in info.filename
-            or "\\" in info.filename
-            or member_path.is_absolute()
-            or any(part in {"", ".", ".."} for part in member_path.parts)
-        ):
-            raise ValueError("Backup-Archiv enthält einen unsicheren Pfad.")
-        unix_mode = info.external_attr >> 16
-        if unix_mode and stat.S_ISLNK(unix_mode):
-            raise ValueError("Backup-Archiv enthält einen symbolischen Link.")
-        if info.is_dir():
-            continue
-        total_uncompressed += max(0, info.file_size)
-        if total_uncompressed > MAX_RESTORE_BYTES:
-            raise ValueError("Entpacktes Backup überschreitet die konfigurierte Restore-Größe.")
-        if member_path.suffix.lower() == ".db":
-            database_members.append(info)
-    return database_members
-
-def validate_sqlite_backup(database_path):
-    database_path = Path(database_path)
-    try:
-        connection = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
-        result = connection.execute("PRAGMA integrity_check").fetchone()[0]
-        connection.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
-        connection.close()
-    except sqlite3.Error as error:
-        raise ValueError("Backup ist keine lesbare SQLite-Datenbank.") from error
-    if result.lower() != "ok":
-        raise ValueError("SQLite-Integritätsprüfung des Backups ist fehlgeschlagen.")
-
-def restore_sqlite_backup(backup_path, database_path=None):
-    """Restore a verified SQLite backup atomically while the application is stopped."""
-    return backup_restore_service.restore_sqlite_backup(
-        backup_path,
-        database_path or DATABASE,
-        get_backup_encryption,
-        MAX_RESTORE_BYTES,
-    )
-
 def schedule_backup_jobs(settings):
-    if not SCHEDULER_ENABLED:
-        app.logger.info("In-Process-Backup-Scheduler ist für diesen Worker deaktiviert.")
-        return
     if not BACKUP_SCHEDULER.running:
         BACKUP_SCHEDULER.start()
     BACKUP_SCHEDULER.remove_all_jobs()
@@ -2533,12 +2629,59 @@ def schedule_backup_jobs(settings):
         "cron",
         hour=hour,
         minute=minute,
-        id="daily_backup",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=300,
+        id="daily_backup"
     )
+
+def load_import_file(file_storage):
+    if not file_storage:
+        return None, "Keine Datei hochgeladen."
+    if request.content_length and request.content_length > MAX_IMPORT_BYTES:
+        return None, "Datei ist zu groß."
+    filename = secure_filename(file_storage.filename or "")
+    if not filename:
+        return None, "Ungültiger Dateiname."
+    temp_dir = Path(tempfile.mkdtemp(prefix="inventory_import_"))
+    file_path = temp_dir / filename
+    file_storage.save(file_path)
+    return file_path, None
+
+def validate_import_file(file_path):
+    antivirus_cmd = os.environ.get("INVENTORY_ANTIVIRUS_COMMAND")
+    if not antivirus_cmd:
+        return None
+    result = subprocess.run(
+        [antivirus_cmd, str(file_path)],
+        capture_output=True,
+        text=True,
+        check=False
+    )
+    if result.returncode != 0:
+        return result.stderr.strip() or "Datei konnte nicht geprüft werden."
+    return None
+
+def validate_import_archive(archive):
+    total_uncompressed = 0
+    upload_members = []
+    for info in archive.infolist():
+        member_name = info.filename
+        if not member_name or "\x00" in member_name or "\\" in member_name:
+            raise ValueError("ZIP-Archiv enthält einen ungültigen Pfad.")
+        member_path = PurePosixPath(member_name)
+        if member_path.is_absolute() or any(part in {"", ".", ".."} for part in member_path.parts):
+            raise ValueError("ZIP-Archiv enthält einen unsicheren Pfad.")
+        unix_mode = info.external_attr >> 16
+        if unix_mode and stat.S_ISLNK(unix_mode):
+            raise ValueError("Symbolische Links sind in Importarchiven nicht zulässig.")
+        total_uncompressed += max(0, info.file_size)
+        if total_uncompressed > MAX_IMPORT_EXPANDED_BYTES:
+            raise ValueError("Entpackter Inhalt überschreitet die zulässige Größe.")
+        if info.is_dir() or not member_path.parts or member_path.parts[0] != "uploads":
+            continue
+        relative_parts = member_path.parts[1:]
+        if not relative_parts:
+            continue
+        upload_members.append((info, Path(*relative_parts)))
+    return upload_members
 
 def export_tables(db, tables):
     export_data = {}
@@ -2583,11 +2726,76 @@ def import_from_sqlite(db, source_path, mode, tables):
             rows = source.execute(f"SELECT * FROM {table}").fetchall()
             import_table_rows(db, table, [dict(row) for row in rows], mode if mode != "replace" else "append")
 
+def clone_customization(data):
+    return json.loads(json.dumps(data))
+
+def deep_merge(base, override):
+    if not isinstance(base, dict) or not isinstance(override, dict):
+        return override if override is not None else base
+    merged = {**base}
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            merged[key] = deep_merge(base[key], value)
+        else:
+            merged[key] = value
+    return merged
+
 def migrate_customization(data):
-    return migrate_customization_payload(data, default_customization=DEFAULT_CUSTOMIZATION)
+    if not isinstance(data, dict):
+        return clone_customization(DEFAULT_CUSTOMIZATION)
+
+    if ("branding" in data or "formStyle" in data) and "baseTokens" not in data:
+        migrated = clone_customization(DEFAULT_CUSTOMIZATION)
+        branding = data.get("branding", {})
+        form_style = data.get("formStyle", {})
+        migrated["branding"]["name"] = branding.get("name", migrated["branding"]["name"])
+        migrated["branding"]["tagline"] = branding.get("tagline", migrated["branding"]["tagline"])
+        migrated["branding"]["logoDataUrl"] = branding.get("logoDataUrl", migrated["branding"]["logoDataUrl"])
+        migrated["baseTokens"]["colors"]["primary"] = branding.get("primary", migrated["baseTokens"]["colors"]["primary"])
+        migrated["baseTokens"]["colors"]["accent"] = branding.get("accent", migrated["baseTokens"]["colors"]["accent"])
+        migrated["baseTokens"]["colors"]["background"] = branding.get("background", migrated["baseTokens"]["colors"]["background"])
+        migrated["baseTokens"]["spacing"]["radius"]["md"] = branding.get("radius", migrated["baseTokens"]["spacing"]["radius"]["md"])
+        migrated["layoutPrefs"]["density"] = branding.get("density", migrated["layoutPrefs"]["density"])
+        migrated["componentOverrides"]["button"]["primary"]["background"] = form_style.get(
+            "buttonColor", migrated["componentOverrides"]["button"]["primary"]["background"]
+        )
+        migrated["componentOverrides"]["button"]["primary"]["text"] = form_style.get(
+            "buttonText", migrated["componentOverrides"]["button"]["primary"]["text"]
+        )
+        migrated["componentOverrides"]["input"]["background"] = form_style.get(
+            "inputBackground", migrated["componentOverrides"]["input"]["background"]
+        )
+        migrated["componentOverrides"]["input"]["border"] = form_style.get(
+            "inputBorder", migrated["componentOverrides"]["input"]["border"]
+        )
+        migrated["layoutPrefs"]["formSpacing"] = form_style.get("spacing", migrated["layoutPrefs"]["formSpacing"])
+        return migrated
+
+    merged = deep_merge(clone_customization(DEFAULT_CUSTOMIZATION), data)
+    merged["schemaVersion"] = 1
+    return merged
 
 def validate_customization(data):
-    return validate_customization_payload(data, max_image_bytes=MAX_CUSTOMIZATION_IMAGE_BYTES)
+    errors = []
+    if not isinstance(data, dict):
+        return False, ["Customization muss ein Objekt sein."]
+    if not isinstance(data.get("schemaVersion"), int):
+        errors.append("schemaVersion fehlt oder ist ungültig.")
+    for key in ("baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs", "branding"):
+        if key not in data:
+            errors.append(f"{key} fehlt.")
+    return len(errors) == 0, errors
+
+def compute_customization_diff(old, new, path=""):
+    changes = []
+    if isinstance(old, dict) and isinstance(new, dict):
+        all_keys = set(old.keys()) | set(new.keys())
+        for key in sorted(all_keys):
+            next_path = f"{path}.{key}" if path else key
+            changes.extend(compute_customization_diff(old.get(key), new.get(key), next_path))
+    elif old != new:
+        changes.append({"path": path, "from": old, "to": new})
+    return changes
 
 def get_current_user_id(db):
     username = session.get("username")
@@ -2595,6 +2803,53 @@ def get_current_user_id(db):
         return None
     row = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
     return row["id"] if row else None
+
+def get_customization_record(db, user_id, workspace_id=None):
+    if workspace_id is None:
+        return db.execute(
+            "SELECT * FROM ui_customization WHERE user_id = ? AND workspace_id IS NULL",
+            (user_id,),
+        ).fetchone()
+    return db.execute(
+        "SELECT * FROM ui_customization WHERE user_id = ? AND workspace_id = ?",
+        (user_id, workspace_id),
+    ).fetchone()
+
+def save_customization(db, user_id, customization, updated_by, workspace_id=None):
+    existing = get_customization_record(db, user_id, workspace_id)
+    serialized = json.dumps(customization)
+    if existing:
+        db.execute(
+            """
+            UPDATE ui_customization
+            SET customization_json = ?, schema_version = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
+            WHERE id = ?
+            """,
+            (serialized, customization["schemaVersion"], updated_by, existing["id"]),
+        )
+        customization_id = existing["id"]
+    else:
+        db.execute(
+            """
+            INSERT INTO ui_customization (user_id, workspace_id, schema_version, customization_json, updated_by)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (user_id, workspace_id, customization["schemaVersion"], serialized, updated_by),
+        )
+        customization_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    diff = []
+    if existing:
+        diff = compute_customization_diff(json.loads(existing["customization_json"]), customization)
+    db.execute(
+        """
+        INSERT INTO ui_customization_revisions (customization_id, revision_json, diff_json, created_by)
+        VALUES (?, ?, ?, ?)
+        """,
+        (customization_id, serialized, json.dumps(diff), updated_by),
+    )
+    db.commit()
+    return customization_id
 
 def seed_permissions(db):
     for perm in PERMISSIONS:
@@ -2751,10 +3006,28 @@ def seed_health_checks(db):
         )
 
 def assign_user_role(db, user_id, role_name):
-    assign_user_role_record(db, user_id, role_name)
+    role = db.execute('SELECT id FROM roles WHERE name = ?', (role_name,)).fetchone()
+    if not role:
+        return
+    db.execute('''
+        INSERT OR IGNORE INTO user_roles (user_id, role_id)
+        VALUES (?, ?)
+    ''', (user_id, role["id"]))
 
 def ensure_default_roles(db):
-    ensure_default_roles_record(db, DEFAULT_ROLE_NAME)
+    default_role = db.execute('SELECT id FROM roles WHERE name = ?', (DEFAULT_ROLE_NAME,)).fetchone()
+    if not default_role:
+        return
+    users_without_role = db.execute('''
+        SELECT u.id FROM users u
+        LEFT JOIN user_roles ur ON ur.user_id = u.id
+        WHERE ur.user_id IS NULL
+    ''').fetchall()
+    for user in users_without_role:
+        db.execute('''
+            INSERT INTO user_roles (user_id, role_id)
+            VALUES (?, ?)
+        ''', (user["id"], default_role["id"]))
 
 def store_initial_admin_credentials(username, password):
     requested_path = Path(
@@ -2824,15 +3097,51 @@ def ensure_admin_user(db):
 def get_user_access(db):
     if hasattr(g, 'user_access'):
         return g.user_access
-    g.user_access = resolve_user_access(db, session.get('username'))
-    return g.user_access
-
-@app.context_processor
-def inject_security_context():
-    return {
-        "csrf_token": get_csrf_token(session),
-        "csrf_header_name": CSRF_HEADER_NAME,
+    username = session.get('username')
+    if not username:
+        g.user_access = {
+            "user": None,
+            "roles": [],
+            "permissions": set(),
+            "is_superuser": False
+        }
+        return g.user_access
+    user = db.execute('SELECT id, username, email, must_change_password FROM users WHERE username = ?', (username,)).fetchone()
+    if not user:
+        g.user_access = {
+            "user": None,
+            "roles": [],
+            "permissions": set(),
+            "is_superuser": False
+        }
+        return g.user_access
+    roles = db.execute('''
+        SELECT r.id, r.name, r.is_superuser
+        FROM roles r
+        JOIN user_roles ur ON ur.role_id = r.id
+        WHERE ur.user_id = ?
+        ORDER BY r.name
+    ''', (user["id"],)).fetchall()
+    is_superuser = any(role["is_superuser"] for role in roles)
+    if is_superuser:
+        permission_rows = db.execute('SELECT key FROM permissions').fetchall()
+        permissions = {row["key"] for row in permission_rows}
+    else:
+        permission_rows = db.execute('''
+            SELECT DISTINCT p.key
+            FROM permissions p
+            JOIN role_permissions rp ON rp.permission_id = p.id
+            JOIN user_roles ur ON ur.role_id = rp.role_id
+            WHERE ur.user_id = ?
+        ''', (user["id"],)).fetchall()
+        permissions = {row["key"] for row in permission_rows}
+    g.user_access = {
+        "user": dict(user),
+        "roles": [dict(role) for role in roles],
+        "permissions": permissions,
+        "is_superuser": is_superuser
     }
+    return g.user_access
 
 @app.context_processor
 def inject_inventory_links():
@@ -4290,6 +4599,7 @@ def init_db():
                 host TEXT DEFAULT '0.0.0.0',
                 port INTEGER DEFAULT 5000,
                 debug_mode INTEGER DEFAULT 0,
+                pro_enabled INTEGER DEFAULT 0,
                 backup_enabled INTEGER DEFAULT 0,
                 backup_schedule TEXT DEFAULT 'daily',
                 backup_time TEXT DEFAULT '02:00',
@@ -4475,28 +4785,6 @@ def init_db():
                 FOREIGN KEY (ticket_id) REFERENCES tickets(id)
             )
         ''')
-        c.execute(
-            '''
-            UPDATE health_incidents
-            SET status = 'closed',
-                closed_at = COALESCE(closed_at, last_observed_at, opened_at)
-            WHERE status = 'open'
-              AND id NOT IN (
-                  SELECT MIN(id)
-                  FROM health_incidents
-                  WHERE status = 'open'
-                  GROUP BY check_id
-              )
-            '''
-        )
-        c.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_health_incidents_open_check "
-            "ON health_incidents(check_id) WHERE status = 'open'"
-        )
-        c.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_health_incidents_ticket "
-            "ON health_incidents(ticket_id) WHERE ticket_id IS NOT NULL"
-        )
         c.execute('''
             CREATE TABLE IF NOT EXISTS login_attempts (
                 username TEXT PRIMARY KEY,
@@ -4510,15 +4798,6 @@ def init_db():
                 user_id INTEGER NOT NULL,
                 code_hash TEXT NOT NULL,
                 used_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        ''')
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS mfa_pending_enrollments (
-                user_id INTEGER PRIMARY KEY,
-                secret TEXT NOT NULL,
-                expires_at INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
@@ -4614,6 +4893,18 @@ def init_db():
                 status TEXT DEFAULT 'open',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT,
+                action TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                details TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
 
@@ -4960,10 +5251,6 @@ def init_db():
         ensure_default_roles(db)
         ensure_admin_user(db)
         seed_health_checks(db)
-        try:
-            apply_migrations(db, Path(__file__).with_name("migrations"))
-        except MigrationError as error:
-            raise RuntimeError("Datenbankmigration konnte nicht sicher angewendet werden.") from error
         db.commit()
 
 # Setup-Funktion zum Benutzer erstellen
@@ -4993,6 +5280,9 @@ def redact_payload(payload):
         return [redact_payload(item) for item in payload]
     return payload
 
+def normalize_health_status(status):
+    return status if status in HEALTH_STATUS_ORDER else "UNKNOWN"
+
 def worst_health_status(statuses):
     worst = "OK"
     for status in statuses:
@@ -5017,7 +5307,7 @@ def safe_sql_identifier(identifier):
     return None
 
 def health_now():
-    return utc_now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
 def register_health_check(name):
     def decorator(fn):
@@ -5054,6 +5344,124 @@ def store_health_event(db, check_id, previous_status, current_status, severity, 
         ''',
         (check_id, previous_status, current_status, severity, reason, observed_at)
     )
+
+def record_health_incident(db, check_id, summary, observed_at, status):
+    db.execute(
+        '''
+        INSERT INTO health_incidents (
+            check_id, status, summary, opened_at, last_status, last_observed_at
+        )
+        VALUES (?, 'open', ?, ?, ?, ?)
+        ''',
+        (check_id, summary, observed_at, status, observed_at)
+    )
+
+def close_health_incident(db, incident_id, observed_at):
+    db.execute(
+        '''
+        UPDATE health_incidents
+        SET status = 'closed',
+            closed_at = ?,
+            last_status = 'OK',
+            last_observed_at = ?
+        WHERE id = ?
+        ''',
+        (observed_at, observed_at, incident_id)
+    )
+
+def update_health_incident_state(db, check_id, status, observed_at, config):
+    status = normalize_health_status(status)
+    incident_open_after_value = config.get("incident_open_after_minutes")
+    incident_close_after_value = config.get("incident_close_after_minutes")
+    incident_open_after = int(incident_open_after_value) if incident_open_after_value is not None else HEALTH_INCIDENT_OPEN_MINUTES
+    incident_close_after = int(incident_close_after_value) if incident_close_after_value is not None else HEALTH_INCIDENT_CLOSE_MINUTES
+
+    active_incident = db.execute(
+        '''
+        SELECT id, status, opened_at, acknowledged_at, muted_until
+        FROM health_incidents
+        WHERE check_id = ? AND status = 'open'
+        ORDER BY opened_at DESC
+        LIMIT 1
+        ''',
+        (check_id,)
+    ).fetchone()
+
+    if status == "CRIT":
+        last_non_crit = db.execute(
+            '''
+            SELECT observed_at
+            FROM health_check_results
+            WHERE check_id = ? AND status != 'CRIT'
+            ORDER BY observed_at DESC
+            LIMIT 1
+            ''',
+            (check_id,)
+        ).fetchone()
+        if last_non_crit:
+            last_non_crit_at = datetime.strptime(last_non_crit["observed_at"], "%Y-%m-%d %H:%M:%S")
+            current_time = datetime.strptime(observed_at, "%Y-%m-%d %H:%M:%S")
+            duration_minutes = (current_time - last_non_crit_at).total_seconds() / 60
+        else:
+            duration_minutes = incident_open_after + 1
+        if duration_minutes >= incident_open_after and not active_incident:
+            record_health_incident(
+                db,
+                check_id,
+                f"CRIT länger als {incident_open_after} Minuten",
+                observed_at,
+                status
+            )
+        if active_incident:
+            db.execute(
+                '''
+                UPDATE health_incidents
+                SET last_status = ?, last_observed_at = ?
+                WHERE id = ?
+                ''',
+                (status, observed_at, active_incident["id"])
+            )
+        return
+
+    if active_incident and status == "OK":
+        last_non_ok = db.execute(
+            '''
+            SELECT observed_at
+            FROM health_check_results
+            WHERE check_id = ? AND status != 'OK'
+            ORDER BY observed_at DESC
+            LIMIT 1
+            ''',
+            (check_id,)
+        ).fetchone()
+        if last_non_ok:
+            last_non_ok_at = datetime.strptime(last_non_ok["observed_at"], "%Y-%m-%d %H:%M:%S")
+            current_time = datetime.strptime(observed_at, "%Y-%m-%d %H:%M:%S")
+            duration_minutes = (current_time - last_non_ok_at).total_seconds() / 60
+        else:
+            duration_minutes = incident_close_after + 1
+        if duration_minutes >= incident_close_after:
+            close_health_incident(db, active_incident["id"], observed_at)
+        else:
+            db.execute(
+                '''
+                UPDATE health_incidents
+                SET last_status = ?, last_observed_at = ?
+                WHERE id = ?
+                ''',
+                (status, observed_at, active_incident["id"])
+            )
+        return
+
+    if active_incident:
+        db.execute(
+            '''
+            UPDATE health_incidents
+            SET last_status = ?, last_observed_at = ?
+            WHERE id = ?
+            ''',
+            (status, observed_at, active_incident["id"])
+        )
 
 def record_health_result(db, run_id, check_def, result):
     check_data = dict(check_def)
@@ -5118,14 +5526,7 @@ def record_health_result(db, run_id, check_def, result):
             check_data["id"]
         )
     )
-    update_health_incident_state(
-        db,
-        check_data["id"],
-        status,
-        observed_at,
-        safe_json_load(check_data["config_json"]),
-        reason,
-    )
+    update_health_incident_state(db, check_data["id"], status, observed_at, safe_json_load(check_data["config_json"]))
 
 def run_health_check_definition(db, check_def):
     check_type = check_def["check_type"]
@@ -5237,7 +5638,7 @@ def run_health_checks_async(check_ids, initiated_by, run_id):
         run_health_checks(db, check_ids=check_ids, triggered_by="manual", initiated_by=initiated_by, run_id=run_id)
 
 def fetch_due_health_checks(db):
-    now = utc_now()
+    now = datetime.utcnow()
     rows = db.execute(
         '''
         SELECT *
@@ -5262,7 +5663,7 @@ def fetch_due_health_checks(db):
     return due
 
 def cleanup_health_retention(db):
-    cutoff = utc_now() - timedelta(days=HEALTH_DEFAULT_RETENTION_DAYS)
+    cutoff = datetime.utcnow() - timedelta(days=HEALTH_DEFAULT_RETENTION_DAYS)
     cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
     db.execute('DELETE FROM health_check_results WHERE observed_at < ?', (cutoff_str,))
     db.execute('DELETE FROM health_check_runs WHERE started_at < ?', (cutoff_str,))
@@ -5280,22 +5681,10 @@ def scheduled_health_run():
         db.commit()
 
 def schedule_health_jobs():
-    if not SCHEDULER_ENABLED:
-        app.logger.info("In-Process-Health-Scheduler ist für diesen Worker deaktiviert.")
-        return
     if not HEALTH_SCHEDULER.running:
         HEALTH_SCHEDULER.start()
     HEALTH_SCHEDULER.remove_all_jobs()
-    HEALTH_SCHEDULER.add_job(
-        scheduled_health_run,
-        "interval",
-        seconds=60,
-        id="health_checks",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=300,
-    )
+    HEALTH_SCHEDULER.add_job(scheduled_health_run, "interval", seconds=60, id="health_checks")
 
 def fetch_latest_health_results(db):
     return db.execute(
@@ -5777,7 +6166,7 @@ def health_check_queue_depth(config, db, timeout_seconds):
         if heartbeat_row and heartbeat_row["heartbeat"]:
             try:
                 last_heartbeat = datetime.strptime(heartbeat_row["heartbeat"], "%Y-%m-%d %H:%M:%S")
-                heartbeat_age = (utc_now() - last_heartbeat).total_seconds()
+                heartbeat_age = (datetime.utcnow() - last_heartbeat).total_seconds()
             except ValueError:
                 heartbeat_age = None
     if heartbeat_age is not None and heartbeat_age > max_age_seconds:
@@ -5906,7 +6295,7 @@ def is_user_locked(db, username):
         locked_until = datetime.fromisoformat(attempt["locked_until"])
     except ValueError:
         return False
-    return locked_until > utc_now()
+    return locked_until > datetime.utcnow()
 
 def record_login_failure(db, username, max_failed, lockout_minutes):
     attempt = get_login_attempt(db, username)
@@ -5914,7 +6303,7 @@ def record_login_failure(db, username, max_failed, lockout_minutes):
     failed_count += 1
     locked_until = None
     if failed_count >= max_failed:
-        locked_until = (utc_now() + timedelta(minutes=lockout_minutes)).isoformat()
+        locked_until = (datetime.utcnow() + timedelta(minutes=lockout_minutes)).isoformat()
         failed_count = 0
     if attempt:
         db.execute(
@@ -5930,31 +6319,6 @@ def record_login_failure(db, username, max_failed, lockout_minutes):
 def clear_login_failures(db, username):
     db.execute('DELETE FROM login_attempts WHERE username = ?', (username,))
 
-def request_comes_from_trusted_proxy():
-    if not TRUSTED_PROXY_NETWORKS:
-        return False
-    remote_address = request.remote_addr or ""
-    try:
-        remote_ip = ipaddress.ip_address(remote_address)
-    except ValueError:
-        return False
-    for entry in TRUSTED_PROXY_NETWORKS:
-        try:
-            if remote_ip in ipaddress.ip_network(entry, strict=False):
-                return True
-        except ValueError:
-            app.logger.error("Ungültiges Netzwerk in INVENTORY_TRUSTED_PROXY_NETWORKS konfiguriert.")
-    return False
-
-def trusted_forwarded_header(name):
-    if not request_comes_from_trusted_proxy():
-        return ""
-    return (request.headers.get(name) or "").split(",")[0].strip()
-
-def get_client_ip():
-    forwarded_for = trusted_forwarded_header("X-Forwarded-For")
-    return forwarded_for or request.remote_addr or ""
-
 def request_origin():
     origin = (request.headers.get("Origin") or "").strip().rstrip("/")
     if origin:
@@ -5968,13 +6332,11 @@ def request_origin():
     return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
 
 def expected_request_origins():
-    forwarded_proto = trusted_forwarded_header("X-Forwarded-Proto")
-    forwarded_host = trusted_forwarded_header("X-Forwarded-Host")
+    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+    forwarded_host = (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()
     scheme = forwarded_proto or request.scheme
     host = forwarded_host or request.host
     origins = {f"{scheme}://{host}".rstrip("/"), request.host_url.rstrip("/")}
-    if PUBLIC_ORIGIN:
-        origins.add(PUBLIC_ORIGIN)
     origins.update(ALLOWED_CORS_ORIGINS)
     return origins
 
@@ -5992,25 +6354,8 @@ def enforce_same_origin_writes():
         return jsonify({"error": "Anfrageursprung ist nicht zulässig."}), 403
     return None
 
-@app.before_request
-def enforce_csrf_protection():
-    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
-        return None
-    if not app.config["INVENTORY_CSRF_ENABLED"] or app.testing:
-        return None
-    if not validate_csrf_token(request, session):
-        return jsonify({"error": "CSRF-Token fehlt oder ist ungültig."}), 403
-    return None
-
-@app.route('/api/csrf-token', methods=['GET'])
-def csrf_token_api():
-    return jsonify({"csrfToken": get_csrf_token(session), "headerName": CSRF_HEADER_NAME})
-
 @app.after_request
 def apply_security_headers(response):
-    request_id = getattr(g, "request_id", None)
-    if request_id:
-        response.headers.setdefault("X-Request-ID", request_id)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
@@ -6038,19 +6383,11 @@ def apply_security_headers(response):
     )
     if request.path.startswith("/api/"):
         response.headers.setdefault("Cache-Control", "no-store")
-    forwarded_proto = trusted_forwarded_header("X-Forwarded-Proto")
+    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
     if request.is_secure or forwarded_proto == "https":
         response.headers.setdefault(
             "Strict-Transport-Security",
             "max-age=31536000; includeSubDomains",
-        )
-    if request.endpoint != "static":
-        response.set_cookie(
-            "csrf_token",
-            get_csrf_token(session),
-            secure=app.config["SESSION_COOKIE_SECURE"],
-            httponly=False,
-            samesite="Lax",
         )
     return response
 
@@ -6063,7 +6400,7 @@ def enforce_security_policies():
     settings, _ = serialize_server_settings(settings_row)
 
     if settings["security"]["forceHttps"]:
-        forwarded_proto = trusted_forwarded_header("X-Forwarded-Proto")
+        forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
         if not request.is_secure and forwarded_proto != "https":
             if request.path.startswith("/api"):
                 return jsonify({"error": "HTTPS erforderlich."}), 403
@@ -6071,7 +6408,8 @@ def enforce_security_policies():
 
     ip_whitelist = settings["security"]["ipWhitelist"]
     if ip_whitelist:
-        remote_ip = get_client_ip()
+        remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+        remote_ip = (remote_ip or "").split(",")[0].strip()
         allowed = False
         for entry in ip_whitelist:
             try:
@@ -6101,35 +6439,20 @@ def enforce_security_policies():
             return redirect(url_for("login"))
         session["last_activity"] = now_ts
         session.permanent = True
-        if settings["security"]["requireMfa"] or session.get("mfa_required"):
-            allowed_paths = {
-                "/verify",
-                "/mfa-enroll",
-                "/api/otp/verify",
-                "/api/otp/status",
-                "/api/otp/setup",
-                "/api/otp/confirm",
-                "/api/otp/cancel",
-                "/logout",
-            }
+        if settings["security"]["requireMfa"]:
+            allowed_paths = {"/verify", "/api/otp/verify", "/api/otp/status", "/api/otp/setup", "/logout"}
             if not session.get("mfa_verified") and request.path not in allowed_paths and not request.path.startswith("/static"):
                 if request.path.startswith("/api"):
                     return jsonify({"error": "MFA erforderlich."}), 403
                 return redirect(url_for("verify"))
     return None
 
-def log_activity(db, action, entity_type, entity_id=None, details=None, outcome=None):
+def log_activity(db, action, entity_type, entity_id=None, details=None):
     username = session.get('username', 'system')
-    record_activity(
-        db,
-        username,
-        action,
-        entity_type,
-        entity_id,
-        details,
-        request_id=getattr(g, "request_id", None),
-        outcome=outcome,
-    )
+    db.execute('''
+        INSERT INTO activity_log (username, action, entity_type, entity_id, details)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (username, action, entity_type, entity_id, json.dumps(details or {})))
 
 def parse_time_machine_timestamp(value):
     if not value:
@@ -6592,6 +6915,15 @@ def calculate_spof_nodes(db):
     spof.sort(key=lambda item: item["dependent_count"], reverse=True)
     return spof
 
+def pro_required(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        settings_row = get_server_settings(get_db())
+        if not settings_row or not settings_row["pro_enabled"]:
+            return jsonify({"error": "Pro-Feature ist deaktiviert."}), 403
+        return f(*args, **kwargs)
+    return wrapped
+
 def parse_email_list(value):
     if not value:
         return []
@@ -6790,7 +7122,7 @@ def render_ticket_email(event_type, ticket, changes=None, actor=None, comment=No
             change_lines = ["- Ticket wurde erstellt."]
         else:
             change_lines = ["- Ticket wurde aktualisiert."]
-    timestamp = utc_now().strftime("%d.%m.%Y %H:%M UTC")
+    timestamp = datetime.utcnow().strftime("%d.%m.%Y %H:%M UTC")
     text_lines = [
         f"Ticket #{ticket['id']} – {ticket['title']}",
         f"Link: {ticket_url}",
@@ -8132,7 +8464,7 @@ def create_roadmap_for_ticket(db, ticket, category_name=None, created_by=None):
     title = f"Roadmap: {ticket['title']}"
     objective = f"Umsetzungsplan für Ticket #{ticket['id']}: {ticket['title']}"
     owner = ticket.get("assignee") or ticket.get("created_by")
-    start_date = utc_now().strftime("%Y-%m-%d")
+    start_date = datetime.utcnow().strftime("%Y-%m-%d")
     target_date = ticket.get("due_date") or None
     roadmap_cursor = db.execute('''
         INSERT INTO roadmaps (ticket_id, title, objective, status, owner, start_date, target_date, created_by)
@@ -8193,7 +8525,7 @@ def warranty_status(warranty_end):
     parsed = parse_date(warranty_end)
     if not parsed:
         return "Unbekannt"
-    today = utc_now().date()
+    today = datetime.utcnow().date()
     return "Aktiv" if parsed >= today else "Abgelaufen"
 
 def extract_manufacturer(specs):
@@ -8437,40 +8769,8 @@ def is_attachment_extension_allowed(filename):
 
 def build_attachment_storage_path(entity_type, entity_id):
     target_dir = UPLOADS_DIR / "attachments" / entity_type / str(entity_id)
-    target_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(target_dir, stat.S_IRWXU)
+    target_dir.mkdir(parents=True, exist_ok=True)
     return target_dir
-
-def validate_attachment_content(file_path, extension):
-    signatures = {
-        ".pdf": b"%PDF-",
-        ".png": b"\x89PNG\r\n\x1a\n",
-        ".jpg": b"\xff\xd8\xff",
-        ".jpeg": b"\xff\xd8\xff",
-    }
-    with Path(file_path).open("rb") as handle:
-        sample = handle.read(8192)
-    required_signature = signatures.get(extension)
-    if required_signature and not sample.startswith(required_signature):
-        return "Dateiinhalt passt nicht zum erlaubten Dateityp."
-    if extension in {".txt", ".csv"}:
-        if b"\x00" in sample:
-            return "Textdatei enthält unzulässige Binärdaten."
-        try:
-            sample.decode("utf-8")
-        except UnicodeDecodeError:
-            return "Textdatei muss UTF-8-kodiert sein."
-    return None
-
-def attachment_mime_type(extension):
-    return {
-        ".pdf": "application/pdf",
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".txt": "text/plain; charset=utf-8",
-        ".csv": "text/csv; charset=utf-8",
-    }.get(extension, "application/octet-stream")
 
 def store_attachment_file(file_storage, entity_type, entity_id):
     if not file_storage:
@@ -8485,7 +8785,6 @@ def store_attachment_file(file_storage, entity_type, entity_id):
     target_dir = build_attachment_storage_path(entity_type, entity_id)
     file_path = target_dir / stored_filename
     file_storage.save(file_path)
-    os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
     size_bytes = file_path.stat().st_size
     if size_bytes > MAX_UPLOAD_BYTES:
         file_path.unlink(missing_ok=True)
@@ -8494,14 +8793,10 @@ def store_attachment_file(file_storage, entity_type, entity_id):
     if antivirus_error:
         file_path.unlink(missing_ok=True)
         return None, antivirus_error
-    content_error = validate_attachment_content(file_path, extension)
-    if content_error:
-        file_path.unlink(missing_ok=True)
-        return None, content_error
     return {
         "original_filename": original_filename,
         "stored_filename": stored_filename,
-        "mime_type": attachment_mime_type(extension),
+        "mime_type": file_storage.mimetype,
         "size_bytes": size_bytes,
         "file_path": file_path,
     }, None
@@ -8574,7 +8869,7 @@ def fetch_ticket_assets(db, ticket_id):
 
 def merge_ticket_records(db, target_ticket, source_tickets, actor=None, note=None):
     merged_ticket_ids = []
-    merged_at = utc_now().strftime("%Y-%m-%d %H:%M:%S")
+    merged_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     actor_name = actor or session.get('username') or "System"
 
     for source_ticket in source_tickets:
@@ -8724,6 +9019,7 @@ def serialize_server_settings_flat(settings):
             "host": DEFAULT_SERVER_SETTINGS["server"]["host"],
             "port": DEFAULT_SERVER_SETTINGS["server"]["port"],
             "debug": DEFAULT_SERVER_SETTINGS["server"]["debug"],
+            "pro_enabled": DEFAULT_SERVER_SETTINGS["proFeaturesEnabled"],
             "backup_enabled": DEFAULT_SERVER_SETTINGS["backup"]["enabled"],
             "backup_schedule": DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
             "backup_time": DEFAULT_SERVER_SETTINGS["backup"]["time"],
@@ -8755,6 +9051,7 @@ def serialize_server_settings_flat(settings):
         "host": settings["host"] or DEFAULT_SERVER_SETTINGS["server"]["host"],
         "port": settings["port"] or DEFAULT_SERVER_SETTINGS["server"]["port"],
         "debug": bool(settings["debug_mode"]),
+        "pro_enabled": bool(settings["pro_enabled"]),
         "backup_enabled": bool(settings["backup_enabled"]),
         "backup_schedule": settings["backup_schedule"] or DEFAULT_SERVER_SETTINGS["backup"]["schedule"],
         "backup_time": settings["backup_time"] or DEFAULT_SERVER_SETTINGS["backup"]["time"],
@@ -8895,32 +9192,24 @@ def login():
         settings, _ = serialize_server_settings(get_server_settings(db))
         security = settings["security"]
         if is_user_locked(db, username):
-            log_activity(
-                db,
-                "login_locked",
-                "user",
-                details={"username": username},
-                outcome="denied",
-            )
+            log_activity(db, "login_locked", "user", details={"username": username})
             db.commit()
             return render_template('login.html', error="Account ist gesperrt. Bitte später erneut versuchen.")
         user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
 
         if user and check_password_hash(user['password_hash'], password):
-            mfa_required = bool(security["requireMfa"] or user['otp_secret'])
-            mfa_enrollment_required = bool(security["requireMfa"] and not user['otp_secret'])
+            if security["requireMfa"] and not user['otp_secret']:
+                log_activity(db, "login_failed_mfa", "user", user['id'], {"username": username})
+                db.commit()
+                return render_template('login.html', error="MFA ist erforderlich. Bitte OTP zuerst aktivieren.")
             session['logged_in'] = True
             session['username'] = username
-            session['mfa_required'] = mfa_required
-            session['mfa_verified'] = not mfa_required
-            session['mfa_enrollment_required'] = mfa_enrollment_required
+            session['mfa_verified'] = not security["requireMfa"]
             access = get_user_access(db)
             log_activity(db, "login", "user", user['id'], {"username": username})
             clear_login_failures(db, username)
             db.commit()
-            if mfa_required:
-                if mfa_enrollment_required:
-                    return redirect(url_for("mfa_enroll"))
+            if security["requireMfa"]:
                 return redirect(url_for("verify"))
             return redirect(get_post_login_redirect(access))
 
@@ -8932,21 +9221,20 @@ def login():
                 cursor = db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, placeholder_password))
                 assign_user_role(db, cursor.lastrowid, DEFAULT_ROLE_NAME)
                 existing_user = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
-            user = db.execute('SELECT otp_secret FROM users WHERE username = ?', (username,)).fetchone()
-            mfa_required = bool(security["requireMfa"] or (user and user['otp_secret']))
-            mfa_enrollment_required = bool(security["requireMfa"] and not (user and user['otp_secret']))
+            if security["requireMfa"]:
+                user = db.execute('SELECT otp_secret FROM users WHERE username = ?', (username,)).fetchone()
+                if not user or not user['otp_secret']:
+                    log_activity(db, "login_failed_mfa", "user", details={"username": username, "source": "ad"})
+                    db.commit()
+                    return render_template('login.html', error="MFA ist erforderlich. Bitte OTP zuerst aktivieren.")
             session['logged_in'] = True
             session['username'] = username
-            session['mfa_required'] = mfa_required
-            session['mfa_verified'] = not mfa_required
-            session['mfa_enrollment_required'] = mfa_enrollment_required
+            session['mfa_verified'] = not security["requireMfa"]
             access = get_user_access(db)
             log_activity(db, "login", "user", existing_user['id'], {"username": username, "source": "ad"})
             clear_login_failures(db, username)
             db.commit()
-            if mfa_required:
-                if mfa_enrollment_required:
-                    return redirect(url_for("mfa_enroll"))
+            if security["requireMfa"]:
                 return redirect(url_for("verify"))
             return redirect(get_post_login_redirect(access))
 
@@ -9054,6 +9342,72 @@ def terminal_settings_page():
         permissions=sorted(access["permissions"]),
         is_superuser=access["is_superuser"],
         initial_section="terminal"
+    )
+
+@app.route('/inventory-links/<link_id>/portal')
+@login_required
+def inventory_link_portal(link_id):
+    access = get_user_access(get_db())
+    db = get_db()
+    user = access.get("user")
+    if not user:
+        return redirect(url_for('login'))
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return ("Link nicht gefunden.", 404)
+    return render_template(
+        'inventory_link_portal.html',
+        username=session.get('username'),
+        permissions=sorted(access["permissions"]),
+        is_superuser=access["is_superuser"],
+        link=serialize_inventory_link(link),
+        active_link_id=link_id
+    )
+
+@app.route('/locations')
+@login_required
+@require_permissions('locations.view', 'locations.manage')
+def locations_page():
+    access = get_user_access(get_db())
+    return render_template('locations.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
+@app.route('/tickets')
+@login_required
+@require_permissions('tickets.view_all', 'tickets.view_own', 'tickets.create')
+def tickets_page():
+    access = get_user_access(get_db())
+    return render_template('tickets.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
+
+@app.route('/tickets/<int:ticket_id>')
+@login_required
+@require_permissions('tickets.view_all', 'tickets.view_own')
+def ticket_workspace_page(ticket_id):
+    ticket = fetch_ticket(get_db(), ticket_id)
+    access = get_user_access(get_db())
+    if not ticket:
+        return Response("Ticket nicht gefunden", status=404, content_type="text/plain; charset=utf-8")
+    if not ensure_ticket_access(ticket, access):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    return render_template(
+        'tickets.html',
+        username=session.get('username'),
+        permissions=sorted(access["permissions"]),
+        is_superuser=access["is_superuser"],
+        initial_ticket_id=ticket_id,
+    )
+
+@app.route('/admin/tickets')
+@app.route('/admin/tickets/<section>')
+@login_required
+@require_permissions('ticket_categories.manage', 'ticket_alerts.manage', 'notifications.manage')
+def ticket_admin_page(section='general'):
+    access = get_user_access(get_db())
+    return render_template(
+        'ticket_admin.html',
+        username=session.get('username'),
+        permissions=sorted(access["permissions"]),
+        is_superuser=access["is_superuser"],
+        section=section,
     )
 
 @app.route('/knowledge')
@@ -9908,7 +10262,7 @@ def assign_asset(asset_id):
     ):
         status = "transferred"
     created_by_user_id = get_current_user_id(db)
-    now = utc_now().isoformat()
+    now = datetime.utcnow().isoformat()
     db.execute('''
         INSERT INTO asset_assignment_history (
             asset_id, assigned_to_user_id, assigned_to_team_id, status, note, created_by_user_id, created_at
@@ -9961,7 +10315,7 @@ def checkout_asset(asset_id):
     if error:
         return jsonify({"error": error}), 400
     created_by_user_id = get_current_user_id(db)
-    now = utc_now().isoformat()
+    now = datetime.utcnow().isoformat()
     db.execute('''
         INSERT INTO asset_assignment_history (
             asset_id, assigned_to_user_id, assigned_to_team_id, status,
@@ -10007,7 +10361,7 @@ def checkin_asset(asset_id):
     if transition_error:
         return jsonify({"error": transition_error}), 400
     created_by_user_id = get_current_user_id(db)
-    now = utc_now().isoformat()
+    now = datetime.utcnow().isoformat()
     db.execute('''
         INSERT INTO asset_assignment_history (
             asset_id, assigned_to_user_id, assigned_to_team_id, status,
@@ -10049,7 +10403,7 @@ def unassign_asset(asset_id):
     if transition_error:
         return jsonify({"error": transition_error}), 400
     created_by_user_id = get_current_user_id(db)
-    now = utc_now().isoformat()
+    now = datetime.utcnow().isoformat()
     db.execute('''
         INSERT INTO asset_assignment_history (
             asset_id, assigned_to_user_id, assigned_to_team_id, status, note, created_by_user_id, created_at
@@ -10199,7 +10553,7 @@ def delete_attachment(attachment_id):
     if error:
         message, status = error
         return jsonify({"error": message}), status
-    deleted_at = utc_now().isoformat()
+    deleted_at = datetime.utcnow().isoformat()
     db.execute('UPDATE attachments SET deleted_at = ? WHERE id = ?', (deleted_at, attachment_id))
     log_activity(db, "ATTACHMENT_DELETED", "attachment", attachment_id, {
         "entity_type": row["entity_type"],
@@ -10221,6 +10575,89 @@ def asset_relation_types():
         ORDER BY name
     ''').fetchall()
     return jsonify([dict(row) for row in rows])
+
+@app.route('/api/locations', methods=['GET', 'POST'])
+@login_required
+def manage_locations():
+    db = get_db()
+    if request.method == 'POST':
+        if not user_can('locations.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json()
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        try:
+            db.execute('''
+                INSERT INTO locations (name, description)
+                VALUES (?, ?)
+            ''', (name, description))
+            log_activity(db, "create", "location", details={"name": name})
+            db.commit()
+            return jsonify({"status": "created"}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Standort existiert bereits"}), 400
+
+    if not (user_can('locations.view') or user_can('locations.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    locations = db.execute('SELECT * FROM locations ORDER BY name').fetchall()
+    return jsonify([dict(row) for row in locations])
+
+@app.route('/api/locations/<int:location_id>', methods=['PUT', 'DELETE'])
+@login_required
+def update_location(location_id):
+    db = get_db()
+    if request.method == 'PUT':
+        if not user_can('locations.manage'):
+            return jsonify({"error": "Keine Berechtigung"}), 403
+        data = request.get_json()
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        if not name:
+            return jsonify({"error": "Name ist erforderlich"}), 400
+        result = db.execute('''
+            UPDATE locations
+            SET name = ?, description = ?
+            WHERE id = ?
+        ''', (name, description, location_id))
+        if result.rowcount == 0:
+            return jsonify({"error": "Standort nicht gefunden"}), 404
+        log_activity(db, "update", "location", location_id, {"name": name})
+        db.commit()
+        return jsonify({"status": "updated"}), 200
+
+    if not user_can('locations.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    location = db.execute('SELECT id, name FROM locations WHERE id = ?', (location_id,)).fetchone()
+    if not location:
+        return jsonify({"error": "Standort nicht gefunden"}), 404
+    device_count = db.execute(
+        'SELECT COUNT(*) FROM devices WHERE location_id = ?',
+        (location_id,),
+    ).fetchone()[0]
+    assignment_count = db.execute(
+        'SELECT COUNT(*) FROM asset_assignments WHERE location_id = ?',
+        (location_id,),
+    ).fetchone()[0]
+    if device_count or assignment_count:
+        return jsonify({
+            "error": (
+                f"Standort „{location['name']}“ wird noch verwendet. "
+                "Ordne Geräte und Asset-Zuweisungen vor dem Löschen einem anderen Standort zu."
+            ),
+            "code": "location_in_use",
+            "references": {
+                "devices": device_count,
+                "asset_assignments": assignment_count,
+            },
+        }), 409
+    result = db.execute('DELETE FROM locations WHERE id = ?', (location_id,))
+    if result.rowcount == 0:
+        return jsonify({"error": "Standort nicht gefunden"}), 404
+    log_activity(db, "delete", "location", location_id)
+    db.commit()
+    return jsonify({"status": "deleted"}), 200
 
 @app.route('/api/ticket-categories', methods=['GET', 'POST'])
 @login_required
@@ -11274,7 +11711,7 @@ def procurement_renewals():
         days = int(request.args.get('days', 90))
     except (TypeError, ValueError):
         days = 90
-    today = utc_now().date()
+    today = datetime.utcnow().date()
     cutoff = today + timedelta(days=days)
 
     contract_rows = db.execute('''
@@ -11737,7 +12174,7 @@ def health_run_now():
 def health_history():
     db = get_db()
     days = int(request.args.get("days") or 1)
-    cutoff = (utc_now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     events = db.execute(
         '''
         SELECT observed_at, current_status
@@ -11811,7 +12248,7 @@ def health_incident_mute(incident_id):
     db = get_db()
     data = request.get_json() or {}
     minutes = int(data.get("minutes") or 30)
-    muted_until = (utc_now() + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    muted_until = (datetime.utcnow() + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
     db.execute(
         '''
         UPDATE health_incidents
@@ -11839,13 +12276,40 @@ def health_incident_ticket(incident_id):
     ).fetchone()
     if not incident:
         return jsonify({"error": "Incident nicht gefunden"}), 404
-    existing_ticket_id = incident["ticket_id"]
-    ticket_id = existing_ticket_id or create_health_incident_ticket(db, incident_id)
+    title = f"Health Incident: {incident['name']}"
+    description = (
+        f"Incident für Check {incident['name']}.\n"
+        f"Status: {incident['status']}\n"
+        f"Seit: {incident['opened_at']}\n"
+        f"Aktuell: {incident['last_status']}"
+    )
+    creator_id = get_current_user_id(db)
+    cursor = db.execute(
+        '''
+        INSERT INTO tickets (title, description, priority, status, requester_name, created_by_user_id, created_by, tags)
+        VALUES (?, ?, ?, 'open', ?, ?, ?, ?)
+        ''',
+        (
+            title,
+            description,
+            "high",
+            session.get("username"),
+            creator_id,
+            session.get("username"),
+            json.dumps(["health", "incident"])
+        )
+    )
+    ticket_id = cursor.lastrowid
+    db.execute(
+        '''
+        UPDATE health_incidents
+        SET ticket_id = ?
+        WHERE id = ?
+        ''',
+        (ticket_id, incident_id)
+    )
     db.commit()
-    return jsonify({
-        "status": "ticket_exists" if existing_ticket_id else "ticket_created",
-        "ticket_id": ticket_id,
-    })
+    return jsonify({"status": "ticket_created", "ticket_id": ticket_id})
 
 @app.route('/api/tickets', methods=['GET', 'POST'])
 @login_required
@@ -11885,7 +12349,7 @@ def tickets():
         tags = json.dumps(data.get('tags') or [])
         custom_fields = json.dumps(data.get('custom_fields') or [])
         asset_ids = data.get('asset_ids') or []
-        resolved_at = utc_now().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
+        resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
         field_errors = {}
         if not title:
             field_errors["title"] = "Titel ist erforderlich"
@@ -12222,7 +12686,7 @@ def bulk_update_tickets():
     if requested_status:
         assignments += ", resolved_at = ?"
         resolved_at = (
-            utc_now().strftime("%Y-%m-%d %H:%M:%S")
+            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             if is_closed_status(requested_status)
             else None
         )
@@ -12650,7 +13114,7 @@ def ticket_detail(ticket_id):
         resolved_at = ticket.get('resolved_at')
         if status_changed:
             if is_closed_status(status):
-                resolved_at = utc_now().strftime("%Y-%m-%d %H:%M:%S")
+                resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             else:
                 resolved_at = None
         changes = build_ticket_changes(ticket, {
@@ -13317,15 +13781,12 @@ def notification_test():
 @app.route('/api/features', methods=['GET'])
 @login_required
 def feature_flags():
+    settings_row = get_server_settings(get_db())
+    settings, _ = serialize_server_settings(settings_row)
     return jsonify({
-        "features": [
-            "maintenance_schedule",
-            "csv_export",
-            "advanced_analytics",
-            "tags",
-            "notes",
-            "activity_feed",
-        ]
+        "pro_enabled": bool(settings["proFeaturesEnabled"]),
+        "pro_features": PRO_FEATURES,
+        "free_features": FREE_FEATURES
     })
 
 @app.route('/api/time-machine/changes', methods=['GET'])
@@ -13488,7 +13949,7 @@ def time_machine_changes():
 
     timestamps = [parse_time_machine_timestamp(change["timestamp"]) for change in changes]
     timestamps = [ts for ts in timestamps if ts]
-    now = utc_now()
+    now = datetime.utcnow()
     range_start = min(timestamps) if timestamps else now
     range_end = max(timestamps) if timestamps else now
 
@@ -13508,7 +13969,7 @@ def time_machine_changes():
 def time_machine_state():
     db = get_db()
     timestamp_raw = request.args.get('timestamp')
-    timestamp = parse_time_machine_timestamp(timestamp_raw) or utc_now()
+    timestamp = parse_time_machine_timestamp(timestamp_raw) or datetime.utcnow()
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
     assets = db.execute('''
@@ -13892,19 +14353,11 @@ def enterprise_workflow_hub():
 def manage_users():
     db = get_db()
     if request.method == 'POST':
-        data = request.get_json() or {}
+        data = request.get_json()
         username = (data.get('username') or '').strip()
         password = data.get('password') or ''
         email = normalize_email(data.get('email') or '')
-        role_ids, role_ids_error = normalize_identifier_list(
-            data.get('role_ids'),
-            "Rollenliste ungültig",
-        )
-        if role_ids_error:
-            return jsonify({"error": role_ids_error}), 400
-        roles, roles_error = get_roles_by_ids(db, role_ids)
-        if roles_error:
-            return jsonify({"error": roles_error}), 400
+        role_ids = data.get('role_ids') or []
         if not username or not password:
             return jsonify({"error": "Benutzername und Passwort sind erforderlich"}), 400
         if email and not is_valid_email(email):
@@ -13916,10 +14369,8 @@ def manage_users():
         min_length = get_password_min_length(db)
         if len(password) < min_length:
             return jsonify({"error": f"Passwort muss mindestens {min_length} Zeichen lang sein"}), 400
-        if role_ids:
-            access = get_user_access(db)
-            if not user_can('roles.assign') or not can_assign_roles(access, roles):
-                return jsonify({"error": "Keine Berechtigung für Rollen"}), 403
+        if role_ids and not user_can('roles.assign'):
+            return jsonify({"error": "Keine Berechtigung für Rollen"}), 403
         password_hash = generate_password_hash(password)
         try:
             cursor = db.execute('''
@@ -14044,17 +14495,7 @@ def manage_roles():
         data = request.get_json() or {}
         name = (data.get('name') or '').strip()
         description = (data.get('description') or '').strip()
-        permission_ids, permission_ids_error = normalize_identifier_list(
-            data.get('permission_ids'),
-            "Berechtigungsliste ungültig",
-        )
-        if permission_ids_error:
-            return jsonify({"error": permission_ids_error}), 400
-        permission_keys, permissions_error = get_permission_keys_by_ids(db, permission_ids)
-        if permissions_error:
-            return jsonify({"error": permissions_error}), 400
-        if not can_manage_role_permissions(get_user_access(db), None, permission_keys):
-            return jsonify({"error": "Keine Berechtigung für diese Rollenrechte"}), 403
+        permission_ids = data.get('permission_ids') or []
         if not name:
             return jsonify({"error": "Name ist erforderlich"}), 400
         try:
@@ -14074,10 +14515,7 @@ def manage_roles():
         db.commit()
         return jsonify({"status": "created", "id": role_id}), 201
 
-    access = get_user_access(db)
-    can_manage_roles = access["is_superuser"] or "roles.manage" in access["permissions"]
-    can_assign_user_roles = access["is_superuser"] or "roles.assign" in access["permissions"]
-    if not (can_manage_roles or can_assign_user_roles):
+    if not (user_can('roles.manage') or user_can('roles.assign')):
         return jsonify({"error": "Keine Berechtigung"}), 403
     roles = db.execute('SELECT id, name, description, is_system, is_superuser FROM roles ORDER BY name').fetchall()
     results = []
@@ -14092,18 +14530,6 @@ def manage_roles():
         entry = dict(role)
         entry["permissions"] = [dict(row) for row in permissions]
         results.append(entry)
-    if not can_manage_roles:
-        results = [
-            role
-            for role in results
-            if can_assign_roles(
-                access,
-                [{
-                    "is_superuser": role["is_superuser"],
-                    "permission_keys": {permission["key"] for permission in role["permissions"]},
-                }],
-            )
-        ]
     return jsonify(results)
 
 @app.route('/api/roles/<int:role_id>', methods=['PUT', 'DELETE'])
@@ -14111,10 +14537,7 @@ def manage_roles():
 @require_permission('roles.manage')
 def role_detail(role_id):
     db = get_db()
-    role = db.execute(
-        'SELECT id, name, is_system, is_superuser FROM roles WHERE id = ?',
-        (role_id,),
-    ).fetchone()
+    role = db.execute('SELECT id, name, is_system FROM roles WHERE id = ?', (role_id,)).fetchone()
     if not role:
         return jsonify({"error": "Rolle nicht gefunden"}), 404
     if request.method == 'DELETE':
@@ -14130,17 +14553,7 @@ def role_detail(role_id):
     data = request.get_json() or {}
     name = (data.get('name') or '').strip()
     description = (data.get('description') or '').strip()
-    permission_ids, permission_ids_error = normalize_identifier_list(
-        data.get('permission_ids'),
-        "Berechtigungsliste ungültig",
-    )
-    if permission_ids_error:
-        return jsonify({"error": permission_ids_error}), 400
-    permission_keys, permissions_error = get_permission_keys_by_ids(db, permission_ids)
-    if permissions_error:
-        return jsonify({"error": permissions_error}), 400
-    if not can_manage_role_permissions(get_user_access(db), dict(role), permission_keys):
-        return jsonify({"error": "Keine Berechtigung für diese Rollenrechte"}), 403
+    permission_ids = data.get('permission_ids') or []
     if not name:
         return jsonify({"error": "Name ist erforderlich"}), 400
     db.execute('''
@@ -14180,17 +14593,9 @@ def current_user_info():
 def update_user_roles(user_id):
     db = get_db()
     data = request.get_json() or {}
-    role_ids, role_ids_error = normalize_identifier_list(
-        data.get('role_ids'),
-        "Rollenliste ungültig",
-    )
-    if role_ids_error:
-        return jsonify({"error": role_ids_error}), 400
-    roles, roles_error = get_roles_by_ids(db, role_ids)
-    if roles_error:
-        return jsonify({"error": roles_error}), 400
-    if not can_assign_roles(get_user_access(db), roles):
-        return jsonify({"error": "Keine Berechtigung für Rollen"}), 403
+    role_ids = data.get('role_ids') or []
+    if not isinstance(role_ids, list):
+        return jsonify({"error": "Rollenliste ungültig"}), 400
     existing_user = db.execute('SELECT id, username FROM users WHERE id = ?', (user_id,)).fetchone()
     if not existing_user:
         return jsonify({"error": "Benutzer nicht gefunden"}), 404
@@ -14225,6 +14630,7 @@ def server_settings():
                 "port": data.get("port"),
                 "debug": data.get("debug")
             },
+            "proFeaturesEnabled": data.get("pro_enabled"),
             "backup": {
                 "enabled": data.get("backup_enabled"),
                 "compress": data.get("backup_compress"),
@@ -14345,6 +14751,709 @@ def server_settings_history():
             "settings": json.loads(row["settings_json"]) if row["settings_json"] else {}
         })
     return jsonify({"revisions": revisions})
+
+@app.route('/api/inventory-links', methods=['GET', 'POST'])
+@login_required
+def inventory_links_api():
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+
+    if request.method == 'GET':
+        return jsonify(list_inventory_links(db, user["id"]))
+
+    data = request.get_json() or {}
+    display_name = (data.get("displayName") or "").strip()
+    base_url = (data.get("baseUrl") or "").strip()
+    auth_mode = data.get("authMode") or "apiKey"
+    verify_tls = bool(data.get("verifyTls", True))
+    allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    connection_scope = data.get("connectionScope") or "internet"
+    secret = data.get("secret") or ""
+
+    if not display_name:
+        return jsonify({"error": "Display-Name ist erforderlich."}), 400
+    if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
+        return jsonify({"error": "Ungültiger Auth-Modus."}), 400
+    if auth_mode not in {"none", "login"} and not secret:
+        return jsonify({"error": "Secret ist erforderlich."}), 400
+    if auth_mode == "login" and secret:
+        try:
+            parse_inventory_link_login_secret(secret)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    try:
+        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    try:
+        secret_encrypted = encrypt_inventory_link_secret(secret) if secret else ""
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    link_id = str(uuid.uuid4())
+    db.execute(
+        '''
+        INSERT INTO inventory_links (
+            id, user_id, display_name, base_url, verify_tls, auth_mode, secret_encrypted,
+            allow_private_network, connection_scope, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ''',
+        (
+            link_id, user["id"], display_name, normalized, 1 if verify_tls else 0,
+            auth_mode, secret_encrypted, 1 if allow_private_network else 0, connection_scope
+        )
+    )
+    log_activity(db, "create", "inventory_link", details={"link_id": link_id, "display_name": display_name})
+    db.commit()
+    link_row = get_inventory_link(db, user["id"], link_id)
+    return jsonify(serialize_inventory_link(link_row)), 201
+
+@app.route('/api/inventory-links/test', methods=['POST'])
+@login_required
+def inventory_links_test_draft():
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    data = request.get_json() or {}
+    base_url = (data.get("baseUrl") or "").strip()
+    auth_mode = data.get("authMode") or "apiKey"
+    verify_tls = bool(data.get("verifyTls", True))
+    allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
+    connection_scope = data.get("connectionScope") or "internet"
+    secret = data.get("secret") or ""
+    if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
+        return jsonify({"error": "Ungültiger Auth-Modus."}), 400
+    try:
+        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    result = perform_inventory_link_test({
+        "base_url": normalized,
+        "verify_tls": verify_tls,
+        "auth_mode": auth_mode,
+        "secret": secret,
+        "allow_private_network": allow_private_network,
+        "connection_scope": connection_scope,
+    })
+    return jsonify(result), 200
+
+@app.route('/api/inventory-links/<link_id>', methods=['PATCH', 'DELETE'])
+@login_required
+def inventory_link_detail_api(link_id):
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return jsonify({"error": "Link nicht gefunden."}), 404
+
+    if request.method == 'DELETE':
+        db.execute('DELETE FROM inventory_links WHERE id = ? AND user_id = ?', (link_id, user["id"]))
+        log_activity(db, "delete", "inventory_link", details={"link_id": link_id})
+        db.commit()
+        return jsonify({"status": "deleted"}), 200
+
+    data = request.get_json() or {}
+    display_name = (data.get("displayName") or link["display_name"]).strip()
+    base_url = (data.get("baseUrl") or link["base_url"]).strip()
+    auth_mode = data.get("authMode") or link["auth_mode"]
+    verify_tls = bool(data.get("verifyTls", bool(link["verify_tls"])))
+    allow_private_network = bool(data.get("allowPrivateNetwork", bool(link["allow_private_network"])))
+    connection_scope = data.get("connectionScope") or (link["connection_scope"] or "internet")
+    secret = data.get("secret")
+
+    if not display_name:
+        return jsonify({"error": "Display-Name ist erforderlich."}), 400
+    if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
+        return jsonify({"error": "Ungültiger Auth-Modus."}), 400
+    if auth_mode == "login" and secret is None and link["secret_encrypted"]:
+        try:
+            existing_secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
+            parse_inventory_link_login_secret(existing_secret)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+    elif auth_mode == "login" and secret:
+        try:
+            parse_inventory_link_login_secret(secret)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    try:
+        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
+            base_url, connection_scope, verify_tls, allow_private_network
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    secret_encrypted = link["secret_encrypted"]
+    if secret is not None:
+        if auth_mode not in {"none", "login"} and not secret and not secret_encrypted:
+            return jsonify({"error": "Secret ist erforderlich."}), 400
+        if secret:
+            try:
+                secret_encrypted = encrypt_inventory_link_secret(secret)
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
+        elif auth_mode == "none":
+            secret_encrypted = ""
+
+    db.execute(
+        '''
+        UPDATE inventory_links
+        SET display_name = ?, base_url = ?, verify_tls = ?, auth_mode = ?, secret_encrypted = ?,
+            allow_private_network = ?, connection_scope = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND user_id = ?
+        ''',
+        (
+            display_name, normalized, 1 if verify_tls else 0, auth_mode, secret_encrypted,
+            1 if allow_private_network else 0, connection_scope, link_id, user["id"]
+        )
+    )
+    log_activity(db, "update", "inventory_link", details={"link_id": link_id})
+    db.commit()
+    updated = get_inventory_link(db, user["id"], link_id)
+    return jsonify(serialize_inventory_link(updated)), 200
+
+@app.route('/api/inventory-links/<link_id>/test', methods=['POST'])
+@login_required
+def inventory_link_test_api(link_id):
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return jsonify({"error": "Link nicht gefunden."}), 404
+    secret = ""
+    if link["auth_mode"] != "none":
+        try:
+            secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+    result = perform_inventory_link_test({
+        "base_url": link["base_url"],
+        "verify_tls": bool(link["verify_tls"]),
+        "auth_mode": link["auth_mode"],
+        "secret": secret,
+        "allow_private_network": bool(link["allow_private_network"]),
+        "connection_scope": link["connection_scope"] or "internet",
+    })
+    status_label = result.get("status")
+    update_inventory_link_health(db, link_id, status_label)
+    db.commit()
+    return jsonify(result), 200
+
+@app.route('/api/inventory-links/<link_id>/auth/status', methods=['GET'])
+@login_required
+def inventory_link_auth_status(link_id):
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return jsonify({"error": "Link nicht gefunden."}), 404
+    if link["auth_mode"] != "login":
+        return jsonify({"authenticated": True}), 200
+    cached_cookie = get_cached_inventory_link_cookie(link, user["id"])
+    return jsonify({"authenticated": bool(cached_cookie)}), 200
+
+@app.route('/api/inventory-links/<link_id>/auth/login', methods=['POST'])
+@login_required
+def inventory_link_auth_login(link_id):
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return jsonify({"error": "Link nicht gefunden."}), 404
+    if link["auth_mode"] != "login":
+        return jsonify({"error": "Dieser Link benötigt keine Login-Authentifizierung."}), 400
+    data = request.get_json() or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    if not username or not password:
+        return jsonify({"error": "Benutzername und Passwort erforderlich."}), 400
+    try:
+        validate_inventory_link_configuration(
+            link["base_url"], link["connection_scope"] or "internet",
+            bool(link["verify_tls"]), bool(link["allow_private_network"])
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    secret = f"{username}:{password}"
+    try:
+        cookie_header, expires_at = login_inventory_link_session(
+            link["base_url"],
+            bool(link["verify_tls"]),
+            secret
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 401
+    except InventoryLinkConnectionError as exc:
+        return jsonify({"error": str(exc)}), 502
+    if not cookie_header:
+        return jsonify({"error": "Login fehlgeschlagen. Prüfe Benutzername/Passwort."}), 401
+    cache_key = f"{user['id']}:{link['id']}"
+    INVENTORY_LINK_LOGIN_SESSION_CACHE[cache_key] = {
+        "cookie": cookie_header,
+        "expires_at": expires_at or (time.time() + INVENTORY_LINK_LOGIN_TTL_SECONDS)
+    }
+    update_inventory_link_health(db, link_id, "ok")
+    db.commit()
+    return jsonify({"authenticated": True}), 200
+
+class InventoryLinkNoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+@app.route('/api/inventory-links/<link_id>/proxy/', defaults={'subpath': ''}, methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'])
+@app.route('/api/inventory-links/<link_id>/proxy/<path:subpath>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'])
+@login_required
+def inventory_link_proxy(link_id, subpath):
+    db = get_db()
+    access = get_user_access(db)
+    user = access.get("user")
+    if not user:
+        return jsonify({"error": "Nicht angemeldet"}), 401
+    if should_rate_limit_inventory_proxy(user["id"]):
+        return jsonify({"error": "Rate limit erreicht."}), 429
+    link = get_inventory_link(db, user["id"], link_id)
+    if not link:
+        return jsonify({"error": "Link nicht gefunden."}), 404
+
+    try:
+        validate_inventory_link_configuration(
+            link["base_url"], link["connection_scope"] or "internet",
+            bool(link["verify_tls"]), bool(link["allow_private_network"])
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if link["auth_mode"] != "none":
+        try:
+            secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+    else:
+        secret = ""
+
+    target_url = build_inventory_link_target_url(link["base_url"], subpath, request.query_string)
+    try:
+        headers = build_inventory_link_request_headers(link["auth_mode"], secret, link=link, user_id=user["id"])
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 401
+    except InventoryLinkConnectionError as exc:
+        return jsonify({"error": str(exc)}), 502
+    data = None
+    if request.method not in {"GET", "HEAD"}:
+        data = request.get_data()
+    req = urllib.request.Request(target_url, data=data if data else None, headers=headers, method=request.method)
+
+    context = None
+    if link["base_url"].startswith("https://"):
+        context = build_inventory_link_ssl_context(bool(link["verify_tls"]))
+
+    handlers = [urllib.request.ProxyHandler({}), InventoryLinkNoRedirect()]
+    if context is not None:
+        handlers.append(urllib.request.HTTPSHandler(context=context))
+    opener = urllib.request.build_opener(*handlers)
+    def perform_proxy_request(request_obj):
+        try:
+            return opener.open(request_obj, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS)
+        except urllib.error.HTTPError as exc:
+            return exc
+
+    try:
+        resp = perform_proxy_request(req)
+        if link["auth_mode"] == "login" and resp.getcode() in {401, 403}:
+            INVENTORY_LINK_LOGIN_SESSION_CACHE.pop(f"{user['id']}:{link['id']}", None)
+            try:
+                headers = build_inventory_link_request_headers(link["auth_mode"], secret, link=link, user_id=user["id"])
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 401
+            except InventoryLinkConnectionError as exc:
+                return jsonify({"error": str(exc)}), 502
+            req = urllib.request.Request(target_url, data=data if data else None, headers=headers, method=request.method)
+            resp = perform_proxy_request(req)
+    except urllib.error.URLError as exc:
+        return jsonify({"error": f"Proxy-Fehler: {exc.reason}"}), 502
+    except ssl.SSLError as exc:
+        return jsonify({"error": f"TLS-Fehler: {str(exc)}"}), 502
+
+    status_code = resp.getcode()
+    response_headers = filter_inventory_link_response_headers(resp.headers, link_id, link["base_url"])
+    log_activity(db, "proxy", "inventory_link", details={"link_id": link_id, "method": request.method, "path": subpath})
+    db.commit()
+    content_type = resp.headers.get("Content-Type", "")
+    if request.method != "HEAD" and should_rewrite_inventory_link_response(content_type):
+        body = resp.read()
+        rewritten = rewrite_inventory_link_text_content(body, content_type, link_id, link["base_url"])
+        return Response(
+            rewritten,
+            status=status_code,
+            headers=response_headers
+        )
+    return Response(
+        stream_inventory_link_response(resp),
+        status=status_code,
+        headers=response_headers
+    )
+
+@app.route('/api/backups/run', methods=['POST'])
+@login_required
+@require_permission('server_settings.manage')
+def run_backup():
+    db = get_db()
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    data = request.get_json() or {}
+    force = bool(data.get("force"))
+    result = run_backup_job(db, settings, force=force)
+    return jsonify(result)
+
+@app.route('/api/backups/list', methods=['GET'])
+@login_required
+@require_permission('server_settings.manage')
+def list_backups():
+    db = get_db()
+    rows = db.execute(
+        '''
+        SELECT id, status, backup_path, backup_size_bytes, message, created_at
+        FROM backup_runs
+        ORDER BY created_at DESC
+        LIMIT 50
+        '''
+    ).fetchall()
+    backups = []
+    for row in rows:
+        backups.append({
+            "id": row["id"],
+            "status": row["status"],
+            "path": row["backup_path"],
+            "sizeBytes": row["backup_size_bytes"],
+            "message": row["message"],
+            "createdAt": row["created_at"]
+        })
+    return jsonify({"backups": backups})
+
+@app.route('/api/export', methods=['GET'])
+@login_required
+@require_permission('server_settings.manage')
+def export_data():
+    db = get_db()
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    if not settings["importExport"]["exportAllowed"]:
+        return jsonify({"error": "Export ist deaktiviert."}), 403
+    export_format = settings["importExport"]["exportFormat"]
+    include_uploads = settings["importExport"]["includeUploads"]
+    tables = [
+        "categories",
+        "asset_categories",
+        "locations",
+        "devices",
+        "asset_categories",
+        "assets",
+        "asset_devices",
+        "maintenance_tasks",
+        "asset_assignment_history",
+        "vendors",
+        "contracts",
+        "purchase_orders",
+        "purchase_order_items",
+        "attachments",
+    ]
+    temp_dir = Path(tempfile.mkdtemp(prefix="inventory_export_"))
+    archive_path = None
+    try:
+        if export_format == "sqlite":
+            db_path = temp_dir / "inventory.db"
+            run_sqlite_backup(db_path)
+            if include_uploads and UPLOADS_DIR.exists():
+                archive_path = temp_dir / "inventory_export.zip"
+                with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                    archive.write(db_path, arcname="inventory.db")
+                    for path in UPLOADS_DIR.rglob("*"):
+                        if path.is_file():
+                            archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
+            else:
+                archive_path = db_path
+        elif export_format == "json":
+            payload = export_tables(db, tables)
+            data_path = temp_dir / "inventory_export.json"
+            data_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            if include_uploads and UPLOADS_DIR.exists():
+                archive_path = temp_dir / "inventory_export.zip"
+                with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                    archive.write(data_path, arcname="inventory_export.json")
+                    for path in UPLOADS_DIR.rglob("*"):
+                        if path.is_file():
+                            archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
+            else:
+                archive_path = data_path
+        else:
+            archive_path = temp_dir / "inventory_export.zip"
+            with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for table in tables:
+                    rows = db.execute(f"SELECT * FROM {table}").fetchall()
+                    csv_path = temp_dir / f"{table}.csv"
+                    if rows:
+                        fieldnames = rows[0].keys()
+                        with open(csv_path, "w", newline="", encoding="utf-8") as handle:
+                            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                            writer.writeheader()
+                            for row in rows:
+                                writer.writerow(dict(row))
+                    else:
+                        csv_path.write_text("", encoding="utf-8")
+                    archive.write(csv_path, arcname=f"{table}.csv")
+                if include_uploads and UPLOADS_DIR.exists():
+                    for path in UPLOADS_DIR.rglob("*"):
+                        if path.is_file():
+                            archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
+        if (export_format in {"sqlite", "json"} and include_uploads) or export_format == "csv":
+            filename = "inventory_export.zip"
+            mimetype = "application/zip"
+        else:
+            filename = f"inventory_export.{archive_path.suffix.lstrip('.')}"
+            mimetype = "application/octet-stream"
+        return Response(
+            archive_path.read_bytes(),
+            mimetype=mimetype,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+@app.route('/api/import', methods=['POST'])
+@login_required
+@require_permission('server_settings.manage')
+def import_data():
+    db = get_db()
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    if not settings["importExport"]["importAllowed"]:
+        return jsonify({"error": "Import ist deaktiviert."}), 403
+    if should_rate_limit(f"import:{session.get('username')}"):
+        return jsonify({"error": "Zu viele Import-Anfragen."}), 429
+    import_mode = settings["importExport"]["importMode"]
+    file_storage = request.files.get("file")
+    file_path, error = load_import_file(file_storage)
+    if error:
+        return jsonify({"error": error}), 400
+    antivirus_error = validate_import_file(file_path)
+    if antivirus_error:
+        shutil.rmtree(file_path.parent, ignore_errors=True)
+        return jsonify({"error": antivirus_error}), 400
+    tables = [
+        "categories",
+        "asset_categories",
+        "locations",
+        "devices",
+        "assets",
+        "maintenance_tasks",
+        "asset_assignment_history",
+        "vendors",
+        "contracts",
+        "purchase_orders",
+        "purchase_order_items",
+        "attachments",
+    ]
+    try:
+        if import_mode == "replace":
+            run_backup_job(db, settings, force=True)
+        if file_path.suffix == ".json":
+            payload = json.loads(file_path.read_text(encoding="utf-8"))
+            with db:
+                import_data_payload(db, payload, import_mode, tables)
+        elif file_path.suffix == ".zip":
+            with zipfile.ZipFile(file_path, "r") as archive:
+                try:
+                    upload_members = validate_import_archive(archive)
+                except ValueError as exc:
+                    return jsonify({"error": str(exc)}), 400
+                members = archive.namelist()
+                data_files = [name for name in members if name.endswith(".csv")]
+                if data_files:
+                    with db:
+                        if import_mode == "replace":
+                            for table in tables:
+                                db.execute(f"DELETE FROM {table}")
+                        for data_file in data_files:
+                            table_name = Path(data_file).stem
+                            if table_name not in tables:
+                                continue
+                            with archive.open(data_file) as handle:
+                                content = handle.read().decode("utf-8")
+                                reader = csv.DictReader(StringIO(content))
+                                import_table_rows(db, table_name, list(reader), import_mode if import_mode != "replace" else "append")
+                db.commit()
+                if settings["importExport"]["includeUploads"] and upload_members:
+                    uploads_root = UPLOADS_DIR.resolve()
+                    for member_info, relative_path in upload_members:
+                        target_path = (uploads_root / relative_path).resolve()
+                        if not target_path.is_relative_to(uploads_root):
+                            return jsonify({"error": "ZIP-Archiv enthält einen unsicheren Upload-Pfad."}), 400
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+                        with archive.open(member_info) as source, open(target_path, "wb") as target:
+                            shutil.copyfileobj(source, target)
+        elif file_path.suffix in {".db", ".sqlite"}:
+            with db:
+                import_from_sqlite(db, file_path, import_mode, tables)
+        else:
+            return jsonify({"error": "Unbekanntes Import-Format."}), 400
+        log_activity(db, "import", "server_settings", details={"mode": import_mode})
+        db.commit()
+        return jsonify({"status": "success"})
+    finally:
+        shutil.rmtree(file_path.parent, ignore_errors=True)
+
+@app.route('/api/customize', methods=['GET', 'PUT', 'PATCH'])
+@login_required
+def customize_settings():
+    db = get_db()
+    user_id = get_current_user_id(db)
+    if not user_id:
+        return jsonify({"error": "Benutzer nicht gefunden."}), 401
+
+    record = get_customization_record(db, user_id)
+    existing = None
+    if record:
+        existing = json.loads(record["customization_json"])
+
+    if request.method == 'GET':
+        customization = migrate_customization(existing or DEFAULT_CUSTOMIZATION)
+        latest_revision = None
+        if record:
+            latest_revision = db.execute(
+                """
+                SELECT id FROM ui_customization_revisions
+                WHERE customization_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (record["id"],),
+            ).fetchone()
+        return jsonify({
+            "customization": customization,
+            "updated_at": record["updated_at"] if record else None,
+            "revision_id": latest_revision["id"] if latest_revision else None,
+        })
+
+    payload = request.get_json() or {}
+    if request.method == 'PATCH':
+        merged = deep_merge(existing or DEFAULT_CUSTOMIZATION, payload)
+    else:
+        merged = payload
+
+    customization = migrate_customization(merged)
+    valid, errors = validate_customization(customization)
+    if not valid:
+        return jsonify({"error": "Ungültige Customize-Daten.", "details": errors}), 400
+
+    customization_id = save_customization(db, user_id, customization, session.get("username", "system"))
+    latest_revision = db.execute(
+        """
+        SELECT id FROM ui_customization_revisions
+        WHERE customization_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (customization_id,),
+    ).fetchone()
+    updated_at = db.execute("SELECT updated_at FROM ui_customization WHERE id = ?", (customization_id,)).fetchone()
+    log_activity(db, "update", "ui_customization", entity_id=customization_id)
+    return jsonify({
+        "customization": customization,
+        "updated_at": updated_at["updated_at"] if updated_at else None,
+        "revision_id": latest_revision["id"] if latest_revision else None,
+    })
+
+@app.route('/api/customize/history', methods=['GET'])
+@login_required
+def customize_history():
+    db = get_db()
+    user_id = get_current_user_id(db)
+    if not user_id:
+        return jsonify({"revisions": []})
+    record = get_customization_record(db, user_id)
+    if not record:
+        return jsonify({"revisions": []})
+    rows = db.execute(
+        """
+        SELECT id, created_at, created_by, diff_json
+        FROM ui_customization_revisions
+        WHERE customization_id = ?
+        ORDER BY id DESC
+        LIMIT 20
+        """,
+        (record["id"],),
+    ).fetchall()
+    revisions = []
+    for row in rows:
+        revisions.append({
+            "id": row["id"],
+            "created_at": row["created_at"],
+            "created_by": row["created_by"],
+            "diff": json.loads(row["diff_json"]) if row["diff_json"] else [],
+        })
+    return jsonify({"revisions": revisions})
+
+@app.route('/api/customize/rollback/<int:revision_id>', methods=['POST'])
+@login_required
+def customize_rollback(revision_id):
+    db = get_db()
+    user_id = get_current_user_id(db)
+    if not user_id:
+        return jsonify({"error": "Benutzer nicht gefunden."}), 401
+
+    record = get_customization_record(db, user_id)
+    if not record:
+        return jsonify({"error": "Keine Customize-Konfiguration vorhanden."}), 404
+
+    revision = db.execute(
+        """
+        SELECT revision_json FROM ui_customization_revisions
+        WHERE id = ? AND customization_id = ?
+        """,
+        (revision_id, record["id"]),
+    ).fetchone()
+    if not revision:
+        return jsonify({"error": "Revision nicht gefunden."}), 404
+
+    customization = migrate_customization(json.loads(revision["revision_json"]))
+    customization_id = save_customization(db, user_id, customization, session.get("username", "system"))
+    latest_revision = db.execute(
+        """
+        SELECT id FROM ui_customization_revisions
+        WHERE customization_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (customization_id,),
+    ).fetchone()
+    updated_at = db.execute("SELECT updated_at FROM ui_customization WHERE id = ?", (customization_id,)).fetchone()
+    log_activity(db, "rollback", "ui_customization", entity_id=customization_id)
+    return jsonify({
+        "customization": customization,
+        "updated_at": updated_at["updated_at"] if updated_at else None,
+        "revision_id": latest_revision["id"] if latest_revision else None,
+    })
 
 @app.route('/api/ad/settings', methods=['GET'])
 @login_required
@@ -14573,6 +15682,7 @@ def delete_device_note(device_id, note_id):
 
 @app.route('/api/maintenance', methods=['GET', 'POST'])
 @login_required
+@pro_required
 def maintenance_tasks():
     db = get_db()
     if request.method == 'POST':
@@ -14610,6 +15720,7 @@ def maintenance_tasks():
 
 @app.route('/api/maintenance/<int:task_id>', methods=['PATCH'])
 @login_required
+@pro_required
 def update_maintenance(task_id):
     db = get_db()
     if not user_can('maintenance.manage'):
@@ -14635,6 +15746,9 @@ def maintenance_summary():
     db = get_db()
     if not (user_can('maintenance.view') or user_can('maintenance.manage')):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    if not settings["proFeaturesEnabled"]:
+        return jsonify({"pro_locked": True, "open": 0, "overdue": 0})
     open_count = db.execute('''
         SELECT COUNT(*) FROM maintenance_tasks WHERE status = 'open'
     ''').fetchone()[0]
@@ -14642,7 +15756,42 @@ def maintenance_summary():
         SELECT COUNT(*) FROM maintenance_tasks
         WHERE status = 'open' AND due_date != '' AND date(due_date) < date('now')
     ''').fetchone()[0]
-    return jsonify({"open": open_count, "overdue": overdue_count})
+    return jsonify({"pro_locked": False, "open": open_count, "overdue": overdue_count})
+
+@app.route('/api/export/devices', methods=['GET'])
+@login_required
+@pro_required
+def export_devices():
+    db = get_db()
+    if not (user_can('devices.view') or user_can('devices.manage')):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    if not settings["importExport"]["exportAllowed"]:
+        return jsonify({"error": "Export ist deaktiviert."}), 403
+    devices = db.execute('''
+        SELECT d.id, d.name, d.serial_number, d.specs, d.created_at, c.name as category_name
+        FROM devices d
+        JOIN categories c ON d.category_id = c.id
+        ORDER BY d.created_at DESC
+    ''').fetchall()
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Name", "Kategorie", "Besitzer", "Spezifikationen", "Erstellt"])
+    for device in devices:
+        writer.writerow([
+            device['id'],
+            device['name'],
+            device['category_name'],
+            device['serial_number'] or '',
+            device['specs'] or '',
+            device['created_at']
+        ])
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=devices.csv'}
+    )
 
 @app.route('/stats')
 @login_required
@@ -14727,7 +15876,7 @@ def stats():
         ORDER BY month
     ''').fetchall()
     monthly_counts = {row['month']: row['device_count'] for row in monthly_rows}
-    now = utc_now()
+    now = datetime.utcnow()
     current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     months = []
     for offset in range(-5, 1):
@@ -14876,7 +16025,7 @@ def stats():
         LIMIT 8
     ''').fetchall()
     asset_ticket_stats = []
-    today = utc_now().date()
+    today = datetime.utcnow().date()
     ticket_counts = []
     for row in asset_ticket_rows:
         commissioning_date = parse_date(row['commissioning_date']) or parse_date(row['acquisition_date'])
@@ -14971,7 +16120,7 @@ def stats():
         if not created_at:
             continue
         sla_hours = row["sla_hours"] or 72
-        age_hours = (utc_now() - created_at).total_seconds() / 3600
+        age_hours = (datetime.utcnow() - created_at).total_seconds() / 3600
         if age_hours > sla_hours:
             sla_risks.append(row)
     if sla_risks:
@@ -15329,102 +16478,39 @@ def terminal_db_execute():
 def setup_otp():
     username = session.get('username')
     db = get_db()
-    user = db.execute("SELECT id, otp_secret FROM users WHERE username = ?", (username,)).fetchone()
-    if not user:
-        return jsonify({"error": "Benutzer nicht gefunden."}), 404
-    if user and user['otp_secret']:
-        return jsonify({'enabled': True, 'pending': False}), 200
 
-    now = int(time.time())
-    pending = db.execute(
-        "SELECT secret, expires_at FROM mfa_pending_enrollments WHERE user_id = ?",
-        (user["id"],),
-    ).fetchone()
-    if pending and pending["expires_at"] <= now:
-        db.execute("DELETE FROM mfa_pending_enrollments WHERE user_id = ?", (user["id"],))
-        pending = None
-    if not pending:
-        secret = pyotp.random_base32()
-        expires_at = now + OTP_ENROLLMENT_TTL_SECONDS
-        db.execute(
-            "INSERT INTO mfa_pending_enrollments (user_id, secret, expires_at) VALUES (?, ?, ?)",
-            (user["id"], secret, expires_at),
-        )
-        log_activity(db, "otp_enrollment_started", "user", user["id"], {"username": username})
-    else:
-        secret = pending["secret"]
-        expires_at = pending["expires_at"]
+    # 1. Vorher prüfen, ob bereits ein OTP eingerichtet ist
+    user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
+    if user and user['otp_secret']:
+        # Bereits eingerichtet – nur Status zurückgeben
+        return jsonify({'enabled': True}), 200
+
+    # 2. Wenn nicht vorhanden, neues Secret generieren und speichern
+    secret = pyotp.random_base32()
+    db.execute("UPDATE users SET otp_secret = ? WHERE username = ?", (secret, username))
+    log_activity(db, "otp_setup", "user", details={"username": username})
     db.commit()
 
+    # 3. QR-Code generieren
     issuer_name = "Inventory Pro"
     otp_uri = pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=issuer_name)
+    factory = qrcode.image.svg.SvgImage
+    img = qrcode.make(otp_uri, image_factory=factory)
+    stream = BytesIO()
+    img.save(stream)
+    qr_code = stream.getvalue().decode()
+    
     qr_img = qrcode.make(otp_uri)
     buffered = BytesIO()
     qr_img.save(buffered, format="PNG")
     img_str = "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode()
+
+    # 4. Secret + QR zurückgeben
     return jsonify({
         'enabled': False,
-        'pending': True,
-        'expires_at': expires_at,
         'secret': secret,
         'qr_code': img_str
     })
-
-
-@app.route('/api/otp/confirm', methods=['POST'])
-@login_required
-def confirm_otp_setup():
-    username = session.get('username') or ""
-    rate_limit_key = f"otp-enrollment:{get_remote_ip()}:{username.lower()}"
-    if should_rate_limit(rate_limit_key):
-        return jsonify({"error": "Zu viele Prüfversuche. Bitte kurz warten."}), 429
-
-    db = get_db()
-    user = db.execute("SELECT id, otp_secret FROM users WHERE username = ?", (username,)).fetchone()
-    if not user:
-        return jsonify({"error": "Benutzer nicht gefunden."}), 404
-    if user["otp_secret"]:
-        return jsonify({"enabled": True}), 200
-
-    pending = db.execute(
-        "SELECT secret, expires_at FROM mfa_pending_enrollments WHERE user_id = ?",
-        (user["id"],),
-    ).fetchone()
-    if not pending or pending["expires_at"] <= int(time.time()):
-        db.execute("DELETE FROM mfa_pending_enrollments WHERE user_id = ?", (user["id"],))
-        db.commit()
-        return jsonify({"error": "Die Einrichtung ist abgelaufen. Bitte erneut starten."}), 400
-
-    payload = request.get_json(silent=True) or {}
-    code = str(payload.get("code") or "").strip()
-    if not code or not pyotp.TOTP(pending["secret"]).verify(code):
-        log_activity(db, "otp_enrollment_failed", "user", user["id"], {"username": username})
-        db.commit()
-        return jsonify({"error": "Code ungültig oder abgelaufen."}), 401
-
-    db.execute("UPDATE users SET otp_secret = ? WHERE id = ?", (pending["secret"], user["id"]))
-    db.execute("DELETE FROM mfa_pending_enrollments WHERE user_id = ?", (user["id"],))
-    log_activity(db, "otp_enabled", "user", user["id"], {"username": username})
-    db.commit()
-    RATE_LIMIT_CACHE.pop(rate_limit_key, None)
-    session["mfa_required"] = True
-    session["mfa_verified"] = True
-    session["mfa_enrollment_required"] = False
-    return jsonify({"enabled": True}), 200
-
-
-@app.route('/api/otp/cancel', methods=['POST'])
-@login_required
-def cancel_otp_setup():
-    username = session.get('username')
-    db = get_db()
-    user = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
-    if not user:
-        return jsonify({"error": "Benutzer nicht gefunden."}), 404
-    db.execute("DELETE FROM mfa_pending_enrollments WHERE user_id = ?", (user["id"],))
-    log_activity(db, "otp_enrollment_cancelled", "user", user["id"], {"username": username})
-    db.commit()
-    return jsonify({"cancelled": True}), 200
 
 def generate_recovery_codes():
     return [secrets.token_hex(4) for _ in range(8)]
@@ -15433,11 +16519,9 @@ def generate_recovery_codes():
 @login_required
 def create_recovery_codes():
     db = get_db()
-    user = db.execute('SELECT id, otp_secret FROM users WHERE username = ?', (session.get('username'),)).fetchone()
+    user = db.execute('SELECT id FROM users WHERE username = ?', (session.get('username'),)).fetchone()
     if not user:
         return jsonify({"error": "Benutzer nicht gefunden"}), 404
-    if not user["otp_secret"]:
-        return jsonify({"error": "TOTP muss vor Wiederherstellungscodes aktiviert werden."}), 409
     codes = generate_recovery_codes()
     db.execute('DELETE FROM mfa_recovery_codes WHERE user_id = ?', (user["id"],))
     for code in codes:
@@ -15460,14 +16544,25 @@ def verify_recovery_code(db, user_id, code):
             return True
     return False
 
-def verify_current_user_otp(db, username, code):
+@app.route('/verify')
+@login_required
+def verify():
+    return render_template('verify_otp.html')
+
+@app.route('/api/otp/verify', methods=['POST'])
+@login_required
+def verify_otp():
+    payload = request.get_json(silent=True) or {}
+    code = str(payload.get('code') or "").strip()
+    username = session.get('username') or ""
     rate_limit_key = f"otp-verify:{get_remote_ip()}:{username.lower()}"
     if should_rate_limit(rate_limit_key):
-        return {
+        return jsonify({
             "verified": False,
             "error": "Zu viele Prüfversuche. Bitte kurz warten.",
-        }, 429
+        }), 429
 
+    db = get_db()
     user = db.execute('SELECT id, otp_secret FROM users WHERE username = ?', (username,)).fetchone()
 
     if user and user['otp_secret'] and code and pyotp.TOTP(user['otp_secret']).verify(code):
@@ -15475,71 +16570,17 @@ def verify_current_user_otp(db, username, code):
         db.commit()
         RATE_LIMIT_CACHE.pop(rate_limit_key, None)
         session['mfa_verified'] = True
-        return {"verified": True}, 200
+        return jsonify({"verified": True}), 200
     if user and code and verify_recovery_code(db, user["id"], code):
         log_activity(db, "otp_recovery_used", "user", details={"username": username})
         db.commit()
         RATE_LIMIT_CACHE.pop(rate_limit_key, None)
         session['mfa_verified'] = True
-        return {"verified": True, "recovery": True}, 200
-    log_activity(db, "otp_failed", "user", details={"username": username})
-    db.commit()
-    return {"verified": False, "error": "Code ungültig oder abgelaufen."}, 401
-
-@app.route('/verify', methods=['GET', 'POST'])
-@login_required
-def verify():
-    if session.get("mfa_enrollment_required"):
-        return redirect(url_for("mfa_enroll"))
-    if request.method == 'GET':
-        return render_template('verify_otp.html')
-    db = get_db()
-    verification, status_code = verify_current_user_otp(
-        db,
-        session.get('username') or "",
-        (request.form.get('otp') or "").strip(),
-    )
-    if verification["verified"]:
-        return redirect(get_post_login_redirect(get_user_access(db)))
-    return render_template('verify_otp.html', error=verification["error"]), status_code
-
-@app.route('/api/otp/verify', methods=['POST'])
-@login_required
-def verify_otp():
-    payload = request.get_json(silent=True) or {}
-    verification, status_code = verify_current_user_otp(
-        get_db(),
-        session.get('username') or "",
-        str(payload.get('code') or "").strip(),
-    )
-    return jsonify(verification), status_code
-
-
-@app.route('/mfa-enroll')
-@login_required
-def mfa_enroll():
-    db = get_db()
-    user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (session.get("username"),)).fetchone()
-    if user and user["otp_secret"]:
-        session["mfa_enrollment_required"] = False
-        return redirect(url_for("verify"))
-    return render_template("mfa_enroll.html", username=session.get("username"))
-
-
-@app.route('/account/security')
-@login_required
-def account_security_page():
-    access = get_user_access(get_db())
-    return render_template(
-        "account_security.html",
-        username=session.get("username"),
-        permissions=sorted(access["permissions"]),
-        is_superuser=access["is_superuser"],
-        page_module="account-security",
-        page_section_label="Konto",
-        page_title="Kontosicherheit",
-        page_description="Passwort und Mehrfaktor-Authentifizierung für dieses Konto verwalten.",
-    )
+        return jsonify({"verified": True, "recovery": True}), 200
+    else:
+        log_activity(db, "otp_failed", "user", details={"username": username})
+        db.commit()
+        return jsonify({"verified": False}), 401
 
 @app.route('/reset', methods=['GET'])
 def reset_page():
@@ -15550,12 +16591,11 @@ def reset_password():
     username = (request.form.get('username') or "").strip()
     otp_code = (request.form.get('otp') or "").strip()
     new_password = request.form.get('new_password') or ""
-    password_confirmation = request.form.get('password_confirmation') or ""
     neutral_error = "Zurücksetzen nicht möglich. Angaben prüfen oder Administrator kontaktieren."
     rate_limit_key = f"password-reset:{get_remote_ip()}:{username.lower()}"
 
-    if not all([username, otp_code, new_password, password_confirmation]):
-        return render_template('reset_password.html', error=neutral_error), 400
+    if not all([username, otp_code, new_password]):
+        return render_template('reset_password.html', error="Alle Felder ausfüllen!")
     if should_rate_limit(rate_limit_key):
         return render_template(
             'reset_password.html',
@@ -15576,8 +16616,6 @@ def reset_password():
     min_length = get_password_min_length(db)
     if len(new_password) < min_length:
         return render_template('reset_password.html', error=f"Passwort muss mindestens {min_length} Zeichen lang sein.")
-    if password_confirmation != new_password:
-        return render_template('reset_password.html', error="Die Passwörter stimmen nicht überein.")
 
     # Neues Passwort setzen
     new_hash = generate_password_hash(new_password)
@@ -15593,28 +16631,11 @@ def reset_password():
 def disable_otp():
     username = session.get('username')
     db = get_db()
-    settings, _ = serialize_server_settings(get_server_settings(db))
-    if settings["security"]["requireMfa"]:
-        return jsonify({"error": "MFA ist serverweit erforderlich und kann nicht deaktiviert werden."}), 409
-    user = db.execute("SELECT id, otp_secret FROM users WHERE username = ?", (username,)).fetchone()
-    if not user or not user["otp_secret"]:
-        return jsonify({"error": "TOTP ist nicht aktiviert."}), 400
-    payload = request.get_json(silent=True) or {}
-    code = str(payload.get("code") or "").strip()
-    valid_code = bool(code and pyotp.TOTP(user["otp_secret"]).verify(code))
-    if not valid_code and code:
-        valid_code = verify_recovery_code(db, user["id"], code)
-    if not valid_code:
-        return jsonify({"error": "Aktueller TOTP- oder Wiederherstellungscode erforderlich."}), 401
 
-    db.execute('UPDATE users SET otp_secret = NULL WHERE id = ?', (user["id"],))
-    db.execute('DELETE FROM mfa_pending_enrollments WHERE user_id = ?', (user["id"],))
-    db.execute('DELETE FROM mfa_recovery_codes WHERE user_id = ?', (user["id"],))
-    log_activity(db, "otp_disabled", "user", user["id"], {"username": username})
+    # OTP löschen
+    db.execute('UPDATE users SET otp_secret = NULL WHERE username = ?', (username,))
+    log_activity(db, "otp_disabled", "user", details={"username": username})
     db.commit()
-    session['mfa_required'] = False
-    session['mfa_verified'] = True
-    session['mfa_enrollment_required'] = False
     return jsonify({'disabled': True}), 200
 
 @app.route('/api/otp/status', methods=['GET'])
@@ -15622,182 +16643,8 @@ def disable_otp():
 def otp_status():
     username = session.get('username')
     db = get_db()
-    user = db.execute("SELECT id, otp_secret FROM users WHERE username = ?", (username,)).fetchone()
-    pending = None
-    if user and not user["otp_secret"]:
-        pending = db.execute(
-            "SELECT expires_at FROM mfa_pending_enrollments WHERE user_id = ?",
-            (user["id"],),
-        ).fetchone()
-    return jsonify({
-        'enabled': bool(user and user['otp_secret']),
-        'pending': bool(pending and pending['expires_at'] > int(time.time())),
-    })
-
-
-INVENTORY_LINK_SESSION_SERVICE = InventoryLinkSessionService(
-    login_session_cache=INVENTORY_LINK_LOGIN_SESSION_CACHE,
-    login_ttl_seconds=INVENTORY_LINK_LOGIN_TTL_SECONDS,
-    proxy_timeout_seconds=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS,
-    allow_private_network_default=INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT,
-)
-extract_inventory_link_cookie_header = INVENTORY_LINK_SESSION_SERVICE.extract_cookie_header
-get_cached_inventory_link_cookie = INVENTORY_LINK_SESSION_SERVICE.get_cached_cookie
-login_inventory_link_session = INVENTORY_LINK_SESSION_SERVICE.login
-get_inventory_link_login_cookie = INVENTORY_LINK_SESSION_SERVICE.get_login_cookie
-build_inventory_link_target_url = INVENTORY_LINK_SESSION_SERVICE.build_target_url
-build_inventory_link_request_headers = INVENTORY_LINK_SESSION_SERVICE.build_request_headers
-build_inventory_link_ssl_context = INVENTORY_LINK_SESSION_SERVICE.build_ssl_context
-build_inventory_link_static_headers = INVENTORY_LINK_SESSION_SERVICE.build_static_headers
-perform_inventory_link_test = INVENTORY_LINK_SESSION_SERVICE.perform_test
-InventoryLinkConnectionError = InventoryLinkServiceConnectionError
-InventoryLinkNoRedirect = InventoryLinkServiceNoRedirect
-
-app.register_blueprint(
-    build_backups_blueprint(
-        get_db=get_db,
-        load_settings=load_backup_settings,
-        login_required=login_required,
-        require_permission=require_permission,
-        run_backup_job=run_backup_job,
-    ),
-)
-app.register_blueprint(
-    build_ticket_pages_blueprint(
-        ensure_ticket_access=ensure_ticket_access,
-        fetch_ticket=fetch_ticket,
-        get_db=get_db,
-        get_user_access=get_user_access,
-        login_required=login_required,
-        require_permissions=require_permissions,
-    ),
-)
-app.register_blueprint(
-    build_locations_blueprint(
-        get_db=get_db,
-        get_user_access=get_user_access,
-        log_activity=log_activity,
-        login_required=login_required,
-        require_permissions=require_permissions,
-        user_can=user_can,
-    ),
-)
-app.register_blueprint(
-    build_import_profiles_blueprint(
-        get_db=get_db,
-        imports_enabled=lambda db: serialize_server_settings(get_server_settings(db))[0]["importExport"]["importAllowed"],
-        current_actor=lambda: session.get("username", "system"),
-        log_activity=log_activity,
-        login_required=login_required,
-        require_permission=require_permission,
-    ),
-)
-app.register_blueprint(
-    build_data_import_blueprint(
-        get_db=get_db,
-        get_import_settings=lambda db: serialize_server_settings(get_server_settings(db))[0],
-        should_rate_limit=should_rate_limit,
-        current_actor=lambda: session.get("username", "system"),
-        max_import_bytes=MAX_IMPORT_BYTES,
-        max_import_expanded_bytes=MAX_IMPORT_EXPANDED_BYTES,
-        uploads_dir=UPLOADS_DIR,
-        import_tables=(
-            "categories",
-            "asset_categories",
-            "locations",
-            "devices",
-            "assets",
-            "maintenance_tasks",
-            "asset_assignment_history",
-            "vendors",
-            "contracts",
-            "purchase_orders",
-            "purchase_order_items",
-            "attachments",
-        ),
-        run_backup_job=run_backup_job,
-        save_import_file=save_import_file,
-        validate_import_file=validate_import_file,
-        resolve_tabular_import_options=resolve_tabular_import_options,
-        import_profile_service=IMPORT_PROFILE_SERVICE,
-        preview_proof_service=IMPORT_PREVIEW_PROOF_SERVICE,
-        build_preview_proof_arguments=build_preview_proof_arguments,
-        import_tabular_file=import_tabular_file,
-        import_data_payload=import_data_payload,
-        validate_import_archive=validate_import_archive,
-        import_table_rows=import_table_rows,
-        import_from_sqlite=import_from_sqlite,
-        parse_tabular_file=parse_tabular_file,
-        preview_tabular_file=preview_tabular_file,
-        inspect_tabular_conflicts=inspect_tabular_conflicts,
-        log_activity=log_activity,
-        login_required=login_required,
-        require_permission=require_permission,
-    ),
-)
-app.register_blueprint(
-    build_customization_blueprint(
-        get_db=get_db,
-        get_current_user_id=get_current_user_id,
-        get_customization_record=get_customization_record,
-        default_customization=DEFAULT_CUSTOMIZATION,
-        migrate_customization=migrate_customization,
-        deep_merge=deep_merge,
-        validate_customization=validate_customization,
-        save_customization=save_customization,
-        current_actor=lambda: session.get("username", "system"),
-        log_activity=log_activity,
-        user_can=user_can,
-        login_required=login_required,
-    ),
-)
-app.register_blueprint(
-    build_inventory_links_blueprint(
-        get_db=get_db,
-        get_user_access=get_user_access,
-        get_inventory_link=get_inventory_link,
-        list_inventory_links=list_inventory_links,
-        serialize_inventory_link=serialize_inventory_link,
-        validate_inventory_link_configuration=validate_inventory_link_configuration,
-        enforce_inventory_link_scope_access=enforce_inventory_link_scope_access,
-        parse_inventory_link_login_secret=parse_inventory_link_login_secret,
-        encrypt_inventory_link_secret=encrypt_inventory_link_secret,
-        decrypt_inventory_link_secret=decrypt_inventory_link_secret,
-        perform_inventory_link_test=perform_inventory_link_test,
-        update_inventory_link_health=update_inventory_link_health,
-        get_cached_inventory_link_cookie=get_cached_inventory_link_cookie,
-        login_inventory_link_session=login_inventory_link_session,
-        connection_error=InventoryLinkConnectionError,
-        build_inventory_link_target_url=build_inventory_link_target_url,
-        build_inventory_link_request_headers=build_inventory_link_request_headers,
-        build_inventory_link_ssl_context=build_inventory_link_ssl_context,
-        no_redirect_handler=InventoryLinkNoRedirect,
-        filter_inventory_link_response_headers=filter_inventory_link_response_headers,
-        should_rewrite_inventory_link_response=should_rewrite_inventory_link_response,
-        rewrite_inventory_link_text_content=rewrite_inventory_link_text_content,
-        stream_inventory_link_response=stream_inventory_link_response,
-        should_rate_limit_inventory_proxy=should_rate_limit_inventory_proxy,
-        login_session_cache=INVENTORY_LINK_LOGIN_SESSION_CACHE,
-        login_ttl_seconds=INVENTORY_LINK_LOGIN_TTL_SECONDS,
-        proxy_timeout_seconds=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS,
-        allow_private_network_default=INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT,
-        log_activity=log_activity,
-        login_required=login_required,
-    ),
-)
-app.register_blueprint(
-    build_exports_blueprint(
-        get_db=get_db,
-        get_export_settings=lambda db: serialize_server_settings(get_server_settings(db))[0],
-        uploads_dir=UPLOADS_DIR,
-        export_tables=export_tables,
-        run_sqlite_backup=run_sqlite_backup,
-        log_activity=log_activity,
-        user_can=user_can,
-        login_required=login_required,
-        require_permission=require_permission,
-    ),
-)
+    user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
+    return jsonify({'enabled': bool(user and user['otp_secret'])})
 
 
 if __name__ == '__main__':
