@@ -623,16 +623,15 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        async openCreateTicket() {
+        openCreateTicket() {
             this.createError = '';
             this.rememberFocus();
             this.createOpen = true;
-            await this.$nextTick();
-            this.$refs.createTitle?.focus();
-            if (!this.newTicket.category_id) await this.ticketTypeChanged();
-            await this.$nextTick();
-            this.$refs.createTitle?.focus();
-            this.refreshIcons();
+            if (!this.newTicket.category_id) void this.ticketTypeChanged();
+            this.$nextTick(() => {
+                this.$refs.createTitle?.focus();
+                this.refreshIcons();
+            });
         },
 
         closeCreateTicket() {
