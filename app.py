@@ -102,6 +102,7 @@ from inventorypro.domains.inventory_links.validators import (
 )
 from inventorypro.domains.locations.routes import build_locations_blueprint
 from inventorypro.domains.tickets.routes import build_ticket_pages_blueprint
+from inventorypro.domains.updates.policy import normalize_update_settings
 from inventorypro.migrations import MigrationError, apply_migrations
 from inventorypro import backup_restore as backup_restore_service
 from inventorypro.secrets import (
@@ -185,9 +186,6 @@ BINPACKING_PREVIEW_COLORS = (
 )
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_REQUESTS = 10
-MAINTENANCE_WINDOW_PATTERN = re.compile(
-    r"^(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)(?::(?P<second>[0-5]\d))?$"
-)
 INVENTORY_LINK_PROXY_TIMEOUT_SECONDS = int(os.environ.get("INVENTORY_LINK_PROXY_TIMEOUT_SECONDS", 20))
 INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS = 60
 INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS", 120))
@@ -1188,14 +1186,6 @@ def serialize_server_settings(settings_row):
         meta["warnings"].append("Automatische Updates sind aktiviert, aber der abgesicherte Updater-Dienst wurde noch nicht bereitgestellt.")
     return settings, meta
 
-def normalize_maintenance_window(value):
-    candidate = str(value or "").strip()
-    match = MAINTENANCE_WINDOW_PATTERN.fullmatch(candidate)
-    if not match or match.group("second") not in {None, "00"}:
-        return None
-    return f"{int(match.group('hour')):02d}:{match.group('minute')}"
-
-
 def validate_settings_payload(payload, partial=False):
     errors = {}
     if not isinstance(payload, dict):
@@ -1235,34 +1225,11 @@ def validate_settings_payload(payload, partial=False):
     if backup.get("encrypt") and not os.environ.get("BACKUP_ENCRYPTION_KEY"):
         errors["backup.encrypt"] = "BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung kann nicht aktiviert werden."
 
-    updates = merged.get("updates", {})
-    auto_update_enabled = bool(updates.get("autoUpdateEnabled"))
-    default_updates = DEFAULT_SERVER_SETTINGS["updates"]
-    update_channel = (updates.get("channel") or "").strip().lower()
-    update_interval = updates.get("checkIntervalMinutes")
-    update_window = normalize_maintenance_window(updates.get("maintenanceWindow"))
-    if auto_update_enabled:
-        if update_channel != "stable":
-            errors["updates.channel"] = "Nur der signierte Stable-Kanal ist zulässig."
-        try:
-            update_interval = int(update_interval)
-        except (TypeError, ValueError):
-            errors["updates.checkIntervalMinutes"] = "Prüfintervall muss eine Zahl sein."
-        else:
-            if update_interval < 15 or update_interval > 1440:
-                errors["updates.checkIntervalMinutes"] = "Prüfintervall muss zwischen 15 und 1440 Minuten liegen."
-        if not update_window:
-            errors["updates.maintenanceWindow"] = "Wartungsfenster muss eine gültige Uhrzeit sein (z. B. 09:00, 9:00 oder 09:00:00)."
-    else:
-        update_channel = "stable"
-        try:
-            update_interval = int(update_interval)
-        except (TypeError, ValueError):
-            update_interval = default_updates["checkIntervalMinutes"]
-        if update_interval < 15 or update_interval > 1440:
-            update_interval = default_updates["checkIntervalMinutes"]
-        if not update_window:
-            update_window = default_updates["maintenanceWindow"]
+    updates, update_errors = normalize_update_settings(
+        merged.get("updates", {}),
+        DEFAULT_SERVER_SETTINGS["updates"],
+    )
+    errors.update(update_errors)
 
     import_export = merged.get("importExport", {})
     export_format = (import_export.get("exportFormat") or "").lower()
@@ -1324,10 +1291,7 @@ def validate_settings_payload(payload, partial=False):
     merged["backup"]["time"] = time_value
     merged["backup"]["retentionDays"] = retention
     merged["backup"]["notifyEmail"] = notify_email
-    merged["updates"]["autoUpdateEnabled"] = auto_update_enabled
-    merged["updates"]["channel"] = update_channel
-    merged["updates"]["checkIntervalMinutes"] = update_interval
-    merged["updates"]["maintenanceWindow"] = update_window
+    merged["updates"] = updates
     merged["importExport"]["exportFormat"] = export_format
     merged["importExport"]["importMode"] = import_mode
     merged["security"]["sessionTimeoutMinutes"] = session_timeout
