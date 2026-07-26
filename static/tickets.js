@@ -629,8 +629,10 @@ document.addEventListener('alpine:init', () => {
             this.createOpen = true;
             if (!this.newTicket.category_id) void this.ticketTypeChanged();
             this.$nextTick(() => {
-                this.$refs.createTitle?.focus();
-                this.refreshIcons();
+                requestAnimationFrame(() => {
+                    this.$refs.createTitle?.focus();
+                    this.refreshIcons();
+                });
             });
         },
 
