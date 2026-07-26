@@ -43,6 +43,7 @@ import smtplib
 
 from inventorypro.config import resolve_application_secret
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
+from inventorypro.domains.locations.routes import build_locations_blueprint
 from inventorypro.migrations import MigrationError, apply_migrations
 from inventorypro import backup_restore as backup_restore_service
 from inventorypro.secrets import (
@@ -9659,13 +9660,6 @@ def inventory_link_portal(link_id):
         active_link_id=link_id
     )
 
-@app.route('/locations')
-@login_required
-@require_permissions('locations.view', 'locations.manage')
-def locations_page():
-    access = get_user_access(get_db())
-    return render_template('locations.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
-
 @app.route('/tickets')
 @login_required
 @require_permissions('tickets.view_all', 'tickets.view_own', 'tickets.create')
@@ -10870,89 +10864,6 @@ def asset_relation_types():
         ORDER BY name
     ''').fetchall()
     return jsonify([dict(row) for row in rows])
-
-@app.route('/api/locations', methods=['GET', 'POST'])
-@login_required
-def manage_locations():
-    db = get_db()
-    if request.method == 'POST':
-        if not user_can('locations.manage'):
-            return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json()
-        name = (data.get('name') or '').strip()
-        description = (data.get('description') or '').strip()
-        if not name:
-            return jsonify({"error": "Name ist erforderlich"}), 400
-        try:
-            db.execute('''
-                INSERT INTO locations (name, description)
-                VALUES (?, ?)
-            ''', (name, description))
-            log_activity(db, "create", "location", details={"name": name})
-            db.commit()
-            return jsonify({"status": "created"}), 201
-        except sqlite3.IntegrityError:
-            return jsonify({"error": "Standort existiert bereits"}), 400
-
-    if not (user_can('locations.view') or user_can('locations.manage')):
-        return jsonify({"error": "Keine Berechtigung"}), 403
-    locations = db.execute('SELECT * FROM locations ORDER BY name').fetchall()
-    return jsonify([dict(row) for row in locations])
-
-@app.route('/api/locations/<int:location_id>', methods=['PUT', 'DELETE'])
-@login_required
-def update_location(location_id):
-    db = get_db()
-    if request.method == 'PUT':
-        if not user_can('locations.manage'):
-            return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json()
-        name = (data.get('name') or '').strip()
-        description = (data.get('description') or '').strip()
-        if not name:
-            return jsonify({"error": "Name ist erforderlich"}), 400
-        result = db.execute('''
-            UPDATE locations
-            SET name = ?, description = ?
-            WHERE id = ?
-        ''', (name, description, location_id))
-        if result.rowcount == 0:
-            return jsonify({"error": "Standort nicht gefunden"}), 404
-        log_activity(db, "update", "location", location_id, {"name": name})
-        db.commit()
-        return jsonify({"status": "updated"}), 200
-
-    if not user_can('locations.manage'):
-        return jsonify({"error": "Keine Berechtigung"}), 403
-    location = db.execute('SELECT id, name FROM locations WHERE id = ?', (location_id,)).fetchone()
-    if not location:
-        return jsonify({"error": "Standort nicht gefunden"}), 404
-    device_count = db.execute(
-        'SELECT COUNT(*) FROM devices WHERE location_id = ?',
-        (location_id,),
-    ).fetchone()[0]
-    assignment_count = db.execute(
-        'SELECT COUNT(*) FROM asset_assignments WHERE location_id = ?',
-        (location_id,),
-    ).fetchone()[0]
-    if device_count or assignment_count:
-        return jsonify({
-            "error": (
-                f"Standort „{location['name']}“ wird noch verwendet. "
-                "Ordne Geräte und Asset-Zuweisungen vor dem Löschen einem anderen Standort zu."
-            ),
-            "code": "location_in_use",
-            "references": {
-                "devices": device_count,
-                "asset_assignments": assignment_count,
-            },
-        }), 409
-    result = db.execute('DELETE FROM locations WHERE id = ?', (location_id,))
-    if result.rowcount == 0:
-        return jsonify({"error": "Standort nicht gefunden"}), 404
-    log_activity(db, "delete", "location", location_id)
-    db.commit()
-    return jsonify({"status": "deleted"}), 200
 
 @app.route('/api/ticket-categories', methods=['GET', 'POST'])
 @login_required
@@ -16955,6 +16866,19 @@ def otp_status():
     db = get_db()
     user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
     return jsonify({'enabled': bool(user and user['otp_secret'])})
+
+
+app.register_blueprint(
+    build_locations_blueprint(
+        get_db=get_db,
+        get_user_access=get_user_access,
+        log_activity=log_activity,
+        login_required=login_required,
+        require_permissions=require_permissions,
+        user_can=user_can,
+    ),
+    name="",
+)
 
 
 if __name__ == '__main__':
