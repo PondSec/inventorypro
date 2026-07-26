@@ -68,6 +68,7 @@ from inventorypro.domains.imports.storage import (
     validate_import_archive,
     validate_import_file,
 )
+from inventorypro.domains.inventory_links.routes import build_inventory_links_blueprint
 from inventorypro.domains.locations.routes import build_locations_blueprint
 from inventorypro.domains.tickets.routes import build_ticket_pages_blueprint
 from inventorypro.migrations import MigrationError, apply_migrations
@@ -9559,26 +9560,6 @@ def terminal_settings_page():
         initial_section="terminal"
     )
 
-@app.route('/inventory-links/<link_id>/portal')
-@login_required
-def inventory_link_portal(link_id):
-    access = get_user_access(get_db())
-    db = get_db()
-    user = access.get("user")
-    if not user:
-        return redirect(url_for('login'))
-    link = get_inventory_link(db, user["id"], link_id)
-    if not link:
-        return ("Link nicht gefunden.", 404)
-    return render_template(
-        'inventory_link_portal.html',
-        username=session.get('username'),
-        permissions=sorted(access["permissions"]),
-        is_superuser=access["is_superuser"],
-        link=serialize_inventory_link(link),
-        active_link_id=link_id
-    )
-
 @app.route('/knowledge')
 @login_required
 @require_permissions('knowledge.view', 'knowledge.manage')
@@ -14840,385 +14821,9 @@ def server_settings_history():
         })
     return jsonify({"revisions": revisions})
 
-@app.route('/api/inventory-links', methods=['GET', 'POST'])
-@login_required
-def inventory_links_api():
-    db = get_db()
-    access = get_user_access(db)
-    user = access.get("user")
-    if not user:
-        return jsonify({"error": "Nicht angemeldet"}), 401
-
-    if request.method == 'GET':
-        return jsonify(list_inventory_links(db, user["id"]))
-
-    data = request.get_json() or {}
-    display_name = (data.get("displayName") or "").strip()
-    base_url = (data.get("baseUrl") or "").strip()
-    auth_mode = data.get("authMode") or "apiKey"
-    verify_tls = bool(data.get("verifyTls", True))
-    allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
-    connection_scope = data.get("connectionScope") or "internet"
-    secret = data.get("secret") or ""
-
-    if not display_name:
-        return jsonify({"error": "Display-Name ist erforderlich."}), 400
-    if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
-        return jsonify({"error": "Ungültiger Auth-Modus."}), 400
-    if auth_mode not in {"none", "login"} and not secret:
-        return jsonify({"error": "Secret ist erforderlich."}), 400
-    if auth_mode == "login" and secret:
-        try:
-            parse_inventory_link_login_secret(secret)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-    try:
-        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
-            base_url, connection_scope, verify_tls, allow_private_network
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    scope_error = enforce_inventory_link_scope_access(access, connection_scope)
-    if scope_error:
-        return jsonify({"error": scope_error}), 403
-
-    try:
-        secret_encrypted = encrypt_inventory_link_secret(secret) if secret else ""
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    link_id = str(uuid.uuid4())
-    db.execute(
-        '''
-        INSERT INTO inventory_links (
-            id, user_id, display_name, base_url, verify_tls, auth_mode, secret_encrypted,
-            allow_private_network, connection_scope, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ''',
-        (
-            link_id, user["id"], display_name, normalized, 1 if verify_tls else 0,
-            auth_mode, secret_encrypted, 1 if allow_private_network else 0, connection_scope
-        )
-    )
-    log_activity(db, "create", "inventory_link", details={"link_id": link_id, "display_name": display_name})
-    db.commit()
-    link_row = get_inventory_link(db, user["id"], link_id)
-    return jsonify(serialize_inventory_link(link_row)), 201
-
-@app.route('/api/inventory-links/test', methods=['POST'])
-@login_required
-def inventory_links_test_draft():
-    db = get_db()
-    access = get_user_access(db)
-    user = access.get("user")
-    if not user:
-        return jsonify({"error": "Nicht angemeldet"}), 401
-    data = request.get_json() or {}
-    base_url = (data.get("baseUrl") or "").strip()
-    auth_mode = data.get("authMode") or "apiKey"
-    verify_tls = bool(data.get("verifyTls", True))
-    allow_private_network = bool(data.get("allowPrivateNetwork", INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT))
-    connection_scope = data.get("connectionScope") or "internet"
-    secret = data.get("secret") or ""
-    if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
-        return jsonify({"error": "Ungültiger Auth-Modus."}), 400
-    try:
-        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
-            base_url, connection_scope, verify_tls, allow_private_network
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    scope_error = enforce_inventory_link_scope_access(access, connection_scope)
-    if scope_error:
-        return jsonify({"error": scope_error}), 403
-    result = perform_inventory_link_test({
-        "base_url": normalized,
-        "verify_tls": verify_tls,
-        "auth_mode": auth_mode,
-        "secret": secret,
-        "allow_private_network": allow_private_network,
-        "connection_scope": connection_scope,
-    })
-    return jsonify(result), 200
-
-@app.route('/api/inventory-links/<link_id>', methods=['PATCH', 'DELETE'])
-@login_required
-def inventory_link_detail_api(link_id):
-    db = get_db()
-    access = get_user_access(db)
-    user = access.get("user")
-    if not user:
-        return jsonify({"error": "Nicht angemeldet"}), 401
-    link = get_inventory_link(db, user["id"], link_id)
-    if not link:
-        return jsonify({"error": "Link nicht gefunden."}), 404
-
-    if request.method == 'DELETE':
-        db.execute('DELETE FROM inventory_links WHERE id = ? AND user_id = ?', (link_id, user["id"]))
-        log_activity(db, "delete", "inventory_link", details={"link_id": link_id})
-        db.commit()
-        return jsonify({"status": "deleted"}), 200
-
-    data = request.get_json() or {}
-    display_name = (data.get("displayName") or link["display_name"]).strip()
-    base_url = (data.get("baseUrl") or link["base_url"]).strip()
-    auth_mode = data.get("authMode") or link["auth_mode"]
-    verify_tls = bool(data.get("verifyTls", bool(link["verify_tls"])))
-    allow_private_network = bool(data.get("allowPrivateNetwork", bool(link["allow_private_network"])))
-    connection_scope = data.get("connectionScope") or (link["connection_scope"] or "internet")
-    secret = data.get("secret")
-
-    if not display_name:
-        return jsonify({"error": "Display-Name ist erforderlich."}), 400
-    if auth_mode not in {"apiKey", "bearerToken", "basic", "login", "none"}:
-        return jsonify({"error": "Ungültiger Auth-Modus."}), 400
-    if auth_mode == "login" and secret is None and link["secret_encrypted"]:
-        try:
-            existing_secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
-            parse_inventory_link_login_secret(existing_secret)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-    elif auth_mode == "login" and secret:
-        try:
-            parse_inventory_link_login_secret(secret)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-    try:
-        normalized, connection_scope, verify_tls, allow_private_network = validate_inventory_link_configuration(
-            base_url, connection_scope, verify_tls, allow_private_network
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    scope_error = enforce_inventory_link_scope_access(access, connection_scope)
-    if scope_error:
-        return jsonify({"error": scope_error}), 403
-
-    secret_encrypted = link["secret_encrypted"]
-    if secret is not None:
-        if auth_mode not in {"none", "login"} and not secret and not secret_encrypted:
-            return jsonify({"error": "Secret ist erforderlich."}), 400
-        if secret:
-            try:
-                secret_encrypted = encrypt_inventory_link_secret(secret)
-            except ValueError as exc:
-                return jsonify({"error": str(exc)}), 400
-        elif auth_mode == "none":
-            secret_encrypted = ""
-
-    db.execute(
-        '''
-        UPDATE inventory_links
-        SET display_name = ?, base_url = ?, verify_tls = ?, auth_mode = ?, secret_encrypted = ?,
-            allow_private_network = ?, connection_scope = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND user_id = ?
-        ''',
-        (
-            display_name, normalized, 1 if verify_tls else 0, auth_mode, secret_encrypted,
-            1 if allow_private_network else 0, connection_scope, link_id, user["id"]
-        )
-    )
-    log_activity(db, "update", "inventory_link", details={"link_id": link_id})
-    db.commit()
-    updated = get_inventory_link(db, user["id"], link_id)
-    return jsonify(serialize_inventory_link(updated)), 200
-
-@app.route('/api/inventory-links/<link_id>/test', methods=['POST'])
-@login_required
-def inventory_link_test_api(link_id):
-    db = get_db()
-    access = get_user_access(db)
-    user = access.get("user")
-    if not user:
-        return jsonify({"error": "Nicht angemeldet"}), 401
-    link = get_inventory_link(db, user["id"], link_id)
-    if not link:
-        return jsonify({"error": "Link nicht gefunden."}), 404
-    secret = ""
-    if link["auth_mode"] != "none":
-        try:
-            secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-    result = perform_inventory_link_test({
-        "base_url": link["base_url"],
-        "verify_tls": bool(link["verify_tls"]),
-        "auth_mode": link["auth_mode"],
-        "secret": secret,
-        "allow_private_network": bool(link["allow_private_network"]),
-        "connection_scope": link["connection_scope"] or "internet",
-    })
-    status_label = result.get("status")
-    update_inventory_link_health(db, link_id, status_label)
-    db.commit()
-    return jsonify(result), 200
-
-@app.route('/api/inventory-links/<link_id>/auth/status', methods=['GET'])
-@login_required
-def inventory_link_auth_status(link_id):
-    db = get_db()
-    access = get_user_access(db)
-    user = access.get("user")
-    if not user:
-        return jsonify({"error": "Nicht angemeldet"}), 401
-    link = get_inventory_link(db, user["id"], link_id)
-    if not link:
-        return jsonify({"error": "Link nicht gefunden."}), 404
-    if link["auth_mode"] != "login":
-        return jsonify({"authenticated": True}), 200
-    cached_cookie = get_cached_inventory_link_cookie(link, user["id"])
-    return jsonify({"authenticated": bool(cached_cookie)}), 200
-
-@app.route('/api/inventory-links/<link_id>/auth/login', methods=['POST'])
-@login_required
-def inventory_link_auth_login(link_id):
-    db = get_db()
-    access = get_user_access(db)
-    user = access.get("user")
-    if not user:
-        return jsonify({"error": "Nicht angemeldet"}), 401
-    link = get_inventory_link(db, user["id"], link_id)
-    if not link:
-        return jsonify({"error": "Link nicht gefunden."}), 404
-    if link["auth_mode"] != "login":
-        return jsonify({"error": "Dieser Link benötigt keine Login-Authentifizierung."}), 400
-    data = request.get_json() or {}
-    username = (data.get("username") or "").strip()
-    password = data.get("password") or ""
-    if not username or not password:
-        return jsonify({"error": "Benutzername und Passwort erforderlich."}), 400
-    try:
-        validate_inventory_link_configuration(
-            link["base_url"], link["connection_scope"] or "internet",
-            bool(link["verify_tls"]), bool(link["allow_private_network"])
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    scope_error = enforce_inventory_link_scope_access(access, link["connection_scope"] or "internet")
-    if scope_error:
-        return jsonify({"error": scope_error}), 403
-    secret = f"{username}:{password}"
-    try:
-        cookie_header, expires_at = login_inventory_link_session(
-            link["base_url"],
-            bool(link["verify_tls"]),
-            secret
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 401
-    except InventoryLinkConnectionError as exc:
-        return jsonify({"error": str(exc)}), 502
-    if not cookie_header:
-        return jsonify({"error": "Login fehlgeschlagen. Prüfe Benutzername/Passwort."}), 401
-    cache_key = f"{user['id']}:{link['id']}"
-    INVENTORY_LINK_LOGIN_SESSION_CACHE.set(cache_key, {
-        "cookie": cookie_header,
-        "expires_at": expires_at or (time.time() + INVENTORY_LINK_LOGIN_TTL_SECONDS)
-    }, INVENTORY_LINK_LOGIN_TTL_SECONDS)
-    update_inventory_link_health(db, link_id, "ok")
-    db.commit()
-    return jsonify({"authenticated": True}), 200
-
 class InventoryLinkNoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
-
-@app.route('/api/inventory-links/<link_id>/proxy/', defaults={'subpath': ''}, methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'])
-@app.route('/api/inventory-links/<link_id>/proxy/<path:subpath>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'])
-@login_required
-def inventory_link_proxy(link_id, subpath):
-    db = get_db()
-    access = get_user_access(db)
-    user = access.get("user")
-    if not user:
-        return jsonify({"error": "Nicht angemeldet"}), 401
-    if should_rate_limit_inventory_proxy(user["id"]):
-        return jsonify({"error": "Rate limit erreicht."}), 429
-    link = get_inventory_link(db, user["id"], link_id)
-    if not link:
-        return jsonify({"error": "Link nicht gefunden."}), 404
-
-    try:
-        validate_inventory_link_configuration(
-            link["base_url"], link["connection_scope"] or "internet",
-            bool(link["verify_tls"]), bool(link["allow_private_network"])
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    scope_error = enforce_inventory_link_scope_access(access, link["connection_scope"] or "internet")
-    if scope_error:
-        return jsonify({"error": scope_error}), 403
-
-    if link["auth_mode"] != "none":
-        try:
-            secret = decrypt_inventory_link_secret(link["secret_encrypted"] or "")
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-    else:
-        secret = ""
-
-    target_url = build_inventory_link_target_url(link["base_url"], subpath, request.query_string)
-    try:
-        headers = build_inventory_link_request_headers(link["auth_mode"], secret, link=link, user_id=user["id"])
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 401
-    except InventoryLinkConnectionError as exc:
-        return jsonify({"error": str(exc)}), 502
-    data = None
-    if request.method not in {"GET", "HEAD"}:
-        data = request.get_data()
-    req = urllib.request.Request(target_url, data=data if data else None, headers=headers, method=request.method)
-
-    context = None
-    if link["base_url"].startswith("https://"):
-        context = build_inventory_link_ssl_context(bool(link["verify_tls"]))
-
-    handlers = [urllib.request.ProxyHandler({}), InventoryLinkNoRedirect()]
-    if context is not None:
-        handlers.append(urllib.request.HTTPSHandler(context=context))
-    opener = urllib.request.build_opener(*handlers)
-    def perform_proxy_request(request_obj):
-        try:
-            return opener.open(request_obj, timeout=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS)
-        except urllib.error.HTTPError as exc:
-            return exc
-
-    try:
-        resp = perform_proxy_request(req)
-        if link["auth_mode"] == "login" and resp.getcode() in {401, 403}:
-            INVENTORY_LINK_LOGIN_SESSION_CACHE.pop(f"{user['id']}:{link['id']}", None)
-            try:
-                headers = build_inventory_link_request_headers(link["auth_mode"], secret, link=link, user_id=user["id"])
-            except ValueError as exc:
-                return jsonify({"error": str(exc)}), 401
-            except InventoryLinkConnectionError as exc:
-                return jsonify({"error": str(exc)}), 502
-            req = urllib.request.Request(target_url, data=data if data else None, headers=headers, method=request.method)
-            resp = perform_proxy_request(req)
-    except urllib.error.URLError as exc:
-        return jsonify({"error": f"Proxy-Fehler: {exc.reason}"}), 502
-    except ssl.SSLError as exc:
-        return jsonify({"error": f"TLS-Fehler: {str(exc)}"}), 502
-
-    status_code = resp.getcode()
-    response_headers = filter_inventory_link_response_headers(resp.headers, link_id, link["base_url"])
-    log_activity(db, "proxy", "inventory_link", details={"link_id": link_id, "method": request.method, "path": subpath})
-    db.commit()
-    content_type = resp.headers.get("Content-Type", "")
-    if request.method != "HEAD" and should_rewrite_inventory_link_response(content_type):
-        body = resp.read()
-        rewritten = rewrite_inventory_link_text_content(body, content_type, link_id, link["base_url"])
-        return Response(
-            rewritten,
-            status=status_code,
-            headers=response_headers
-        )
-    return Response(
-        stream_inventory_link_response(resp),
-        status=status_code,
-        headers=response_headers
-    )
 
 @app.route('/api/ad/settings', methods=['GET'])
 @login_required
@@ -16467,6 +16072,40 @@ app.register_blueprint(
         current_actor=lambda: session.get("username", "system"),
         log_activity=log_activity,
         user_can=user_can,
+        login_required=login_required,
+    ),
+)
+app.register_blueprint(
+    build_inventory_links_blueprint(
+        get_db=get_db,
+        get_user_access=get_user_access,
+        get_inventory_link=get_inventory_link,
+        list_inventory_links=list_inventory_links,
+        serialize_inventory_link=serialize_inventory_link,
+        validate_inventory_link_configuration=validate_inventory_link_configuration,
+        enforce_inventory_link_scope_access=enforce_inventory_link_scope_access,
+        parse_inventory_link_login_secret=parse_inventory_link_login_secret,
+        encrypt_inventory_link_secret=encrypt_inventory_link_secret,
+        decrypt_inventory_link_secret=decrypt_inventory_link_secret,
+        perform_inventory_link_test=perform_inventory_link_test,
+        update_inventory_link_health=update_inventory_link_health,
+        get_cached_inventory_link_cookie=get_cached_inventory_link_cookie,
+        login_inventory_link_session=login_inventory_link_session,
+        connection_error=InventoryLinkConnectionError,
+        build_inventory_link_target_url=build_inventory_link_target_url,
+        build_inventory_link_request_headers=build_inventory_link_request_headers,
+        build_inventory_link_ssl_context=build_inventory_link_ssl_context,
+        no_redirect_handler=InventoryLinkNoRedirect,
+        filter_inventory_link_response_headers=filter_inventory_link_response_headers,
+        should_rewrite_inventory_link_response=should_rewrite_inventory_link_response,
+        rewrite_inventory_link_text_content=rewrite_inventory_link_text_content,
+        stream_inventory_link_response=stream_inventory_link_response,
+        should_rate_limit_inventory_proxy=should_rate_limit_inventory_proxy,
+        login_session_cache=INVENTORY_LINK_LOGIN_SESSION_CACHE,
+        login_ttl_seconds=INVENTORY_LINK_LOGIN_TTL_SECONDS,
+        proxy_timeout_seconds=INVENTORY_LINK_PROXY_TIMEOUT_SECONDS,
+        allow_private_network_default=INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT,
+        log_activity=log_activity,
         login_required=login_required,
     ),
 )
