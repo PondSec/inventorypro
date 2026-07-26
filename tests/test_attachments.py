@@ -162,7 +162,10 @@ class AttachmentTestCase(unittest.TestCase):
         upload_response = self.client.post("/attachments/upload", data=data, content_type="multipart/form-data")
         attachment_id = upload_response.get_json()["id"]
         download_response = self.client.get(f"/attachments/{attachment_id}/download")
-        self.assertEqual(download_response.status_code, 200)
+        try:
+            self.assertEqual(download_response.status_code, 200)
+        finally:
+            download_response.close()
 
 
 if __name__ == "__main__":

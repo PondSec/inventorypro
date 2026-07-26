@@ -6,7 +6,7 @@ import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from cryptography.fernet import Fernet
 from flask import Flask
@@ -360,10 +360,12 @@ class InventoryLinksTestCase(unittest.TestCase):
             self.assertEqual(service.build_static_headers("login", "operator:secret", "https://inventory.example")["Cookie"], "session=active")
 
         unauthorized = urllib.error.HTTPError("https://inventory.example/login", 401, "Unauthorized", None, None)
+        unauthorized.close = Mock(wraps=unauthorized.close)
         opener = type("Opener", (), {"open": lambda self, *args, **kwargs: (_ for _ in ()).throw(unauthorized)})()
         with patch.object(inventory_link_service.urllib.request, "build_opener", return_value=opener):
             with self.assertRaises(ValueError):
                 service.login("https://inventory.example", True, "operator:secret")
+        unauthorized.close.assert_called_once()
 
         with patch.object(
             inventory_link_service,

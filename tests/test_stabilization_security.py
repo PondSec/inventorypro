@@ -3,11 +3,13 @@ import sqlite3
 import tempfile
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
 
 from cryptography.fernet import Fernet
 
 import app as inventory_app
 from inventorypro.config import ConfigurationError, resolve_application_secret
+from inventorypro import backup_restore
 from inventorypro.migrations import MigrationError, apply_migrations, rollback_migrations
 from inventorypro.factory import create_app
 from inventorypro.secrets import (
@@ -348,6 +350,31 @@ class MigrationRunnerTestCase(TestCase):
 
 
 class BackupRestoreTestCase(TestCase):
+    def test_sqlite_copy_closes_both_connections_after_copying(self):
+        class BackupConnection:
+            def __init__(self):
+                self.backup_targets = []
+                self.close_count = 0
+
+            def backup(self, target):
+                self.backup_targets.append(target)
+
+            def close(self):
+                self.close_count += 1
+
+        source_connection = BackupConnection()
+        target_connection = BackupConnection()
+        with patch.object(
+            backup_restore.sqlite3,
+            "connect",
+            side_effect=[source_connection, target_connection],
+        ):
+            backup_restore.copy_sqlite_database("source.db", "target.db")
+
+        self.assertEqual(source_connection.backup_targets, [target_connection])
+        self.assertEqual(source_connection.close_count, 1)
+        self.assertEqual(target_connection.close_count, 1)
+
     def test_restore_validates_manifest_and_keeps_rollback_snapshot(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
