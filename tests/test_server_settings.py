@@ -63,6 +63,15 @@ class ServerSettingsTestCase(unittest.TestCase):
         updated = update_response.get_json()
         self.assertTrue(updated["meta"]["pendingRestart"])
 
+    def test_settings_page_links_to_personal_account_security(self):
+        self.login()
+
+        response = self.client.get("/settings")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'href="/account/security"', response.data)
+        self.assertIn(b"Erfordert TOTP f\xc3\xbcr alle Konten beim n\xc3\xa4chsten Login.", response.data)
+
     def test_invalid_port_rejected(self):
         self.login()
         response = self.client.get("/api/settings/server")
@@ -94,10 +103,77 @@ class ServerSettingsTestCase(unittest.TestCase):
         self.assertEqual(policy["maintenanceWindow"], "02:45")
         self.assertFalse(any("password" in key.lower() for key in policy))
 
+    def test_update_maintenance_window_is_normalized_before_publishing(self):
+        self.login()
+        for raw_window, normalized_window in (
+            ("09:00", "09:00"),
+            ("9:00", "09:00"),
+            ("09:00:00", "09:00"),
+            ("23:30", "23:30"),
+            ("00:00", "00:00"),
+        ):
+            with self.subTest(raw_window=raw_window):
+                settings = self.client.get("/api/settings/server").get_json()["settings"]
+                settings["updates"] = {
+                    "autoUpdateEnabled": True,
+                    "channel": "stable",
+                    "checkIntervalMinutes": 120,
+                    "maintenanceWindow": raw_window,
+                }
+
+                response = self.client.put("/api/settings/server", json=settings)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    response.get_json()["settings"]["updates"]["maintenanceWindow"],
+                    normalized_window,
+                )
+                policy = json.loads(
+                    (inventory_app.APP_INSTANCE_PATH / "update_policy.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(policy["maintenanceWindow"], normalized_window)
+
+    def test_update_maintenance_window_with_seconds_is_rejected(self):
+        self.login()
+        settings = self.client.get("/api/settings/server").get_json()["settings"]
+        settings["updates"] = {
+            "autoUpdateEnabled": True,
+            "channel": "stable",
+            "checkIntervalMinutes": 120,
+            "maintenanceWindow": "09:00:30",
+        }
+
+        response = self.client.put("/api/settings/server", json=settings)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("updates.maintenanceWindow", response.get_json()["details"])
+
+    def test_disabled_updates_do_not_block_server_settings_save(self):
+        self.login()
+        response = self.client.get("/api/settings/server")
+        settings = response.get_json()["settings"]
+        settings["updates"] = {
+            "autoUpdateEnabled": False,
+            "channel": "preview",
+            "checkIntervalMinutes": "invalid",
+            "maintenanceWindow": "",
+        }
+
+        update_response = self.client.put("/api/settings/server", json=settings)
+
+        self.assertEqual(update_response.status_code, 200)
+        policy_path = inventory_app.APP_INSTANCE_PATH / "update_policy.json"
+        policy = json.loads(policy_path.read_text(encoding="utf-8"))
+        self.assertFalse(policy["autoUpdateEnabled"])
+        self.assertEqual(policy["channel"], "stable")
+        self.assertEqual(policy["checkIntervalMinutes"], 360)
+        self.assertEqual(policy["maintenanceWindow"], "03:30")
+
     def test_unsigned_update_channel_is_rejected(self):
         self.login()
         response = self.client.get("/api/settings/server")
         settings = response.get_json()["settings"]
+        settings["updates"]["autoUpdateEnabled"] = True
         settings["updates"]["channel"] = "preview"
 
         update_response = self.client.put("/api/settings/server", json=settings)

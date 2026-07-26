@@ -106,6 +106,38 @@ class HealthModuleTestCase(unittest.TestCase):
                 (check_id,)
             ).fetchone()
             self.assertIsNotNone(incident)
+            self.assertIsNotNone(incident["ticket_id"])
+            ticket = db.execute(
+                '''
+                SELECT t.priority, t.due_date, t.tags, c.name AS category_name, c.sla_hours
+                FROM tickets t
+                JOIN ticket_categories c ON c.id = t.category_id
+                WHERE t.id = ?
+                ''',
+                (incident["ticket_id"],),
+            ).fetchone()
+            self.assertEqual(ticket["priority"], "high")
+            self.assertEqual(ticket["category_name"], "Incident")
+            self.assertGreaterEqual(ticket["sla_hours"], 1)
+            self.assertTrue(ticket["due_date"])
+            self.assertIn("automatic", json.loads(ticket["tags"]))
+            inventory_app.record_health_result(
+                db,
+                run_id,
+                check_def,
+                {
+                    "status": "CRIT",
+                    "severity": "CRIT",
+                    "reason": "still failing",
+                    "metrics": {},
+                    "details": {}
+                }
+            )
+            duplicate_count = db.execute(
+                "SELECT COUNT(*) AS count FROM tickets WHERE id = ?",
+                (incident["ticket_id"],),
+            ).fetchone()["count"]
+            self.assertEqual(duplicate_count, 1)
             inventory_app.record_health_result(
                 db,
                 run_id,
@@ -124,6 +156,57 @@ class HealthModuleTestCase(unittest.TestCase):
                 (check_id,)
             ).fetchone()
             self.assertIsNotNone(closed)
+
+    def test_warn_status_automatically_creates_a_high_priority_incident_ticket(self):
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            check_id = db.execute(
+                '''
+                INSERT INTO health_check_definitions (
+                    name, slug, category, check_type, config_json, interval_seconds, timeout_seconds, enabled
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    "Memory",
+                    "memory-test",
+                    "System",
+                    "memory",
+                    json.dumps({"incident_open_after_minutes": 0}),
+                    60,
+                    5,
+                    1,
+                ),
+            ).lastrowid
+            run_id = db.execute(
+                "INSERT INTO health_check_runs (started_at, status, triggered_by) VALUES (?, 'running', 'test')",
+                (inventory_app.health_now(),),
+            ).lastrowid
+            check_def = db.execute("SELECT * FROM health_check_definitions WHERE id = ?", (check_id,)).fetchone()
+
+            inventory_app.record_health_result(
+                db,
+                run_id,
+                check_def,
+                {
+                    "status": "WARN",
+                    "severity": "WARN",
+                    "reason": "memory threshold",
+                    "metrics": {},
+                    "details": {},
+                },
+            )
+            incident = db.execute(
+                "SELECT ticket_id FROM health_incidents WHERE check_id = ? AND status = 'open'",
+                (check_id,),
+            ).fetchone()
+            ticket = db.execute(
+                "SELECT priority FROM tickets WHERE id = ?",
+                (incident["ticket_id"],),
+            ).fetchone()
+
+        self.assertIsNotNone(incident["ticket_id"])
+        self.assertEqual(ticket["priority"], "high")
 
 
 if __name__ == "__main__":

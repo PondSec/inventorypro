@@ -190,6 +190,10 @@
                 </div>
                 <div class="flex items-center gap-2 sm:gap-3">
                     <span class="hidden text-sm text-slate-500 sm:inline">Angemeldet als {{ username }}</span>
+                    <a href="/account/security" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
+                        <i data-feather="shield" class="w-4 h-4"></i>
+                        <span class="sr-only sm:not-sr-only">Kontosicherheit</span>
+                    </a>
                     <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="icon-button inline-flex h-9 w-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-4 sm:py-2">
                         <span data-theme-icon aria-hidden="true">🌙</span>
                         <span data-theme-label class="sr-only sm:not-sr-only">Dark Mode</span>
@@ -321,9 +325,9 @@
                                         <p class="text-xs text-slate-400">Der Updater lädt keine Daten aus der Anwendung hoch.</p>
                                     </div>
                                     <div class="space-y-2">
-                                        <label class="text-sm font-semibold text-slate-700">Wartungsfenster</label>
-                                        <input type="time" x-model="settings.updates.maintenanceWindow" aria-label="Wartungsfenster für Updates" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <p class="text-xs text-slate-400">Installationen erfolgen nur innerhalb dieses Fensters.</p>
+                                        <label class="text-sm font-semibold text-slate-700">Wartungsbeginn (Serverzeit)</label>
+                                        <input type="time" x-model="settings.updates.maintenanceWindow" aria-label="Wartungsbeginn für Updates in Serverzeit" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-slate-400">Format HH:MM. Installationen erfolgen nur innerhalb des anschließenden Prüfintervalls.</p>
                                     </div>
                                 </div>
                             </div>
@@ -614,7 +618,7 @@
                                         <input type="checkbox" x-model="settings.security.requireMfa" aria-label="Mehrfaktor-Authentifizierung erzwingen" class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
                                         <div>
                                             <p class="text-sm font-semibold text-slate-700">MFA verpflichtend</p>
-                                            <p class="text-xs text-slate-500">Erfordert 2FA für alle Admin-Konten.</p>
+                                            <p class="text-xs text-slate-500">Erfordert TOTP für alle Konten beim nächsten Login.</p>
                                             <span class="mt-2 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700" x-show="meta.enforcedCapabilities.requireMfa && meta.enforcedCapabilities.requireMfa.enforced">Enforced</span>
                                         </div>
                                     </label>
@@ -2056,10 +2060,10 @@
                     if (this.settings.backup.notifyEmail && !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(this.settings.backup.notifyEmail)) {
                         return 'E-Mail-Adresse ist ungültig.';
                     }
-                    if (!Number.isInteger(this.settings.updates.checkIntervalMinutes) || this.settings.updates.checkIntervalMinutes < 15 || this.settings.updates.checkIntervalMinutes > 1440) {
+                    if (this.settings.updates.autoUpdateEnabled && (!Number.isInteger(this.settings.updates.checkIntervalMinutes) || this.settings.updates.checkIntervalMinutes < 15 || this.settings.updates.checkIntervalMinutes > 1440)) {
                         return 'Update-Prüfintervall muss zwischen 15 und 1440 Minuten liegen.';
                     }
-                    if (!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(this.settings.updates.maintenanceWindow || '')) {
+                    if (this.settings.updates.autoUpdateEnabled && !/^([01]\d|2[0-3]):[0-5]\d$/.test(this.settings.updates.maintenanceWindow || '')) {
                         return 'Update-Wartungsfenster muss im Format HH:MM sein.';
                     }
                     if (!Number.isInteger(this.settings.security.sessionTimeoutMinutes)) {

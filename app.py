@@ -177,6 +177,9 @@ BINPACKING_PREVIEW_COLORS = (
 )
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_REQUESTS = 10
+MAINTENANCE_WINDOW_PATTERN = re.compile(
+    r"^(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)(?::(?P<second>[0-5]\d))?$"
+)
 INVENTORY_LINK_PROXY_TIMEOUT_SECONDS = int(os.environ.get("INVENTORY_LINK_PROXY_TIMEOUT_SECONDS", 20))
 INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS = 60
 INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS", 120))
@@ -231,6 +234,7 @@ TERMINAL_LOG_MAX_BYTES = 150 * 1024
 TERMINAL_DB_MAX_ROWS = 100
 TERMINAL_DB_MAX_BYTES = 150 * 1024
 TERMINAL_REAUTH_WINDOW_SECONDS = 10 * 60
+OTP_ENROLLMENT_TTL_SECONDS = 10 * 60
 CACHE_MAX_ENTRIES = int(os.environ.get("INVENTORY_CACHE_MAX_ENTRIES", "10000"))
 TERMINAL_RATE_LIMIT_CACHE = SlidingWindowRateLimiter(CACHE_MAX_ENTRIES)
 RUNTIME_SETTINGS_CACHE = None
@@ -247,8 +251,10 @@ HEALTH_STATUS_ORDER = {
     "UNKNOWN": 3
 }
 HEALTH_DEFAULT_RETENTION_DAYS = 14
-HEALTH_INCIDENT_OPEN_MINUTES = 5
+HEALTH_INCIDENT_OPEN_MINUTES = 0
 HEALTH_INCIDENT_CLOSE_MINUTES = 5
+HEALTH_INCIDENT_PRIORITY = "high"
+HEALTH_INCIDENT_REQUESTER = "System Health"
 HEALTH_REDACT_KEYS = {
     "password", "secret", "token", "api_key", "apikey", "key", "authorization", "bearer", "dsn"
 }
@@ -1178,6 +1184,14 @@ def serialize_server_settings(settings_row):
         meta["warnings"].append("Automatische Updates sind aktiviert, aber der abgesicherte Updater-Dienst wurde noch nicht bereitgestellt.")
     return settings, meta
 
+def normalize_maintenance_window(value):
+    candidate = str(value or "").strip()
+    match = MAINTENANCE_WINDOW_PATTERN.fullmatch(candidate)
+    if not match or match.group("second") not in {None, "00"}:
+        return None
+    return f"{int(match.group('hour')):02d}:{match.group('minute')}"
+
+
 def validate_settings_payload(payload, partial=False):
     errors = {}
     if not isinstance(payload, dict):
@@ -1218,20 +1232,33 @@ def validate_settings_payload(payload, partial=False):
         errors["backup.encrypt"] = "BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung kann nicht aktiviert werden."
 
     updates = merged.get("updates", {})
+    auto_update_enabled = bool(updates.get("autoUpdateEnabled"))
+    default_updates = DEFAULT_SERVER_SETTINGS["updates"]
     update_channel = (updates.get("channel") or "").strip().lower()
-    if update_channel != "stable":
-        errors["updates.channel"] = "Nur der signierte Stable-Kanal ist zulässig."
     update_interval = updates.get("checkIntervalMinutes")
-    try:
-        update_interval = int(update_interval)
-    except (TypeError, ValueError):
-        errors["updates.checkIntervalMinutes"] = "Prüfintervall muss eine Zahl sein."
+    update_window = normalize_maintenance_window(updates.get("maintenanceWindow"))
+    if auto_update_enabled:
+        if update_channel != "stable":
+            errors["updates.channel"] = "Nur der signierte Stable-Kanal ist zulässig."
+        try:
+            update_interval = int(update_interval)
+        except (TypeError, ValueError):
+            errors["updates.checkIntervalMinutes"] = "Prüfintervall muss eine Zahl sein."
+        else:
+            if update_interval < 15 or update_interval > 1440:
+                errors["updates.checkIntervalMinutes"] = "Prüfintervall muss zwischen 15 und 1440 Minuten liegen."
+        if not update_window:
+            errors["updates.maintenanceWindow"] = "Wartungsfenster muss eine gültige Uhrzeit sein (z. B. 09:00, 9:00 oder 09:00:00)."
     else:
+        update_channel = "stable"
+        try:
+            update_interval = int(update_interval)
+        except (TypeError, ValueError):
+            update_interval = default_updates["checkIntervalMinutes"]
         if update_interval < 15 or update_interval > 1440:
-            errors["updates.checkIntervalMinutes"] = "Prüfintervall muss zwischen 15 und 1440 Minuten liegen."
-    update_window = (updates.get("maintenanceWindow") or "").strip()
-    if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', update_window):
-        errors["updates.maintenanceWindow"] = "Wartungsfenster muss im Format HH:MM sein."
+            update_interval = default_updates["checkIntervalMinutes"]
+        if not update_window:
+            update_window = default_updates["maintenanceWindow"]
 
     import_export = merged.get("importExport", {})
     export_format = (import_export.get("exportFormat") or "").lower()
@@ -1293,7 +1320,7 @@ def validate_settings_payload(payload, partial=False):
     merged["backup"]["time"] = time_value
     merged["backup"]["retentionDays"] = retention
     merged["backup"]["notifyEmail"] = notify_email
-    merged["updates"]["autoUpdateEnabled"] = bool(updates.get("autoUpdateEnabled"))
+    merged["updates"]["autoUpdateEnabled"] = auto_update_enabled
     merged["updates"]["channel"] = update_channel
     merged["updates"]["checkIntervalMinutes"] = update_interval
     merged["updates"]["maintenanceWindow"] = update_window
@@ -4571,6 +4598,28 @@ def init_db():
                 FOREIGN KEY (ticket_id) REFERENCES tickets(id)
             )
         ''')
+        c.execute(
+            '''
+            UPDATE health_incidents
+            SET status = 'closed',
+                closed_at = COALESCE(closed_at, last_observed_at, opened_at)
+            WHERE status = 'open'
+              AND id NOT IN (
+                  SELECT MIN(id)
+                  FROM health_incidents
+                  WHERE status = 'open'
+                  GROUP BY check_id
+              )
+            '''
+        )
+        c.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_health_incidents_open_check "
+            "ON health_incidents(check_id) WHERE status = 'open'"
+        )
+        c.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_health_incidents_ticket "
+            "ON health_incidents(ticket_id) WHERE ticket_id IS NOT NULL"
+        )
         c.execute('''
             CREATE TABLE IF NOT EXISTS login_attempts (
                 username TEXT PRIMARY KEY,
@@ -4584,6 +4633,15 @@ def init_db():
                 user_id INTEGER NOT NULL,
                 code_hash TEXT NOT NULL,
                 used_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS mfa_pending_enrollments (
+                user_id INTEGER PRIMARY KEY,
+                secret TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
@@ -5135,16 +5193,124 @@ def store_health_event(db, check_id, previous_status, current_status, severity, 
         (check_id, previous_status, current_status, severity, reason, observed_at)
     )
 
-def record_health_incident(db, check_id, summary, observed_at, status):
+def get_health_incident_ticket_category(db):
+    category = db.execute(
+        '''
+        SELECT id, name, sla_hours
+        FROM ticket_categories
+        WHERE LOWER(name) = 'incident'
+        ORDER BY id
+        LIMIT 1
+        '''
+    ).fetchone()
+    if category:
+        return category
+    cursor = db.execute(
+        '''
+        INSERT INTO ticket_categories (name, description, color, sla_hours, is_default)
+        VALUES (?, ?, ?, ?, ?)
+        ''',
+        ("Incident", "Automatisch erstellte System-Incidents", "#dc2626", 24, 0),
+    )
+    return db.execute(
+        "SELECT id, name, sla_hours FROM ticket_categories WHERE id = ?",
+        (cursor.lastrowid,),
+    ).fetchone()
+
+
+def create_health_incident_ticket(db, incident_id):
+    incident = db.execute(
+        '''
+        SELECT i.*, d.name, d.slug, d.category
+        FROM health_incidents i
+        JOIN health_check_definitions d ON d.id = i.check_id
+        WHERE i.id = ?
+        ''',
+        (incident_id,),
+    ).fetchone()
+    if not incident:
+        raise ValueError("Health-Incident nicht gefunden.")
+    if incident["ticket_id"]:
+        return incident["ticket_id"]
+
+    category = get_health_incident_ticket_category(db)
+    sla_hours = max(1, int(category["sla_hours"] or 24))
+    opened_at = datetime.strptime(incident["opened_at"], "%Y-%m-%d %H:%M:%S")
+    due_date = (opened_at + timedelta(hours=sla_hours)).strftime("%Y-%m-%d")
+    description = (
+        f"Automatisch aus dem Health-Monitoring erstellt.\n"
+        f"Check: {incident['name']} ({incident['slug'] or incident['check_id']})\n"
+        f"Kategorie: {incident['category'] or '-'}\n"
+        f"Status: {incident['last_status']}\n"
+        f"Eröffnet: {incident['opened_at']} UTC\n"
+        f"SLA: {sla_hours} Stunden\n"
+        f"Details: {incident['summary'] or '-'}"
+    )
+    cursor = db.execute(
+        '''
+        INSERT INTO tickets (
+            title, description, category_id, priority, status, requester_name,
+            created_by, due_date, escalation_level, tags
+        )
+        VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
+        ''',
+        (
+            f"Health-Incident: {incident['name']}",
+            description,
+            category["id"],
+            HEALTH_INCIDENT_PRIORITY,
+            HEALTH_INCIDENT_REQUESTER,
+            HEALTH_INCIDENT_REQUESTER,
+            due_date,
+            1,
+            json.dumps(["health", "incident", "automatic"]),
+        ),
+    )
+    ticket_id = cursor.lastrowid
+    db.execute(
+        "UPDATE health_incidents SET ticket_id = ? WHERE id = ?",
+        (ticket_id, incident_id),
+    )
     db.execute(
         '''
-        INSERT INTO health_incidents (
-            check_id, status, summary, opened_at, last_status, last_observed_at
-        )
-        VALUES (?, 'open', ?, ?, ?, ?)
+        INSERT INTO activity_log (username, action, entity_type, entity_id, details)
+        VALUES (?, ?, ?, ?, ?)
         ''',
-        (check_id, summary, observed_at, status, observed_at)
+        (
+            HEALTH_INCIDENT_REQUESTER,
+            "create",
+            "ticket",
+            ticket_id,
+            json.dumps({"source": "health_incident", "incident_id": incident_id}),
+        ),
     )
+    return ticket_id
+
+
+def record_health_incident(db, check_id, summary, observed_at, status):
+    try:
+        cursor = db.execute(
+            '''
+            INSERT INTO health_incidents (
+                check_id, status, summary, opened_at, last_status, last_observed_at
+            )
+            VALUES (?, 'open', ?, ?, ?, ?)
+            ''',
+            (check_id, summary, observed_at, status, observed_at)
+        )
+    except sqlite3.IntegrityError:
+        active_incident = db.execute(
+            "SELECT id, ticket_id FROM health_incidents WHERE check_id = ? AND status = 'open'",
+            (check_id,),
+        ).fetchone()
+        if active_incident:
+            if not active_incident["ticket_id"]:
+                create_health_incident_ticket(db, active_incident["id"])
+            return active_incident["id"]
+        raise
+    incident_id = cursor.lastrowid
+    create_health_incident_ticket(db, incident_id)
+    return incident_id
 
 def close_health_incident(db, incident_id, observed_at):
     db.execute(
@@ -5159,7 +5325,7 @@ def close_health_incident(db, incident_id, observed_at):
         (observed_at, observed_at, incident_id)
     )
 
-def update_health_incident_state(db, check_id, status, observed_at, config):
+def update_health_incident_state(db, check_id, status, observed_at, config, reason=""):
     status = normalize_health_status(status)
     incident_open_after_value = config.get("incident_open_after_minutes")
     incident_close_after_value = config.get("incident_close_after_minutes")
@@ -5168,7 +5334,7 @@ def update_health_incident_state(db, check_id, status, observed_at, config):
 
     active_incident = db.execute(
         '''
-        SELECT id, status, opened_at, acknowledged_at, muted_until
+        SELECT id, status, opened_at, acknowledged_at, muted_until, ticket_id
         FROM health_incidents
         WHERE check_id = ? AND status = 'open'
         ORDER BY opened_at DESC
@@ -5177,32 +5343,34 @@ def update_health_incident_state(db, check_id, status, observed_at, config):
         (check_id,)
     ).fetchone()
 
-    if status == "CRIT":
-        last_non_crit = db.execute(
+    if status != "OK":
+        last_ok = db.execute(
             '''
             SELECT observed_at
             FROM health_check_results
-            WHERE check_id = ? AND status != 'CRIT'
+            WHERE check_id = ? AND status = 'OK'
             ORDER BY observed_at DESC
             LIMIT 1
             ''',
             (check_id,)
         ).fetchone()
-        if last_non_crit:
-            last_non_crit_at = datetime.strptime(last_non_crit["observed_at"], "%Y-%m-%d %H:%M:%S")
+        if last_ok:
+            last_ok_at = datetime.strptime(last_ok["observed_at"], "%Y-%m-%d %H:%M:%S")
             current_time = datetime.strptime(observed_at, "%Y-%m-%d %H:%M:%S")
-            duration_minutes = (current_time - last_non_crit_at).total_seconds() / 60
+            duration_minutes = (current_time - last_ok_at).total_seconds() / 60
         else:
             duration_minutes = incident_open_after + 1
         if duration_minutes >= incident_open_after and not active_incident:
             record_health_incident(
                 db,
                 check_id,
-                f"CRIT länger als {incident_open_after} Minuten",
+                f"{status}: {reason or 'Health-Check meldet einen nicht-OK-Zustand.'}",
                 observed_at,
                 status
             )
         if active_incident:
+            if not active_incident["ticket_id"]:
+                create_health_incident_ticket(db, active_incident["id"])
             db.execute(
                 '''
                 UPDATE health_incidents
@@ -5316,7 +5484,14 @@ def record_health_result(db, run_id, check_def, result):
             check_data["id"]
         )
     )
-    update_health_incident_state(db, check_data["id"], status, observed_at, safe_json_load(check_data["config_json"]))
+    update_health_incident_state(
+        db,
+        check_data["id"],
+        status,
+        observed_at,
+        safe_json_load(check_data["config_json"]),
+        reason,
+    )
 
 def run_health_check_definition(db, check_def):
     check_type = check_def["check_type"]
@@ -6289,8 +6464,17 @@ def enforce_security_policies():
             return redirect(url_for("login"))
         session["last_activity"] = now_ts
         session.permanent = True
-        if settings["security"]["requireMfa"]:
-            allowed_paths = {"/verify", "/api/otp/verify", "/api/otp/status", "/api/otp/setup", "/logout"}
+        if settings["security"]["requireMfa"] or session.get("mfa_required"):
+            allowed_paths = {
+                "/verify",
+                "/mfa-enroll",
+                "/api/otp/verify",
+                "/api/otp/status",
+                "/api/otp/setup",
+                "/api/otp/confirm",
+                "/api/otp/cancel",
+                "/logout",
+            }
             if not session.get("mfa_verified") and request.path not in allowed_paths and not request.path.startswith("/static"):
                 if request.path.startswith("/api"):
                     return jsonify({"error": "MFA erforderlich."}), 403
@@ -9074,18 +9258,20 @@ def login():
         user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
 
         if user and check_password_hash(user['password_hash'], password):
-            if security["requireMfa"] and not user['otp_secret']:
-                log_activity(db, "login_failed_mfa", "user", user['id'], {"username": username})
-                db.commit()
-                return render_template('login.html', error="MFA ist erforderlich. Bitte OTP zuerst aktivieren.")
+            mfa_required = bool(security["requireMfa"] or user['otp_secret'])
+            mfa_enrollment_required = bool(security["requireMfa"] and not user['otp_secret'])
             session['logged_in'] = True
             session['username'] = username
-            session['mfa_verified'] = not security["requireMfa"]
+            session['mfa_required'] = mfa_required
+            session['mfa_verified'] = not mfa_required
+            session['mfa_enrollment_required'] = mfa_enrollment_required
             access = get_user_access(db)
             log_activity(db, "login", "user", user['id'], {"username": username})
             clear_login_failures(db, username)
             db.commit()
-            if security["requireMfa"]:
+            if mfa_required:
+                if mfa_enrollment_required:
+                    return redirect(url_for("mfa_enroll"))
                 return redirect(url_for("verify"))
             return redirect(get_post_login_redirect(access))
 
@@ -9097,20 +9283,21 @@ def login():
                 cursor = db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, placeholder_password))
                 assign_user_role(db, cursor.lastrowid, DEFAULT_ROLE_NAME)
                 existing_user = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
-            if security["requireMfa"]:
-                user = db.execute('SELECT otp_secret FROM users WHERE username = ?', (username,)).fetchone()
-                if not user or not user['otp_secret']:
-                    log_activity(db, "login_failed_mfa", "user", details={"username": username, "source": "ad"})
-                    db.commit()
-                    return render_template('login.html', error="MFA ist erforderlich. Bitte OTP zuerst aktivieren.")
+            user = db.execute('SELECT otp_secret FROM users WHERE username = ?', (username,)).fetchone()
+            mfa_required = bool(security["requireMfa"] or (user and user['otp_secret']))
+            mfa_enrollment_required = bool(security["requireMfa"] and not (user and user['otp_secret']))
             session['logged_in'] = True
             session['username'] = username
-            session['mfa_verified'] = not security["requireMfa"]
+            session['mfa_required'] = mfa_required
+            session['mfa_verified'] = not mfa_required
+            session['mfa_enrollment_required'] = mfa_enrollment_required
             access = get_user_access(db)
             log_activity(db, "login", "user", existing_user['id'], {"username": username, "source": "ad"})
             clear_login_failures(db, username)
             db.commit()
-            if security["requireMfa"]:
+            if mfa_required:
+                if mfa_enrollment_required:
+                    return redirect(url_for("mfa_enroll"))
                 return redirect(url_for("verify"))
             return redirect(get_post_login_redirect(access))
 
@@ -12003,40 +12190,13 @@ def health_incident_ticket(incident_id):
     ).fetchone()
     if not incident:
         return jsonify({"error": "Incident nicht gefunden"}), 404
-    title = f"Health Incident: {incident['name']}"
-    description = (
-        f"Incident für Check {incident['name']}.\n"
-        f"Status: {incident['status']}\n"
-        f"Seit: {incident['opened_at']}\n"
-        f"Aktuell: {incident['last_status']}"
-    )
-    creator_id = get_current_user_id(db)
-    cursor = db.execute(
-        '''
-        INSERT INTO tickets (title, description, priority, status, requester_name, created_by_user_id, created_by, tags)
-        VALUES (?, ?, ?, 'open', ?, ?, ?, ?)
-        ''',
-        (
-            title,
-            description,
-            "high",
-            session.get("username"),
-            creator_id,
-            session.get("username"),
-            json.dumps(["health", "incident"])
-        )
-    )
-    ticket_id = cursor.lastrowid
-    db.execute(
-        '''
-        UPDATE health_incidents
-        SET ticket_id = ?
-        WHERE id = ?
-        ''',
-        (ticket_id, incident_id)
-    )
+    existing_ticket_id = incident["ticket_id"]
+    ticket_id = existing_ticket_id or create_health_incident_ticket(db, incident_id)
     db.commit()
-    return jsonify({"status": "ticket_created", "ticket_id": ticket_id})
+    return jsonify({
+        "status": "ticket_exists" if existing_ticket_id else "ticket_created",
+        "ticket_id": ticket_id,
+    })
 
 @app.route('/api/tickets', methods=['GET', 'POST'])
 @login_required
@@ -15464,39 +15624,102 @@ def terminal_db_execute():
 def setup_otp():
     username = session.get('username')
     db = get_db()
-
-    # 1. Vorher prüfen, ob bereits ein OTP eingerichtet ist
-    user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
+    user = db.execute("SELECT id, otp_secret FROM users WHERE username = ?", (username,)).fetchone()
+    if not user:
+        return jsonify({"error": "Benutzer nicht gefunden."}), 404
     if user and user['otp_secret']:
-        # Bereits eingerichtet – nur Status zurückgeben
-        return jsonify({'enabled': True}), 200
+        return jsonify({'enabled': True, 'pending': False}), 200
 
-    # 2. Wenn nicht vorhanden, neues Secret generieren und speichern
-    secret = pyotp.random_base32()
-    db.execute("UPDATE users SET otp_secret = ? WHERE username = ?", (secret, username))
-    log_activity(db, "otp_setup", "user", details={"username": username})
+    now = int(time.time())
+    pending = db.execute(
+        "SELECT secret, expires_at FROM mfa_pending_enrollments WHERE user_id = ?",
+        (user["id"],),
+    ).fetchone()
+    if pending and pending["expires_at"] <= now:
+        db.execute("DELETE FROM mfa_pending_enrollments WHERE user_id = ?", (user["id"],))
+        pending = None
+    if not pending:
+        secret = pyotp.random_base32()
+        expires_at = now + OTP_ENROLLMENT_TTL_SECONDS
+        db.execute(
+            "INSERT INTO mfa_pending_enrollments (user_id, secret, expires_at) VALUES (?, ?, ?)",
+            (user["id"], secret, expires_at),
+        )
+        log_activity(db, "otp_enrollment_started", "user", user["id"], {"username": username})
+    else:
+        secret = pending["secret"]
+        expires_at = pending["expires_at"]
     db.commit()
 
-    # 3. QR-Code generieren
     issuer_name = "Inventory Pro"
     otp_uri = pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=issuer_name)
-    factory = qrcode.image.svg.SvgImage
-    img = qrcode.make(otp_uri, image_factory=factory)
-    stream = BytesIO()
-    img.save(stream)
-    qr_code = stream.getvalue().decode()
-    
     qr_img = qrcode.make(otp_uri)
     buffered = BytesIO()
     qr_img.save(buffered, format="PNG")
     img_str = "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode()
-
-    # 4. Secret + QR zurückgeben
     return jsonify({
         'enabled': False,
+        'pending': True,
+        'expires_at': expires_at,
         'secret': secret,
         'qr_code': img_str
     })
+
+
+@app.route('/api/otp/confirm', methods=['POST'])
+@login_required
+def confirm_otp_setup():
+    username = session.get('username') or ""
+    rate_limit_key = f"otp-enrollment:{get_remote_ip()}:{username.lower()}"
+    if should_rate_limit(rate_limit_key):
+        return jsonify({"error": "Zu viele Prüfversuche. Bitte kurz warten."}), 429
+
+    db = get_db()
+    user = db.execute("SELECT id, otp_secret FROM users WHERE username = ?", (username,)).fetchone()
+    if not user:
+        return jsonify({"error": "Benutzer nicht gefunden."}), 404
+    if user["otp_secret"]:
+        return jsonify({"enabled": True}), 200
+
+    pending = db.execute(
+        "SELECT secret, expires_at FROM mfa_pending_enrollments WHERE user_id = ?",
+        (user["id"],),
+    ).fetchone()
+    if not pending or pending["expires_at"] <= int(time.time()):
+        db.execute("DELETE FROM mfa_pending_enrollments WHERE user_id = ?", (user["id"],))
+        db.commit()
+        return jsonify({"error": "Die Einrichtung ist abgelaufen. Bitte erneut starten."}), 400
+
+    payload = request.get_json(silent=True) or {}
+    code = str(payload.get("code") or "").strip()
+    if not code or not pyotp.TOTP(pending["secret"]).verify(code):
+        log_activity(db, "otp_enrollment_failed", "user", user["id"], {"username": username})
+        db.commit()
+        return jsonify({"error": "Code ungültig oder abgelaufen."}), 401
+
+    db.execute("UPDATE users SET otp_secret = ? WHERE id = ?", (pending["secret"], user["id"]))
+    db.execute("DELETE FROM mfa_pending_enrollments WHERE user_id = ?", (user["id"],))
+    log_activity(db, "otp_enabled", "user", user["id"], {"username": username})
+    db.commit()
+    RATE_LIMIT_CACHE.pop(rate_limit_key, None)
+    session["mfa_required"] = True
+    session["mfa_verified"] = True
+    session["mfa_enrollment_required"] = False
+    return jsonify({"enabled": True}), 200
+
+
+@app.route('/api/otp/cancel', methods=['POST'])
+@login_required
+def cancel_otp_setup():
+    username = session.get('username')
+    db = get_db()
+    user = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+    if not user:
+        return jsonify({"error": "Benutzer nicht gefunden."}), 404
+    db.execute("DELETE FROM mfa_pending_enrollments WHERE user_id = ?", (user["id"],))
+    log_activity(db, "otp_enrollment_cancelled", "user", user["id"], {"username": username})
+    db.commit()
+    return jsonify({"cancelled": True}), 200
 
 def generate_recovery_codes():
     return [secrets.token_hex(4) for _ in range(8)]
@@ -15505,9 +15728,11 @@ def generate_recovery_codes():
 @login_required
 def create_recovery_codes():
     db = get_db()
-    user = db.execute('SELECT id FROM users WHERE username = ?', (session.get('username'),)).fetchone()
+    user = db.execute('SELECT id, otp_secret FROM users WHERE username = ?', (session.get('username'),)).fetchone()
     if not user:
         return jsonify({"error": "Benutzer nicht gefunden"}), 404
+    if not user["otp_secret"]:
+        return jsonify({"error": "TOTP muss vor Wiederherstellungscodes aktiviert werden."}), 409
     codes = generate_recovery_codes()
     db.execute('DELETE FROM mfa_recovery_codes WHERE user_id = ?', (user["id"],))
     for code in codes:
@@ -15530,25 +15755,14 @@ def verify_recovery_code(db, user_id, code):
             return True
     return False
 
-@app.route('/verify')
-@login_required
-def verify():
-    return render_template('verify_otp.html')
-
-@app.route('/api/otp/verify', methods=['POST'])
-@login_required
-def verify_otp():
-    payload = request.get_json(silent=True) or {}
-    code = str(payload.get('code') or "").strip()
-    username = session.get('username') or ""
+def verify_current_user_otp(db, username, code):
     rate_limit_key = f"otp-verify:{get_remote_ip()}:{username.lower()}"
     if should_rate_limit(rate_limit_key):
-        return jsonify({
+        return {
             "verified": False,
             "error": "Zu viele Prüfversuche. Bitte kurz warten.",
-        }), 429
+        }, 429
 
-    db = get_db()
     user = db.execute('SELECT id, otp_secret FROM users WHERE username = ?', (username,)).fetchone()
 
     if user and user['otp_secret'] and code and pyotp.TOTP(user['otp_secret']).verify(code):
@@ -15556,17 +15770,71 @@ def verify_otp():
         db.commit()
         RATE_LIMIT_CACHE.pop(rate_limit_key, None)
         session['mfa_verified'] = True
-        return jsonify({"verified": True}), 200
+        return {"verified": True}, 200
     if user and code and verify_recovery_code(db, user["id"], code):
         log_activity(db, "otp_recovery_used", "user", details={"username": username})
         db.commit()
         RATE_LIMIT_CACHE.pop(rate_limit_key, None)
         session['mfa_verified'] = True
-        return jsonify({"verified": True, "recovery": True}), 200
-    else:
-        log_activity(db, "otp_failed", "user", details={"username": username})
-        db.commit()
-        return jsonify({"verified": False}), 401
+        return {"verified": True, "recovery": True}, 200
+    log_activity(db, "otp_failed", "user", details={"username": username})
+    db.commit()
+    return {"verified": False, "error": "Code ungültig oder abgelaufen."}, 401
+
+@app.route('/verify', methods=['GET', 'POST'])
+@login_required
+def verify():
+    if session.get("mfa_enrollment_required"):
+        return redirect(url_for("mfa_enroll"))
+    if request.method == 'GET':
+        return render_template('verify_otp.html')
+    db = get_db()
+    verification, status_code = verify_current_user_otp(
+        db,
+        session.get('username') or "",
+        (request.form.get('otp') or "").strip(),
+    )
+    if verification["verified"]:
+        return redirect(get_post_login_redirect(get_user_access(db)))
+    return render_template('verify_otp.html', error=verification["error"]), status_code
+
+@app.route('/api/otp/verify', methods=['POST'])
+@login_required
+def verify_otp():
+    payload = request.get_json(silent=True) or {}
+    verification, status_code = verify_current_user_otp(
+        get_db(),
+        session.get('username') or "",
+        str(payload.get('code') or "").strip(),
+    )
+    return jsonify(verification), status_code
+
+
+@app.route('/mfa-enroll')
+@login_required
+def mfa_enroll():
+    db = get_db()
+    user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (session.get("username"),)).fetchone()
+    if user and user["otp_secret"]:
+        session["mfa_enrollment_required"] = False
+        return redirect(url_for("verify"))
+    return render_template("mfa_enroll.html", username=session.get("username"))
+
+
+@app.route('/account/security')
+@login_required
+def account_security_page():
+    access = get_user_access(get_db())
+    return render_template(
+        "account_security.html",
+        username=session.get("username"),
+        permissions=sorted(access["permissions"]),
+        is_superuser=access["is_superuser"],
+        page_module="account-security",
+        page_section_label="Konto",
+        page_title="Kontosicherheit",
+        page_description="Passwort und Mehrfaktor-Authentifizierung für dieses Konto verwalten.",
+    )
 
 @app.route('/reset', methods=['GET'])
 def reset_page():
@@ -15577,11 +15845,12 @@ def reset_password():
     username = (request.form.get('username') or "").strip()
     otp_code = (request.form.get('otp') or "").strip()
     new_password = request.form.get('new_password') or ""
+    password_confirmation = request.form.get('password_confirmation') or ""
     neutral_error = "Zurücksetzen nicht möglich. Angaben prüfen oder Administrator kontaktieren."
     rate_limit_key = f"password-reset:{get_remote_ip()}:{username.lower()}"
 
-    if not all([username, otp_code, new_password]):
-        return render_template('reset_password.html', error="Alle Felder ausfüllen!")
+    if not all([username, otp_code, new_password, password_confirmation]):
+        return render_template('reset_password.html', error=neutral_error), 400
     if should_rate_limit(rate_limit_key):
         return render_template(
             'reset_password.html',
@@ -15602,6 +15871,8 @@ def reset_password():
     min_length = get_password_min_length(db)
     if len(new_password) < min_length:
         return render_template('reset_password.html', error=f"Passwort muss mindestens {min_length} Zeichen lang sein.")
+    if password_confirmation != new_password:
+        return render_template('reset_password.html', error="Die Passwörter stimmen nicht überein.")
 
     # Neues Passwort setzen
     new_hash = generate_password_hash(new_password)
@@ -15617,11 +15888,28 @@ def reset_password():
 def disable_otp():
     username = session.get('username')
     db = get_db()
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    if settings["security"]["requireMfa"]:
+        return jsonify({"error": "MFA ist serverweit erforderlich und kann nicht deaktiviert werden."}), 409
+    user = db.execute("SELECT id, otp_secret FROM users WHERE username = ?", (username,)).fetchone()
+    if not user or not user["otp_secret"]:
+        return jsonify({"error": "TOTP ist nicht aktiviert."}), 400
+    payload = request.get_json(silent=True) or {}
+    code = str(payload.get("code") or "").strip()
+    valid_code = bool(code and pyotp.TOTP(user["otp_secret"]).verify(code))
+    if not valid_code and code:
+        valid_code = verify_recovery_code(db, user["id"], code)
+    if not valid_code:
+        return jsonify({"error": "Aktueller TOTP- oder Wiederherstellungscode erforderlich."}), 401
 
-    # OTP löschen
-    db.execute('UPDATE users SET otp_secret = NULL WHERE username = ?', (username,))
-    log_activity(db, "otp_disabled", "user", details={"username": username})
+    db.execute('UPDATE users SET otp_secret = NULL WHERE id = ?', (user["id"],))
+    db.execute('DELETE FROM mfa_pending_enrollments WHERE user_id = ?', (user["id"],))
+    db.execute('DELETE FROM mfa_recovery_codes WHERE user_id = ?', (user["id"],))
+    log_activity(db, "otp_disabled", "user", user["id"], {"username": username})
     db.commit()
+    session['mfa_required'] = False
+    session['mfa_verified'] = True
+    session['mfa_enrollment_required'] = False
     return jsonify({'disabled': True}), 200
 
 @app.route('/api/otp/status', methods=['GET'])
@@ -15629,8 +15917,17 @@ def disable_otp():
 def otp_status():
     username = session.get('username')
     db = get_db()
-    user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
-    return jsonify({'enabled': bool(user and user['otp_secret'])})
+    user = db.execute("SELECT id, otp_secret FROM users WHERE username = ?", (username,)).fetchone()
+    pending = None
+    if user and not user["otp_secret"]:
+        pending = db.execute(
+            "SELECT expires_at FROM mfa_pending_enrollments WHERE user_id = ?",
+            (user["id"],),
+        ).fetchone()
+    return jsonify({
+        'enabled': bool(user and user['otp_secret']),
+        'pending': bool(pending and pending['expires_at'] > int(time.time())),
+    })
 
 
 INVENTORY_LINK_SESSION_SERVICE = InventoryLinkSessionService(
