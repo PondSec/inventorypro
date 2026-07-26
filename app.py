@@ -133,6 +133,11 @@ from inventorypro.secrets import (
 
 INVENTORY_INSTANCE_PATH = os.environ.get("INVENTORY_INSTANCE_PATH") or None
 app = Flask(__name__, instance_path=INVENTORY_INSTANCE_PATH) if INVENTORY_INSTANCE_PATH else Flask(__name__)
+
+@app.before_request
+def assign_request_id():
+    g.request_id = uuid.uuid4().hex
+
 APPLICATION_SECRET = resolve_application_secret()
 app.secret_key = APPLICATION_SECRET.value
 if APPLICATION_SECRET.generated_for_development:
@@ -5996,6 +6001,9 @@ def csrf_token_api():
 
 @app.after_request
 def apply_security_headers(response):
+    request_id = getattr(g, "request_id", None)
+    if request_id:
+        response.headers.setdefault("X-Request-ID", request_id)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
@@ -6103,9 +6111,18 @@ def enforce_security_policies():
                 return redirect(url_for("verify"))
     return None
 
-def log_activity(db, action, entity_type, entity_id=None, details=None):
+def log_activity(db, action, entity_type, entity_id=None, details=None, outcome=None):
     username = session.get('username', 'system')
-    record_activity(db, username, action, entity_type, entity_id, details)
+    record_activity(
+        db,
+        username,
+        action,
+        entity_type,
+        entity_id,
+        details,
+        request_id=getattr(g, "request_id", None),
+        outcome=outcome,
+    )
 
 def parse_time_machine_timestamp(value):
     if not value:
@@ -8871,7 +8888,13 @@ def login():
         settings, _ = serialize_server_settings(get_server_settings(db))
         security = settings["security"]
         if is_user_locked(db, username):
-            log_activity(db, "login_locked", "user", details={"username": username})
+            log_activity(
+                db,
+                "login_locked",
+                "user",
+                details={"username": username},
+                outcome="denied",
+            )
             db.commit()
             return render_template('login.html', error="Account ist gesperrt. Bitte später erneut versuchen.")
         user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
