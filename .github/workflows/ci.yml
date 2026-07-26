@@ -48,4 +48,14 @@ jobs:
       - name: Build frontend assets
         run: pnpm run build:vendor
       - name: Build application image
-        run: docker build --build-arg APP_VERSION=ci -t inventorypro:ci .
+        run: |
+          for attempt in 1 2 3; do
+            if docker build --build-arg APP_VERSION=ci -t inventorypro:ci .; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Container registry request failed; retrying in $((attempt * 15)) seconds."
+              sleep $((attempt * 15))
+            fi
+          done
+          exit 1

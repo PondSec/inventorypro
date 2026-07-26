@@ -119,6 +119,10 @@ class MobileInteractionTestCase(unittest.TestCase):
     def open_modal_and_close(self, page, open_selector, container_selector, panel_selector, close_selector):
         page.click(open_selector)
         page.wait_for_selector(panel_selector, state="visible")
+        page.wait_for_function(
+            "selector => { const modal = document.querySelector(selector); return modal && modal.contains(document.activeElement); }",
+            arg=panel_selector,
+        )
         focus_in_modal = page.evaluate(
             "selector => { const modal = document.querySelector(selector); return modal && modal.contains(document.activeElement); }",
             panel_selector,
@@ -322,6 +326,7 @@ class MobileInteractionTestCase(unittest.TestCase):
         page.get_by_role("button", name="Assets verknüpfen").click()
 
         asset_search = page.get_by_role("searchbox", name="Assets durchsuchen")
+        asset_search.wait_for(state="visible")
         self.assertTrue(asset_search.is_visible())
         search_box = asset_search.bounding_box()
         self.assertIsNotNone(search_box)
