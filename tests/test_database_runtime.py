@@ -3,6 +3,7 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import app as inventory_app
 
@@ -99,6 +100,37 @@ class DatabaseRuntimeTestCase(unittest.TestCase):
             self.assertEqual(len(relation_queries), 1)
             self.assertEqual(summaries[0]["serial_numbers"], ["SERIAL-0"])
             self.assertEqual(summaries[1]["locations"], ["Lager Nord"])
+
+    def test_sqlite_backup_closes_both_connections_after_copying(self):
+        class BackupConnection:
+            def __init__(self):
+                self.backup_targets = []
+                self.close_count = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def backup(self, target):
+                self.backup_targets.append(target)
+
+            def close(self):
+                self.close_count += 1
+
+        source_connection = BackupConnection()
+        target_connection = BackupConnection()
+        with patch.object(
+            inventory_app.sqlite3,
+            "connect",
+            side_effect=[source_connection, target_connection],
+        ):
+            inventory_app.run_sqlite_backup(Path(self.temp_dir.name) / "backup.db")
+
+        self.assertEqual(source_connection.backup_targets, [target_connection])
+        self.assertEqual(source_connection.close_count, 1)
+        self.assertEqual(target_connection.close_count, 1)
 
 
 if __name__ == "__main__":

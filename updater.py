@@ -24,7 +24,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +66,11 @@ PUBLIC_KEY_VALUE = os.environ.get("INVENTORY_UPDATE_PUBLIC_KEY", "")
 HEALTH_TIMEOUT_SECONDS = int(os.environ.get("INVENTORY_UPDATE_HEALTH_TIMEOUT_SECONDS", "180"))
 HEALTH_POLL_SECONDS = int(os.environ.get("INVENTORY_UPDATE_HEALTH_POLL_SECONDS", "5"))
 COMMAND_TIMEOUT_SECONDS = int(os.environ.get("INVENTORY_UPDATE_COMMAND_TIMEOUT_SECONDS", "300"))
+DEFAULT_CHECK_INTERVAL_MINUTES = 360
+DEFAULT_MAINTENANCE_WINDOW = "03:30"
+MAINTENANCE_WINDOW_PATTERN = re.compile(
+    r"^(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)(?::(?P<second>[0-5]\d))?$"
+)
 
 
 def configure_logging() -> None:
@@ -74,6 +79,11 @@ def configure_logging() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
+
+
+def utc_now() -> datetime:
+    """Return the current UTC time without timezone metadata for stored state."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def load_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -110,9 +120,28 @@ def atomic_write_json(path: Path, value: dict[str, Any]) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
+def normalize_maintenance_window(value: Any) -> str:
+    candidate = str(value or "").strip()
+    match = MAINTENANCE_WINDOW_PATTERN.fullmatch(candidate)
+    if not match or match.group("second") not in {None, "00"}:
+        raise UpdateError(
+            "Update-Wartungsfenster muss eine minutengenaue Uhrzeit sein "
+            "(z. B. 09:00, 9:00 oder 09:00:00)."
+        )
+    return f"{int(match.group('hour')):02d}:{match.group('minute')}"
+
+
 def normalize_policy(raw_policy: dict[str, Any]) -> dict[str, Any]:
     if raw_policy.get("schemaVersion") != 1:
         raise UpdateError("Unbekannte Update-Policy-Version.")
+    enabled = bool(raw_policy.get("autoUpdateEnabled"))
+    if not enabled:
+        return {
+            "enabled": False,
+            "channel": "stable",
+            "interval": DEFAULT_CHECK_INTERVAL_MINUTES,
+            "maintenance_window": DEFAULT_MAINTENANCE_WINDOW,
+        }
     channel = str(raw_policy.get("channel") or "").lower()
     if channel != "stable":
         raise UpdateError("Nur der signierte Stable-Kanal ist zulässig.")
@@ -122,11 +151,9 @@ def normalize_policy(raw_policy: dict[str, Any]) -> dict[str, Any]:
         raise UpdateError("Update-Prüfintervall ist ungültig.") from error
     if not 15 <= interval <= 1440:
         raise UpdateError("Update-Prüfintervall außerhalb des zulässigen Bereichs.")
-    window = str(raw_policy.get("maintenanceWindow") or "")
-    if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", window):
-        raise UpdateError("Update-Wartungsfenster ist ungültig.")
+    window = normalize_maintenance_window(raw_policy.get("maintenanceWindow"))
     return {
-        "enabled": bool(raw_policy.get("autoUpdateEnabled")),
+        "enabled": enabled,
         "channel": channel,
         "interval": interval,
         "maintenance_window": window,
@@ -140,6 +167,19 @@ def is_due(policy: dict[str, Any], now: datetime | None = None) -> bool:
     window_start = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
     elapsed_seconds = (current - window_start).total_seconds()
     return 0 <= elapsed_seconds < policy["interval"] * 60
+
+
+def seconds_until_next_maintenance_window(
+    policy: dict[str, Any], now: datetime | None = None
+) -> int:
+    """Return the delay until the next configured local maintenance time."""
+    current = now or datetime.now()
+    hour, minute = (int(part) for part in policy["maintenance_window"].split(":"))
+    next_window = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if next_window <= current:
+        next_window += timedelta(days=1)
+    delay_seconds = (next_window - current).total_seconds()
+    return max(1, int(delay_seconds) + int(delay_seconds % 1 > 0))
 
 
 class SafeHttpsRedirect(urllib.request.HTTPRedirectHandler):
@@ -301,7 +341,7 @@ def backup_database(target_version: str) -> Path:
     database_path = DATA_PATH / "inventory.db"
     if not database_path.exists():
         raise UpdateError("Produktivdatenbank für Update-Backup nicht gefunden.")
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    timestamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
     backup_directory = DATA_PATH / "backups" / "updates" / f"{timestamp}-{target_version}"
     backup_directory.mkdir(parents=True, exist_ok=False)
     os.chmod(backup_directory, 0o700)
@@ -361,7 +401,7 @@ def deploy_image(image: str) -> None:
 
 def write_state(state: dict[str, Any], **changes: Any) -> None:
     state.update(changes)
-    state["updatedAt"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    state["updatedAt"] = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     atomic_write_json(STATE_PATH, state)
 
 
@@ -445,7 +485,10 @@ def main() -> int:
                 result = run_once()
                 LOGGER.info("Updater-Ergebnis: %s", result)
                 policy = normalize_policy(load_json(POLICY_PATH))
-                sleep_seconds = policy["interval"] * 60
+                sleep_seconds = min(
+                    policy["interval"] * 60,
+                    seconds_until_next_maintenance_window(policy),
+                )
             except UpdateError as error:
                 LOGGER.error("Updater abgebrochen: %s", error)
                 sleep_seconds = 15 * 60

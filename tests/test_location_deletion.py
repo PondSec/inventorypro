@@ -95,6 +95,70 @@ class LocationDeletionTestCase(unittest.TestCase):
             ).fetchone()
         self.assertIsNone(location)
 
+    def test_location_page_and_api_keep_their_create_read_update_contracts(self):
+        page = self.client.get("/locations")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Standorte", page.data)
+
+        listed = self.client.get("/api/locations")
+        self.assertEqual(listed.status_code, 200)
+        self.assertIn("Verwendeter Standort", [location["name"] for location in listed.get_json()])
+
+        created = self.client.post(
+            "/api/locations",
+            json={"name": "API Standort", "description": "Erstellt per Test"},
+        )
+        self.assertEqual(created.status_code, 201)
+        duplicate = self.client.post("/api/locations", json={"name": "API Standort"})
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertEqual(duplicate.get_json()["error"], "Standort existiert bereits")
+
+        with inventory_app.app.app_context():
+            location_id = inventory_app.get_db().execute(
+                "SELECT id FROM locations WHERE name = ?", ("API Standort",)
+            ).fetchone()["id"]
+        updated = self.client.put(
+            f"/api/locations/{location_id}",
+            json={"name": "API Standort Aktualisiert", "description": "Neu"},
+        )
+        self.assertEqual(updated.status_code, 200)
+        missing = self.client.put("/api/locations/999999", json={"name": "Nicht vorhanden"})
+        self.assertEqual(missing.status_code, 404)
+
+    def test_location_api_rejects_invalid_and_unauthorized_commands(self):
+        invalid_create = self.client.post("/api/locations", json={"name": " "})
+        self.assertEqual(invalid_create.status_code, 400)
+        self.assertEqual(invalid_create.get_json()["error"], "Name ist erforderlich")
+        invalid_update = self.client.put(
+            f"/api/locations/{self.unused_location_id}", json={"name": ""}
+        )
+        self.assertEqual(invalid_update.status_code, 400)
+        missing_delete = self.client.delete("/api/locations/999999")
+        self.assertEqual(missing_delete.status_code, 404)
+
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            db.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                ("location_without_permissions", inventory_app.generate_password_hash("secret1234")),
+            )
+            db.commit()
+        self.client.post("/logout")
+        self.client.post(
+            "/login",
+            data={"username": "location_without_permissions", "password": "secret1234"},
+        )
+        self.assertEqual(self.client.get("/api/locations").status_code, 403)
+        self.assertEqual(
+            self.client.post("/api/locations", json={"name": "Nicht erlaubt"}).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.put(f"/api/locations/{self.unused_location_id}", json={"name": "Nein"}).status_code,
+            403,
+        )
+        self.assertEqual(self.client.delete(f"/api/locations/{self.unused_location_id}").status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()
