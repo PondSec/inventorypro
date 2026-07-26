@@ -49,6 +49,16 @@ from inventorypro.data_migration import (
     preview_tabular_file,
 )
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
+from inventorypro.domains.authorization.service import (
+    assign_user_role as assign_user_role_record,
+    can_assign_roles,
+    can_manage_role_permissions,
+    ensure_default_roles as ensure_default_roles_record,
+    get_permission_keys_by_ids,
+    get_roles_by_ids,
+    normalize_identifier_list,
+    resolve_user_access,
+)
 from inventorypro.domains.backups.routes import build_backups_blueprint
 from inventorypro.domains.customization.repository import get_customization_record, save_customization
 from inventorypro.domains.customization.routes import build_customization_blueprint
@@ -2728,28 +2738,10 @@ def seed_health_checks(db):
         )
 
 def assign_user_role(db, user_id, role_name):
-    role = db.execute('SELECT id FROM roles WHERE name = ?', (role_name,)).fetchone()
-    if not role:
-        return
-    db.execute('''
-        INSERT OR IGNORE INTO user_roles (user_id, role_id)
-        VALUES (?, ?)
-    ''', (user_id, role["id"]))
+    assign_user_role_record(db, user_id, role_name)
 
 def ensure_default_roles(db):
-    default_role = db.execute('SELECT id FROM roles WHERE name = ?', (DEFAULT_ROLE_NAME,)).fetchone()
-    if not default_role:
-        return
-    users_without_role = db.execute('''
-        SELECT u.id FROM users u
-        LEFT JOIN user_roles ur ON ur.user_id = u.id
-        WHERE ur.user_id IS NULL
-    ''').fetchall()
-    for user in users_without_role:
-        db.execute('''
-            INSERT INTO user_roles (user_id, role_id)
-            VALUES (?, ?)
-        ''', (user["id"], default_role["id"]))
+    ensure_default_roles_record(db, DEFAULT_ROLE_NAME)
 
 def store_initial_admin_credentials(username, password):
     requested_path = Path(
@@ -2819,50 +2811,7 @@ def ensure_admin_user(db):
 def get_user_access(db):
     if hasattr(g, 'user_access'):
         return g.user_access
-    username = session.get('username')
-    if not username:
-        g.user_access = {
-            "user": None,
-            "roles": [],
-            "permissions": set(),
-            "is_superuser": False
-        }
-        return g.user_access
-    user = db.execute('SELECT id, username, email, must_change_password FROM users WHERE username = ?', (username,)).fetchone()
-    if not user:
-        g.user_access = {
-            "user": None,
-            "roles": [],
-            "permissions": set(),
-            "is_superuser": False
-        }
-        return g.user_access
-    roles = db.execute('''
-        SELECT r.id, r.name, r.is_superuser
-        FROM roles r
-        JOIN user_roles ur ON ur.role_id = r.id
-        WHERE ur.user_id = ?
-        ORDER BY r.name
-    ''', (user["id"],)).fetchall()
-    is_superuser = any(role["is_superuser"] for role in roles)
-    if is_superuser:
-        permission_rows = db.execute('SELECT key FROM permissions').fetchall()
-        permissions = {row["key"] for row in permission_rows}
-    else:
-        permission_rows = db.execute('''
-            SELECT DISTINCT p.key
-            FROM permissions p
-            JOIN role_permissions rp ON rp.permission_id = p.id
-            JOIN user_roles ur ON ur.role_id = rp.role_id
-            WHERE ur.user_id = ?
-        ''', (user["id"],)).fetchall()
-        permissions = {row["key"] for row in permission_rows}
-    g.user_access = {
-        "user": dict(user),
-        "roles": [dict(role) for role in roles],
-        "permissions": permissions,
-        "is_superuser": is_superuser
-    }
+    g.user_access = resolve_user_access(db, session.get('username'))
     return g.user_access
 
 @app.context_processor
@@ -13927,11 +13876,19 @@ def enterprise_workflow_hub():
 def manage_users():
     db = get_db()
     if request.method == 'POST':
-        data = request.get_json()
+        data = request.get_json() or {}
         username = (data.get('username') or '').strip()
         password = data.get('password') or ''
         email = normalize_email(data.get('email') or '')
-        role_ids = data.get('role_ids') or []
+        role_ids, role_ids_error = normalize_identifier_list(
+            data.get('role_ids'),
+            "Rollenliste ungültig",
+        )
+        if role_ids_error:
+            return jsonify({"error": role_ids_error}), 400
+        roles, roles_error = get_roles_by_ids(db, role_ids)
+        if roles_error:
+            return jsonify({"error": roles_error}), 400
         if not username or not password:
             return jsonify({"error": "Benutzername und Passwort sind erforderlich"}), 400
         if email and not is_valid_email(email):
@@ -13943,8 +13900,10 @@ def manage_users():
         min_length = get_password_min_length(db)
         if len(password) < min_length:
             return jsonify({"error": f"Passwort muss mindestens {min_length} Zeichen lang sein"}), 400
-        if role_ids and not user_can('roles.assign'):
-            return jsonify({"error": "Keine Berechtigung für Rollen"}), 403
+        if role_ids:
+            access = get_user_access(db)
+            if not user_can('roles.assign') or not can_assign_roles(access, roles):
+                return jsonify({"error": "Keine Berechtigung für Rollen"}), 403
         password_hash = generate_password_hash(password)
         try:
             cursor = db.execute('''
@@ -14069,7 +14028,17 @@ def manage_roles():
         data = request.get_json() or {}
         name = (data.get('name') or '').strip()
         description = (data.get('description') or '').strip()
-        permission_ids = data.get('permission_ids') or []
+        permission_ids, permission_ids_error = normalize_identifier_list(
+            data.get('permission_ids'),
+            "Berechtigungsliste ungültig",
+        )
+        if permission_ids_error:
+            return jsonify({"error": permission_ids_error}), 400
+        permission_keys, permissions_error = get_permission_keys_by_ids(db, permission_ids)
+        if permissions_error:
+            return jsonify({"error": permissions_error}), 400
+        if not can_manage_role_permissions(get_user_access(db), None, permission_keys):
+            return jsonify({"error": "Keine Berechtigung für diese Rollenrechte"}), 403
         if not name:
             return jsonify({"error": "Name ist erforderlich"}), 400
         try:
@@ -14089,7 +14058,10 @@ def manage_roles():
         db.commit()
         return jsonify({"status": "created", "id": role_id}), 201
 
-    if not (user_can('roles.manage') or user_can('roles.assign')):
+    access = get_user_access(db)
+    can_manage_roles = access["is_superuser"] or "roles.manage" in access["permissions"]
+    can_assign_user_roles = access["is_superuser"] or "roles.assign" in access["permissions"]
+    if not (can_manage_roles or can_assign_user_roles):
         return jsonify({"error": "Keine Berechtigung"}), 403
     roles = db.execute('SELECT id, name, description, is_system, is_superuser FROM roles ORDER BY name').fetchall()
     results = []
@@ -14104,6 +14076,18 @@ def manage_roles():
         entry = dict(role)
         entry["permissions"] = [dict(row) for row in permissions]
         results.append(entry)
+    if not can_manage_roles:
+        results = [
+            role
+            for role in results
+            if can_assign_roles(
+                access,
+                [{
+                    "is_superuser": role["is_superuser"],
+                    "permission_keys": {permission["key"] for permission in role["permissions"]},
+                }],
+            )
+        ]
     return jsonify(results)
 
 @app.route('/api/roles/<int:role_id>', methods=['PUT', 'DELETE'])
@@ -14111,7 +14095,10 @@ def manage_roles():
 @require_permission('roles.manage')
 def role_detail(role_id):
     db = get_db()
-    role = db.execute('SELECT id, name, is_system FROM roles WHERE id = ?', (role_id,)).fetchone()
+    role = db.execute(
+        'SELECT id, name, is_system, is_superuser FROM roles WHERE id = ?',
+        (role_id,),
+    ).fetchone()
     if not role:
         return jsonify({"error": "Rolle nicht gefunden"}), 404
     if request.method == 'DELETE':
@@ -14127,7 +14114,17 @@ def role_detail(role_id):
     data = request.get_json() or {}
     name = (data.get('name') or '').strip()
     description = (data.get('description') or '').strip()
-    permission_ids = data.get('permission_ids') or []
+    permission_ids, permission_ids_error = normalize_identifier_list(
+        data.get('permission_ids'),
+        "Berechtigungsliste ungültig",
+    )
+    if permission_ids_error:
+        return jsonify({"error": permission_ids_error}), 400
+    permission_keys, permissions_error = get_permission_keys_by_ids(db, permission_ids)
+    if permissions_error:
+        return jsonify({"error": permissions_error}), 400
+    if not can_manage_role_permissions(get_user_access(db), dict(role), permission_keys):
+        return jsonify({"error": "Keine Berechtigung für diese Rollenrechte"}), 403
     if not name:
         return jsonify({"error": "Name ist erforderlich"}), 400
     db.execute('''
@@ -14167,9 +14164,17 @@ def current_user_info():
 def update_user_roles(user_id):
     db = get_db()
     data = request.get_json() or {}
-    role_ids = data.get('role_ids') or []
-    if not isinstance(role_ids, list):
-        return jsonify({"error": "Rollenliste ungültig"}), 400
+    role_ids, role_ids_error = normalize_identifier_list(
+        data.get('role_ids'),
+        "Rollenliste ungültig",
+    )
+    if role_ids_error:
+        return jsonify({"error": role_ids_error}), 400
+    roles, roles_error = get_roles_by_ids(db, role_ids)
+    if roles_error:
+        return jsonify({"error": roles_error}), 400
+    if not can_assign_roles(get_user_access(db), roles):
+        return jsonify({"error": "Keine Berechtigung für Rollen"}), 403
     existing_user = db.execute('SELECT id, username FROM users WHERE id = ?', (user_id,)).fetchone()
     if not existing_user:
         return jsonify({"error": "Benutzer nicht gefunden"}), 404
