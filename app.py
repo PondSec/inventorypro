@@ -5967,12 +5967,25 @@ def request_origin():
         return ""
     return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
 
+def normalized_origin(scheme, host):
+    parsed = urllib.parse.urlsplit(f"{scheme}://{host}")
+    hostname = parsed.hostname or host
+    port = parsed.port
+    default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    netloc = hostname if port is None or default_port else f"{hostname}:{port}"
+    return f"{scheme}://{netloc}".rstrip("/")
+
+
 def expected_request_origins():
     forwarded_proto = trusted_forwarded_header("X-Forwarded-Proto")
     forwarded_host = trusted_forwarded_header("X-Forwarded-Host")
     scheme = forwarded_proto or request.scheme
     host = forwarded_host or request.host
-    origins = {f"{scheme}://{host}".rstrip("/"), request.host_url.rstrip("/")}
+    origins = {
+        normalized_origin(scheme, host),
+        normalized_origin(request.scheme, request.host),
+        request.host_url.rstrip("/"),
+    }
     if PUBLIC_ORIGIN:
         origins.add(PUBLIC_ORIGIN)
     origins.update(ALLOWED_CORS_ORIGINS)

@@ -157,6 +157,25 @@ class CsrfProtectionTestCase(TestCase):
         )
         self.assertEqual(cross_origin.status_code, 403)
 
+
+    def test_same_origin_accepts_default_port_normalization(self):
+        self.client.get("/login", base_url="http://localhost:80")
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+
+        response = self.client.post(
+            "/login",
+            base_url="http://localhost:80",
+            data={"username": "admin", "password": "invalid"},
+            headers={"X-CSRF-Token": token, "Origin": "http://localhost"},
+        )
+
+        self.assertNotEqual(response.status_code, 403)
+
+    def test_expected_origins_normalize_https_default_port(self):
+        with inventory_app.app.test_request_context("/login", base_url="https://inventory.example:443"):
+            self.assertIn("https://inventory.example", inventory_app.expected_request_origins())
+
     def test_untrusted_forwarded_headers_are_not_used_for_client_identity(self):
         previous_networks = inventory_app.TRUSTED_PROXY_NETWORKS
         try:
