@@ -110,5 +110,33 @@
       "defaultColumns": ["name", "status", "owner", "updated_at"]
     },
     "compactSidebar": false
+  },
+  "navigation": {
+    "groups": {
+      "legacyPrimary": "Hauptbereiche",
+      "assetOperations": "Asset Operations",
+      "serviceWorkflow": "Service & Workflow",
+      "legacyAnalysis": "Auswertung",
+      "analysisPlatform": "Analyse & Plattform",
+      "linkedInstances": "Verknüpfte Instanzen",
+      "administration": "Administration"
+    },
+    "items": {
+      "dashboard": { "label": "Dashboard", "visible": true, "order": 10 },
+      "devices": { "label": "Geräte", "visible": true, "order": 20 },
+      "assets": { "label": "Assets", "visible": true, "order": 30 },
+      "categories": { "label": "Kategorien", "visible": true, "order": 40 },
+      "locations": { "label": "Standorte", "visible": true, "order": 50 },
+      "tickets": { "label": "Ticketsystem", "visible": true, "order": 60 },
+      "knowledge": { "label": "Wissensbasis", "visible": true, "order": 70 },
+      "roadmap": { "label": "Roadmap", "visible": true, "order": 80 },
+      "procurement": { "label": "Beschaffung", "visible": true, "order": 90 },
+      "statistics": { "label": "Statistiken", "visible": true, "order": 100 },
+      "dependencies": { "label": "Abhängigkeiten", "visible": true, "order": 110 },
+      "timeMachine": { "label": "Zeitmaschine", "visible": true, "order": 120 },
+      "health": { "label": "Health", "visible": true, "order": 130 },
+      "users": { "label": "Benutzer & Rollen", "visible": true, "order": 140 },
+      "settings": { "label": "Einstellungen", "visible": true, "order": 150 }
+    }
   }
 }

@@ -790,6 +790,46 @@
                                 <div class="ui-card p-6">
                                     <div class="flex items-center gap-3">
                                         <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                                            <i data-feather="menu" class="h-5 w-5"></i>
+                                        </span>
+                                        <div>
+                                            <h2 class="text-xl font-semibold text-slate-900">Linke Navigation</h2>
+                                            <p class="text-sm text-slate-500">Benenne Links um, blende sie aus und lege ihre Reihenfolge innerhalb des Bereichs fest. Berechtigungen bleiben unverändert wirksam.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 grid gap-4 md:grid-cols-2">
+                                        <template x-for="group in navigationGroups" :key="group.id">
+                                            <div class="space-y-2">
+                                                <label class="text-sm font-semibold text-slate-700" x-text="group.label"></label>
+                                                <input type="text" x-model="customization.navigation.groups[group.id]" :aria-label="`${group.label} umbenennen`" class="input-field">
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <div class="mt-6 space-y-3">
+                                        <template x-for="item in navigationItems" :key="item.id">
+                                            <div class="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-[minmax(0,1fr)_7rem_auto] md:items-end">
+                                                <div class="space-y-2">
+                                                    <label class="text-sm font-semibold text-slate-700" x-text="item.label"></label>
+                                                    <input type="text" x-model="customization.navigation.items[item.id].label" :aria-label="`${item.label} umbenennen`" class="input-field">
+                                                </div>
+                                                <div class="space-y-2">
+                                                    <label class="text-sm font-semibold text-slate-700">Reihenfolge</label>
+                                                    <input type="number" min="0" max="999" step="10" x-model.number="customization.navigation.items[item.id].order" :aria-label="`${item.label} Reihenfolge`" class="input-field">
+                                                </div>
+                                                <label class="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-slate-700">
+                                                    <input type="checkbox" x-model="customization.navigation.items[item.id].visible" :aria-label="`${item.label} anzeigen`" class="rounded border-slate-300 text-emerald-600">
+                                                    Anzeigen
+                                                </label>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div class="ui-card p-6">
+                                    <div class="flex items-center gap-3">
+                                        <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                             <i data-feather="image" class="h-5 w-5"></i>
                                         </span>
                                         <div>
@@ -1556,6 +1596,32 @@
                     },
                 ],
                 selectedPreset: '',
+                navigationGroups: [
+                    { id: 'legacyPrimary', label: 'Bereich Hauptbereiche' },
+                    { id: 'assetOperations', label: 'Bereich Asset Operations' },
+                    { id: 'serviceWorkflow', label: 'Bereich Service & Workflow' },
+                    { id: 'legacyAnalysis', label: 'Bereich Auswertung' },
+                    { id: 'analysisPlatform', label: 'Bereich Analyse & Plattform' },
+                    { id: 'linkedInstances', label: 'Bereich Verknüpfte Instanzen' },
+                    { id: 'administration', label: 'Bereich Administration' },
+                ],
+                navigationItems: [
+                    { id: 'dashboard', label: 'Dashboard' },
+                    { id: 'devices', label: 'Geräte' },
+                    { id: 'assets', label: 'Assets' },
+                    { id: 'categories', label: 'Kategorien' },
+                    { id: 'locations', label: 'Standorte' },
+                    { id: 'tickets', label: 'Ticketsystem' },
+                    { id: 'knowledge', label: 'Wissensbasis' },
+                    { id: 'roadmap', label: 'Roadmap' },
+                    { id: 'procurement', label: 'Beschaffung' },
+                    { id: 'statistics', label: 'Statistiken' },
+                    { id: 'dependencies', label: 'Abhängigkeiten' },
+                    { id: 'timeMachine', label: 'Zeitmaschine' },
+                    { id: 'health', label: 'Health' },
+                    { id: 'users', label: 'Benutzer & Rollen' },
+                    { id: 'settings', label: 'Einstellungen' },
+                ],
                 loading: false,
                 saving: false,
                 errorMessage: '',

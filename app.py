@@ -809,6 +809,34 @@ DEFAULT_CUSTOMIZATION = {
         },
         "compactSidebar": False,
     },
+    "navigation": {
+        "groups": {
+            "legacyPrimary": "Hauptbereiche",
+            "assetOperations": "Asset Operations",
+            "serviceWorkflow": "Service & Workflow",
+            "legacyAnalysis": "Auswertung",
+            "analysisPlatform": "Analyse & Plattform",
+            "linkedInstances": "Verknüpfte Instanzen",
+            "administration": "Administration",
+        },
+        "items": {
+            "dashboard": {"label": "Dashboard", "visible": True, "order": 10},
+            "devices": {"label": "Geräte", "visible": True, "order": 20},
+            "assets": {"label": "Assets", "visible": True, "order": 30},
+            "categories": {"label": "Kategorien", "visible": True, "order": 40},
+            "locations": {"label": "Standorte", "visible": True, "order": 50},
+            "tickets": {"label": "Ticketsystem", "visible": True, "order": 60},
+            "knowledge": {"label": "Wissensbasis", "visible": True, "order": 70},
+            "roadmap": {"label": "Roadmap", "visible": True, "order": 80},
+            "procurement": {"label": "Beschaffung", "visible": True, "order": 90},
+            "statistics": {"label": "Statistiken", "visible": True, "order": 100},
+            "dependencies": {"label": "Abhängigkeiten", "visible": True, "order": 110},
+            "timeMachine": {"label": "Zeitmaschine", "visible": True, "order": 120},
+            "health": {"label": "Health", "visible": True, "order": 130},
+            "users": {"label": "Benutzer & Rollen", "visible": True, "order": 140},
+            "settings": {"label": "Einstellungen", "visible": True, "order": 150},
+        },
+    },
 }
 INSTANCE_CUSTOMIZATION_WORKSPACE_ID = 0
 
@@ -2977,7 +3005,7 @@ def validate_customization(data):
         return False, ["Customization muss ein Objekt sein."]
     if not isinstance(data.get("schemaVersion"), int):
         errors.append("schemaVersion fehlt oder ist ungültig.")
-    for key in ("baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs", "branding"):
+    for key in ("baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs", "branding", "navigation"):
         if key not in data:
             errors.append(f"{key} fehlt.")
 
@@ -3004,6 +3032,39 @@ def validate_customization(data):
                 errors.append(f"branding.{key} überschreitet die Größenbegrenzung von 2 MB.")
     elif branding is not None:
         errors.append("branding muss ein Objekt sein.")
+
+    navigation = data.get("navigation")
+    if not isinstance(navigation, dict):
+        errors.append("navigation muss ein Objekt sein.")
+    else:
+        groups = navigation.get("groups")
+        items = navigation.get("items")
+        if not isinstance(groups, dict):
+            errors.append("navigation.groups muss ein Objekt sein.")
+        else:
+            for group_key, label in groups.items():
+                if not isinstance(group_key, str) or not isinstance(label, str) or not label.strip() or len(label) > 80:
+                    errors.append("navigation.groups enthält eine ungültige Gruppenbezeichnung.")
+                    break
+        if not isinstance(items, dict):
+            errors.append("navigation.items muss ein Objekt sein.")
+        else:
+            for item_key, item in items.items():
+                if not isinstance(item_key, str) or not isinstance(item, dict):
+                    errors.append("navigation.items enthält einen ungültigen Navigationseintrag.")
+                    break
+                label = item.get("label")
+                visible = item.get("visible")
+                order = item.get("order")
+                if not isinstance(label, str) or not label.strip() or len(label) > 80:
+                    errors.append(f"navigation.items.{item_key}.label ist ungültig.")
+                    break
+                if not isinstance(visible, bool):
+                    errors.append(f"navigation.items.{item_key}.visible muss wahr oder falsch sein.")
+                    break
+                if not isinstance(order, int) or not 0 <= order <= 999:
+                    errors.append(f"navigation.items.{item_key}.order muss zwischen 0 und 999 liegen.")
+                    break
     return len(errors) == 0, errors
 
 def compute_customization_diff(old, new, path=""):
