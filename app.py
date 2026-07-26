@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import sqlite3
 import json
+import hashlib
 from datetime import datetime, timedelta
 from functools import wraps
 import os
@@ -40,9 +41,34 @@ from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
 import smtplib
 
+from inventorypro.config import resolve_application_secret
+from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
+from inventorypro.data_migration import TabularImportError, import_tabular_csv, preview_tabular_csv
+from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
+from inventorypro.domains.backups.routes import build_backups_blueprint
+from inventorypro.domains.locations.routes import build_locations_blueprint
+from inventorypro.domains.tickets.routes import build_ticket_pages_blueprint
+from inventorypro.migrations import MigrationError, apply_migrations
+from inventorypro import backup_restore as backup_restore_service
+from inventorypro.secrets import (
+    EncryptionKeyring,
+    SecretConfigurationError,
+    SecretDecryptionError,
+    decrypt_secret,
+    encrypt_secret,
+    is_plaintext_secret,
+    migrate_plaintext_secret,
+)
+
 INVENTORY_INSTANCE_PATH = os.environ.get("INVENTORY_INSTANCE_PATH") or None
 app = Flask(__name__, instance_path=INVENTORY_INSTANCE_PATH) if INVENTORY_INSTANCE_PATH else Flask(__name__)
-app.secret_key = os.environ.get("APP_SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY") or os.urandom(24).hex()
+APPLICATION_SECRET = resolve_application_secret()
+app.secret_key = APPLICATION_SECRET.value
+if APPLICATION_SECRET.generated_for_development:
+    app.logger.warning(
+        "APP_SECRET_KEY fehlt; ein nicht persistenter Schlüssel wurde nur für %s erzeugt.",
+        APPLICATION_SECRET.environment,
+    )
 ALLOWED_CORS_ORIGINS = tuple(
     origin.strip().rstrip("/")
     for origin in (os.environ.get("INVENTORY_ALLOWED_ORIGINS") or "").split(",")
@@ -61,6 +87,10 @@ app.config.update(
         os.environ.get("INVENTORY_SECURE_COOKIES", "0").strip().lower()
         in {"1", "true", "yes", "on"}
     ),
+    INVENTORY_CSRF_ENABLED=(
+        os.environ.get("INVENTORY_CSRF_ENABLED", "1").strip().lower()
+        not in {"0", "false", "no", "off"}
+    ),
 )
 
 DATABASE = os.environ.get("INVENTORY_DATABASE_PATH") or "inventory.db"
@@ -74,6 +104,9 @@ MAX_IMPORT_EXPANDED_BYTES = int(
     os.environ.get("INVENTORY_MAX_IMPORT_EXPANDED_BYTES", MAX_IMPORT_BYTES * 4)
 )
 MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_BYTES))
+MAX_RESTORE_BYTES = int(os.environ.get("INVENTORY_MAX_RESTORE_BYTES", 5 * 1024 * 1024 * 1024))
+MAX_CUSTOMIZATION_IMAGE_BYTES = int(os.environ.get("INVENTORY_MAX_CUSTOMIZATION_IMAGE_BYTES", 2 * 1024 * 1024))
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
 BLOCKED_ATTACHMENT_EXTENSIONS = {".exe", ".js", ".html", ".htm", ".bat", ".sh", ".ps1"}
 BINPACKING_DIMENSIONS = ("width", "height", "depth")
@@ -127,12 +160,18 @@ INVENTORY_LINK_PROXY_REWRITE_PATH_PREFIXES = (
     "settings",
     "inventory-links",
 )
-INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT = os.environ.get("INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS", "1").lower() not in {"0", "false", "no"}
+INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS_DEFAULT = os.environ.get("INVENTORY_LINKS_ALLOW_PRIVATE_NETWORKS", "0").lower() in {"1", "true", "yes"}
 INVENTORY_LINK_LOGIN_TTL_SECONDS = int(os.environ.get("INVENTORY_LINK_LOGIN_TTL_SECONDS", 30 * 60))
-INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS = os.environ.get(
-    "INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS",
-    "1"
-).lower() in {"1", "true", "yes"}
+TRUSTED_PROXY_NETWORKS = tuple(
+    entry.strip()
+    for entry in (os.environ.get("INVENTORY_TRUSTED_PROXY_NETWORKS") or "").split(",")
+    if entry.strip()
+)
+PUBLIC_ORIGIN = (os.environ.get("INVENTORY_PUBLIC_ORIGIN") or "").strip().rstrip("/")
+SCHEDULER_ENABLED = os.environ.get(
+    "INVENTORY_SCHEDULER_ENABLED",
+    "0" if APPLICATION_SECRET.environment == "production" else "1",
+).strip().lower() in {"1", "true", "yes", "on"}
 PRO_ENABLED = True
 APP_START_TIME = time.time()
 TERMINAL_RATE_LIMIT_WINDOW_SECONDS = 60
@@ -145,7 +184,8 @@ TERMINAL_LOG_MAX_BYTES = 150 * 1024
 TERMINAL_DB_MAX_ROWS = 100
 TERMINAL_DB_MAX_BYTES = 150 * 1024
 TERMINAL_REAUTH_WINDOW_SECONDS = 10 * 60
-TERMINAL_RATE_LIMIT_CACHE = {}
+CACHE_MAX_ENTRIES = int(os.environ.get("INVENTORY_CACHE_MAX_ENTRIES", "10000"))
+TERMINAL_RATE_LIMIT_CACHE = SlidingWindowRateLimiter(CACHE_MAX_ENTRIES)
 PRO_FEATURES = [
     "maintenance_schedule",
     "csv_export",
@@ -160,9 +200,9 @@ FREE_FEATURES = [
 RUNTIME_SETTINGS_CACHE = None
 BACKUP_SCHEDULER = BackgroundScheduler()
 HEALTH_SCHEDULER = BackgroundScheduler()
-RATE_LIMIT_CACHE = {}
-INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE = {}
-INVENTORY_LINK_LOGIN_SESSION_CACHE = {}
+RATE_LIMIT_CACHE = SlidingWindowRateLimiter(CACHE_MAX_ENTRIES)
+INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE = SlidingWindowRateLimiter(CACHE_MAX_ENTRIES)
+INVENTORY_LINK_LOGIN_SESSION_CACHE = BoundedTTLCache(CACHE_MAX_ENTRIES)
 
 HEALTH_STATUS_ORDER = {
     "OK": 0,
@@ -609,6 +649,9 @@ DEFAULT_CUSTOMIZATION = {
         "name": "Inventory Pro",
         "tagline": "Inventarisierung",
         "logoDataUrl": "",
+        "logoLightDataUrl": "",
+        "logoDarkDataUrl": "",
+        "faviconDataUrl": "",
     },
     "baseTokens": {
         "colors": {
@@ -766,7 +809,36 @@ DEFAULT_CUSTOMIZATION = {
         },
         "compactSidebar": False,
     },
+    "navigation": {
+        "groups": {
+            "legacyPrimary": "Hauptbereiche",
+            "assetOperations": "Asset Operations",
+            "serviceWorkflow": "Service & Workflow",
+            "legacyAnalysis": "Auswertung",
+            "analysisPlatform": "Analyse & Plattform",
+            "linkedInstances": "Verknüpfte Instanzen",
+            "administration": "Administration",
+        },
+        "items": {
+            "dashboard": {"label": "Dashboard", "visible": True, "order": 10},
+            "devices": {"label": "Geräte", "visible": True, "order": 20},
+            "assets": {"label": "Assets", "visible": True, "order": 30},
+            "categories": {"label": "Kategorien", "visible": True, "order": 40},
+            "locations": {"label": "Standorte", "visible": True, "order": 50},
+            "tickets": {"label": "Ticketsystem", "visible": True, "order": 60},
+            "knowledge": {"label": "Wissensbasis", "visible": True, "order": 70},
+            "roadmap": {"label": "Roadmap", "visible": True, "order": 80},
+            "procurement": {"label": "Beschaffung", "visible": True, "order": 90},
+            "statistics": {"label": "Statistiken", "visible": True, "order": 100},
+            "dependencies": {"label": "Abhängigkeiten", "visible": True, "order": 110},
+            "timeMachine": {"label": "Zeitmaschine", "visible": True, "order": 120},
+            "health": {"label": "Health", "visible": True, "order": 130},
+            "users": {"label": "Benutzer & Rollen", "visible": True, "order": 140},
+            "settings": {"label": "Einstellungen", "visible": True, "order": 150},
+        },
+    },
 }
+INSTANCE_CUSTOMIZATION_WORKSPACE_ID = 0
 
 DEFAULT_ROLES = [
     {
@@ -1298,46 +1370,30 @@ def get_password_min_length(db):
     return settings_row["password_min_length"] or DEFAULT_SERVER_SETTINGS["security"]["minPasswordLength"]
 
 def should_rate_limit(key):
-    now = time.time()
-    window_start = now - RATE_LIMIT_WINDOW_SECONDS
-    entries = RATE_LIMIT_CACHE.get(key, [])
-    entries = [timestamp for timestamp in entries if timestamp >= window_start]
-    if len(entries) >= RATE_LIMIT_MAX_REQUESTS:
-        RATE_LIMIT_CACHE[key] = entries
-        return True
-    entries.append(now)
-    RATE_LIMIT_CACHE[key] = entries
-    return False
+    return RATE_LIMIT_CACHE.is_limited(
+        key,
+        window_seconds=RATE_LIMIT_WINDOW_SECONDS,
+        max_requests=RATE_LIMIT_MAX_REQUESTS,
+    )
 
 def should_rate_limit_terminal(user_id):
-    now = time.time()
-    window_start = now - TERMINAL_RATE_LIMIT_WINDOW_SECONDS
     key = f"terminal:{user_id}"
-    entries = TERMINAL_RATE_LIMIT_CACHE.get(key, [])
-    entries = [timestamp for timestamp in entries if timestamp >= window_start]
-    if len(entries) >= TERMINAL_RATE_LIMIT_MAX_REQUESTS:
-        TERMINAL_RATE_LIMIT_CACHE[key] = entries
-        return True
-    entries.append(now)
-    TERMINAL_RATE_LIMIT_CACHE[key] = entries
-    return False
+    return TERMINAL_RATE_LIMIT_CACHE.is_limited(
+        key,
+        window_seconds=TERMINAL_RATE_LIMIT_WINDOW_SECONDS,
+        max_requests=TERMINAL_RATE_LIMIT_MAX_REQUESTS,
+    )
 
 def should_rate_limit_inventory_proxy(user_id):
-    now = time.time()
-    window_start = now - INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS
     key = f"inventory_links_proxy:{user_id}"
-    entries = INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE.get(key, [])
-    entries = [timestamp for timestamp in entries if timestamp >= window_start]
-    if len(entries) >= INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS:
-        INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE[key] = entries
-        return True
-    entries.append(now)
-    INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE[key] = entries
-    return False
+    return INVENTORY_LINK_PROXY_RATE_LIMIT_CACHE.is_limited(
+        key,
+        window_seconds=INVENTORY_LINK_PROXY_RATE_LIMIT_WINDOW_SECONDS,
+        max_requests=INVENTORY_LINK_PROXY_RATE_LIMIT_MAX_REQUESTS,
+    )
 
 def get_remote_ip():
-    remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
-    return (remote_ip or "").split(",")[0].strip()
+    return get_client_ip()
 
 def is_ip_allowed(remote_ip, allowlist):
     if not allowlist:
@@ -1466,6 +1522,14 @@ def validate_inventory_link_configuration(base_url, connection_scope, verify_tls
         raise ValueError("Lokale Verbindungen dürfen nur auf private LAN-Adressen zeigen.")
     return normalized, scope, bool(verify_tls), True
 
+def can_manage_local_inventory_links(access):
+    return bool(access.get("is_superuser") or "server_settings.manage" in access.get("permissions", set()))
+
+def enforce_inventory_link_scope_access(access, connection_scope):
+    if connection_scope == "local" and not can_manage_local_inventory_links(access):
+        return "Lokale Inventory-Link-Verbindungen benötigen Administratorrechte."
+    return None
+
 def parse_inventory_link_login_secret(secret):
     if not secret or ":" not in secret:
         raise ValueError("Login-Secret muss im Format Benutzername:Passwort vorliegen.")
@@ -1544,10 +1608,10 @@ def get_inventory_link_login_cookie(link, secret, user_id):
     )
     if not cookie_header:
         raise ValueError("Login fehlgeschlagen. Prüfe Benutzername/Passwort.")
-    INVENTORY_LINK_LOGIN_SESSION_CACHE[cache_key] = {
+    INVENTORY_LINK_LOGIN_SESSION_CACHE.set(cache_key, {
         "cookie": cookie_header,
         "expires_at": expires_at or (time.time() + INVENTORY_LINK_LOGIN_TTL_SECONDS)
-    }
+    }, INVENTORY_LINK_LOGIN_TTL_SECONDS)
     return cookie_header
 
 def serialize_inventory_link(row):
@@ -2486,37 +2550,58 @@ def get_backup_encryption():
         return None
 
 def get_inventory_links_encryption():
-    key = os.environ.get("INVENTORY_LINKS_ENCRYPTION_KEY")
-    if not key:
-        return None
     try:
-        return Fernet(key)
-    except (ValueError, TypeError):
+        return EncryptionKeyring.from_environ()
+    except SecretConfigurationError:
         return None
 
 def encrypt_inventory_link_secret(secret):
-    if secret is None:
-        return None
-    if secret == "":
-        return ""
-    cipher = get_inventory_links_encryption()
-    if cipher is None:
-        if not INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS:
-            raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
-        return f"plain:{secret}"
-    return cipher.encrypt(secret.encode("utf-8")).decode("utf-8")
+    try:
+        return encrypt_secret(secret)
+    except SecretConfigurationError as error:
+        raise ValueError(str(error)) from error
 
 def decrypt_inventory_link_secret(secret_encrypted):
-    if not secret_encrypted:
-        return ""
-    if secret_encrypted.startswith("plain:"):
-        return secret_encrypted.removeprefix("plain:")
-    cipher = get_inventory_links_encryption()
-    if cipher is None:
-        if not INVENTORY_LINKS_ALLOW_PLAINTEXT_SECRETS:
-            raise ValueError("INVENTORY_LINKS_ENCRYPTION_KEY fehlt.")
-        return secret_encrypted
-    return cipher.decrypt(secret_encrypted.encode("utf-8")).decode("utf-8")
+    try:
+        return decrypt_secret(secret_encrypted)
+    except (SecretConfigurationError, SecretDecryptionError) as error:
+        raise ValueError(str(error)) from error
+
+def migrate_inventory_link_secrets(db, reencrypt_all=False):
+    """Encrypt legacy values and re-encrypt values after a key rotation.
+
+    Callers must run this as an explicit maintenance action with a valid primary
+    key. Values are never included in the result, logs or raised messages.
+    """
+    try:
+        keyring = EncryptionKeyring.from_environ()
+    except SecretConfigurationError as error:
+        raise ValueError(str(error)) from error
+
+    rows = db.execute(
+        "SELECT id, secret_encrypted FROM inventory_links WHERE secret_encrypted IS NOT NULL AND secret_encrypted != ''"
+    ).fetchall()
+    migrated = 0
+    skipped = 0
+    for row in rows:
+        stored_value = row["secret_encrypted"]
+        try:
+            if is_plaintext_secret(stored_value):
+                encrypted_value = migrate_plaintext_secret(stored_value)
+            elif reencrypt_all or not stored_value.startswith("fernet:v1:"):
+                encrypted_value = keyring.encrypt(keyring.decrypt(stored_value))
+            else:
+                continue
+        except (SecretConfigurationError, SecretDecryptionError):
+            skipped += 1
+            continue
+        db.execute(
+            "UPDATE inventory_links SET secret_encrypted = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (encrypted_value, row["id"]),
+        )
+        migrated += 1
+    db.commit()
+    return {"migrated": migrated, "skipped": skipped}
 
 def run_sqlite_backup(target_path):
     with sqlite3.connect(DATABASE) as source:
@@ -2600,6 +2685,7 @@ def run_backup_job(db, settings, force=False):
             final_path.unlink(missing_ok=True)
             final_path = Path(encrypted_path)
 
+        write_backup_manifest(final_path)
         cleanup_old_backups(backup_dir, settings["backup"]["retentionDays"])
         record_backup_run(db, "success", str(final_path))
         send_backup_notification(db, settings, "Backup erfolgreich", f"Backup erstellt: {final_path.name}")
@@ -2609,7 +2695,132 @@ def run_backup_job(db, settings, force=False):
         send_backup_notification(db, settings, "Backup fehlgeschlagen", f"Backup fehlgeschlagen: {exc}")
         return {"status": "failed", "message": str(exc)}
 
+def load_backup_settings(db):
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    return settings
+
+def backup_manifest_path(backup_path):
+    return backup_restore_service.backup_manifest_path(backup_path)
+
+def file_sha256(path):
+    return backup_restore_service.file_sha256(path)
+
+def write_backup_manifest(backup_path):
+    return backup_restore_service.write_backup_manifest(
+        backup_path,
+        os.environ.get("APP_VERSION", "dev"),
+    )
+
+def verify_backup_manifest(backup_path):
+    return backup_restore_service.verify_backup_manifest(backup_path)
+
+def _copy_restore_source(source, destination):
+    copied = 0
+    with source, destination.open("wb") as output:
+        while chunk := source.read(1024 * 1024):
+            copied += len(chunk)
+            if copied > MAX_RESTORE_BYTES:
+                raise ValueError("Backup überschreitet die konfigurierte Restore-Größe.")
+            output.write(chunk)
+
+def materialize_sqlite_backup(backup_path, staging_directory):
+    backup_path = Path(backup_path).resolve(strict=True)
+    verify_backup_manifest(backup_path)
+    staging_directory = Path(staging_directory)
+    staging_directory.mkdir(parents=True, exist_ok=True)
+    raw_path = backup_path
+    temporary_paths = []
+    try:
+        if backup_path.suffix == ".enc":
+            fernet = get_backup_encryption()
+            if not fernet:
+                raise ValueError("BACKUP_ENCRYPTION_KEY fehlt oder ist ungültig.")
+            encrypted_data = backup_path.read_bytes()
+            if len(encrypted_data) > MAX_RESTORE_BYTES:
+                raise ValueError("Verschlüsseltes Backup überschreitet die konfigurierte Restore-Größe.")
+            try:
+                decrypted_data = fernet.decrypt(encrypted_data)
+            except Exception as error:
+                raise ValueError("Backup kann mit dem konfigurierten Schlüssel nicht entschlüsselt werden.") from error
+            if len(decrypted_data) > MAX_RESTORE_BYTES:
+                raise ValueError("Entschlüsseltes Backup überschreitet die konfigurierte Restore-Größe.")
+            raw_path = staging_directory / f"decrypted-backup{Path(backup_path.stem).suffix}"
+            raw_path.write_bytes(decrypted_data)
+            os.chmod(raw_path, stat.S_IRUSR | stat.S_IWUSR)
+            temporary_paths.append(raw_path)
+
+        restore_source = staging_directory / "restore-source.db"
+        if raw_path.suffix == ".zip" or backup_path.name.endswith(".zip.enc"):
+            with zipfile.ZipFile(raw_path) as archive:
+                database_members = validate_backup_archive(archive)
+                if len(database_members) != 1:
+                    raise ValueError("Backup-Archiv muss genau eine SQLite-Datenbank enthalten.")
+                source_info = database_members[0]
+                with archive.open(source_info) as source:
+                    _copy_restore_source(source, restore_source)
+        elif raw_path.suffix == ".db":
+            if raw_path.stat().st_size > MAX_RESTORE_BYTES:
+                raise ValueError("Backup überschreitet die konfigurierte Restore-Größe.")
+            shutil.copyfile(raw_path, restore_source)
+        else:
+            raise ValueError("Nur SQLite-Backupdateien (.db, .zip oder .enc) können wiederhergestellt werden.")
+        validate_sqlite_backup(restore_source)
+        return restore_source
+    except Exception:
+        for path in temporary_paths:
+            path.unlink(missing_ok=True)
+        raise
+
+def validate_backup_archive(archive):
+    database_members = []
+    total_uncompressed = 0
+    for info in archive.infolist():
+        member_path = PurePosixPath(info.filename)
+        if (
+            not info.filename
+            or "\x00" in info.filename
+            or "\\" in info.filename
+            or member_path.is_absolute()
+            or any(part in {"", ".", ".."} for part in member_path.parts)
+        ):
+            raise ValueError("Backup-Archiv enthält einen unsicheren Pfad.")
+        unix_mode = info.external_attr >> 16
+        if unix_mode and stat.S_ISLNK(unix_mode):
+            raise ValueError("Backup-Archiv enthält einen symbolischen Link.")
+        if info.is_dir():
+            continue
+        total_uncompressed += max(0, info.file_size)
+        if total_uncompressed > MAX_RESTORE_BYTES:
+            raise ValueError("Entpacktes Backup überschreitet die konfigurierte Restore-Größe.")
+        if member_path.suffix.lower() == ".db":
+            database_members.append(info)
+    return database_members
+
+def validate_sqlite_backup(database_path):
+    database_path = Path(database_path)
+    try:
+        connection = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+        result = connection.execute("PRAGMA integrity_check").fetchone()[0]
+        connection.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
+        connection.close()
+    except sqlite3.Error as error:
+        raise ValueError("Backup ist keine lesbare SQLite-Datenbank.") from error
+    if result.lower() != "ok":
+        raise ValueError("SQLite-Integritätsprüfung des Backups ist fehlgeschlagen.")
+
+def restore_sqlite_backup(backup_path, database_path=None):
+    """Restore a verified SQLite backup atomically while the application is stopped."""
+    return backup_restore_service.restore_sqlite_backup(
+        backup_path,
+        database_path or DATABASE,
+        get_backup_encryption,
+        MAX_RESTORE_BYTES,
+    )
+
 def schedule_backup_jobs(settings):
+    if not SCHEDULER_ENABLED:
+        app.logger.info("In-Process-Backup-Scheduler ist für diesen Worker deaktiviert.")
+        return
     if not BACKUP_SCHEDULER.running:
         BACKUP_SCHEDULER.start()
     BACKUP_SCHEDULER.remove_all_jobs()
@@ -2629,7 +2840,11 @@ def schedule_backup_jobs(settings):
         "cron",
         hour=hour,
         minute=minute,
-        id="daily_backup"
+        id="daily_backup",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
     )
 
 def load_import_file(file_storage):
@@ -2751,6 +2966,15 @@ def migrate_customization(data):
         migrated["branding"]["name"] = branding.get("name", migrated["branding"]["name"])
         migrated["branding"]["tagline"] = branding.get("tagline", migrated["branding"]["tagline"])
         migrated["branding"]["logoDataUrl"] = branding.get("logoDataUrl", migrated["branding"]["logoDataUrl"])
+        migrated["branding"]["logoLightDataUrl"] = branding.get(
+            "logoLightDataUrl", migrated["branding"]["logoLightDataUrl"]
+        )
+        migrated["branding"]["logoDarkDataUrl"] = branding.get(
+            "logoDarkDataUrl", migrated["branding"]["logoDarkDataUrl"]
+        )
+        migrated["branding"]["faviconDataUrl"] = branding.get(
+            "faviconDataUrl", migrated["branding"]["faviconDataUrl"]
+        )
         migrated["baseTokens"]["colors"]["primary"] = branding.get("primary", migrated["baseTokens"]["colors"]["primary"])
         migrated["baseTokens"]["colors"]["accent"] = branding.get("accent", migrated["baseTokens"]["colors"]["accent"])
         migrated["baseTokens"]["colors"]["background"] = branding.get("background", migrated["baseTokens"]["colors"]["background"])
@@ -2781,9 +3005,66 @@ def validate_customization(data):
         return False, ["Customization muss ein Objekt sein."]
     if not isinstance(data.get("schemaVersion"), int):
         errors.append("schemaVersion fehlt oder ist ungültig.")
-    for key in ("baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs", "branding"):
+    for key in ("baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs", "branding", "navigation"):
         if key not in data:
             errors.append(f"{key} fehlt.")
+
+    branding = data.get("branding")
+    if isinstance(branding, dict):
+        for key in ("name", "tagline", "logoDataUrl", "logoLightDataUrl", "logoDarkDataUrl", "faviconDataUrl"):
+            value = branding.get(key)
+            if not isinstance(value, str):
+                errors.append(f"branding.{key} muss ein Textwert sein.")
+        for key in ("logoDataUrl", "logoLightDataUrl", "logoDarkDataUrl", "faviconDataUrl"):
+            value = branding.get(key)
+            if not isinstance(value, str) or not value:
+                continue
+            match = re.fullmatch(r"data:image/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})", value)
+            if not match:
+                errors.append(f"branding.{key} muss ein PNG-, JPEG-, WebP- oder GIF-Data-URL sein.")
+                continue
+            try:
+                image_bytes = base64.b64decode(match.group(2), validate=True)
+            except ValueError:
+                errors.append(f"branding.{key} enthält ungültige Base64-Daten.")
+                continue
+            if len(image_bytes) > MAX_CUSTOMIZATION_IMAGE_BYTES:
+                errors.append(f"branding.{key} überschreitet die Größenbegrenzung von 2 MB.")
+    elif branding is not None:
+        errors.append("branding muss ein Objekt sein.")
+
+    navigation = data.get("navigation")
+    if not isinstance(navigation, dict):
+        errors.append("navigation muss ein Objekt sein.")
+    else:
+        groups = navigation.get("groups")
+        items = navigation.get("items")
+        if not isinstance(groups, dict):
+            errors.append("navigation.groups muss ein Objekt sein.")
+        else:
+            for group_key, label in groups.items():
+                if not isinstance(group_key, str) or not isinstance(label, str) or not label.strip() or len(label) > 80:
+                    errors.append("navigation.groups enthält eine ungültige Gruppenbezeichnung.")
+                    break
+        if not isinstance(items, dict):
+            errors.append("navigation.items muss ein Objekt sein.")
+        else:
+            for item_key, item in items.items():
+                if not isinstance(item_key, str) or not isinstance(item, dict):
+                    errors.append("navigation.items enthält einen ungültigen Navigationseintrag.")
+                    break
+                label = item.get("label")
+                visible = item.get("visible")
+                order = item.get("order")
+                if not isinstance(label, str) or not label.strip() or len(label) > 80:
+                    errors.append(f"navigation.items.{item_key}.label ist ungültig.")
+                    break
+                if not isinstance(visible, bool):
+                    errors.append(f"navigation.items.{item_key}.visible muss wahr oder falsch sein.")
+                    break
+                if not isinstance(order, int) or not 0 <= order <= 999:
+                    errors.append(f"navigation.items.{item_key}.order muss zwischen 0 und 999 liegen.")
+                    break
     return len(errors) == 0, errors
 
 def compute_customization_diff(old, new, path=""):
@@ -2806,9 +3087,14 @@ def get_current_user_id(db):
 
 def get_customization_record(db, user_id, workspace_id=None):
     if workspace_id is None:
+        record = db.execute(
+            "SELECT * FROM ui_customization WHERE workspace_id = ? ORDER BY id LIMIT 1",
+            (INSTANCE_CUSTOMIZATION_WORKSPACE_ID,),
+        ).fetchone()
+        if record:
+            return record
         return db.execute(
-            "SELECT * FROM ui_customization WHERE user_id = ? AND workspace_id IS NULL",
-            (user_id,),
+            "SELECT * FROM ui_customization WHERE workspace_id IS NULL ORDER BY updated_at DESC, id DESC LIMIT 1"
         ).fetchone()
     return db.execute(
         "SELECT * FROM ui_customization WHERE user_id = ? AND workspace_id = ?",
@@ -2822,10 +3108,10 @@ def save_customization(db, user_id, customization, updated_by, workspace_id=None
         db.execute(
             """
             UPDATE ui_customization
-            SET customization_json = ?, schema_version = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
+            SET workspace_id = ?, customization_json = ?, schema_version = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
             WHERE id = ?
             """,
-            (serialized, customization["schemaVersion"], updated_by, existing["id"]),
+            (INSTANCE_CUSTOMIZATION_WORKSPACE_ID, serialized, customization["schemaVersion"], updated_by, existing["id"]),
         )
         customization_id = existing["id"]
     else:
@@ -2834,7 +3120,7 @@ def save_customization(db, user_id, customization, updated_by, workspace_id=None
             INSERT INTO ui_customization (user_id, workspace_id, schema_version, customization_json, updated_by)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (user_id, workspace_id, customization["schemaVersion"], serialized, updated_by),
+            (user_id, INSTANCE_CUSTOMIZATION_WORKSPACE_ID, customization["schemaVersion"], serialized, updated_by),
         )
         customization_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -3142,6 +3428,13 @@ def get_user_access(db):
         "is_superuser": is_superuser
     }
     return g.user_access
+
+@app.context_processor
+def inject_security_context():
+    return {
+        "csrf_token": get_csrf_token(session),
+        "csrf_header_name": CSRF_HEADER_NAME,
+    }
 
 @app.context_processor
 def inject_inventory_links():
@@ -5251,6 +5544,10 @@ def init_db():
         ensure_default_roles(db)
         ensure_admin_user(db)
         seed_health_checks(db)
+        try:
+            apply_migrations(db, Path(__file__).with_name("migrations"))
+        except MigrationError as error:
+            raise RuntimeError("Datenbankmigration konnte nicht sicher angewendet werden.") from error
         db.commit()
 
 # Setup-Funktion zum Benutzer erstellen
@@ -5681,10 +5978,22 @@ def scheduled_health_run():
         db.commit()
 
 def schedule_health_jobs():
+    if not SCHEDULER_ENABLED:
+        app.logger.info("In-Process-Health-Scheduler ist für diesen Worker deaktiviert.")
+        return
     if not HEALTH_SCHEDULER.running:
         HEALTH_SCHEDULER.start()
     HEALTH_SCHEDULER.remove_all_jobs()
-    HEALTH_SCHEDULER.add_job(scheduled_health_run, "interval", seconds=60, id="health_checks")
+    HEALTH_SCHEDULER.add_job(
+        scheduled_health_run,
+        "interval",
+        seconds=60,
+        id="health_checks",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
+    )
 
 def fetch_latest_health_results(db):
     return db.execute(
@@ -6319,6 +6628,31 @@ def record_login_failure(db, username, max_failed, lockout_minutes):
 def clear_login_failures(db, username):
     db.execute('DELETE FROM login_attempts WHERE username = ?', (username,))
 
+def request_comes_from_trusted_proxy():
+    if not TRUSTED_PROXY_NETWORKS:
+        return False
+    remote_address = request.remote_addr or ""
+    try:
+        remote_ip = ipaddress.ip_address(remote_address)
+    except ValueError:
+        return False
+    for entry in TRUSTED_PROXY_NETWORKS:
+        try:
+            if remote_ip in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            app.logger.error("Ungültiges Netzwerk in INVENTORY_TRUSTED_PROXY_NETWORKS konfiguriert.")
+    return False
+
+def trusted_forwarded_header(name):
+    if not request_comes_from_trusted_proxy():
+        return ""
+    return (request.headers.get(name) or "").split(",")[0].strip()
+
+def get_client_ip():
+    forwarded_for = trusted_forwarded_header("X-Forwarded-For")
+    return forwarded_for or request.remote_addr or ""
+
 def request_origin():
     origin = (request.headers.get("Origin") or "").strip().rstrip("/")
     if origin:
@@ -6332,11 +6666,13 @@ def request_origin():
     return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
 
 def expected_request_origins():
-    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
-    forwarded_host = (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()
+    forwarded_proto = trusted_forwarded_header("X-Forwarded-Proto")
+    forwarded_host = trusted_forwarded_header("X-Forwarded-Host")
     scheme = forwarded_proto or request.scheme
     host = forwarded_host or request.host
     origins = {f"{scheme}://{host}".rstrip("/"), request.host_url.rstrip("/")}
+    if PUBLIC_ORIGIN:
+        origins.add(PUBLIC_ORIGIN)
     origins.update(ALLOWED_CORS_ORIGINS)
     return origins
 
@@ -6353,6 +6689,20 @@ def enforce_same_origin_writes():
     if origin and origin not in expected_request_origins():
         return jsonify({"error": "Anfrageursprung ist nicht zulässig."}), 403
     return None
+
+@app.before_request
+def enforce_csrf_protection():
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    if not app.config["INVENTORY_CSRF_ENABLED"] or app.testing:
+        return None
+    if not validate_csrf_token(request, session):
+        return jsonify({"error": "CSRF-Token fehlt oder ist ungültig."}), 403
+    return None
+
+@app.route('/api/csrf-token', methods=['GET'])
+def csrf_token_api():
+    return jsonify({"csrfToken": get_csrf_token(session), "headerName": CSRF_HEADER_NAME})
 
 @app.after_request
 def apply_security_headers(response):
@@ -6383,11 +6733,19 @@ def apply_security_headers(response):
     )
     if request.path.startswith("/api/"):
         response.headers.setdefault("Cache-Control", "no-store")
-    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+    forwarded_proto = trusted_forwarded_header("X-Forwarded-Proto")
     if request.is_secure or forwarded_proto == "https":
         response.headers.setdefault(
             "Strict-Transport-Security",
             "max-age=31536000; includeSubDomains",
+        )
+    if request.endpoint != "static":
+        response.set_cookie(
+            "csrf_token",
+            get_csrf_token(session),
+            secure=app.config["SESSION_COOKIE_SECURE"],
+            httponly=False,
+            samesite="Lax",
         )
     return response
 
@@ -6400,7 +6758,7 @@ def enforce_security_policies():
     settings, _ = serialize_server_settings(settings_row)
 
     if settings["security"]["forceHttps"]:
-        forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
+        forwarded_proto = trusted_forwarded_header("X-Forwarded-Proto")
         if not request.is_secure and forwarded_proto != "https":
             if request.path.startswith("/api"):
                 return jsonify({"error": "HTTPS erforderlich."}), 403
@@ -6408,8 +6766,7 @@ def enforce_security_policies():
 
     ip_whitelist = settings["security"]["ipWhitelist"]
     if ip_whitelist:
-        remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
-        remote_ip = (remote_ip or "").split(",")[0].strip()
+        remote_ip = get_client_ip()
         allowed = False
         for entry in ip_whitelist:
             try:
@@ -8769,8 +9126,40 @@ def is_attachment_extension_allowed(filename):
 
 def build_attachment_storage_path(entity_type, entity_id):
     target_dir = UPLOADS_DIR / "attachments" / entity_type / str(entity_id)
-    target_dir.mkdir(parents=True, exist_ok=True)
+    target_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(target_dir, stat.S_IRWXU)
     return target_dir
+
+def validate_attachment_content(file_path, extension):
+    signatures = {
+        ".pdf": b"%PDF-",
+        ".png": b"\x89PNG\r\n\x1a\n",
+        ".jpg": b"\xff\xd8\xff",
+        ".jpeg": b"\xff\xd8\xff",
+    }
+    with Path(file_path).open("rb") as handle:
+        sample = handle.read(8192)
+    required_signature = signatures.get(extension)
+    if required_signature and not sample.startswith(required_signature):
+        return "Dateiinhalt passt nicht zum erlaubten Dateityp."
+    if extension in {".txt", ".csv"}:
+        if b"\x00" in sample:
+            return "Textdatei enthält unzulässige Binärdaten."
+        try:
+            sample.decode("utf-8")
+        except UnicodeDecodeError:
+            return "Textdatei muss UTF-8-kodiert sein."
+    return None
+
+def attachment_mime_type(extension):
+    return {
+        ".pdf": "application/pdf",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".txt": "text/plain; charset=utf-8",
+        ".csv": "text/csv; charset=utf-8",
+    }.get(extension, "application/octet-stream")
 
 def store_attachment_file(file_storage, entity_type, entity_id):
     if not file_storage:
@@ -8785,6 +9174,7 @@ def store_attachment_file(file_storage, entity_type, entity_id):
     target_dir = build_attachment_storage_path(entity_type, entity_id)
     file_path = target_dir / stored_filename
     file_storage.save(file_path)
+    os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
     size_bytes = file_path.stat().st_size
     if size_bytes > MAX_UPLOAD_BYTES:
         file_path.unlink(missing_ok=True)
@@ -8793,10 +9183,14 @@ def store_attachment_file(file_storage, entity_type, entity_id):
     if antivirus_error:
         file_path.unlink(missing_ok=True)
         return None, antivirus_error
+    content_error = validate_attachment_content(file_path, extension)
+    if content_error:
+        file_path.unlink(missing_ok=True)
+        return None, content_error
     return {
         "original_filename": original_filename,
         "stored_filename": stored_filename,
-        "mime_type": file_storage.mimetype,
+        "mime_type": attachment_mime_type(extension),
         "size_bytes": size_bytes,
         "file_path": file_path,
     }, None
@@ -9362,52 +9756,6 @@ def inventory_link_portal(link_id):
         is_superuser=access["is_superuser"],
         link=serialize_inventory_link(link),
         active_link_id=link_id
-    )
-
-@app.route('/locations')
-@login_required
-@require_permissions('locations.view', 'locations.manage')
-def locations_page():
-    access = get_user_access(get_db())
-    return render_template('locations.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
-
-@app.route('/tickets')
-@login_required
-@require_permissions('tickets.view_all', 'tickets.view_own', 'tickets.create')
-def tickets_page():
-    access = get_user_access(get_db())
-    return render_template('tickets.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
-
-@app.route('/tickets/<int:ticket_id>')
-@login_required
-@require_permissions('tickets.view_all', 'tickets.view_own')
-def ticket_workspace_page(ticket_id):
-    ticket = fetch_ticket(get_db(), ticket_id)
-    access = get_user_access(get_db())
-    if not ticket:
-        return Response("Ticket nicht gefunden", status=404, content_type="text/plain; charset=utf-8")
-    if not ensure_ticket_access(ticket, access):
-        return jsonify({"error": "Keine Berechtigung"}), 403
-    return render_template(
-        'tickets.html',
-        username=session.get('username'),
-        permissions=sorted(access["permissions"]),
-        is_superuser=access["is_superuser"],
-        initial_ticket_id=ticket_id,
-    )
-
-@app.route('/admin/tickets')
-@app.route('/admin/tickets/<section>')
-@login_required
-@require_permissions('ticket_categories.manage', 'ticket_alerts.manage', 'notifications.manage')
-def ticket_admin_page(section='general'):
-    access = get_user_access(get_db())
-    return render_template(
-        'ticket_admin.html',
-        username=session.get('username'),
-        permissions=sorted(access["permissions"]),
-        is_superuser=access["is_superuser"],
-        section=section,
     )
 
 @app.route('/knowledge')
@@ -10575,89 +10923,6 @@ def asset_relation_types():
         ORDER BY name
     ''').fetchall()
     return jsonify([dict(row) for row in rows])
-
-@app.route('/api/locations', methods=['GET', 'POST'])
-@login_required
-def manage_locations():
-    db = get_db()
-    if request.method == 'POST':
-        if not user_can('locations.manage'):
-            return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json()
-        name = (data.get('name') or '').strip()
-        description = (data.get('description') or '').strip()
-        if not name:
-            return jsonify({"error": "Name ist erforderlich"}), 400
-        try:
-            db.execute('''
-                INSERT INTO locations (name, description)
-                VALUES (?, ?)
-            ''', (name, description))
-            log_activity(db, "create", "location", details={"name": name})
-            db.commit()
-            return jsonify({"status": "created"}), 201
-        except sqlite3.IntegrityError:
-            return jsonify({"error": "Standort existiert bereits"}), 400
-
-    if not (user_can('locations.view') or user_can('locations.manage')):
-        return jsonify({"error": "Keine Berechtigung"}), 403
-    locations = db.execute('SELECT * FROM locations ORDER BY name').fetchall()
-    return jsonify([dict(row) for row in locations])
-
-@app.route('/api/locations/<int:location_id>', methods=['PUT', 'DELETE'])
-@login_required
-def update_location(location_id):
-    db = get_db()
-    if request.method == 'PUT':
-        if not user_can('locations.manage'):
-            return jsonify({"error": "Keine Berechtigung"}), 403
-        data = request.get_json()
-        name = (data.get('name') or '').strip()
-        description = (data.get('description') or '').strip()
-        if not name:
-            return jsonify({"error": "Name ist erforderlich"}), 400
-        result = db.execute('''
-            UPDATE locations
-            SET name = ?, description = ?
-            WHERE id = ?
-        ''', (name, description, location_id))
-        if result.rowcount == 0:
-            return jsonify({"error": "Standort nicht gefunden"}), 404
-        log_activity(db, "update", "location", location_id, {"name": name})
-        db.commit()
-        return jsonify({"status": "updated"}), 200
-
-    if not user_can('locations.manage'):
-        return jsonify({"error": "Keine Berechtigung"}), 403
-    location = db.execute('SELECT id, name FROM locations WHERE id = ?', (location_id,)).fetchone()
-    if not location:
-        return jsonify({"error": "Standort nicht gefunden"}), 404
-    device_count = db.execute(
-        'SELECT COUNT(*) FROM devices WHERE location_id = ?',
-        (location_id,),
-    ).fetchone()[0]
-    assignment_count = db.execute(
-        'SELECT COUNT(*) FROM asset_assignments WHERE location_id = ?',
-        (location_id,),
-    ).fetchone()[0]
-    if device_count or assignment_count:
-        return jsonify({
-            "error": (
-                f"Standort „{location['name']}“ wird noch verwendet. "
-                "Ordne Geräte und Asset-Zuweisungen vor dem Löschen einem anderen Standort zu."
-            ),
-            "code": "location_in_use",
-            "references": {
-                "devices": device_count,
-                "asset_assignments": assignment_count,
-            },
-        }), 409
-    result = db.execute('DELETE FROM locations WHERE id = ?', (location_id,))
-    if result.rowcount == 0:
-        return jsonify({"error": "Standort nicht gefunden"}), 404
-    log_activity(db, "delete", "location", location_id)
-    db.commit()
-    return jsonify({"status": "deleted"}), 200
 
 @app.route('/api/ticket-categories', methods=['GET', 'POST'])
 @login_required
@@ -14791,6 +15056,9 @@ def inventory_links_api():
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    scope_error = enforce_inventory_link_scope_access(access, connection_scope)
+    if scope_error:
+        return jsonify({"error": scope_error}), 403
 
     try:
         secret_encrypted = encrypt_inventory_link_secret(secret) if secret else ""
@@ -14838,6 +15106,9 @@ def inventory_links_test_draft():
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    scope_error = enforce_inventory_link_scope_access(access, connection_scope)
+    if scope_error:
+        return jsonify({"error": scope_error}), 403
     result = perform_inventory_link_test({
         "base_url": normalized,
         "verify_tls": verify_tls,
@@ -14897,6 +15168,9 @@ def inventory_link_detail_api(link_id):
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    scope_error = enforce_inventory_link_scope_access(access, connection_scope)
+    if scope_error:
+        return jsonify({"error": scope_error}), 403
 
     secret_encrypted = link["secret_encrypted"]
     if secret is not None:
@@ -14998,6 +15272,9 @@ def inventory_link_auth_login(link_id):
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    scope_error = enforce_inventory_link_scope_access(access, link["connection_scope"] or "internet")
+    if scope_error:
+        return jsonify({"error": scope_error}), 403
     secret = f"{username}:{password}"
     try:
         cookie_header, expires_at = login_inventory_link_session(
@@ -15012,10 +15289,10 @@ def inventory_link_auth_login(link_id):
     if not cookie_header:
         return jsonify({"error": "Login fehlgeschlagen. Prüfe Benutzername/Passwort."}), 401
     cache_key = f"{user['id']}:{link['id']}"
-    INVENTORY_LINK_LOGIN_SESSION_CACHE[cache_key] = {
+    INVENTORY_LINK_LOGIN_SESSION_CACHE.set(cache_key, {
         "cookie": cookie_header,
         "expires_at": expires_at or (time.time() + INVENTORY_LINK_LOGIN_TTL_SECONDS)
-    }
+    }, INVENTORY_LINK_LOGIN_TTL_SECONDS)
     update_inventory_link_health(db, link_id, "ok")
     db.commit()
     return jsonify({"authenticated": True}), 200
@@ -15046,6 +15323,9 @@ def inventory_link_proxy(link_id, subpath):
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    scope_error = enforce_inventory_link_scope_access(access, link["connection_scope"] or "internet")
+    if scope_error:
+        return jsonify({"error": scope_error}), 403
 
     if link["auth_mode"] != "none":
         try:
@@ -15116,42 +15396,6 @@ def inventory_link_proxy(link_id, subpath):
         status=status_code,
         headers=response_headers
     )
-
-@app.route('/api/backups/run', methods=['POST'])
-@login_required
-@require_permission('server_settings.manage')
-def run_backup():
-    db = get_db()
-    settings, _ = serialize_server_settings(get_server_settings(db))
-    data = request.get_json() or {}
-    force = bool(data.get("force"))
-    result = run_backup_job(db, settings, force=force)
-    return jsonify(result)
-
-@app.route('/api/backups/list', methods=['GET'])
-@login_required
-@require_permission('server_settings.manage')
-def list_backups():
-    db = get_db()
-    rows = db.execute(
-        '''
-        SELECT id, status, backup_path, backup_size_bytes, message, created_at
-        FROM backup_runs
-        ORDER BY created_at DESC
-        LIMIT 50
-        '''
-    ).fetchall()
-    backups = []
-    for row in rows:
-        backups.append({
-            "id": row["id"],
-            "status": row["status"],
-            "path": row["backup_path"],
-            "sizeBytes": row["backup_size_bytes"],
-            "message": row["message"],
-            "createdAt": row["created_at"]
-        })
-    return jsonify({"backups": backups})
 
 @app.route('/api/export', methods=['GET'])
 @login_required
@@ -15312,6 +15556,10 @@ def import_data():
                         target_path.parent.mkdir(parents=True, exist_ok=True)
                         with archive.open(member_info) as source, open(target_path, "wb") as target:
                             shutil.copyfileobj(source, target)
+        elif file_path.suffix.lower() in {".csv", ".tsv"}:
+            entity = (request.form.get("entity") or "").strip().lower()
+            tabular_mode = (request.form.get("mode") or import_mode).strip().lower()
+            summary = import_tabular_csv(db, file_path.read_bytes(), entity, tabular_mode)
         elif file_path.suffix in {".db", ".sqlite"}:
             with db:
                 import_from_sqlite(db, file_path, import_mode, tables)
@@ -15319,7 +15567,34 @@ def import_data():
             return jsonify({"error": "Unbekanntes Import-Format."}), 400
         log_activity(db, "import", "server_settings", details={"mode": import_mode})
         db.commit()
-        return jsonify({"status": "success"})
+        response = {"status": "success"}
+        if file_path.suffix.lower() in {".csv", ".tsv"}:
+            response["summary"] = summary
+        return jsonify(response)
+    except TabularImportError as error:
+        return jsonify({"error": str(error)}), 400
+    finally:
+        shutil.rmtree(file_path.parent, ignore_errors=True)
+
+@app.route('/api/import/preview', methods=['POST'])
+@login_required
+@require_permission('server_settings.manage')
+def preview_import_data():
+    db = get_db()
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    if not settings["importExport"]["importAllowed"]:
+        return jsonify({"error": "Import ist deaktiviert."}), 403
+    file_storage = request.files.get("file")
+    file_path, error = load_import_file(file_storage)
+    if error:
+        return jsonify({"error": error}), 400
+    try:
+        if file_path.suffix.lower() not in {".csv", ".tsv"}:
+            return jsonify({"error": "Die Vorschau unterstützt CSV- und TSV-Dateien."}), 400
+        entity = (request.form.get("entity") or "").strip().lower()
+        return jsonify(preview_tabular_csv(file_path.read_bytes(), entity))
+    except TabularImportError as error:
+        return jsonify({"error": str(error)}), 400
     finally:
         shutil.rmtree(file_path.parent, ignore_errors=True)
 
@@ -15355,6 +15630,8 @@ def customize_settings():
             "revision_id": latest_revision["id"] if latest_revision else None,
         })
 
+    if not user_can('server_settings.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     payload = request.get_json() or {}
     if request.method == 'PATCH':
         merged = deep_merge(existing or DEFAULT_CUSTOMIZATION, payload)
@@ -15387,6 +15664,8 @@ def customize_settings():
 @app.route('/api/customize/history', methods=['GET'])
 @login_required
 def customize_history():
+    if not user_can('server_settings.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     db = get_db()
     user_id = get_current_user_id(db)
     if not user_id:
@@ -15417,6 +15696,8 @@ def customize_history():
 @app.route('/api/customize/rollback/<int:revision_id>', methods=['POST'])
 @login_required
 def customize_rollback(revision_id):
+    if not user_can('server_settings.manage'):
+        return jsonify({"error": "Keine Berechtigung"}), 403
     db = get_db()
     user_id = get_current_user_id(db)
     if not user_id:
@@ -16645,6 +16926,37 @@ def otp_status():
     db = get_db()
     user = db.execute("SELECT otp_secret FROM users WHERE username = ?", (username,)).fetchone()
     return jsonify({'enabled': bool(user and user['otp_secret'])})
+
+
+app.register_blueprint(
+    build_backups_blueprint(
+        get_db=get_db,
+        load_settings=load_backup_settings,
+        login_required=login_required,
+        require_permission=require_permission,
+        run_backup_job=run_backup_job,
+    ),
+)
+app.register_blueprint(
+    build_ticket_pages_blueprint(
+        ensure_ticket_access=ensure_ticket_access,
+        fetch_ticket=fetch_ticket,
+        get_db=get_db,
+        get_user_access=get_user_access,
+        login_required=login_required,
+        require_permissions=require_permissions,
+    ),
+)
+app.register_blueprint(
+    build_locations_blueprint(
+        get_db=get_db,
+        get_user_access=get_user_access,
+        log_activity=log_activity,
+        login_required=login_required,
+        require_permissions=require_permissions,
+        user_can=user_can,
+    ),
+)
 
 
 if __name__ == '__main__':

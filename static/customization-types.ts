@@ -2,6 +2,9 @@ export interface BrandingConfig {
   name: string;
   tagline: string;
   logoDataUrl: string;
+  logoLightDataUrl: string;
+  logoDarkDataUrl: string;
+  faviconDataUrl: string;
 }
 
 export interface ColorTokens {
@@ -147,6 +150,17 @@ export interface FeaturePrefs {
   compactSidebar: boolean;
 }
 
+export interface NavigationItem {
+  label: string;
+  visible: boolean;
+  order: number;
+}
+
+export interface NavigationConfig {
+  groups: Record<string, string>;
+  items: Record<string, NavigationItem>;
+}
+
 export interface UiCustomization {
   schemaVersion: 1;
   branding: BrandingConfig;
@@ -154,4 +168,5 @@ export interface UiCustomization {
   componentOverrides: ComponentOverrides;
   layoutPrefs: LayoutPrefs;
   featurePrefs: FeaturePrefs;
+  navigation: NavigationConfig;
 }

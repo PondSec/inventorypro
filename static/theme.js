@@ -3,7 +3,6 @@
   const stored = localStorage.getItem('theme');
   const initial = stored || 'light';
   const customizationCacheKey = 'inventorypro.customization.cache';
-  const customizationLocalKey = 'inventorypro.customization.local';
   const legacyCustomizationKey = 'inventorypro.customization';
   let activeCustomization = null;
 
@@ -13,6 +12,9 @@
       name: 'Inventory Pro',
       tagline: 'Inventarisierung',
       logoDataUrl: '',
+      logoLightDataUrl: '',
+      logoDarkDataUrl: '',
+      faviconDataUrl: '',
     },
     baseTokens: {
       colors: {
@@ -170,6 +172,62 @@
       },
       compactSidebar: false,
     },
+    navigation: {
+      groups: {
+        legacyPrimary: 'Hauptbereiche',
+        assetOperations: 'Asset Operations',
+        serviceWorkflow: 'Service & Workflow',
+        legacyAnalysis: 'Auswertung',
+        analysisPlatform: 'Analyse & Plattform',
+        linkedInstances: 'Verknüpfte Instanzen',
+        administration: 'Administration',
+      },
+      items: {
+        dashboard: { label: 'Dashboard', visible: true, order: 10 },
+        devices: { label: 'Geräte', visible: true, order: 20 },
+        assets: { label: 'Assets', visible: true, order: 30 },
+        categories: { label: 'Kategorien', visible: true, order: 40 },
+        locations: { label: 'Standorte', visible: true, order: 50 },
+        tickets: { label: 'Ticketsystem', visible: true, order: 60 },
+        knowledge: { label: 'Wissensbasis', visible: true, order: 70 },
+        roadmap: { label: 'Roadmap', visible: true, order: 80 },
+        procurement: { label: 'Beschaffung', visible: true, order: 90 },
+        statistics: { label: 'Statistiken', visible: true, order: 100 },
+        dependencies: { label: 'Abhängigkeiten', visible: true, order: 110 },
+        timeMachine: { label: 'Zeitmaschine', visible: true, order: 120 },
+        health: { label: 'Health', visible: true, order: 130 },
+        users: { label: 'Benutzer & Rollen', visible: true, order: 140 },
+        settings: { label: 'Einstellungen', visible: true, order: 150 },
+      },
+    },
+  };
+
+  const navigationTargets = {
+    dashboard: ['/', '/?view=overview'],
+    devices: ['/?view=devices'],
+    assets: ['/?view=assets'],
+    categories: ['/?view=taxonomy'],
+    locations: ['/locations'],
+    tickets: ['/tickets'],
+    knowledge: ['/knowledge'],
+    roadmap: ['/roadmap'],
+    procurement: ['/procurement'],
+    statistics: ['/stats'],
+    dependencies: ['/dependencies'],
+    timeMachine: ['/time-machine'],
+    health: ['/health'],
+    users: ['/users'],
+    settings: ['/settings'],
+  };
+
+  const navigationGroupDefaults = {
+    legacyPrimary: 'Hauptbereiche',
+    assetOperations: 'Asset Operations',
+    serviceWorkflow: 'Service & Workflow',
+    legacyAnalysis: 'Auswertung',
+    analysisPlatform: 'Analyse & Plattform',
+    linkedInstances: 'Verknüpfte Instanzen',
+    administration: 'Administration',
   };
 
   if (initial === 'dark') {
@@ -241,6 +299,7 @@
     if (!activeCustomization) return;
     applyThemeToCSSVars(activeCustomization);
     applyModeTokens(activeCustomization);
+    applyBrandingContent(activeCustomization);
   };
 
   const setTheme = (mode) => {
@@ -315,6 +374,9 @@
       migrated.branding.name = branding.name || migrated.branding.name;
       migrated.branding.tagline = branding.tagline || migrated.branding.tagline;
       migrated.branding.logoDataUrl = branding.logoDataUrl || migrated.branding.logoDataUrl;
+      migrated.branding.logoLightDataUrl = branding.logoLightDataUrl || migrated.branding.logoLightDataUrl;
+      migrated.branding.logoDarkDataUrl = branding.logoDarkDataUrl || migrated.branding.logoDarkDataUrl;
+      migrated.branding.faviconDataUrl = branding.faviconDataUrl || migrated.branding.faviconDataUrl;
       migrated.baseTokens.colors.primary = branding.primary || migrated.baseTokens.colors.primary;
       migrated.baseTokens.colors.accent = branding.accent || migrated.baseTokens.colors.accent;
       migrated.baseTokens.colors.background = branding.background || migrated.baseTokens.colors.background;
@@ -499,6 +561,87 @@
     root.style.setProperty('--table-row-height', `${rowHeight}px`);
   };
 
+  const logoForCurrentTheme = (branding) => {
+    if (root.classList.contains('dark')) {
+      return branding.logoDarkDataUrl || branding.logoDataUrl || branding.logoLightDataUrl;
+    }
+    return branding.logoLightDataUrl || branding.logoDataUrl || branding.logoDarkDataUrl;
+  };
+
+  const applyFavicon = (faviconDataUrl) => {
+    if (!faviconDataUrl) return;
+    let favicon = document.querySelector('link[rel~="icon"]');
+    if (!favicon) {
+      favicon = document.createElement('link');
+      favicon.rel = 'icon';
+      document.head.appendChild(favicon);
+    }
+    favicon.href = faviconDataUrl;
+  };
+
+  const navigationIdForLink = (link) => {
+    const href = link.getAttribute('href');
+    if (!href || href.startsWith('#')) return null;
+    const target = new URL(href, window.location.origin);
+    const relativeTarget = `${target.pathname}${target.search}`;
+    return Object.entries(navigationTargets).find(([, targets]) => targets.includes(relativeTarget))?.[0] || null;
+  };
+
+  const updateNavigationLabel = (link, label) => {
+    const explicitLabel = link.querySelector('.sidebar-text');
+    if (explicitLabel) {
+      explicitLabel.textContent = label;
+      return;
+    }
+    const icon = link.querySelector('.sidebar-link-icon');
+    const labelContainer = icon && icon.parentElement;
+    if (!labelContainer) return;
+    const textNode = Array.from(labelContainer.childNodes).find((node) => (
+      node.nodeType === Node.TEXT_NODE && node.textContent.trim()
+    ));
+    if (textNode) {
+      textNode.textContent = ` ${label}`;
+    }
+  };
+
+  const applyNavigationCustomization = (customization) => {
+    const navigation = customization.navigation || defaultCustomization.navigation;
+    const itemSettings = navigation.items || {};
+    const groupSettings = navigation.groups || {};
+    const sortableContainers = new Set();
+
+    document.querySelectorAll('.app-sidebar .sidebar-link, .sidebar .sidebar-link').forEach((link) => {
+      const itemId = link.dataset.navigationItem || navigationIdForLink(link);
+      if (!itemId || !itemSettings[itemId]) return;
+      link.dataset.navigationItem = itemId;
+      const item = itemSettings[itemId];
+      link.hidden = item.visible === false;
+      link.setAttribute('aria-hidden', item.visible === false ? 'true' : 'false');
+      updateNavigationLabel(link, item.label);
+      if (link.parentElement) sortableContainers.add(link.parentElement);
+    });
+
+    document.querySelectorAll('.app-sidebar .sidebar-panel, .sidebar .sidebar-panel').forEach((panel) => {
+      const title = panel.querySelector('.sidebar-panel-title');
+      if (!title) return;
+      const groupId = panel.dataset.navigationGroup || Object.entries(navigationGroupDefaults).find(([, label]) => (
+        label === title.textContent.trim()
+      ))?.[0];
+      if (!groupId || !groupSettings[groupId]) return;
+      panel.dataset.navigationGroup = groupId;
+      title.textContent = groupSettings[groupId];
+    });
+
+    sortableContainers.forEach((container) => {
+      const links = Array.from(container.children).filter((child) => (
+        child.matches('.sidebar-link') && child.dataset.navigationItem
+      ));
+      links.sort((left, right) => (
+        itemSettings[left.dataset.navigationItem].order - itemSettings[right.dataset.navigationItem].order
+      )).forEach((link) => container.appendChild(link));
+    });
+  };
+
   const applyBrandingContent = (customization) => {
     const branding = customization.branding;
     document.querySelectorAll('[data-brand-name]').forEach((element) => {
@@ -508,20 +651,28 @@
       element.textContent = branding.tagline || defaultCustomization.branding.tagline;
     });
     document.querySelectorAll('[data-brand-logo]').forEach((element) => {
-      const logo = branding.logoDataUrl;
+      const logo = logoForCurrentTheme(branding);
       const icon = element.querySelector('[data-brand-logo-icon]');
       if (logo) {
-        element.style.background = `url(${logo}) center/cover no-repeat`;
+        element.style.backgroundImage = `url(${JSON.stringify(logo)})`;
+        element.style.backgroundPosition = 'center';
+        element.style.backgroundRepeat = 'no-repeat';
+        element.style.backgroundSize = 'cover';
         if (icon) {
           icon.style.display = 'none';
         }
       } else {
-        element.style.background = '';
+        element.style.backgroundImage = '';
+        element.style.backgroundPosition = '';
+        element.style.backgroundRepeat = '';
+        element.style.backgroundSize = '';
         if (icon) {
           icon.style.display = '';
         }
       }
     });
+    applyFavicon(branding.faviconDataUrl || logoForCurrentTheme(branding));
+    applyNavigationCustomization(customization);
     if (branding.name && document.title.includes(defaultCustomization.branding.name)) {
       document.title = document.title.replace(defaultCustomization.branding.name, branding.name);
     }
@@ -570,25 +721,6 @@
     localStorage.setItem(customizationCacheKey, JSON.stringify(payload));
   };
 
-  const getLocalOverride = () => {
-    const storedOverride = localStorage.getItem(customizationLocalKey);
-    if (!storedOverride) return null;
-    try {
-      return JSON.parse(storedOverride);
-    } catch (error) {
-      console.warn('Customize override could not be loaded', error);
-      return null;
-    }
-  };
-
-  const setLocalOverride = (override) => {
-    if (!override) {
-      localStorage.removeItem(customizationLocalKey);
-      return;
-    }
-    localStorage.setItem(customizationLocalKey, JSON.stringify(override));
-  };
-
   const loadCustomization = async () => {
     let applied = applyCustomization(defaultCustomization);
     const legacy = migrateLegacyCustomization();
@@ -619,11 +751,6 @@
       console.warn('Customize settings could not be loaded', error);
     }
 
-    const localOverride = getLocalOverride();
-    if (localOverride) {
-      applied = applyCustomization(deepMerge(applied, localOverride));
-    }
-
     return applied;
   };
 
@@ -645,14 +772,12 @@
     load: loadCustomization,
     getCached: getCachedCustomization,
     setCached: setCachedCustomization,
-    getLocalOverride,
-    setLocalOverride,
   };
 
   loadCustomization();
   document.addEventListener('DOMContentLoaded', updateButtons);
   window.addEventListener('storage', (event) => {
-    if (event.key === customizationCacheKey || event.key === customizationLocalKey) {
+    if (event.key === customizationCacheKey) {
       loadCustomization();
     }
   });

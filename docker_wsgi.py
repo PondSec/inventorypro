@@ -1,4 +1,5 @@
 import app as inventory_app
+from inventorypro.factory import create_app
 
 inventory_app.init_db()
 
@@ -14,4 +15,4 @@ with inventory_app.app.app_context():
     inventory_app.schedule_backup_jobs(settings)
     inventory_app.schedule_health_jobs()
 
-application = inventory_app.app
+application = create_app()

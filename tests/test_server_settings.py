@@ -1,4 +1,5 @@
 import json
+import io
 import tempfile
 from pathlib import Path
 import unittest
@@ -105,6 +106,52 @@ class ServerSettingsTestCase(unittest.TestCase):
         self.assertEqual(run_response.status_code, 200)
         result = run_response.get_json()
         self.assertIn(result["status"], {"success", "failed"})
+
+    def test_backup_history_keeps_the_existing_response_shape(self):
+        self.login()
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            db.execute(
+                """
+                INSERT INTO backup_runs (status, backup_path, backup_size_bytes, message)
+                VALUES (?, ?, ?, ?)
+                """,
+                ("success", "/backups/example.db", 123, "completed"),
+            )
+            db.commit()
+
+        response = self.client.get("/api/backups/list")
+        self.assertEqual(response.status_code, 200)
+        backup = response.get_json()["backups"][0]
+        self.assertEqual(
+            set(backup),
+            {"id", "status", "path", "sizeBytes", "message", "createdAt"},
+        )
+        self.assertEqual(backup["path"], "/backups/example.db")
+        self.assertEqual(backup["sizeBytes"], 123)
+
+    def test_tabular_import_preview_and_device_import(self):
+        self.login()
+        settings = self.client.get("/api/settings/server").get_json()["settings"]
+        settings["importExport"]["importAllowed"] = True
+        self.assertEqual(self.client.put("/api/settings/server", json=settings).status_code, 200)
+        csv_content = b"Hostname;Seriennummer;Standort;Hersteller\ncore-1;SER-1;Berlin;Pond\n"
+        preview = self.client.post(
+            "/api/import/preview",
+            data={"entity": "devices", "file": (io.BytesIO(csv_content), "devices.csv")},
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.get_json()["validRows"], 1)
+        imported = self.client.post(
+            "/api/import",
+            data={
+                "entity": "devices",
+                "mode": "append",
+                "file": (io.BytesIO(csv_content), "devices.csv"),
+            },
+        )
+        self.assertEqual(imported.status_code, 200)
+        self.assertEqual(imported.get_json()["summary"]["created"], 1)
 
     def test_login_lockout(self):
         for _ in range(5):
