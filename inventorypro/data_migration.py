@@ -298,6 +298,13 @@ def parse_tabular_file(
 
 
 def _preview(parsed: Mapping[str, Any]) -> dict[str, Any]:
+    error_report = io.StringIO(newline="")
+    error_writer = csv.DictWriter(error_report, fieldnames=("Zeile", "Fehler"), lineterminator="\n")
+    error_writer.writeheader()
+    error_writer.writerows(
+        {"Zeile": error["line"], "Fehler": error["error"]}
+        for error in parsed["errors"]
+    )
     return {
         "entity": parsed["entity"],
         "format": parsed["format"],
@@ -305,6 +312,12 @@ def _preview(parsed: Mapping[str, Any]) -> dict[str, Any]:
         "validRows": len(parsed["rows"]),
         "invalidRows": len(parsed["errors"]),
         "errors": parsed["errors"][:100],
+        "errorReport": {
+            "format": "csv",
+            "filename": f"inventorypro-{parsed['entity']}-import-errors.csv",
+            "rowCount": len(parsed["errors"]),
+            "content": error_report.getvalue(),
+        },
         "sample": parsed["rows"][:20],
         "headers": parsed["headers"],
         "sheetName": parsed.get("sheetName"),

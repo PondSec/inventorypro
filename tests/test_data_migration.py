@@ -1,3 +1,4 @@
+import csv
 import json
 from datetime import date
 from io import BytesIO
@@ -76,6 +77,19 @@ class DataMigrationTestCase(TestCase):
         source = b"name,serial\nfirst,S-2\n"
         import_tabular_csv(self.connection, source, "devices", "append")
         self.assertEqual(import_tabular_csv(self.connection, source, "devices", "append")["skipped"], 1)
+
+    def test_preview_provides_a_complete_csv_error_report(self):
+        source = "name,serial\n" + "\n".join(f",missing-{index}" for index in range(101)) + "\nvalid,S-1\n"
+        preview = preview_tabular_file(source.encode(), "devices", "devices.csv")
+
+        self.assertEqual(preview["invalidRows"], 101)
+        self.assertEqual(len(preview["errors"]), 100)
+        self.assertEqual(preview["errorReport"]["format"], "csv")
+        self.assertEqual(preview["errorReport"]["filename"], "inventorypro-devices-import-errors.csv")
+        report_rows = list(csv.DictReader(preview["errorReport"]["content"].splitlines()))
+        self.assertEqual(len(report_rows), 101)
+        self.assertEqual(report_rows[0], {"Zeile": "2", "Fehler": "Name ist erforderlich."})
+        self.assertEqual(report_rows[-1], {"Zeile": "102", "Fehler": "Name ist erforderlich."})
 
     def test_asset_merge_and_cost_validation_are_transactional(self):
         source = b"asset,invoice,price\nLaptop,INV-2,1000\n"

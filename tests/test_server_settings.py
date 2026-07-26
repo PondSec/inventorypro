@@ -178,6 +178,25 @@ class ServerSettingsTestCase(unittest.TestCase):
         self.assertEqual(imported.status_code, 200)
         self.assertEqual(imported.get_json()["summary"]["created"], 1)
 
+    def test_tabular_preview_includes_complete_downloadable_error_report(self):
+        self.login()
+        settings = self.client.get("/api/settings/server").get_json()["settings"]
+        settings["importExport"]["importAllowed"] = True
+        self.assertEqual(self.client.put("/api/settings/server", json=settings).status_code, 200)
+        source = b"name,serial\n,missing-1\n,missing-2\nvalid,S-1\n"
+
+        preview = self.client.post(
+            "/api/import/preview",
+            data={"entity": "devices", "file": (io.BytesIO(source), "devices.csv")},
+        )
+
+        self.assertEqual(preview.status_code, 200)
+        report = preview.get_json()["errorReport"]
+        self.assertEqual(report["format"], "csv")
+        self.assertEqual(report["filename"], "inventorypro-devices-import-errors.csv")
+        self.assertEqual(report["rowCount"], 2)
+        self.assertIn("Zeile,Fehler\n2,Name ist erforderlich.\n", report["content"])
+
     def test_tabular_xlsx_and_json_previews_are_available(self):
         self.login()
         settings = self.client.get("/api/settings/server").get_json()["settings"]
