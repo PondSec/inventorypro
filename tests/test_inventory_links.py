@@ -2,6 +2,7 @@ import json
 import socket
 import tempfile
 import threading
+import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import unittest
@@ -12,6 +13,8 @@ from flask import Flask
 
 import app as inventory_app
 from inventorypro.domains.inventory_links.routes import build_inventory_links_blueprint
+from inventorypro.domains.inventory_links.service import InventoryLinkSessionService
+from inventorypro.domains.inventory_links import service as inventory_link_service
 from inventorypro.domains.inventory_links import validators as inventory_link_validators
 
 
@@ -277,6 +280,120 @@ class InventoryLinksTestCase(unittest.TestCase):
             inventory_link_validators.parse_inventory_link_login_secret(" operator :secret"),
             ("operator", "secret"),
         )
+
+    def test_inventory_link_session_service_cache_and_headers(self):
+        class Cache:
+            def __init__(self):
+                self.values = {}
+
+            def get(self, key):
+                return self.values.get(key)
+
+            def set(self, key, value, ttl):
+                self.values[key] = value
+
+            def pop(self, key, default=None):
+                return self.values.pop(key, default)
+
+        cache = Cache()
+        service = InventoryLinkSessionService(
+            login_session_cache=cache,
+            login_ttl_seconds=60,
+            proxy_timeout_seconds=1,
+            allow_private_network_default=False,
+        )
+        link = {"id": "service-link", "base_url": "https://inventory.example", "verify_tls": 1}
+        self.assertIsNone(service.get_cached_cookie(link, 1))
+        cache.values["1:service-link"] = {"cookie": "session=active", "expires_at": None}
+        self.assertEqual(service.get_cached_cookie(link, 1), "session=active")
+        cache.values["1:service-link"] = {"cookie": "session=expired", "expires_at": 0}
+        self.assertIsNone(service.get_cached_cookie(link, 1))
+        self.assertEqual(
+            service.build_target_url("https://inventory.example/root/", "devices", b"page=2"),
+            "https://inventory.example/root/devices?page=2",
+        )
+        self.assertEqual(service.build_target_url("https://inventory.example", "", ""), "https://inventory.example/")
+
+        with inventory_app.app.test_request_context("/", headers={"X-Request-ID": "request-1", "Cookie": "local=1"}):
+            api_key_headers = service.build_request_headers("apiKey", "key")
+            self.assertEqual(api_key_headers["X-API-Key"], "key")
+            self.assertEqual(api_key_headers["X-Request-Id"], "request-1")
+            self.assertNotIn("Cookie", api_key_headers)
+            self.assertEqual(service.build_request_headers("bearerToken", "token")["Authorization"], "Bearer token")
+            self.assertTrue(service.build_request_headers("basic", "user:secret")["Authorization"].startswith("Basic "))
+
+        self.assertEqual(service.build_static_headers("apiKey", "key")["X-API-Key"], "key")
+        self.assertEqual(service.build_static_headers("bearerToken", "token")["Authorization"], "Bearer token")
+        self.assertTrue(service.build_static_headers("basic", "user:secret")["Authorization"].startswith("Basic "))
+        self.assertFalse(service.build_ssl_context(False).check_hostname)
+
+    def test_inventory_link_session_service_login_and_diagnostic_failures(self):
+        class Cache:
+            def __init__(self):
+                self.values = {}
+
+            def get(self, key):
+                return self.values.get(key)
+
+            def set(self, key, value, ttl):
+                self.values[key] = value
+
+            def pop(self, key, default=None):
+                return self.values.pop(key, default)
+
+        service = InventoryLinkSessionService(
+            login_session_cache=Cache(),
+            login_ttl_seconds=60,
+            proxy_timeout_seconds=1,
+            allow_private_network_default=False,
+        )
+        cookie = type("Cookie", (), {"name": "session", "value": "active", "expires": 123})()
+        self.assertEqual(service.extract_cookie_header([cookie]), ("session=active", 123))
+        self.assertEqual(service.extract_cookie_header([]), (None, None))
+        link = {"id": "link", "base_url": "https://inventory.example", "verify_tls": 1}
+        with patch.object(service, "login", return_value=(None, None)):
+            with self.assertRaises(ValueError):
+                service.get_login_cookie(link, "operator:secret", 1)
+        with patch.object(service, "login", return_value=("session=active", None)):
+            self.assertEqual(service.get_login_cookie(link, "operator:secret", 1), "session=active")
+        with patch.object(service, "login", return_value=("session=active", None)):
+            self.assertEqual(service.build_static_headers("login", "operator:secret", "https://inventory.example")["Cookie"], "session=active")
+
+        unauthorized = urllib.error.HTTPError("https://inventory.example/login", 401, "Unauthorized", None, None)
+        opener = type("Opener", (), {"open": lambda self, *args, **kwargs: (_ for _ in ()).throw(unauthorized)})()
+        with patch.object(inventory_link_service.urllib.request, "build_opener", return_value=opener):
+            with self.assertRaises(ValueError):
+                service.login("https://inventory.example", True, "operator:secret")
+
+        with patch.object(
+            inventory_link_service,
+            "validate_inventory_link_configuration",
+            side_effect=ValueError("blocked"),
+        ):
+            self.assertEqual(service.perform_test({"base_url": "https://inventory.example"})["status"], "down")
+        with patch.object(
+            inventory_link_service,
+            "validate_inventory_link_configuration",
+            return_value=("https://inventory.example", "internet", True, False),
+        ):
+            with patch.object(service, "build_static_headers", side_effect=ValueError("invalid credentials")):
+                self.assertEqual(service.perform_test({"base_url": "https://inventory.example"})["status"], "unauthorized")
+            with patch.object(service, "build_static_headers", side_effect=inventory_link_service.InventoryLinkConnectionError("offline")):
+                self.assertEqual(service.perform_test({"base_url": "https://inventory.example"})["status"], "down")
+
+    def test_inventory_link_stream_closes_after_remote_disconnect(self):
+        class BrokenResponse:
+            closed = False
+
+            def read(self, size):
+                raise ConnectionResetError("remote connection closed")
+
+            def close(self):
+                self.closed = True
+
+        response = BrokenResponse()
+        self.assertEqual(list(inventory_app.stream_inventory_link_response(response)), [])
+        self.assertTrue(response.closed)
 
     def test_proxy_forwards_headers_and_redirects(self):
         inventory_app.os.environ["INVENTORY_LINKS_ALLOW_LOOPBACK"] = "1"
