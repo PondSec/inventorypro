@@ -43,6 +43,7 @@ import smtplib
 
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
+from inventorypro.data_migration import TabularImportError, import_tabular_csv, preview_tabular_csv
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
 from inventorypro.domains.backups.routes import build_backups_blueprint
 from inventorypro.domains.locations.routes import build_locations_blueprint
@@ -15451,6 +15452,10 @@ def import_data():
                         target_path.parent.mkdir(parents=True, exist_ok=True)
                         with archive.open(member_info) as source, open(target_path, "wb") as target:
                             shutil.copyfileobj(source, target)
+        elif file_path.suffix.lower() in {".csv", ".tsv"}:
+            entity = (request.form.get("entity") or "").strip().lower()
+            tabular_mode = (request.form.get("mode") or import_mode).strip().lower()
+            summary = import_tabular_csv(db, file_path.read_bytes(), entity, tabular_mode)
         elif file_path.suffix in {".db", ".sqlite"}:
             with db:
                 import_from_sqlite(db, file_path, import_mode, tables)
@@ -15458,7 +15463,34 @@ def import_data():
             return jsonify({"error": "Unbekanntes Import-Format."}), 400
         log_activity(db, "import", "server_settings", details={"mode": import_mode})
         db.commit()
-        return jsonify({"status": "success"})
+        response = {"status": "success"}
+        if file_path.suffix.lower() in {".csv", ".tsv"}:
+            response["summary"] = summary
+        return jsonify(response)
+    except TabularImportError as error:
+        return jsonify({"error": str(error)}), 400
+    finally:
+        shutil.rmtree(file_path.parent, ignore_errors=True)
+
+@app.route('/api/import/preview', methods=['POST'])
+@login_required
+@require_permission('server_settings.manage')
+def preview_import_data():
+    db = get_db()
+    settings, _ = serialize_server_settings(get_server_settings(db))
+    if not settings["importExport"]["importAllowed"]:
+        return jsonify({"error": "Import ist deaktiviert."}), 403
+    file_storage = request.files.get("file")
+    file_path, error = load_import_file(file_storage)
+    if error:
+        return jsonify({"error": error}), 400
+    try:
+        if file_path.suffix.lower() not in {".csv", ".tsv"}:
+            return jsonify({"error": "Die Vorschau unterstützt CSV- und TSV-Dateien."}), 400
+        entity = (request.form.get("entity") or "").strip().lower()
+        return jsonify(preview_tabular_csv(file_path.read_bytes(), entity))
+    except TabularImportError as error:
+        return jsonify({"error": str(error)}), 400
     finally:
         shutil.rmtree(file_path.parent, ignore_errors=True)
 
