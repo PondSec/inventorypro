@@ -14,10 +14,16 @@ class CustomizationTestCase(unittest.TestCase):
         with inventory_app.app.app_context():
             inventory_app.init_db()
             db = inventory_app.get_db()
-            db.execute(
+            user_id = db.execute(
                 "INSERT INTO users (username, password_hash) VALUES (?, ?)",
                 ("tester", "hash"),
-            )
+            ).lastrowid
+            inventory_app.assign_user_role(db, user_id, "Admin")
+            second_user_id = db.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                ("viewer", "hash"),
+            ).lastrowid
+            inventory_app.assign_user_role(db, second_user_id, "Mitarbeiter")
             db.commit()
         self.client = inventory_app.app.test_client()
         with self.client.session_transaction() as session:
@@ -75,6 +81,16 @@ class CustomizationTestCase(unittest.TestCase):
         self.assertEqual(history.status_code, 200)
         history_data = history.get_json()
         self.assertTrue(len(history_data["revisions"]) >= 1)
+
+        second_client = inventory_app.app.test_client()
+        with second_client.session_transaction() as session:
+            session['logged_in'] = True
+            session['username'] = 'viewer'
+        shared = second_client.get('/api/customize')
+        self.assertEqual(shared.status_code, 200)
+        self.assertEqual(shared.get_json()["customization"]["branding"]["name"], "Persisted")
+        denied = second_client.put('/api/customize', json=payload)
+        self.assertEqual(denied.status_code, 403)
 
 
 if __name__ == '__main__':

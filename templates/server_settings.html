@@ -2240,11 +2240,7 @@
                     } catch (error) {
                         this.customizeError = error.message || 'Customize konnte nicht geladen werden.';
                     }
-                    const localOverride = window.InventoryCustomization ? window.InventoryCustomization.getLocalOverride() : null;
-                    if (localOverride) {
-                        this.customization = window.InventoryCustomization.merge(this.customization, localOverride);
-                        this.saveLocalOnly = true;
-                    }
+                    this.saveLocalOnly = false;
                     this.applyCustomization();
                 },
 
