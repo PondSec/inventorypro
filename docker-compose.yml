@@ -14,6 +14,7 @@ services:
       INVENTORY_INSTANCE_PATH: /data/instance
       INVENTORY_UPDATER_ENABLED: ${INVENTORY_UPDATER_ENABLED:-0}
       INVENTORY_ENV: production
+      INVENTORY_ALLOWED_ORIGINS: ${INVENTORY_ALLOWED_ORIGINS:-}
       INVENTORY_SCHEDULER_ENABLED: ${INVENTORY_SCHEDULER_ENABLED:-1}
       # Override APP_SECRET_KEY in production; the fallback keeps local Compose starts stable and session-persistent.
       APP_SECRET_KEY: ${APP_SECRET_KEY:-inventorypro-compose-change-me-persistently-before-production}
