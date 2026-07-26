@@ -99,15 +99,30 @@ def validate_backup_archive(archive: zipfile.ZipFile, maximum_bytes: int) -> lis
 
 def validate_sqlite_backup(database_path: str | Path) -> None:
     path = Path(database_path)
+    connection = None
     try:
         connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         result = connection.execute("PRAGMA integrity_check").fetchone()[0]
         connection.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
-        connection.close()
     except sqlite3.Error as error:
         raise ValueError("Backup ist keine lesbare SQLite-Datenbank.") from error
+    finally:
+        if connection is not None:
+            connection.close()
     if result.lower() != "ok":
         raise ValueError("SQLite-Integritätsprüfung des Backups ist fehlgeschlagen.")
+
+
+def copy_sqlite_database(source_path: str | Path, destination_path: str | Path) -> None:
+    source = sqlite3.connect(f"file:{Path(source_path)}?mode=ro", uri=True)
+    try:
+        destination = sqlite3.connect(destination_path)
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+    finally:
+        source.close()
 
 
 def materialize_sqlite_backup(backup_path, staging_directory, encryption_provider, maximum_bytes):
@@ -172,17 +187,13 @@ def restore_sqlite_backup(backup_path, database_path, encryption_provider, maxim
             maximum_bytes,
         )
         restored_path = Path(directory) / "restored.db"
-        with sqlite3.connect(f"file:{restore_source}?mode=ro", uri=True) as source:
-            with sqlite3.connect(restored_path) as destination:
-                source.backup(destination)
+        copy_sqlite_database(restore_source, restored_path)
         validate_sqlite_backup(restored_path)
         rollback_path = None
         if target_path.exists():
             rollback_path = target_path.with_name(
                 f"{target_path.stem}.pre-restore-{utc_now().strftime('%Y%m%d_%H%M%S')}{target_path.suffix}"
             )
-            with sqlite3.connect(f"file:{target_path}?mode=ro", uri=True) as source:
-                with sqlite3.connect(rollback_path) as destination:
-                    source.backup(destination)
+            copy_sqlite_database(target_path, rollback_path)
         os.replace(restored_path, target_path)
     return {"database": str(target_path), "rollback": str(rollback_path) if rollback_path else None}

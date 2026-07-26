@@ -2291,9 +2291,15 @@ def migrate_inventory_link_secrets(db, reencrypt_all=False):
     return {"migrated": migrated, "skipped": skipped}
 
 def run_sqlite_backup(target_path):
-    with sqlite3.connect(DATABASE) as source:
-        with sqlite3.connect(target_path) as dest:
+    source = sqlite3.connect(DATABASE)
+    try:
+        dest = sqlite3.connect(target_path)
+        try:
             source.backup(dest)
+        finally:
+            dest.close()
+    finally:
+        source.close()
 
 def run_postgres_backup(target_path):
     database_url = os.environ.get("DATABASE_URL")

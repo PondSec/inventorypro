@@ -99,11 +99,18 @@ class InventoryLinkSessionService:
         opener = urllib.request.build_opener(*handlers)
         login_request = urllib.request.Request(login_url, data=payload, headers=headers, method="POST")
         try:
-            opener.open(login_request, timeout=self._proxy_timeout_seconds).read(1024)
+            response = opener.open(login_request, timeout=self._proxy_timeout_seconds)
+            try:
+                response.read(1024)
+            finally:
+                response.close()
         except urllib.error.HTTPError as error:
-            if error.code in {401, 403}:
-                raise ValueError("Login fehlgeschlagen. Prüfe Benutzername/Passwort.") from error
-            raise InventoryLinkConnectionError(f"Login fehlgeschlagen (HTTP {error.code}).") from error
+            try:
+                if error.code in {401, 403}:
+                    raise ValueError("Login fehlgeschlagen. Prüfe Benutzername/Passwort.") from error
+                raise InventoryLinkConnectionError(f"Login fehlgeschlagen (HTTP {error.code}).") from error
+            finally:
+                error.close()
         except (urllib.error.URLError, TimeoutError, socket.timeout) as error:
             reason = getattr(error, "reason", error)
             raise InventoryLinkConnectionError(f"Login-Verbindung fehlgeschlagen: {reason}") from error
@@ -197,18 +204,24 @@ class InventoryLinkSessionService:
             opener = urllib.request.build_opener(*handlers)
             try:
                 response = opener.open(request_object, timeout=self._proxy_timeout_seconds)
-                payload = response.read(4096)
-                info = {"statusCode": response.getcode()}
-                if "application/json" in response.headers.get("Content-Type", ""):
-                    try:
-                        info.update(json.loads(payload.decode("utf-8")))
-                    except json.JSONDecodeError:
-                        pass
-                return {"status": "ok", "message": "Verbindung erfolgreich.", "info": info}
+                try:
+                    payload = response.read(4096)
+                    info = {"statusCode": response.getcode()}
+                    if "application/json" in response.headers.get("Content-Type", ""):
+                        try:
+                            info.update(json.loads(payload.decode("utf-8")))
+                        except json.JSONDecodeError:
+                            pass
+                    return {"status": "ok", "message": "Verbindung erfolgreich.", "info": info}
+                finally:
+                    response.close()
             except urllib.error.HTTPError as error:
-                if error.code in {401, 403}:
-                    return {"status": "unauthorized", "error": "Nicht autorisiert."}
-                last_error = f"HTTP {error.code}"
+                try:
+                    if error.code in {401, 403}:
+                        return {"status": "unauthorized", "error": "Nicht autorisiert."}
+                    last_error = f"HTTP {error.code}"
+                finally:
+                    error.close()
             except ssl.SSLError as error:
                 return {"status": "down", "error": f"TLS-Fehler: {str(error)}"}
             except urllib.error.URLError as error:
