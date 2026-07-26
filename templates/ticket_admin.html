@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Pro · Ticket-Administration</title>
-    <script src="/static/theme.js?v=inventory-v4-20260726-1"></script>
-    <script src="/static/csrf.js?v=1"></script>
+    <script src="/static/theme.js"></script>
     <script src="/static/vendor/alpinejs.min.js" defer></script>
     <script>
         window.inventoryPermissions = {{ permissions | tojson }};
@@ -18,7 +17,7 @@
     <div class="ticket-admin-shell">
         <aside class="ticket-admin-nav" aria-label="Ticket-Administration">
             <a class="ticket-admin-back" href="/tickets"><i data-feather="arrow-left"></i><span>Zurück zum Service Desk</span></a>
-            <div class="ticket-admin-title"><span class="sd-brand-mark" data-brand-logo><i data-feather="settings" data-brand-logo-icon></i></span><div><strong>Ticket-Administration</strong><small data-brand-tagline>Konfiguration & Workflows</small></div></div>
+            <div class="ticket-admin-title"><span class="sd-brand-mark"><i data-feather="settings"></i></span><div><strong>Ticket-Administration</strong><small>Konfiguration & Workflows</small></div></div>
             <nav>
                 <template x-for="item in navigation" :key="item.key">
                     <a :href="`/admin/tickets/${item.key}`" :class="{ active: section === item.key, disabled: !item.enabled }" @click="selectSection($event, item)">
@@ -30,7 +29,7 @@
 
         <main class="ticket-admin-main">
             <header class="ticket-admin-header">
-                <div><p><span data-brand-name>Inventory Pro</span> / Ticket-Administration</p><h1 x-text="currentSection.label"></h1><span x-text="currentSection.description"></span></div>
+                <div><p>Inventory Pro / Ticket-Administration</p><h1 x-text="currentSection.label"></h1><span x-text="currentSection.description"></span></div>
                 <a href="/tickets" class="sd-button"><i data-feather="external-link"></i>Service Desk öffnen</a>
             </header>
 

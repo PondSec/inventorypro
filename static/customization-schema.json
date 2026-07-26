@@ -2,20 +2,16 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "InventoryProCustomization",
   "type": "object",
-  "required": ["schemaVersion", "branding", "baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs", "navigation"],
+  "required": ["schemaVersion", "branding", "baseTokens", "componentOverrides", "layoutPrefs", "featurePrefs"],
   "properties": {
     "schemaVersion": { "type": "integer", "const": 1 },
     "branding": {
       "type": "object",
-      "required": ["name", "tagline", "logoDataUrl", "logoLightDataUrl", "logoDarkDataUrl", "faviconDataUrl", "authBackgroundDataUrl"],
+      "required": ["name", "tagline", "logoDataUrl"],
       "properties": {
         "name": { "type": "string" },
         "tagline": { "type": "string" },
-        "logoDataUrl": { "type": "string" },
-        "logoLightDataUrl": { "type": "string" },
-        "logoDarkDataUrl": { "type": "string" },
-        "faviconDataUrl": { "type": "string" },
-        "authBackgroundDataUrl": { "type": "string" }
+        "logoDataUrl": { "type": "string" }
       }
     },
     "baseTokens": {
@@ -31,14 +27,6 @@
     },
     "componentOverrides": { "type": "object" },
     "layoutPrefs": { "type": "object" },
-    "featurePrefs": { "type": "object" },
-    "navigation": {
-      "type": "object",
-      "required": ["groups", "items"],
-      "properties": {
-        "groups": { "type": "object" },
-        "items": { "type": "object" }
-      }
-    }
+    "featurePrefs": { "type": "object" }
   }
 }

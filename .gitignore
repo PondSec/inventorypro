@@ -2,8 +2,6 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-.coverage
-coverage.xml
 .venv/
 venv/
 node_modules/
@@ -12,4 +10,4 @@ inventory.db
 instance/runtime_config.json
 instance/initial_admin_credentials*.txt
 uploads/
-/backups/
+backups/
