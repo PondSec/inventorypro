@@ -3,7 +3,6 @@
   const stored = localStorage.getItem('theme');
   const initial = stored || 'light';
   const customizationCacheKey = 'inventorypro.customization.cache';
-  const customizationLocalKey = 'inventorypro.customization.local';
   const legacyCustomizationKey = 'inventorypro.customization';
   let activeCustomization = null;
 
@@ -13,6 +12,9 @@
       name: 'Inventory Pro',
       tagline: 'Inventarisierung',
       logoDataUrl: '',
+      logoLightDataUrl: '',
+      logoDarkDataUrl: '',
+      faviconDataUrl: '',
     },
     baseTokens: {
       colors: {
@@ -241,6 +243,7 @@
     if (!activeCustomization) return;
     applyThemeToCSSVars(activeCustomization);
     applyModeTokens(activeCustomization);
+    applyBrandingContent(activeCustomization);
   };
 
   const setTheme = (mode) => {
@@ -315,6 +318,9 @@
       migrated.branding.name = branding.name || migrated.branding.name;
       migrated.branding.tagline = branding.tagline || migrated.branding.tagline;
       migrated.branding.logoDataUrl = branding.logoDataUrl || migrated.branding.logoDataUrl;
+      migrated.branding.logoLightDataUrl = branding.logoLightDataUrl || migrated.branding.logoLightDataUrl;
+      migrated.branding.logoDarkDataUrl = branding.logoDarkDataUrl || migrated.branding.logoDarkDataUrl;
+      migrated.branding.faviconDataUrl = branding.faviconDataUrl || migrated.branding.faviconDataUrl;
       migrated.baseTokens.colors.primary = branding.primary || migrated.baseTokens.colors.primary;
       migrated.baseTokens.colors.accent = branding.accent || migrated.baseTokens.colors.accent;
       migrated.baseTokens.colors.background = branding.background || migrated.baseTokens.colors.background;
@@ -499,6 +505,24 @@
     root.style.setProperty('--table-row-height', `${rowHeight}px`);
   };
 
+  const logoForCurrentTheme = (branding) => {
+    if (root.classList.contains('dark')) {
+      return branding.logoDarkDataUrl || branding.logoDataUrl || branding.logoLightDataUrl;
+    }
+    return branding.logoLightDataUrl || branding.logoDataUrl || branding.logoDarkDataUrl;
+  };
+
+  const applyFavicon = (faviconDataUrl) => {
+    if (!faviconDataUrl) return;
+    let favicon = document.querySelector('link[rel~="icon"]');
+    if (!favicon) {
+      favicon = document.createElement('link');
+      favicon.rel = 'icon';
+      document.head.appendChild(favicon);
+    }
+    favicon.href = faviconDataUrl;
+  };
+
   const applyBrandingContent = (customization) => {
     const branding = customization.branding;
     document.querySelectorAll('[data-brand-name]').forEach((element) => {
@@ -508,20 +532,27 @@
       element.textContent = branding.tagline || defaultCustomization.branding.tagline;
     });
     document.querySelectorAll('[data-brand-logo]').forEach((element) => {
-      const logo = branding.logoDataUrl;
+      const logo = logoForCurrentTheme(branding);
       const icon = element.querySelector('[data-brand-logo-icon]');
       if (logo) {
-        element.style.background = `url(${logo}) center/cover no-repeat`;
+        element.style.backgroundImage = `url(${JSON.stringify(logo)})`;
+        element.style.backgroundPosition = 'center';
+        element.style.backgroundRepeat = 'no-repeat';
+        element.style.backgroundSize = 'cover';
         if (icon) {
           icon.style.display = 'none';
         }
       } else {
-        element.style.background = '';
+        element.style.backgroundImage = '';
+        element.style.backgroundPosition = '';
+        element.style.backgroundRepeat = '';
+        element.style.backgroundSize = '';
         if (icon) {
           icon.style.display = '';
         }
       }
     });
+    applyFavicon(branding.faviconDataUrl || logoForCurrentTheme(branding));
     if (branding.name && document.title.includes(defaultCustomization.branding.name)) {
       document.title = document.title.replace(defaultCustomization.branding.name, branding.name);
     }
@@ -568,25 +599,6 @@
 
   const setCachedCustomization = (payload) => {
     localStorage.setItem(customizationCacheKey, JSON.stringify(payload));
-  };
-
-  const getLocalOverride = () => {
-    const storedOverride = localStorage.getItem(customizationLocalKey);
-    if (!storedOverride) return null;
-    try {
-      return JSON.parse(storedOverride);
-    } catch (error) {
-      console.warn('Customize override could not be loaded', error);
-      return null;
-    }
-  };
-
-  const setLocalOverride = (override) => {
-    if (!override) {
-      localStorage.removeItem(customizationLocalKey);
-      return;
-    }
-    localStorage.setItem(customizationLocalKey, JSON.stringify(override));
   };
 
   const loadCustomization = async () => {
@@ -640,14 +652,12 @@
     load: loadCustomization,
     getCached: getCachedCustomization,
     setCached: setCachedCustomization,
-    getLocalOverride,
-    setLocalOverride,
   };
 
   loadCustomization();
   document.addEventListener('DOMContentLoaded', updateButtons);
   window.addEventListener('storage', (event) => {
-    if (event.key === customizationCacheKey || event.key === customizationLocalKey) {
+    if (event.key === customizationCacheKey) {
       loadCustomization();
     }
   });

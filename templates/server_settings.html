@@ -768,21 +768,21 @@
                                         </div>
                                     </div>
 
-                                    <div class="mt-6">
-                                        <label class="text-sm font-semibold text-slate-700">Logo hochladen</label>
-                                        <div class="mt-2 flex flex-col gap-4 md:flex-row md:items-center">
-                                            <input type="file" accept="image/*" @change="handleLogoUpload" aria-label="Markenlogo hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                                            <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                                                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100">
-                                                    <template x-if="customization.branding.logoDataUrl">
-                                                        <img :src="customization.branding.logoDataUrl" alt="Logo" class="h-10 w-10 rounded-2xl object-cover">
-                                                    </template>
-                                                    <template x-if="!customization.branding.logoDataUrl">
-                                                        <i data-feather="image" class="h-4 w-4 text-slate-400"></i>
-                                                    </template>
-                                                </span>
-                                                <span x-text="customization.branding.logoDataUrl ? 'Logo geladen' : 'Noch kein Logo'"></span>
-                                            </div>
+                                    <div class="mt-6 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Logo für helle Ansicht</label>
+                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleLogoUpload($event, 'logoLightDataUrl')" aria-label="Logo für helle Ansicht hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                                            <p class="text-xs text-slate-500" x-text="customization.branding.logoLightDataUrl || customization.branding.logoDataUrl ? 'Logo geladen' : 'Optional' "></p>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Logo für dunkle Ansicht</label>
+                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleLogoUpload($event, 'logoDarkDataUrl')" aria-label="Logo für dunkle Ansicht hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                                            <p class="text-xs text-slate-500" x-text="customization.branding.logoDarkDataUrl || customization.branding.logoDataUrl ? 'Logo geladen' : 'Optional' "></p>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Favicon</label>
+                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleLogoUpload($event, 'faviconDataUrl')" aria-label="Favicon hochladen" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                                            <p class="text-xs text-slate-500" x-text="customization.branding.faviconDataUrl ? 'Favicon geladen' : 'Optional' "></p>
                                         </div>
                                     </div>
                                 </div>
@@ -1029,10 +1029,10 @@
                                         <div class="flex items-center justify-between gap-3">
                                             <div class="flex items-center gap-3">
                                                 <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm">
-                                                    <template x-if="customization.branding.logoDataUrl">
-                                                        <img :src="customization.branding.logoDataUrl" alt="Logo" class="h-10 w-10 rounded-2xl object-cover">
+                                                    <template x-if="customization.branding.logoLightDataUrl || customization.branding.logoDataUrl">
+                                                        <img :src="customization.branding.logoLightDataUrl || customization.branding.logoDataUrl" alt="Logo" class="h-10 w-10 rounded-2xl object-cover">
                                                     </template>
-                                                    <template x-if="!customization.branding.logoDataUrl">
+                                                    <template x-if="!customization.branding.logoLightDataUrl && !customization.branding.logoDataUrl">
                                                         <i data-feather="cpu" class="h-4 w-4 text-slate-500"></i>
                                                     </template>
                                                 </span>
@@ -1119,7 +1119,7 @@
                                     <div class="flex items-center justify-between gap-3">
                                         <div>
                                             <h2 class="text-lg font-semibold text-slate-900">Anpassungen sichern</h2>
-                                            <p class="text-sm text-slate-500">Server ist die Quelle der Wahrheit, lokale Overrides sind optional.</p>
+                                            <p class="text-sm text-slate-500">Die serverseitige Konfiguration gilt einheitlich für die gesamte Instanz.</p>
                                         </div>
                                         <div class="flex flex-wrap gap-2">
                                             <button type="button" @click="undoChange" class="btn-secondary">Undo</button>
@@ -1128,10 +1128,6 @@
                                     </div>
 
                                     <div class="mt-4 flex flex-wrap items-center gap-3">
-                                        <label class="inline-flex items-center gap-2 text-sm text-slate-600">
-                                            <input type="checkbox" x-model="saveLocalOnly" aria-label="Änderungen nur lokal speichern" class="rounded border-slate-300 text-emerald-600">
-                                            Nur lokal speichern (Override)
-                                        </label>
                                         <button type="button" @click="saveCustomization" class="btn-primary">Speichern</button>
                                         <button type="button" @click="resetCustomization" class="btn-secondary">Alles zurücksetzen</button>
                                         <button type="button" @click="resetSection('tokens')" class="btn-secondary">Tokens reset</button>
@@ -1560,7 +1556,6 @@
                     },
                 ],
                 selectedPreset: '',
-                saveLocalOnly: false,
                 loading: false,
                 saving: false,
                 errorMessage: '',
@@ -2240,7 +2235,6 @@
                     } catch (error) {
                         this.customizeError = error.message || 'Customize konnte nicht geladen werden.';
                     }
-                    this.saveLocalOnly = false;
                     this.applyCustomization();
                 },
 
@@ -2278,12 +2272,22 @@
                     return (lighter + 0.05) / (darker + 0.05);
                 },
 
-                handleLogoUpload(event) {
+                handleLogoUpload(event, field) {
                     const file = event.target.files[0];
                     if (!file) return;
+                    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+                    if (!allowedTypes.includes(file.type)) {
+                        this.customizeError = 'Bitte ein PNG-, JPEG-, WebP- oder GIF-Bild auswählen.';
+                        return;
+                    }
+                    if (file.size > 2 * 1024 * 1024) {
+                        this.customizeError = 'Logo- und Favicon-Dateien dürfen höchstens 2 MB groß sein.';
+                        return;
+                    }
                     const reader = new FileReader();
                     reader.onload = () => {
-                        this.customization.branding.logoDataUrl = reader.result;
+                        this.customization.branding[field] = reader.result;
+                        this.customizeError = '';
                     };
                     reader.readAsDataURL(file);
                 },
@@ -2291,10 +2295,6 @@
                 resetCustomization() {
                     const defaults = window.InventoryCustomization ? window.InventoryCustomization.defaults() : {};
                     this.customization = defaults;
-                    this.saveLocalOnly = false;
-                    if (window.InventoryCustomization) {
-                        window.InventoryCustomization.setLocalOverride(null);
-                    }
                     this.customizeMessage = 'Alle Anpassungen wurden zurückgesetzt.';
                     this.customizeError = '';
                     this.resetHistory();
@@ -2320,17 +2320,6 @@
                 async saveCustomization() {
                     this.customizeMessage = '';
                     this.customizeError = '';
-                    if (this.saveLocalOnly) {
-                        if (window.InventoryCustomization) {
-                            window.InventoryCustomization.setLocalOverride(this.customization);
-                        }
-                        this.customizeMessage = 'Lokal gespeichert. Server-Konfiguration bleibt unverändert.';
-                        setTimeout(() => {
-                            this.customizeMessage = '';
-                        }, 3000);
-                        return;
-                    }
-
                     try {
                         const response = await fetch('/api/customize', {
                             method: 'PUT',
@@ -2343,7 +2332,6 @@
                         }
                         this.customization = window.InventoryCustomization.migrate(data.customization || this.customization);
                         if (window.InventoryCustomization) {
-                            window.InventoryCustomization.setLocalOverride(null);
                             window.InventoryCustomization.setCached({
                                 customization: this.customization,
                                 updatedAt: data.updated_at,

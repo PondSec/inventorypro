@@ -2,6 +2,9 @@ export interface BrandingConfig {
   name: string;
   tagline: string;
   logoDataUrl: string;
+  logoLightDataUrl: string;
+  logoDarkDataUrl: string;
+  faviconDataUrl: string;
 }
 
 export interface ColorTokens {

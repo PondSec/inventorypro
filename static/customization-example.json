@@ -3,7 +3,10 @@
   "branding": {
     "name": "Inventarisierungswerk",
     "tagline": "Klar. Flexibel. Sicher.",
-    "logoDataUrl": ""
+    "logoDataUrl": "",
+    "logoLightDataUrl": "",
+    "logoDarkDataUrl": "",
+    "faviconDataUrl": ""
   },
   "baseTokens": {
     "colors": {
