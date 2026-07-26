@@ -1,10 +1,16 @@
 import json
+from datetime import date
+from io import BytesIO
 import sqlite3
 from unittest import TestCase
+
+from openpyxl import Workbook
 
 from inventorypro.data_migration import (
     TabularImportError,
     import_tabular_csv,
+    import_tabular_file,
+    preview_tabular_file,
     preview_tabular_csv,
 )
 
@@ -81,3 +87,61 @@ class DataMigrationTestCase(TestCase):
         self.assertEqual(self.connection.execute("SELECT name FROM assets").fetchone()[0], "Laptop Pro")
         with self.assertRaisesRegex(TabularImportError, "keine gültige Zahl"):
             import_tabular_csv(self.connection, b"asset,price\nBroken,nope\n", "assets", "append")
+
+    def test_xlsx_import_uses_the_same_alias_mapping_and_preserves_extras(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["Hostname", "Seriennummer", "Standort", "Hersteller", "Aktiv", "Prüfdatum"])
+        worksheet.append(["core-xlsx", "S-XLSX", "Berlin", "Beispiel GmbH", True, date(2026, 1, 2)])
+        buffer = BytesIO()
+        workbook.save(buffer)
+
+        preview = preview_tabular_file(buffer.getvalue(), "devices", "device-export.xlsx")
+        self.assertEqual(preview["format"], "xlsx")
+        self.assertEqual(preview["mapping"]["name"], "Hostname")
+        self.assertEqual(
+            preview["sample"][0]["specs"],
+            {"Hersteller": "Beispiel GmbH", "Aktiv": "true", "Prüfdatum": "2026-01-02"},
+        )
+
+        result = import_tabular_file(self.connection, buffer.getvalue(), "devices", "append", "device-export.xlsx")
+        self.assertEqual(result["created"], 1)
+        self.assertEqual(self.connection.execute("SELECT name FROM devices").fetchone()[0], "core-xlsx")
+
+    def test_json_preview_and_import_accept_named_arrays(self):
+        content = json.dumps({
+            "assets": [{
+                "Bezeichnung": "Notebook",
+                "Rechnungsnummer": "INV-JSON",
+                "Preis": 1999.95,
+                "Währung": "EUR",
+                "Hersteller": "Beispiel GmbH",
+            }],
+        }).encode()
+
+        preview = preview_tabular_file(content, "assets", "assets.json")
+        self.assertEqual(preview["format"], "json")
+        self.assertEqual(preview["validRows"], 1)
+        self.assertEqual(preview["sample"][0]["specs"], {"Hersteller": "Beispiel GmbH"})
+
+        result = import_tabular_file(self.connection, content, "assets", "append", "assets.json")
+        self.assertEqual(result["created"], 1)
+        self.assertEqual(self.connection.execute("SELECT purchase_cost FROM assets").fetchone()[0], 1999.95)
+
+    def test_rejects_malformed_xlsx(self):
+        with self.assertRaisesRegex(TabularImportError, "beschädigt"):
+            preview_tabular_file(b"not an xlsx", "devices", "devices.xlsx")
+
+    def test_rejects_ambiguous_or_invalid_source_shapes(self):
+        with self.assertRaisesRegex(TabularImportError, "doppelte Spaltenüberschriften"):
+            preview_tabular_csv(b"name,Name\nfirst,duplicate\n", "devices")
+        with self.assertRaisesRegex(TabularImportError, "Nur Geräte und Assets"):
+            preview_tabular_file(b"name\nentry\n", "vendors", "vendors.csv")
+        with self.assertRaisesRegex(TabularImportError, "gültig"):
+            preview_tabular_file(b"{", "devices", "devices.json")
+        with self.assertRaisesRegex(TabularImportError, "Array"):
+            preview_tabular_file(b"{}", "devices", "devices.json")
+        with self.assertRaisesRegex(TabularImportError, "muss ein Objekt"):
+            preview_tabular_file(b'["not-an-object"]', "devices", "devices.json")
+        with self.assertRaisesRegex(TabularImportError, "keine Kopfzeile"):
+            preview_tabular_file(b"[]", "devices", "devices.json")

@@ -3,16 +3,26 @@
 from __future__ import annotations
 
 import csv
+from datetime import date, datetime
 import io
 import json
+from pathlib import Path
 import re
 import sqlite3
-from typing import Any
+from typing import Any, Iterable, Mapping, Sequence
+import zipfile
+
+from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 
 
 class TabularImportError(ValueError):
     """Raised for a recoverable, user-facing tabular import problem."""
 
+
+MAX_TABULAR_ROWS = 100_000
+MAX_XLSX_ARCHIVE_MEMBERS = 1_000
+MAX_XLSX_EXPANDED_BYTES = 100 * 1024 * 1024
 
 _ALIASES = {
     "devices": {
@@ -42,32 +52,64 @@ def _key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", normalized).strip()
 
 
-def parse_tabular_csv(content: bytes, entity: str) -> dict[str, Any]:
-    """Parse a CSV/TSV export and infer a conservative Inventory Pro mapping."""
+def _cell_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        if value.time().isoformat() == "00:00:00":
+            return value.date().isoformat()
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value).strip()
+
+
+def _validate_entity(entity: str) -> None:
     if entity not in _ALIASES:
         raise TabularImportError("Nur Geräte und Assets können tabellarisch importiert werden.")
-    try:
-        text = content.decode("utf-8-sig")
-    except UnicodeDecodeError as error:
-        raise TabularImportError("Die Importdatei muss UTF-8-kodiert sein.") from error
-    try:
-        dialect = csv.Sniffer().sniff(text[:8192], delimiters=",;\t")
-    except csv.Error:
-        dialect = csv.excel
-    reader = csv.DictReader(io.StringIO(text), dialect=dialect)
-    if not reader.fieldnames:
+
+
+def _build_mapping(entity: str, headers: Sequence[str]) -> dict[str, str | None]:
+    _validate_entity(entity)
+    normalized_headers = [_key(header) for header in headers]
+    if not any(normalized_headers):
         raise TabularImportError("Die Datei enthält keine Kopfzeile.")
+    if len([header for header in normalized_headers if header]) != len(set(header for header in normalized_headers if header)):
+        raise TabularImportError("Die Datei enthält doppelte Spaltenüberschriften.")
     mapping = {}
     for target, aliases in _ALIASES[entity].items():
         normalized_aliases = {_key(alias) for alias in aliases}
         mapping[target] = next(
-            (header for header in reader.fieldnames if _key(header) in normalized_aliases),
+            (header for header in headers if _key(header) in normalized_aliases),
             None,
         )
     if not mapping["name"]:
         raise TabularImportError("Keine Spalte für Name/Gerät/Asset erkannt.")
-    rows, errors = [], []
-    for line_number, source in enumerate(reader, start=2):
+    return mapping
+
+
+def _parse_rows(
+    entity: str,
+    headers: Sequence[Any],
+    rows: Iterable[tuple[int, Sequence[Any]]],
+    *,
+    source_format: str,
+    delimiter: str | None = None,
+) -> dict[str, Any]:
+    normalized_headers = [_cell_text(header) for header in headers]
+    mapping = _build_mapping(entity, normalized_headers)
+    parsed_rows: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    for count, (line_number, values) in enumerate(rows, start=1):
+        if count > MAX_TABULAR_ROWS:
+            raise TabularImportError(f"Die Importdatei darf höchstens {MAX_TABULAR_ROWS:,} Datenzeilen enthalten.")
+        source = {
+            header: _cell_text(values[index]) if index < len(values) else ""
+            for index, header in enumerate(normalized_headers)
+            if header
+        }
         normalized = {
             target: (source.get(header) or "").strip()
             for target, header in mapping.items()
@@ -76,20 +118,125 @@ def parse_tabular_csv(content: bytes, entity: str) -> dict[str, Any]:
         if not normalized.get("name"):
             errors.append({"line": line_number, "error": "Name ist erforderlich."})
             continue
-        extras = {
+        normalized["specs"] = {
             header: value
             for header, value in source.items()
             if header not in mapping.values() and value
         }
-        normalized["specs"] = extras
-        rows.append(normalized)
-    return {"entity": entity, "mapping": mapping, "rows": rows, "errors": errors, "delimiter": dialect.delimiter}
-
-
-def preview_tabular_csv(content: bytes, entity: str) -> dict[str, Any]:
-    parsed = parse_tabular_csv(content, entity)
+        parsed_rows.append(normalized)
     return {
         "entity": entity,
+        "mapping": mapping,
+        "rows": parsed_rows,
+        "errors": errors,
+        "format": source_format,
+        "delimiter": delimiter,
+    }
+
+
+def parse_tabular_csv(content: bytes, entity: str) -> dict[str, Any]:
+    """Parse a CSV/TSV export and infer a conservative Inventory Pro mapping."""
+    _validate_entity(entity)
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as error:
+        raise TabularImportError("Die Importdatei muss UTF-8-kodiert sein.") from error
+    try:
+        dialect = csv.Sniffer().sniff(text[:8192], delimiters=",;\t")
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.reader(io.StringIO(text), dialect=dialect)
+    try:
+        headers = next(reader)
+    except StopIteration as error:
+        raise TabularImportError("Die Datei enthält keine Kopfzeile.") from error
+    return _parse_rows(
+        entity,
+        headers,
+        enumerate(reader, start=2),
+        source_format="tsv" if dialect.delimiter == "\t" else "csv",
+        delimiter=dialect.delimiter,
+    )
+
+
+def _validate_xlsx_archive(content: bytes) -> None:
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            infos = archive.infolist()
+            if len(infos) > MAX_XLSX_ARCHIVE_MEMBERS:
+                raise TabularImportError("Die XLSX-Datei enthält zu viele Archivbestandteile.")
+            expanded_bytes = sum(max(0, info.file_size) for info in infos)
+    except zipfile.BadZipFile as error:
+        raise TabularImportError("Die XLSX-Datei ist beschädigt oder kein gültiges Archiv.") from error
+    if expanded_bytes > MAX_XLSX_EXPANDED_BYTES:
+        raise TabularImportError("Die entpackte XLSX-Datei überschreitet die zulässige Größe.")
+
+
+def parse_tabular_xlsx(content: bytes, entity: str) -> dict[str, Any]:
+    """Parse the first worksheet of a regular XLSX migration export."""
+    _validate_entity(entity)
+    _validate_xlsx_archive(content)
+    try:
+        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True, keep_links=False)
+    except (InvalidFileException, OSError, ValueError, zipfile.BadZipFile) as error:
+        raise TabularImportError("Die XLSX-Datei kann nicht gelesen werden.") from error
+    try:
+        worksheet = workbook[entity] if entity in workbook.sheetnames else workbook.active
+        rows = worksheet.iter_rows(values_only=True)
+        try:
+            headers = next(rows)
+        except StopIteration as error:
+            raise TabularImportError("Die XLSX-Datei enthält keine Kopfzeile.") from error
+        return _parse_rows(entity, headers, enumerate(rows, start=2), source_format="xlsx")
+    finally:
+        workbook.close()
+
+
+def parse_tabular_json(content: bytes, entity: str) -> dict[str, Any]:
+    """Parse a JSON array or a named devices/assets array for migration."""
+    _validate_entity(entity)
+    try:
+        payload = json.loads(content.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise TabularImportError("Die JSON-Datei muss UTF-8-kodiert und gültig sein.") from error
+    records = payload.get(entity) if isinstance(payload, dict) else payload
+    if not isinstance(records, list):
+        raise TabularImportError(f"Die JSON-Datei muss ein Array oder ein '{entity}'-Array enthalten.")
+    if len(records) > MAX_TABULAR_ROWS:
+        raise TabularImportError(f"Die Importdatei darf höchstens {MAX_TABULAR_ROWS:,} Datenzeilen enthalten.")
+    if any(not isinstance(record, Mapping) for record in records):
+        raise TabularImportError("Jeder JSON-Eintrag muss ein Objekt sein.")
+    headers: list[str] = []
+    for record in records:
+        for key in record:
+            key_text = _cell_text(key)
+            if key_text and key_text not in headers:
+                headers.append(key_text)
+    if not headers:
+        raise TabularImportError("Die JSON-Datei enthält keine Kopfzeile.")
+    values = [
+        (index, [record.get(header) for header in headers])
+        for index, record in enumerate(records, start=1)
+    ]
+    return _parse_rows(entity, headers, values, source_format="json")
+
+
+def parse_tabular_file(content: bytes, entity: str, filename: str) -> dict[str, Any]:
+    """Parse a supported migration format based on its safely handled extension."""
+    suffix = Path(filename).suffix.casefold()
+    if suffix in {".csv", ".tsv"}:
+        return parse_tabular_csv(content, entity)
+    if suffix == ".xlsx":
+        return parse_tabular_xlsx(content, entity)
+    if suffix == ".json":
+        return parse_tabular_json(content, entity)
+    raise TabularImportError("Die Vorschau unterstützt CSV, TSV, XLSX und JSON.")
+
+
+def _preview(parsed: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "entity": parsed["entity"],
+        "format": parsed["format"],
         "mapping": parsed["mapping"],
         "validRows": len(parsed["rows"]),
         "invalidRows": len(parsed["errors"]),
@@ -98,17 +245,25 @@ def preview_tabular_csv(content: bytes, entity: str) -> dict[str, Any]:
     }
 
 
-def import_tabular_csv(connection: sqlite3.Connection, content: bytes, entity: str, mode: str) -> dict[str, Any]:
-    """Import validated rows atomically; unknown source columns remain in specs."""
+def preview_tabular_csv(content: bytes, entity: str) -> dict[str, Any]:
+    """Return the legacy CSV/TSV preview response shape."""
+    return _preview(parse_tabular_csv(content, entity))
+
+
+def preview_tabular_file(content: bytes, entity: str, filename: str) -> dict[str, Any]:
+    """Return a safe preview for any supported tabular migration file."""
+    return _preview(parse_tabular_file(content, entity, filename))
+
+
+def _import_parsed(connection: sqlite3.Connection, parsed: Mapping[str, Any], mode: str) -> dict[str, Any]:
     if mode not in {"append", "merge"}:
         raise TabularImportError("Importmodus muss append oder merge sein.")
-    parsed = parse_tabular_csv(content, entity)
     if parsed["errors"]:
         raise TabularImportError("Die Vorschau enthält ungültige Zeilen; bitte zuerst korrigieren.")
     created = updated = skipped = 0
     with connection:
         for row in parsed["rows"]:
-            if entity == "devices":
+            if parsed["entity"] == "devices":
                 category_id = _category_id(connection, "categories", row.get("category") or "Importiert")
                 location_id = _location_id(connection, row.get("location"))
                 existing = _find_device_by_serial(connection, row.get("serial_number"))
@@ -157,6 +312,22 @@ def import_tabular_csv(connection: sqlite3.Connection, content: bytes, entity: s
                     )
                     created += 1
     return {"created": created, "updated": updated, "skipped": skipped, "errors": parsed["errors"]}
+
+
+def import_tabular_csv(connection: sqlite3.Connection, content: bytes, entity: str, mode: str) -> dict[str, Any]:
+    """Import a CSV/TSV export while preserving the established public API."""
+    return _import_parsed(connection, parse_tabular_csv(content, entity), mode)
+
+
+def import_tabular_file(
+    connection: sqlite3.Connection,
+    content: bytes,
+    entity: str,
+    mode: str,
+    filename: str,
+) -> dict[str, Any]:
+    """Import a CSV, TSV, XLSX, or JSON migration file atomically."""
+    return _import_parsed(connection, parse_tabular_file(content, entity, filename), mode)
 
 
 def _category_id(connection: sqlite3.Connection, table: str, name: str) -> int:
