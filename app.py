@@ -69,6 +69,25 @@ from inventorypro.domains.imports.storage import (
     validate_import_file,
 )
 from inventorypro.domains.inventory_links.routes import build_inventory_links_blueprint
+from inventorypro.domains.inventory_links.repository import (
+    get_inventory_link,
+    list_inventory_links,
+    serialize_inventory_link,
+    update_inventory_link_health,
+)
+from inventorypro.domains.inventory_links.validators import (
+    can_manage_local_inventory_links,
+    enforce_inventory_link_scope_access,
+    inventory_links_allow_loopback,
+    is_inventory_link_ip_blocked,
+    is_inventory_link_private_ip,
+    normalize_inventory_link_base_url,
+    normalize_inventory_link_connection_scope,
+    parse_inventory_link_login_secret,
+    resolve_inventory_link_ips,
+    validate_inventory_link_configuration,
+    validate_inventory_link_target,
+)
 from inventorypro.domains.locations.routes import build_locations_blueprint
 from inventorypro.domains.tickets.routes import build_ticket_pages_blueprint
 from inventorypro.migrations import MigrationError, apply_migrations
@@ -1420,135 +1439,6 @@ def is_ip_allowed(remote_ip, allowlist):
             continue
     return False
 
-def normalize_inventory_link_base_url(base_url):
-    if not base_url:
-        raise ValueError("Base URL fehlt.")
-    candidate = base_url.strip()
-    parsed = urllib.parse.urlsplit(candidate)
-    if parsed.scheme not in {"http", "https"}:
-        raise ValueError("Base URL muss mit http oder https beginnen.")
-    if not parsed.netloc:
-        raise ValueError("Base URL benötigt einen Host.")
-    if parsed.username or parsed.password:
-        raise ValueError("Base URL darf keine Zugangsdaten enthalten.")
-    if parsed.query or parsed.fragment:
-        raise ValueError("Base URL darf keine Query oder Fragmente enthalten.")
-    path = (parsed.path or "").rstrip("/")
-    if path == "/":
-        path = ""
-    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
-
-def resolve_inventory_link_ips(hostname):
-    try:
-        infos = socket.getaddrinfo(hostname, None)
-    except socket.gaierror:
-        return []
-    ips = []
-    for info in infos:
-        sockaddr = info[4]
-        if sockaddr:
-            ips.append(sockaddr[0])
-    return list(dict.fromkeys(ips))
-
-def inventory_links_allow_loopback():
-    return os.environ.get("INVENTORY_LINKS_ALLOW_LOOPBACK", "0").lower() in {"1", "true", "yes"}
-
-def is_inventory_link_ip_blocked(ip_str, allow_private_network):
-    try:
-        ip_obj = ipaddress.ip_address(ip_str)
-    except ValueError:
-        return True
-    if ip_obj.is_loopback and not inventory_links_allow_loopback():
-        return True
-    if ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified or ip_obj.is_reserved:
-        return True
-    if str(ip_obj) == "169.254.169.254":
-        return True
-    if ip_obj.is_private and not allow_private_network:
-        return True
-    return False
-
-def validate_inventory_link_target(base_url, allow_private_network):
-    normalized = normalize_inventory_link_base_url(base_url)
-    parsed = urllib.parse.urlsplit(normalized)
-    hostname = parsed.hostname
-    if not hostname:
-        raise ValueError("Base URL Host konnte nicht gelesen werden.")
-    resolved_ips = resolve_inventory_link_ips(hostname)
-    if not resolved_ips:
-        raise ValueError("Host konnte nicht aufgelöst werden.")
-    for ip_str in resolved_ips:
-        if is_inventory_link_ip_blocked(ip_str, allow_private_network):
-            raise ValueError("Zieladresse ist nicht erlaubt.")
-    return parsed
-
-def is_inventory_link_private_ip(ip_str):
-    try:
-        ip_obj = ipaddress.ip_address(ip_str)
-    except ValueError:
-        return False
-    if ip_obj.is_loopback:
-        return inventory_links_allow_loopback()
-    return (
-        ip_obj.is_private
-        and not ip_obj.is_link_local
-        and not ip_obj.is_multicast
-        and not ip_obj.is_unspecified
-        and not ip_obj.is_reserved
-    )
-
-def normalize_inventory_link_connection_scope(scope):
-    normalized = (scope or "internet").strip().lower()
-    if normalized not in {"internet", "local"}:
-        raise ValueError("Verbindungsart muss Internet oder lokales Netzwerk sein.")
-    return normalized
-
-def validate_inventory_link_configuration(base_url, connection_scope, verify_tls, allow_private_network):
-    """Validate an inventory connection as a safe Internet or LAN-only route.
-
-    Keeping the two paths explicit avoids ambiguous settings such as a public URL
-    with private-network access enabled. Resolution is repeated for every proxy
-    request to reduce DNS rebinding exposure.
-    """
-    normalized = normalize_inventory_link_base_url(base_url)
-    scope = normalize_inventory_link_connection_scope(connection_scope)
-    parsed = urllib.parse.urlsplit(normalized)
-
-    if scope == "internet":
-        if parsed.scheme != "https":
-            raise ValueError("Internet-Verbindungen benötigen HTTPS.")
-        if not verify_tls:
-            raise ValueError("Internet-Verbindungen müssen das TLS-Zertifikat prüfen.")
-        if allow_private_network:
-            raise ValueError("Internet-Verbindungen dürfen keine privaten Netzwerkziele zulassen.")
-        validate_inventory_link_target(normalized, False)
-        return normalized, scope, True, False
-
-    if not allow_private_network:
-        raise ValueError("Lokale Verbindungen benötigen die Freigabe für private Netzwerkziele.")
-    validate_inventory_link_target(normalized, True)
-    resolved_ips = resolve_inventory_link_ips(parsed.hostname)
-    if not resolved_ips or any(not is_inventory_link_private_ip(ip_str) for ip_str in resolved_ips):
-        raise ValueError("Lokale Verbindungen dürfen nur auf private LAN-Adressen zeigen.")
-    return normalized, scope, bool(verify_tls), True
-
-def can_manage_local_inventory_links(access):
-    return bool(access.get("is_superuser") or "server_settings.manage" in access.get("permissions", set()))
-
-def enforce_inventory_link_scope_access(access, connection_scope):
-    if connection_scope == "local" and not can_manage_local_inventory_links(access):
-        return "Lokale Inventory-Link-Verbindungen benötigen Administratorrechte."
-    return None
-
-def parse_inventory_link_login_secret(secret):
-    if not secret or ":" not in secret:
-        raise ValueError("Login-Secret muss im Format Benutzername:Passwort vorliegen.")
-    username, password = secret.split(":", 1)
-    username = username.strip()
-    if not username or not password:
-        raise ValueError("Login-Secret muss Benutzername und Passwort enthalten.")
-    return username, password
-
 def extract_inventory_link_cookie_header(cookie_jar):
     cookies = []
     expiry_candidates = []
@@ -1623,54 +1513,6 @@ def get_inventory_link_login_cookie(link, secret, user_id):
         "expires_at": expires_at or (time.time() + INVENTORY_LINK_LOGIN_TTL_SECONDS)
     }, INVENTORY_LINK_LOGIN_TTL_SECONDS)
     return cookie_header
-
-def serialize_inventory_link(row):
-    return {
-        "id": row["id"],
-        "displayName": row["display_name"],
-        "baseUrl": row["base_url"],
-        "verifyTls": bool(row["verify_tls"]),
-        "authMode": row["auth_mode"],
-        "allowPrivateNetwork": bool(row["allow_private_network"]),
-        "connectionScope": row["connection_scope"] or "internet",
-        "healthStatus": row["health_status"],
-        "lastCheckedAt": row["health_last_checked_at"],
-        "createdAt": row["created_at"],
-        "updatedAt": row["updated_at"],
-    }
-
-def list_inventory_links(db, user_id):
-    rows = db.execute(
-        '''
-        SELECT id, display_name, base_url, verify_tls, auth_mode, allow_private_network, connection_scope,
-               health_status, health_last_checked_at, created_at, updated_at
-        FROM inventory_links
-        WHERE user_id = ?
-        ORDER BY display_name
-        ''',
-        (user_id,)
-    ).fetchall()
-    return [serialize_inventory_link(row) for row in rows]
-
-def get_inventory_link(db, user_id, link_id):
-    return db.execute(
-        '''
-        SELECT *
-        FROM inventory_links
-        WHERE id = ? AND user_id = ?
-        ''',
-        (link_id, user_id)
-    ).fetchone()
-
-def update_inventory_link_health(db, link_id, status):
-    db.execute(
-        '''
-        UPDATE inventory_links
-        SET health_status = ?, health_last_checked_at = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-        ''',
-        (status, datetime.utcnow().isoformat(), link_id)
-    )
 
 def build_inventory_link_target_url(base_url, subpath, query_string):
     base = base_url.rstrip("/")
