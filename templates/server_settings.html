@@ -434,6 +434,7 @@
                                             <option value="sqlite">SQLite</option>
                                             <option value="csv">CSV</option>
                                             <option value="json">JSON</option>
+                                            <option value="xlsx">XLSX</option>
                                         </select>
                                         <p class="text-xs text-slate-400">Format für geplante Exporte.</p>
                                     </div>
@@ -453,6 +454,77 @@
                                             <p class="text-xs text-slate-500">Anhänge und Medien mit exportieren.</p>
                                         </div>
                                     </label>
+                                </div>
+
+                                <div class="mt-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
+                                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                        <div>
+                                            <h3 class="text-lg font-semibold text-slate-900">Datenübernahme</h3>
+                                            <p class="mt-1 text-sm text-slate-500">Übernimm Geräte oder Assets aus CSV, TSV, XLSX oder JSON. Die Vorschau schreibt noch keine Daten.</p>
+                                        </div>
+                                        <button type="button" @click="downloadInventoryExport" :disabled="!settings.importExport.exportAllowed" class="btn-secondary disabled:cursor-not-allowed disabled:opacity-60">
+                                            <i data-feather="download" class="h-4 w-4"></i>
+                                            Export herunterladen
+                                        </button>
+                                    </div>
+
+                                    <div class="mt-5 grid gap-4 md:grid-cols-3">
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Datentyp</label>
+                                            <select x-model="migrationEntity" aria-label="Datentyp für die Datenübernahme" class="select-field">
+                                                <option value="devices">Geräte</option>
+                                                <option value="assets">Assets</option>
+                                            </select>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Importmodus</label>
+                                            <select x-model="migrationMode" aria-label="Importmodus für tabellarische Daten" class="select-field">
+                                                <option value="merge">Zusammenführen</option>
+                                                <option value="append">Nur anfügen</option>
+                                            </select>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-semibold text-slate-700">Datei</label>
+                                            <input type="file" accept=".csv,.tsv,.xlsx,.json,text/csv,text/tab-separated-values,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="selectMigrationFile" aria-label="Importdatei auswählen" class="input-field">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-5 flex flex-wrap items-center gap-3">
+                                        <button type="button" @click="previewMigration" :disabled="migrationBusy || !migrationFile || !settings.importExport.importAllowed" class="btn-primary disabled:cursor-not-allowed disabled:opacity-60">
+                                            <i data-feather="eye" class="h-4 w-4"></i>
+                                            <span x-text="migrationBusy ? 'Prüfe…' : 'Vorschau erstellen'"></span>
+                                        </button>
+                                        <button type="button" @click="importMigration" :disabled="migrationBusy || !migrationPreview || migrationPreview.invalidRows > 0 || !settings.importExport.importAllowed" class="btn-secondary disabled:cursor-not-allowed disabled:opacity-60">
+                                            <i data-feather="upload" class="h-4 w-4"></i>
+                                            Import ausführen
+                                        </button>
+                                        <span class="text-xs text-slate-500" x-text="migrationFile ? migrationFile.name : 'Noch keine Datei ausgewählt'"></span>
+                                    </div>
+
+                                    <p class="mt-3 text-sm text-rose-600" x-show="migrationError" x-text="migrationError"></p>
+                                    <p class="mt-3 text-sm text-emerald-700" x-show="migrationMessage" x-text="migrationMessage"></p>
+
+                                    <template x-if="migrationPreview">
+                                        <div class="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
+                                            <div class="flex flex-wrap items-center gap-3 text-sm">
+                                                <span class="rounded-full bg-emerald-100 px-3 py-1 font-semibold text-emerald-700"><span x-text="migrationPreview.validRows"></span> gültig</span>
+                                                <span class="rounded-full bg-rose-100 px-3 py-1 font-semibold text-rose-700"><span x-text="migrationPreview.invalidRows"></span> fehlerhaft</span>
+                                                <span class="text-slate-500">Format: <span x-text="migrationPreview.format.toUpperCase()"></span></span>
+                                            </div>
+                                            <div class="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
+                                                <template x-for="(source, target) in migrationPreview.mapping" :key="target">
+                                                    <p><span class="font-semibold" x-text="target"></span>: <span x-text="source || 'nicht zugeordnet'"></span></p>
+                                                </template>
+                                            </div>
+                                            <template x-if="migrationPreview.errors.length">
+                                                <ul class="space-y-1 text-sm text-rose-700">
+                                                    <template x-for="error in migrationPreview.errors" :key="`${error.line}-${error.error}`">
+                                                        <li>Zeile <span x-text="error.line"></span>: <span x-text="error.error"></span></li>
+                                                    </template>
+                                                </ul>
+                                            </template>
+                                        </div>
+                                    </template>
                                 </div>
                             </div>
 
@@ -1545,6 +1617,13 @@
                 originalSettings: null,
                 ipWhitelistInput: '',
                 terminalAllowlistInput: '',
+                migrationFile: null,
+                migrationEntity: 'devices',
+                migrationMode: 'merge',
+                migrationPreview: null,
+                migrationBusy: false,
+                migrationError: '',
+                migrationMessage: '',
                 customization: window.InventoryCustomization ? window.InventoryCustomization.defaults() : {},
                 customizationHistory: [],
                 presets: [
@@ -2206,6 +2285,69 @@
                     } finally {
                         this.terminalBusy = false;
                     }
+                },
+
+                selectMigrationFile(event) {
+                    this.migrationFile = event.target.files?.[0] || null;
+                    this.migrationPreview = null;
+                    this.migrationError = '';
+                    this.migrationMessage = '';
+                },
+
+                async previewMigration() {
+                    if (!this.migrationFile) return;
+                    this.migrationBusy = true;
+                    this.migrationError = '';
+                    this.migrationMessage = '';
+                    const formData = new FormData();
+                    formData.append('entity', this.migrationEntity);
+                    formData.append('file', this.migrationFile);
+                    try {
+                        const response = await fetch('/api/import/preview', {
+                            method: 'POST',
+                            body: formData,
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Vorschau konnte nicht erstellt werden.');
+                        }
+                        this.migrationPreview = data;
+                    } catch (error) {
+                        this.migrationError = error.message || 'Vorschau konnte nicht erstellt werden.';
+                    } finally {
+                        this.migrationBusy = false;
+                    }
+                },
+
+                async importMigration() {
+                    if (!this.migrationFile || !this.migrationPreview || this.migrationPreview.invalidRows > 0) return;
+                    this.migrationBusy = true;
+                    this.migrationError = '';
+                    this.migrationMessage = '';
+                    const formData = new FormData();
+                    formData.append('entity', this.migrationEntity);
+                    formData.append('mode', this.migrationMode);
+                    formData.append('file', this.migrationFile);
+                    try {
+                        const response = await fetch('/api/import', {
+                            method: 'POST',
+                            body: formData,
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Import konnte nicht ausgeführt werden.');
+                        }
+                        const summary = data.summary || {};
+                        this.migrationMessage = `Import abgeschlossen: ${summary.created || 0} erstellt, ${summary.updated || 0} aktualisiert, ${summary.skipped || 0} übersprungen.`;
+                    } catch (error) {
+                        this.migrationError = error.message || 'Import konnte nicht ausgeführt werden.';
+                    } finally {
+                        this.migrationBusy = false;
+                    }
+                },
+
+                downloadInventoryExport() {
+                    window.location.assign('/api/export');
                 },
 
                 async saveSettings() {

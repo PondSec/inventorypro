@@ -29,6 +29,7 @@ from itertools import permutations
 from pathlib import Path, PurePosixPath
 from apscheduler.schedulers.background import BackgroundScheduler
 from cryptography.fernet import Fernet
+from openpyxl import Workbook
 import pyotp
 import qrcode
 import qrcode.image.svg
@@ -43,7 +44,7 @@ import smtplib
 
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
-from inventorypro.data_migration import TabularImportError, import_tabular_csv, preview_tabular_csv
+from inventorypro.data_migration import TabularImportError, import_tabular_file, preview_tabular_file
 from inventorypro.csrf import CSRF_HEADER_NAME, get_csrf_token, validate_csrf_token
 from inventorypro.domains.backups.routes import build_backups_blueprint
 from inventorypro.domains.locations.routes import build_locations_blueprint
@@ -1187,7 +1188,7 @@ def validate_settings_payload(payload, partial=False):
 
     import_export = merged.get("importExport", {})
     export_format = (import_export.get("exportFormat") or "").lower()
-    if export_format not in {"sqlite", "csv", "json"}:
+    if export_format not in {"sqlite", "csv", "json", "xlsx"}:
         errors["importExport.exportFormat"] = "Export-Format ist ungültig."
     import_mode = (import_export.get("importMode") or "").lower()
     if import_mode not in {"merge", "replace", "append"}:
@@ -15398,7 +15399,6 @@ def export_data():
         "asset_categories",
         "locations",
         "devices",
-        "asset_categories",
         "assets",
         "asset_devices",
         "maintenance_tasks",
@@ -15437,6 +15437,25 @@ def export_data():
                             archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
             else:
                 archive_path = data_path
+        elif export_format == "xlsx":
+            data_path = temp_dir / "inventory_export.xlsx"
+            workbook = Workbook(write_only=True)
+            for table in tables:
+                worksheet = workbook.create_sheet(title=table[:31])
+                columns = [column["name"] for column in db.execute(f"PRAGMA table_info({table})").fetchall()]
+                worksheet.append(columns)
+                for row in db.execute(f"SELECT * FROM {table}").fetchall():
+                    worksheet.append([row[column] for column in columns])
+            workbook.save(data_path)
+            if include_uploads and UPLOADS_DIR.exists():
+                archive_path = temp_dir / "inventory_export.zip"
+                with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                    archive.write(data_path, arcname="inventory_export.xlsx")
+                    for path in UPLOADS_DIR.rglob("*"):
+                        if path.is_file():
+                            archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
+            else:
+                archive_path = data_path
         else:
             archive_path = temp_dir / "inventory_export.zip"
             with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -15457,12 +15476,16 @@ def export_data():
                     for path in UPLOADS_DIR.rglob("*"):
                         if path.is_file():
                             archive.write(path, arcname=str(Path("uploads") / path.relative_to(UPLOADS_DIR)))
-        if (export_format in {"sqlite", "json"} and include_uploads) or export_format == "csv":
+        if (export_format in {"sqlite", "json", "xlsx"} and include_uploads) or export_format == "csv":
             filename = "inventory_export.zip"
             mimetype = "application/zip"
         else:
             filename = f"inventory_export.{archive_path.suffix.lstrip('.')}"
-            mimetype = "application/octet-stream"
+            mimetype = (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                if export_format == "xlsx"
+                else "application/octet-stream"
+            )
         return Response(
             archive_path.read_bytes(),
             mimetype=mimetype,
@@ -15507,7 +15530,12 @@ def import_data():
     try:
         if import_mode == "replace":
             run_backup_job(db, settings, force=True)
-        if file_path.suffix == ".json":
+        suffix = file_path.suffix.lower()
+        entity = (request.form.get("entity") or "").strip().lower()
+        if suffix == ".json" and entity:
+            tabular_mode = (request.form.get("mode") or import_mode).strip().lower()
+            summary = import_tabular_file(db, file_path.read_bytes(), entity, tabular_mode, file_path.name)
+        elif suffix == ".json":
             payload = json.loads(file_path.read_text(encoding="utf-8"))
             with db:
                 import_data_payload(db, payload, import_mode, tables)
@@ -15542,11 +15570,10 @@ def import_data():
                         target_path.parent.mkdir(parents=True, exist_ok=True)
                         with archive.open(member_info) as source, open(target_path, "wb") as target:
                             shutil.copyfileobj(source, target)
-        elif file_path.suffix.lower() in {".csv", ".tsv"}:
-            entity = (request.form.get("entity") or "").strip().lower()
+        elif suffix in {".csv", ".tsv", ".xlsx"}:
             tabular_mode = (request.form.get("mode") or import_mode).strip().lower()
-            summary = import_tabular_csv(db, file_path.read_bytes(), entity, tabular_mode)
-        elif file_path.suffix in {".db", ".sqlite"}:
+            summary = import_tabular_file(db, file_path.read_bytes(), entity, tabular_mode, file_path.name)
+        elif suffix in {".db", ".sqlite"}:
             with db:
                 import_from_sqlite(db, file_path, import_mode, tables)
         else:
@@ -15554,7 +15581,7 @@ def import_data():
         log_activity(db, "import", "server_settings", details={"mode": import_mode})
         db.commit()
         response = {"status": "success"}
-        if file_path.suffix.lower() in {".csv", ".tsv"}:
+        if suffix in {".csv", ".tsv", ".xlsx"} or (suffix == ".json" and entity):
             response["summary"] = summary
         return jsonify(response)
     except TabularImportError as error:
@@ -15575,10 +15602,8 @@ def preview_import_data():
     if error:
         return jsonify({"error": error}), 400
     try:
-        if file_path.suffix.lower() not in {".csv", ".tsv"}:
-            return jsonify({"error": "Die Vorschau unterstützt CSV- und TSV-Dateien."}), 400
         entity = (request.form.get("entity") or "").strip().lower()
-        return jsonify(preview_tabular_csv(file_path.read_bytes(), entity))
+        return jsonify(preview_tabular_file(file_path.read_bytes(), entity, file_path.name))
     except TabularImportError as error:
         return jsonify({"error": str(error)}), 400
     finally:

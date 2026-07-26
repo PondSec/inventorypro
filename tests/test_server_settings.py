@@ -4,6 +4,8 @@ import tempfile
 from pathlib import Path
 import unittest
 
+from openpyxl import Workbook, load_workbook
+
 import app as inventory_app
 
 
@@ -160,6 +162,62 @@ class ServerSettingsTestCase(unittest.TestCase):
         )
         self.assertEqual(imported.status_code, 200)
         self.assertEqual(imported.get_json()["summary"]["created"], 1)
+
+    def test_tabular_xlsx_and_json_previews_are_available(self):
+        self.login()
+        settings = self.client.get("/api/settings/server").get_json()["settings"]
+        settings["importExport"]["importAllowed"] = True
+        self.assertEqual(self.client.put("/api/settings/server", json=settings).status_code, 200)
+
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["Hostname", "Seriennummer", "Standort"])
+        worksheet.append(["xlsx-device", "XLSX-1", "Hamburg"])
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        xlsx_content = buffer.getvalue()
+
+        preview = self.client.post(
+            "/api/import/preview",
+            data={"entity": "devices", "file": (io.BytesIO(xlsx_content), "devices.xlsx")},
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.get_json()["format"], "xlsx")
+        imported = self.client.post(
+            "/api/import",
+            data={"entity": "devices", "mode": "append", "file": (io.BytesIO(xlsx_content), "devices.xlsx")},
+        )
+        self.assertEqual(imported.status_code, 200)
+        self.assertEqual(imported.get_json()["summary"]["created"], 1)
+
+        json_content = b'{"assets": [{"Bezeichnung": "JSON Asset", "Rechnungsnummer": "JSON-1"}]}'
+        json_preview = self.client.post(
+            "/api/import/preview",
+            data={"entity": "assets", "file": (io.BytesIO(json_content), "assets.json")},
+        )
+        self.assertEqual(json_preview.status_code, 200)
+        self.assertEqual(json_preview.get_json()["format"], "json")
+
+    def test_xlsx_export_contains_inventory_sheets(self):
+        self.login()
+        settings = self.client.get("/api/settings/server").get_json()["settings"]
+        settings["importExport"]["exportFormat"] = "xlsx"
+        settings["importExport"]["includeUploads"] = False
+        self.assertEqual(self.client.put("/api/settings/server", json=settings).status_code, 200)
+
+        response = self.client.get("/api/export")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.mimetype,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        workbook = load_workbook(io.BytesIO(response.data), read_only=True, data_only=True)
+        self.assertIn("devices", workbook.sheetnames)
+        sheet = workbook["devices"]
+        self.assertEqual(next(sheet.values)[0], "id")
+        self.assertIn("Testgerät", [row[1] for row in sheet.iter_rows(values_only=True)])
+        workbook.close()
 
     def test_all_built_in_features_are_available_without_license_flags(self):
         self.login()
