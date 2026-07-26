@@ -1,9 +1,11 @@
+import base64
 import json
 import os
 import tempfile
 import unittest
 
 import app as inventory_app
+from inventorypro.domains.customization.validators import validate_customization as validate_customization_payload
 
 
 class CustomizationTestCase(unittest.TestCase):
@@ -75,6 +77,79 @@ class CustomizationTestCase(unittest.TestCase):
             "branding.logoLightDataUrl muss ein PNG-, JPEG-, WebP- oder GIF-Data-URL sein.",
             errors,
         )
+
+    def test_validator_rejects_invalid_payload_shapes(self):
+        valid, errors = validate_customization_payload(None, max_image_bytes=1024)
+        self.assertFalse(valid)
+        self.assertEqual(errors, ["Customization muss ein Objekt sein."])
+
+        payload = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        payload["branding"] = []
+        payload["navigation"] = []
+        valid, errors = validate_customization_payload(payload, max_image_bytes=1024)
+        self.assertFalse(valid)
+        self.assertIn("branding muss ein Objekt sein.", errors)
+        self.assertIn("navigation muss ein Objekt sein.", errors)
+
+    def test_validator_enforces_image_encoding_and_size(self):
+        invalid_base64 = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        invalid_base64["branding"]["logoDataUrl"] = "data:image/png;base64,a"
+        valid, errors = validate_customization_payload(invalid_base64, max_image_bytes=1024)
+        self.assertFalse(valid)
+        self.assertIn("branding.logoDataUrl enthält ungültige Base64-Daten.", errors)
+
+        oversized = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        encoded = base64.b64encode(b"branding-image").decode("ascii")
+        oversized["branding"]["logoDataUrl"] = f"data:image/png;base64,{encoded}"
+        valid, errors = validate_customization_payload(oversized, max_image_bytes=4)
+        self.assertFalse(valid)
+        self.assertIn("branding.logoDataUrl überschreitet die Größenbegrenzung von 2 MB.", errors)
+
+    def test_validator_enforces_navigation_structure(self):
+        invalid_group = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        invalid_group["navigation"]["groups"] = {"": ""}
+        valid, errors = validate_customization_payload(invalid_group, max_image_bytes=1024)
+        self.assertFalse(valid)
+        self.assertIn("navigation.groups enthält eine ungültige Gruppenbezeichnung.", errors)
+
+        invalid_item = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        invalid_item["navigation"]["items"] = {"invalid": {"label": "", "visible": "yes", "order": 1000}}
+        valid, errors = validate_customization_payload(invalid_item, max_image_bytes=1024)
+        self.assertFalse(valid)
+        self.assertIn("navigation.items.invalid.label ist ungültig.", errors)
+
+    def test_validator_requires_schema_sections_and_navigation_entry_types(self):
+        incomplete = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        incomplete["schemaVersion"] = "1"
+        incomplete.pop("featurePrefs")
+        incomplete["branding"]["name"] = 42
+        valid, errors = validate_customization_payload(incomplete, max_image_bytes=1024)
+        self.assertFalse(valid)
+        self.assertIn("schemaVersion fehlt oder ist ungültig.", errors)
+        self.assertIn("featurePrefs fehlt.", errors)
+        self.assertIn("branding.name muss ein Textwert sein.", errors)
+
+        invalid_collections = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        invalid_collections["navigation"]["groups"] = []
+        invalid_collections["navigation"]["items"] = []
+        valid, errors = validate_customization_payload(invalid_collections, max_image_bytes=1024)
+        self.assertFalse(valid)
+        self.assertIn("navigation.groups muss ein Objekt sein.", errors)
+        self.assertIn("navigation.items muss ein Objekt sein.", errors)
+
+        invalid_entry = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        invalid_entry["navigation"]["items"] = {"invalid": "not-an-object"}
+        valid, errors = validate_customization_payload(invalid_entry, max_image_bytes=1024)
+        self.assertFalse(valid)
+        self.assertIn("navigation.items enthält einen ungültigen Navigationseintrag.", errors)
+
+        invalid_order = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
+        invalid_order["navigation"]["items"] = {
+            "invalid": {"label": "Gültig", "visible": True, "order": 1000},
+        }
+        valid, errors = validate_customization_payload(invalid_order, max_image_bytes=1024)
+        self.assertFalse(valid)
+        self.assertIn("navigation.items.invalid.order muss zwischen 0 und 999 liegen.", errors)
 
     def test_customize_api_rejects_invalid_branding_image(self):
         payload = inventory_app.clone_customization(inventory_app.DEFAULT_CUSTOMIZATION)
