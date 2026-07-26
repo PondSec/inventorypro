@@ -145,6 +145,43 @@ class ImportProfileService:
         }
 
 
+def resolve_tabular_import_options(
+    connection: Any,
+    form: Mapping[str, Any],
+    entity: str,
+    profile_service: ImportProfileService,
+) -> dict[str, Any]:
+    """Combine explicit form values with an optional reusable import profile."""
+    profile_id = parse_profile_id(form.get("profileId"))
+    profile_options = profile_service.resolve(connection, profile_id, entity)
+    mapping = parse_mapping(form.get("mapping")) if form.get("mapping") is not None else profile_options["mapping"]
+    return {
+        "mapping": mapping,
+        "matchingKey": form.get("matchingKey") or profile_options["matchingKey"] or None,
+        "sheetName": form.get("sheetName") or profile_options["sheetName"] or None,
+        "profileId": profile_options["profileId"],
+    }
+
+
+def build_preview_proof_arguments(
+    content: bytes,
+    filename: str,
+    entity: str,
+    options: Mapping[str, Any],
+    actor: str,
+) -> dict[str, Any]:
+    """Build the exact option set that must match a later import request."""
+    return {
+        "content": content,
+        "filename": filename,
+        "entity": entity,
+        "mapping": options["mapping"],
+        "matching_key": options["matchingKey"],
+        "sheet_name": options["sheetName"],
+        "actor": actor,
+    }
+
+
 class ImportPreviewProofService:
     """Bind a tabular import to its validated preview and initiating user."""
 
