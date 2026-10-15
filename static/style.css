@@ -2240,13 +2240,11 @@ textarea {
   background-color: #16202a !important;
 }
 
-.dark .inventory-workspace-tabs button.active,
 .dark .inventory-action--strong,
-.dark .sidebar-link.active,
 .dark .bg-slate-900 {
-  background-color: #e6edf3 !important;
-  color: #0b0f14 !important;
-  border-color: #e6edf3 !important;
+  background-color: var(--button-bg);
+  color: var(--button-text);
+  border-color: var(--button-bg);
 }
 
 .dark .border,

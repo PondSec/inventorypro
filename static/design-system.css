@@ -520,3 +520,7 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 .timeline-layout { display: grid; grid-template-columns: minmax(0,2fr) minmax(260px,1fr); gap: 16px; align-items: start; }
 .timeline-layout > .workspace-panel { min-width: 0; }
 @media(max-width:1000px) { .timeline-layout { grid-template-columns: minmax(0,1fr); } }
+
+/* Semantic tab states take precedence over retained legacy dark utility classes. */
+.app-body [role=tablist] [role=tab] { background: transparent !important; color: var(--color-text-muted) !important; }
+.app-body [role=tablist] [role=tab][aria-selected=true] { color: var(--color-accent) !important; }

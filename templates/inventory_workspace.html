@@ -11,9 +11,9 @@
 {% block content %}
 <div class="kpi-grid" aria-label="Bestandskennzahlen">
     {{ kpi_tile('Gesamtbestand',inventory.summary.total,'box','Alle sichtbaren Kategorien','/inventory') }}
-    {% if can_assets %}{{ kpi_tile('Zugewiesen',inventory.summary.assigned,'users','Assets und enthaltene Komponenten' if unified_inventory else 'Geräte und Sets','/inventory?assigned=yes') }}{% endif %}
-    {% if can_maintenance %}{{ kpi_tile('Wartung fällig',inventory.summary.maintenance,'tool','Bis in 30 Tagen, inklusive überfällig','/inventory?kind=device&filter=due_maintenance','danger' if inventory.summary.maintenance else 'neutral') }}{% endif %}
-    {{ kpi_tile('Unvollständig',inventory.summary.incomplete,'file-text','Fehlende Inventar- oder Lifecycle-Daten','/inventory?filter=incomplete') }}
+    {% if can_assets %}{{ kpi_tile('Zugewiesen',inventory.summary.assigned,'users','Zugewiesene Assets' if unified_inventory else 'Geräte und Sets','/inventory?assigned=yes') }}{% endif %}
+    {% if can_maintenance %}{{ kpi_tile('Wartung fällig',inventory.summary.maintenance,'tool','Fällig bis in 30 Tagen','/inventory?kind=device&filter=due_maintenance','danger' if inventory.summary.maintenance else 'neutral') }}{% endif %}
+    {{ kpi_tile('Unvollständig',inventory.summary.incomplete,'file-text','Fehlende Angaben','/inventory?filter=incomplete') }}
 </div>
 <div class="inventory-viewbar">
     <nav class="workspace-tabs" aria-label="Inventaransichten">

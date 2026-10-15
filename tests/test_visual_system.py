@@ -183,3 +183,18 @@ def test_compact_rows_and_primary_actions_keep_theme_contrast(live_inventory,bro
     page.goto(live_inventory+'/dependencies')
     expect(page.locator('main section').first).to_have_css('box-shadow','none')
     page.close()
+
+
+def test_legacy_dark_utilities_cannot_replace_shared_tab_and_action_states(live_inventory,browser):
+    page=browser.new_page(viewport={'width':1440,'height':900});sign_in(page,live_inventory)
+    for route in ['/health','/users']:
+        page.goto(live_inventory+route);page.evaluate("InventoryTheme.set('dark')")
+        selected=page.locator('[role=tab][aria-selected=true]').first
+        expect(selected).to_have_css('background-color','rgba(0, 0, 0, 0)')
+        expect(selected).to_have_css('color','rgb(122, 162, 247)')
+        expect(page.locator('.sidebar-link.active').first).not_to_have_css('background-color','rgb(230, 237, 243)')
+    page.goto(live_inventory+'/health')
+    action=page.get_by_role('button',name='Jetzt prüfen',exact=True)
+    expect(action).to_have_css('background-color','rgb(37, 99, 235)')
+    expect(action).to_have_css('color','rgb(255, 255, 255)')
+    page.close()
