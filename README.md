@@ -2,7 +2,7 @@
 
 Enterprise-Inventarisierung und Service-Management für Teams, die Assets, Standorte, Beschaffung und Supportvorgänge in einem nachvollziehbaren System steuern wollen.
 
-![Inventory Pro Dashboard](docs/images/inventory-pro-dashboard.png)
+![Inventory Pro Assetbestand](docs/images/inventory-pro-dashboard.png)
 
 > Die Abbildung zeigt eine isolierte Demo-Instanz mit synthetischen Daten. Sie enthält keine Daten einer produktiven Installation.
 
