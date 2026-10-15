@@ -133,3 +133,29 @@ def test_task_counts_do_not_leak_other_users_tickets(client):
     tasks=client.get('/api/workspace/tasks').json['tasks']
     assert {t['key'] for t in tasks}=={'tickets','overdue_tickets'}
     assert next(t['count'] for t in tasks if t['key']=='tickets')==1
+
+
+def test_inventory_summary_and_combinable_filters_use_exact_object_counts(client):
+    with inventory_app.app.app_context():
+        db = inventory_app.get_db()
+        site = db.execute("INSERT INTO locations(name) VALUES ('QA Office')").lastrowid
+        category = db.execute("SELECT category_id FROM devices WHERE id=1").fetchone()[0]
+        db.execute('UPDATE devices SET location_id=? WHERE id=1',(site,))
+        asset = db.execute("INSERT INTO assets(name,specs) VALUES ('QA Assigned Set','{}')").lastrowid
+        db.execute('INSERT INTO asset_devices(asset_id,device_id,quantity) VALUES (?,1,1)',(asset,))
+        user = db.execute("SELECT id FROM users WHERE username='admin'").fetchone()[0]
+        db.execute("INSERT INTO asset_assignment_history(asset_id,assigned_to_user_id,status) VALUES (?,?,'assigned')",(asset,user))
+        for title in ('One overdue task','Another overdue task'):
+            db.execute("INSERT INTO maintenance_tasks(device_id,title,status,due_date) VALUES (1,?,'open','2026-01-01')",(title,))
+        db.commit()
+        result = list_inventory(db,{},devices_allowed=True,assets_allowed=True,maintenance_allowed=True)
+        assert result['summary'] == {'total':41,'assigned':2,'maintenance':1,'incomplete':40}
+        result = list_inventory(db,{'kind':'device','category':f'device:{category}','location':str(site),'assigned':'yes','q':'admin'},devices_allowed=True,assets_allowed=True)
+        assert result['total'] == 1 and result['rows'][0]['id'] == 1
+        assert result['rows'][0]['assigned_to'] == 'admin'
+        assert list_inventory(db,{'location':site,'kind':'asset'},devices_allowed=True,assets_allowed=True)['total'] == 1
+        assert list_inventory(db,{'filter':'due_maintenance'},devices_allowed=True,assets_allowed=True,maintenance_allowed=True)['total'] == 1
+        restricted = list_inventory(db,{},devices_allowed=True,assets_allowed=False)
+        assert restricted['summary']['assigned'] == 0 and restricted['summary']['maintenance'] == 0
+        assert all(row['assigned_to'] == '' for row in restricted['rows'])
+        assert list_inventory(db,{'category':'device:1 OR 1=1','location':'-1'},devices_allowed=True,assets_allowed=True)['total'] == 41

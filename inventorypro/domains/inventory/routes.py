@@ -38,11 +38,12 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
     def inventory():
         if not (can_read('device') or can_read('asset')):
             abort(403)
-        result = list_inventory(get_db(), request.args, devices_allowed=can_read('device'), assets_allowed=can_read('asset'))
+        maintenance_allowed = user_can('maintenance.view') or user_can('maintenance.manage')
+        result = list_inventory(get_db(), request.args, devices_allowed=can_read('device'), assets_allowed=can_read('asset'), maintenance_allowed=maintenance_allowed)
         def link(**changes):
-            return '/inventory?' + urlencode({**{key: value for key, value in result.items() if key not in {'rows','total','pages'}}, **changes})
+            return '/inventory?' + urlencode({**{key: result[key] for key in ('q','kind','filter','sort','direction','category','location','assigned','page','per_page')}, **changes})
         return render_template('inventory_workspace.html', inventory=result, inventory_link=link,
-                               can_devices=can_read('device'), can_assets=can_read('asset'), **context())
+                               can_devices=can_read('device'), can_assets=can_read('asset'), can_maintenance=maintenance_allowed, **context())
 
     @blueprint.get('/inventory/new')
     @login_required
