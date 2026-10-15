@@ -1,39 +1,42 @@
-# Inventory Pro UI Patterns
+# Bedienmuster
 
-## List → Detail
-- Links: Tabelle oder Card-Grid.
-- Rechts: Detailpanel (`panel`) mit Kontextaktionen.
-- Für mobile: Detail im selben Flow (Accordion/Modal).
+Die verbindlichen Komponenten und Quellen stehen in [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md).
 
-## Filterbar
-- `.filter-bar` direkt unter `page-header`.
-- Links: Suche + Filter.
-- Rechts: Primary Action (z. B. „Neu erstellen“).
+## Bestand durchsuchen und bearbeiten
 
-## Table
-- `.table-wrapper` + `.table`.
-- Sticky header.
-- Actions in letzter Spalte als `inline-actions`.
-- Bulk Actions: Optional in einer `toolbar` oberhalb.
+`/inventory` verbindet Geräte und Komponenten/Sets als gemeinsame Arbeitsliste,
+ohne deren Datenmodelle zusammenzulegen. Suche, Filter und Sortierung bleiben
+im Link erhalten. Persönliche Ansichten speichern diese Parameter pro Konto
+im aktuellen Browser; das wird in der Oberfläche ausdrücklich erklärt.
 
-## Modal
-- `.modal` Overlay + `.modal-content`.
-- Header mit Titel + Close.
-- Actions im Footer als `toolbar`.
+Der Objektname öffnet eine vollständige Detailseite. „Vorschau“ öffnet nur die
+wichtigsten vorhandenen Listendaten im Drawer. Zurück schließt ihn, Vorwärts
+öffnet ihn wieder. Vollständige Details haben normale URLs und eigene Reiter.
+Erfassen beginnt mit Name und Vorlage, weitere Eigenschaften sind optional.
 
-## Empty State
-- `.empty-state` mit Titel, Erklärung, CTA.
+## Tickets und Arbeitsaufgaben
 
-## Cards / KPIs
-- `.card` für KPIs oder kleinere Inhalte.
-- Mehrere Cards in `.grid`.
+Queues, kompakte Tabelle, Bulk-Aktionen, SLA und bestehende Kürzel bleiben erhalten.
+Die globale Navigation ist dieselbe wie in allen anderen Modulen. Dashboardzahlen
+führen zu passenden Arbeitslisten und berücksichtigen die eigenen Berechtigungen.
+Keine aus mehreren Lücken doppelt gezählten Geräte als angebliche Objektzahl.
 
-## Graph / Timeline
-- Toolbar oben, Controls gruppiert.
-- Detailpanel für Node/State Informationen.
-- Compare-Ansicht: Nebeneinander mit klaren Differenz-Highlights.
+## Auswahl großer Mengen
 
-## Tabs + Detail-Drawer
-- Haupt-Views über Tabs strukturieren (Overview | Services | Checks | Incidents | History).
-- Detailansichten rechts als Drawer (`panel`) öffnen, damit Listen übersichtlich bleiben.
-- Drawer mit Fokus-Management und klaren Aktionen.
+Suche und Vorlagenfilter begrenzen die Ergebnismenge, maximal zwanzig Ergebnisse
+pro Seite. Sichtbare Auswahlchips und „Nur ausgewählte“ erlauben die Kontrolle
+über mehrere Filter hinweg. Speichern erhält alle bestehenden Zuordnungsdaten.
+
+## Lager- und Platzplanung
+
+Behälter/Lagerplatz → Maße/Einheit → Gegenstände/Mengen → Rotation/Abstände →
+Packliste und 2D-Vorschau. Erkanntes Feldmapping bleibt kontrollierbar. 3D ist
+optional. Heuristiken versprechen keine optimale oder physikalisch garantierte
+Lösung. Details: [STORAGE-PLANNING.md](docs/enterprise/STORAGE-PLANNING.md).
+
+## Gefährliche Aktionen und Speichern
+
+Kategorieentfernung nennt verwendende Einträge und fordert bei Bedarf eine
+explizite Zielvorlage; keine stillen kaskadierenden Bestandslöschungen.
+Fehler bleiben am Formular sichtbar. Speichern hat genau einen laufenden Zustand;
+bei Fehlern bleiben Eingaben erhalten. Tastaturdialoge führen den Fokus zurück.

@@ -1,86 +1,66 @@
-# Inventory Pro Design System
+# Inventory Pro – gemeinsames Designsystem
 
-## UI/UX Audit (Phase 1)
-### Hauptprobleme
-- Zu viele voneinander abweichende Styles (viele Tailwind-Utilities pro Seite), wodurch Konsistenz und Wiedererkennbarkeit leiden.
-- Unterschiedliche Abstände, Radii und Button-Stile erzeugen visuelles Rauschen.
-- Tabellen, Filterbars und Sidepanels sind uneinheitlich strukturiert.
-- Fehlende klar definierte Typografie-Hierarchie für Überschriften, Metadaten und Hilfetexte.
-- Interaktions-States (Hover/Focus/Active) sind nicht überall sauber ersichtlich.
+Stand 15.10.2026. Die Anwendung bleibt Flask/Jinja mit vorhandenem Alpine und
+JavaScript. Neue Oberflächen nutzen gemeinsame Komponenten; fachliche Modelle
+werden durch gemeinsame Arbeitsabläufe verbunden.
 
-### Ziele für das neue System
-- Ruhige, klare Oberfläche mit klarer Hierarchie und gutem „scannable“ Layout.
-- Einheitliche Komponenten und konsistente Abstände.
-- Starker Fokus auf schnelle Bedienbarkeit (klare Action-Cluster, Filterbars, Toolbars).
-- Zugänglichkeit (Kontraste, Fokus-Ringe, klare Labels, gut erkennbare States).
+## Verbindliche Quellen
 
-## Design Tokens
-### Typografie
-- Font: `Inter`, `Segoe UI`, System UI
-- Base: 15px
-- Titles: 1.8rem
-- Section title: 1.1rem
-- Meta/Labels: 0.7–0.85rem
+- `inventorypro/domains/customization/defaults.json`: gemeinsame Vorgaben für
+  Backendvalidierung und Browser. `_design_tokens.html` liefert dieselben Werte
+  vor dem ersten Theme-Skript in App- und Auth-Shell aus. Keine getrennte
+  JavaScript-Kopie der Konfiguration.
+- `static/style.css`: semantische Farbtokens, Light/Dark und bestehende Komponenten.
+- `static/enterprise.css`: gemeinsame Shell, kompakte Komponenten, responsive
+  Tabellen, Detailseiten, Vorschau, Auswahl und Planungsassistent.
+- `static/theme.js`: vorhandene Instanz-/Browseranpassungen, Themewechsel und Cache.
+  Explizit gespeicherte Kundenanpassungen werden weiter angewendet.
 
-### Spacing Scale (px)
-`4, 8, 12, 16, 20, 24, 32, 40, 48, 64`
+## Sprache und Hierarchie
 
-### Radius
-- `sm`: 8px
-- `md`: 12px
-- `lg`: 18px
-- `pill`: 999px
+Eine Hauptaufgabe pro Seite. Titel in der gemeinsamen Topbar, darunter nur nötiger
+Kontext und Aktionen. Keine zweite Navigation zur selben Funktion, kein dekorativer
+Startbereich. Objektbezeichnungen bleiben Links zur eigenen Detailseite.
 
-### Shadows
-- `xs`: subtile Card-Schattierung
-- `sm`: leichte Elevation
-- `md`: Modals/Overlays
-- `lg`: hero/cta
+Systemschrift mit Inter/Segoe-UI-Fallback, Grundschrift 15 px, Tabellen 14 px,
+Metadaten mindestens 12 px. Abstandsskala 4/8/12/16/20/24/32/40/48/64 px.
+Standardradien: 4/6/8 px; Buttons und Eingaben 6 px, Panels und Dialoge 8 px.
+Akzent Blau kennzeichnet Auswahl/primäre Aktion; Status immer zusätzlich als Text.
+Flächen, Text, Rahmen und Fokus beziehen ihre Farben aus semantischen Tokens,
+keine neue lokale Palette in einzelnen Modulen.
 
-### Color System
-- Background: `#f6f7fb`
-- Surface: `#ffffff`
-- Surface muted: `#f1f3f7`
-- Text: `#0f172a`
-- Muted text: `#6b7280`
-- Border: `#e5e7eb`
-- Accent: `#2563eb`
-- Success: `#16a34a`
-- Warning: `#f59e0b`
-- Danger: `#dc2626`
+## Shell und Komponenten
 
-## Komponenten-Regeln
-### Buttons
-- `.btn` Basis mit zwei Größen (Standard + Icon).
-- Variants: `.btn-primary`, `.btn-secondary`, `.btn-ghost`, `.btn-outline`, `.btn-danger`.
-- Fokus: klarer Fokus-Ring.
+Angemeldete Seiten erben `base_app.html`; `_app_shell.html` rendert Sidebar und
+Topbar. Ticketqueues bleiben eine fachliche zweite Navigation innerhalb dieser
+Shell. Authentifizierung erbt `base_auth.html`. Sidebarangebote richten sich nach
+Rollen; Backendprüfungen bleiben unabhängig davon verpflichtend.
 
-### Form Controls
-- `.input`, `.select`, `.textarea` mit gleicher Höhe und klarer Label-Struktur.
-- Labels sind immer oberhalb.
-- Hilfe-/Validierungs-Text unterhalb.
+- `.btn` mit Primary/Secondary/Danger für echte Aktionen. Pro Arbeitsbereich eine
+  erkennbare Hauptaktion. Deaktivierte und laufende Speicherung klar anzeigen.
+- `.workspace-panel`, `.list-toolbar`, `.data-table-scroll`, `.data-table` und
+  `.list-pagination` für neue Listen. Sortierung als Link mit aria-sort;
+  serverseitige Suche/Filter/Pagination im URL-Zustand.
+- Eigene Detailseiten mit `.object-summary`, `.detail-tabs`, `.detail-panel`.
+  Fachlich optionale Informationen in nativen details/summary-Bereichen.
+- `.quick-preview`: native dialog-Kurzansicht für bereits sichtbare Bestandsdaten,
+  Link zur Detailseite, Escape, Fokusbegrenzung/-rückgabe und Browserhistorie.
+- `[role=tablist]`: `static/components.js` bietet Pfeiltasten, Pos1/Ende und genau
+  einen Tabstop. Zugehörige tabpanels über aria-controls/aria-labelledby verbinden.
+- Große Zuordnungen durchsuchen und paginieren; ausgewählte Einträge bleiben als
+  entfernbare Chips sichtbar, auch wenn der aktuelle Suchfilter sie nicht enthält.
 
-### Cards & Panels
-- `.card` für kompakten Inhalt.
-- `.panel` für größere Abschnitte (Listen, Tabellen, Graphen).
-- Always: Border + leichter Shadow.
+## Zugänglichkeit und Fehler
 
-### Tabellen
-- `.table-wrapper` + `.table`.
-- Sticky header.
-- Hover-Zeilen.
-- Toolbars + Filterbar als Standardpattern.
+Sichtbare Labels, Hilfe und Fehlermeldung gehören zur Eingabe. Placeholder ersetzt
+kein Label. Fokus ist sichtbar, Hauptinhalt per Skip-Link erreichbar. Kein Status
+allein über Farbe; reduzierte Bewegung beachten. Tabellen dürfen innerhalb ihres
+benannten Containers horizontal scrollen, die gesamte Seite soll nicht überlaufen.
 
-### Navigation
-- `.app-shell` mit Sidebar + Topbar.
-- Sidebar mit Sections und `nav-link` States.
-- Active: Accent-Hintergrund.
+Speicherfehler erhalten Eingaben, Meldungen erscheinen am Formular, doppelte
+Speicherung wird verhindert. Ungespeicherte Geräte-/Komponentenänderungen werden
+vor Verwerfen geschützt. Umfangreiche Bearbeitung gehört auf eine Detailseite;
+Legacy-Managementdialoge bleiben während der inkrementellen Migration erreichbar.
 
-### Empty/Loading
-- `.empty-state` für leere Listen.
-
-## Layout Grundgerüst
-- **App-Shell:** Sidebar + Topbar + Content.
-- **Page Layout:** `page-header` + `panel` mit Tools + Content.
-- **Filterbars:** Eine Zeile, klar gruppiert.
-- **Detail Panels:** Rechts oder unterhalb als Panel.
+Tatsächliche Prüfungen und Grenzen stehen in `docs/enterprise/QUALITY.md`;
+keine pauschale WCAG-Zertifizierung aus diesen Gestaltungsregeln ableiten.

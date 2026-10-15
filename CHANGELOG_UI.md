@@ -1,5 +1,21 @@
 # UI Changelog
 
+## 2026-10-15 – Enterprise-Arbeitsabläufe auf dev
+
+- Gemeinsame App-/Auth-Shell einschließlich Service Desk, Administration und MFA.
+- Aufgaben-Dashboard mit berechtigungsgerechten Kennzahlen und Zielfiltern.
+- Gemeinsamer Bestand mit serverseitiger Suche/Pagination, eigenen Detailseiten,
+  Kurzansicht und persönlichen gespeicherten Ansichten.
+- Geführte Erfassung, geschützte ungespeicherte Eingaben und durchsuchbare Zuordnung.
+- Sichere Kategorieentfernung/-umordnung ohne implizite Inventarlöschung.
+- Lager- und Platzplanung mit Einheiten, Packliste, 2D und bestehendem 3D.
+- Gemeinsame Designvorgaben und Tastaturreiter; funktionierende Einstellungsnavigation.
+- Persistente Produktionssecrets, Docker-Schnellstart und Update-Kompatibilitätswerkzeug.
+- GitLab-Prüfpipeline und Regressionstests; keine Releaseveröffentlichung.
+
+Prüfungen und Grenzen: docs/enterprise/QUALITY.md und PROGRESS.md.
+
+
 ## Phase 1 Plan & Dateien
 ### Plan (kurz)
 1. Audit & Tokenisierung (Farben, Spacing, Typo, Radius, Shadow).

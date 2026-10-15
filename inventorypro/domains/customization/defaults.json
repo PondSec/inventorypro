@@ -1,0 +1,281 @@
+{
+  "schemaVersion": 1,
+  "branding": {
+    "name": "Inventory Pro",
+    "tagline": "Inventarisierung",
+    "logoDataUrl": "",
+    "logoLightDataUrl": "",
+    "logoDarkDataUrl": "",
+    "faviconDataUrl": "",
+    "authBackgroundDataUrl": ""
+  },
+  "baseTokens": {
+    "colors": {
+      "primary": "#2563eb",
+      "secondary": "#6366f1",
+      "accent": "#2563eb",
+      "neutral": "#64748b",
+      "background": "#f6f7fb",
+      "surface": "#ffffff",
+      "text": "#0f172a",
+      "textMuted": "#6b7280",
+      "border": "#e5e7eb",
+      "shadow": "rgba(15, 23, 42, 0.12)",
+      "focus": "rgba(37, 99, 235, 0.35)",
+      "success": "#16a34a",
+      "warning": "#f59e0b",
+      "danger": "#dc2626",
+      "info": "#0ea5e9"
+    },
+    "typography": {
+      "fontFamily": "\"Inter\", \"Segoe UI\", system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+      "fontSizes": {
+        "xs": "12px",
+        "sm": "14px",
+        "base": "15px",
+        "lg": "18px",
+        "xl": "22px"
+      },
+      "fontWeights": {
+        "normal": 400,
+        "medium": 500,
+        "semibold": 600,
+        "bold": 700
+      },
+      "lineHeights": {
+        "tight": 1.2,
+        "normal": 1.6,
+        "relaxed": 1.75
+      },
+      "letterSpacing": {
+        "tight": "-0.01em",
+        "normal": "0",
+        "wide": "0.05em"
+      }
+    },
+    "spacing": {
+      "radius": {
+        "sm": 4,
+        "md": 6,
+        "lg": 8,
+        "pill": 999
+      },
+      "paddingScale": [
+        4,
+        8,
+        12,
+        16,
+        20,
+        24,
+        32,
+        40,
+        48,
+        64
+      ],
+      "gapScale": [
+        4,
+        8,
+        12,
+        16,
+        20,
+        24,
+        32,
+        40
+      ]
+    },
+    "layout": {
+      "containerWidth": 1200,
+      "sidebarWidth": 280,
+      "tableDensity": "normal"
+    },
+    "states": {
+      "hover": 0.92,
+      "active": 0.86,
+      "disabled": 0.6
+    }
+  },
+  "componentOverrides": {
+    "button": {
+      "primary": {
+        "radius": 6,
+        "background": "#2563eb",
+        "text": "#ffffff",
+        "border": "transparent",
+        "shadow": "none",
+        "hoverBg": "#1d4ed8",
+        "activeBg": "#1e40af",
+        "disabledBg": "#e5e7eb",
+        "disabledText": "#94a3b8"
+      },
+      "secondary": {
+        "radius": 6,
+        "background": "#ffffff",
+        "text": "#1f2937",
+        "border": "#e2e8f0",
+        "shadow": "none",
+        "hoverBg": "#f8fafc",
+        "activeBg": "#e2e8f0",
+        "disabledBg": "#f1f5f9",
+        "disabledText": "#94a3b8"
+      }
+    },
+    "input": {
+      "radius": 6,
+      "background": "#ffffff",
+      "text": "#0f172a",
+      "border": "#e2e8f0",
+      "focusRing": "rgba(37, 99, 235, 0.35)",
+      "shadow": "none",
+      "placeholder": "#94a3b8"
+    },
+    "card": {
+      "radius": 8,
+      "background": "#ffffff",
+      "border": "#e5e7eb",
+      "shadow": "none"
+    },
+    "table": {
+      "radius": 8,
+      "headerBg": "#f8fafc",
+      "rowBg": "#ffffff",
+      "zebraBg": "#f8fafc",
+      "border": "#e2e8f0"
+    },
+    "modal": {
+      "radius": 8,
+      "background": "#ffffff",
+      "shadow": "0 20px 50px rgba(15, 23, 42, 0.16)"
+    },
+    "toast": {
+      "radius": 8,
+      "background": "#0f172a",
+      "text": "#ffffff",
+      "shadow": "0 12px 30px rgba(15, 23, 42, 0.2)"
+    },
+    "badge": {
+      "radius": 999,
+      "background": "#eef2ff",
+      "text": "#4338ca"
+    },
+    "navbar": {
+      "background": "#ffffff",
+      "border": "#e5e7eb",
+      "text": "#0f172a"
+    },
+    "sidebar": {
+      "background": "#ffffff",
+      "border": "#e5e7eb",
+      "text": "#0f172a"
+    }
+  },
+  "layoutPrefs": {
+    "density": 1,
+    "containerWidth": 1200,
+    "sidebarWidth": 280,
+    "tableDensity": "normal",
+    "rowHeight": 44,
+    "zebraStriping": true,
+    "formSpacing": 16
+  },
+  "featurePrefs": {
+    "iconSet": "feather",
+    "tableDefaults": {
+      "defaultSort": "updated_at:desc",
+      "defaultColumns": [
+        "name",
+        "status",
+        "owner",
+        "updated_at"
+      ]
+    },
+    "compactSidebar": false
+  },
+  "navigation": {
+    "groups": {
+      "legacyPrimary": "Hauptbereiche",
+      "assetOperations": "Asset Operations",
+      "serviceWorkflow": "Service & Workflow",
+      "legacyAnalysis": "Auswertung",
+      "analysisPlatform": "Analyse & Plattform",
+      "linkedInstances": "Verknüpfte Instanzen",
+      "administration": "Administration"
+    },
+    "items": {
+      "dashboard": {
+        "label": "Dashboard",
+        "visible": true,
+        "order": 10
+      },
+      "devices": {
+        "label": "Geräte",
+        "visible": true,
+        "order": 20
+      },
+      "assets": {
+        "label": "Assets",
+        "visible": true,
+        "order": 30
+      },
+      "categories": {
+        "label": "Kategorien",
+        "visible": true,
+        "order": 40
+      },
+      "locations": {
+        "label": "Standorte",
+        "visible": true,
+        "order": 50
+      },
+      "tickets": {
+        "label": "Ticketsystem",
+        "visible": true,
+        "order": 60
+      },
+      "knowledge": {
+        "label": "Wissensbasis",
+        "visible": true,
+        "order": 70
+      },
+      "roadmap": {
+        "label": "Roadmap",
+        "visible": true,
+        "order": 80
+      },
+      "procurement": {
+        "label": "Beschaffung",
+        "visible": true,
+        "order": 90
+      },
+      "statistics": {
+        "label": "Statistiken",
+        "visible": true,
+        "order": 100
+      },
+      "dependencies": {
+        "label": "Abhängigkeiten",
+        "visible": true,
+        "order": 110
+      },
+      "timeMachine": {
+        "label": "Zeitmaschine",
+        "visible": true,
+        "order": 120
+      },
+      "health": {
+        "label": "Health",
+        "visible": true,
+        "order": 130
+      },
+      "users": {
+        "label": "Benutzer & Rollen",
+        "visible": true,
+        "order": 140
+      },
+      "settings": {
+        "label": "Einstellungen",
+        "visible": true,
+        "order": 150
+      }
+    }
+  }
+}

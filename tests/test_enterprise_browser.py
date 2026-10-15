@@ -155,7 +155,7 @@ def test_dashboard_task_links_open_exact_work_list(live_inventory, browser):
     expect(task.locator('.task-count')).to_have_text('40')
     task.click()
     assert 'filter=missing_identity' in page.url
-    expect(page.locator('.list-summary')).to_contain_text('40 Einträge')
+    expect(page.locator('.list-summary[role=status]')).to_contain_text('40 Einträge')
     context.close()
 
 
@@ -325,4 +325,25 @@ def test_shared_tabs_keyboard_and_panel_semantics(live_inventory, browser, isola
         page.keyboard.press('ArrowRight')
         expect(tabs.first).to_be_focused()
         assert tabs.evaluate_all('(nodes) => nodes.filter(node => node.tabIndex === 0).length') == 1
+    context.close()
+
+
+def test_shared_design_defaults_preserve_instance_customization(live_inventory, browser):
+    context = browser.new_context(viewport={'width': 1280, 'height': 900})
+    page = context.new_page()
+    sign_in(page, live_inventory)
+    assert page.evaluate('InventoryCustomization.defaults().baseTokens.spacing.radius.md') == 6
+    result = page.evaluate('''async () => {
+        const response = await fetch('/api/customize', {method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({baseTokens: {spacing: {radius: {md: 11}}}})});
+        return response.status;
+    }''')
+    assert result == 200
+    page.reload()
+    page.wait_for_load_state('networkidle')
+    assert page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--radius-md").trim()') == '11px'
+    page.goto(live_inventory + '/inventory')
+    page.wait_for_load_state('networkidle')
+    assert page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--radius-md").trim()') == '11px'
     context.close()
