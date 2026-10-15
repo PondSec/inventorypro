@@ -5,6 +5,8 @@ document.addEventListener('alpine:init', () => {
         selectedEntry: null,
         selectedCategoryId: '',
         searchQuery: '',
+        listPage: 1, listPages: 1, listTotal: 0, listLoading: false, listError: '',
+        listRequestId: 0,
         entryModalOpen: false,
         categoryModalOpen: false,
         entryError: '',
@@ -51,17 +53,26 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        async loadEntries() {
-            const params = new URLSearchParams();
-            if (this.selectedCategoryId) {
-                params.append('category_id', this.selectedCategoryId);
-            }
-            if (this.searchQuery) {
-                params.append('search', this.searchQuery);
-            }
-            const response = await fetch(`/api/knowledge/entries?${params.toString()}`);
-            if (response.ok) {
-                this.entries = await response.json();
+        async loadEntries(page = 1) {
+            const requestId = ++this.listRequestId;
+            this.listLoading = true;
+            this.listError = '';
+            const params = new URLSearchParams({paginated: '1', page: String(page)});
+            if (this.selectedCategoryId) params.set('category_id', this.selectedCategoryId);
+            if (this.searchQuery) params.set('search', this.searchQuery);
+            try {
+                const response = await fetch(`/api/knowledge/entries?${params.toString()}`);
+                if (!response.ok) throw new Error('Wissenseinträge konnten nicht geladen werden.');
+                const data = await response.json();
+                if (requestId !== this.listRequestId) return;
+                this.entries = data.items;
+                this.listPage = data.page;
+                this.listPages = data.pages;
+                this.listTotal = data.total;
+            } catch (error) {
+                if (requestId === this.listRequestId) this.listError = error.message || 'Verbindung fehlgeschlagen.';
+            } finally {
+                if (requestId === this.listRequestId) this.listLoading = false;
             }
         },
 

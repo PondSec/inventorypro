@@ -12958,15 +12958,31 @@ def knowledge_entries():
         like = f"%{search}%"
         params.extend([like, like, like])
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    paginated = request.args.get('paginated') == '1'
+    page, total, pages = 1, 0, 1
+    if paginated:
+        try:
+            page = max(1, int(request.args.get('page', '1')))
+        except ValueError:
+            page = 1
+        total = scalar_int(db, f"SELECT COUNT(*) FROM knowledge_entries ke {where_sql}", params)
+        pages = max(1, (total + 24) // 25)
+        page = min(page, pages)
+    pagination_sql = "LIMIT 25 OFFSET ?" if paginated else ""
+    query_params = [*params, (page - 1) * 25] if paginated else params
     entries = db.execute(f'''
         SELECT ke.id, ke.title, ke.summary, ke.content, ke.category_id, ke.related_ticket_id,
                ke.created_by, ke.created_at, ke.updated_at, kc.name AS category_name
         FROM knowledge_entries ke
         LEFT JOIN knowledge_categories kc ON kc.id = ke.category_id
         {where_sql}
-        ORDER BY ke.updated_at DESC, ke.created_at DESC
-    ''', params).fetchall()
-    return jsonify([serialize_knowledge_entry(row) for row in entries])
+        ORDER BY ke.updated_at DESC, ke.created_at DESC, ke.id DESC
+        {pagination_sql}
+    ''', query_params).fetchall()
+    items = [serialize_knowledge_entry(row) for row in entries]
+    if paginated:
+        return jsonify({"items": items, "total": total, "page": page, "pages": pages})
+    return jsonify(items)
 
 @app.route('/api/knowledge/entries/<int:entry_id>', methods=['GET', 'PUT', 'DELETE'])
 @login_required

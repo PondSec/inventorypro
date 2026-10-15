@@ -347,3 +347,28 @@ def test_shared_design_defaults_preserve_instance_customization(live_inventory, 
     page.wait_for_load_state('networkidle')
     assert page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--radius-md").trim()') == '11px'
     context.close()
+
+
+def test_knowledge_search_uses_current_query_and_pages(live_inventory, browser, isolated_inventory):
+    import app as inventory_app
+    with inventory_app.app.app_context():
+        db = inventory_app.get_db()
+        for index in range(60):
+            db.execute('INSERT INTO knowledge_entries(title,content,summary) VALUES (?,?,?)',
+                       (f'QA knowledge {index:03}', 'Synthetic content', 'Synthetic summary'))
+        db.commit()
+    context = browser.new_context(viewport={'width': 1280, 'height': 900})
+    page = context.new_page()
+    sign_in(page, live_inventory)
+    page.goto(live_inventory + '/knowledge')
+    search = page.get_by_label('Suche', exact=True)
+    search.fill('QA knowledge')
+    navigation = page.get_by_role('navigation', name='Seiten in der Wissensbasis')
+    expect(navigation).to_contain_text('60 Einträge')
+    navigation.get_by_role('button', name='Weiter', exact=True).click()
+    expect(navigation).to_contain_text('Seite 2 von 3')
+    search.fill('QA knowledge 059')
+    expect(navigation).to_contain_text('Seite 1 von 1 · 1 Einträge')
+    page.get_by_role('button').filter(has=page.locator('p', has_text='QA knowledge 059')).first.click()
+    expect(page.locator('h3').filter(has_text='QA knowledge 059')).to_be_visible()
+    context.close()
