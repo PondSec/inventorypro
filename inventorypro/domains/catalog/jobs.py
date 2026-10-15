@@ -57,7 +57,10 @@ def enqueue(db,kind,object_id,identity):
 def enqueue_inventory(db,*,after=None,limit=100):
     if not enabled(db):raise service.CatalogError('Die öffentliche Bildquelle ist deaktiviert.',409)
     result={'processed':0,'queued':0,'last':dict(after or {})}
+    from inventorypro.domains.inventory.assets import unified
+    is_unified=unified(db)
     for kind,(table,links,key) in TABLES.items():
+        if is_unified and kind=='device':continue
         rows=db.execute(f'''SELECT a.id,a.specs FROM {table} a LEFT JOIN {links} p ON p.{key}=a.id
             WHERE a.id>? AND coalesce(p.suppress_image,0)=0 AND p.override_hash IS NULL
             AND coalesce(p.match_method,'none')<>'manual' AND NOT EXISTS (SELECT 1 FROM product_images pi WHERE pi.product_id=p.product_id) ORDER BY a.id LIMIT ?''',((after or {}).get(kind,0),min(250,max(1,limit)))).fetchall()

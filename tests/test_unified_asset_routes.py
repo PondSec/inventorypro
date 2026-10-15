@@ -60,3 +60,18 @@ def test_canonical_routes_keep_csrf_enforced(unified_client,monkeypatch):
     assert unified_client.post('/api/inventory/assets',json={'name':'Blocked'}).status_code==403
     token=unified_client.get('/api/csrf-token').json['csrfToken']
     assert unified_client.post('/api/inventory/assets',json={'name':'Allowed'},headers={'X-CSRF-Token':token}).status_code==201
+
+
+def test_legacy_photo_routes_use_same_canonical_server_image_after_conversion(unified_client):
+    from test_product_catalog_routes import image_data
+    client=unified_client
+    with inventory_app.app.app_context():identifier=inventory_app.get_db().execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=1').fetchone()[0]
+    legacy='/api/inventory/device/1/photo';canonical=f'/api/inventory/asset/{identifier}/photo'
+    initial=client.get(legacy).json
+    uploaded=client.post(legacy+'/upload',data=image_data(expectedUpdatedAt=initial['updated_at']))
+    assert uploaded.status_code==201 and uploaded.json['url'].startswith(f'/media/inventory/asset/{identifier}/')
+    same=client.get(canonical).json
+    assert same['hash']==uploaded.json['hash']
+    replacement=client.post(canonical,json={'action':'hide','expectedUpdatedAt':same['updated_at']})
+    assert replacement.status_code==200 and client.get(legacy).json['source']=='fallback'
+    assert client.get(uploaded.json['url']).status_code==404

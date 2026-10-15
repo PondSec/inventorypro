@@ -113,6 +113,10 @@ def touch_catalog(db,user_id=None):
 
 def sync_object(db,kind,object_id,*,force=False,catalog_revision=None,row=None,external=True):
     if kind not in TABLES:raise ValueError('Ungültiger Inventartyp.')
+    from inventorypro.domains.inventory.assets import unified
+    if kind=='device' and unified(db):
+        mapped=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=?',(object_id,)).fetchone()
+        if mapped:kind='asset';object_id=mapped[0]
     table,links,key = TABLES[kind]
     source = row if row is not None else db.execute(f'SELECT id,name,specs FROM {table} WHERE id=?',(object_id,)).fetchone()
     if source is None:return {'product_id':None,'method':'none','reason':'missing','changed':False}
@@ -141,7 +145,10 @@ def sync_object(db,kind,object_id,*,force=False,catalog_revision=None,row=None,e
 def sync_inventory(db,*,limit=None,after=None):
     """Local-only reconciliation; caller owns transaction/progress and permissions."""
     version = revision(db);result={'processed':0,'matched':0,'changed':0,'last':dict(after or {})}
+    from inventorypro.domains.inventory.assets import unified
+    is_unified=unified(db)
     for kind,(table,_,_) in TABLES.items():
+        if is_unified and kind=='device':continue
         sql = f'SELECT id,name,specs FROM {table} WHERE id>? ORDER BY id'
         arguments = [(after or {}).get(kind,0)]
         if limit is not None:sql+=' LIMIT ?';arguments.append(min(250,max(1,int(limit))))

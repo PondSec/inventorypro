@@ -60,6 +60,14 @@ def build_catalog_blueprint(*,get_db,get_access,user_can,login_required,get_uplo
     def context():
         access=get_access(get_db())
         return dict(username=session.get('username'),permissions=sorted(access['permissions']),is_superuser=access['is_superuser'])
+    @bp.before_request
+    def canonical_photo_alias():
+        values=request.view_args or {}
+        if values.get('kind')=='device' and 'identifier' in values:
+            from inventorypro.domains.inventory.assets import unified
+            if unified(get_db()):
+                mapped=get_db().execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=?',(values['identifier'],)).fetchone()
+                if mapped:values['kind']='asset';values['identifier']=mapped[0]
     @bp.after_app_request
     def resume_public_lookups(response):
         if response.status_code<400 and (request.method in {'POST','PUT','PATCH'} or str(request.endpoint or '').startswith('product_catalog.')):
