@@ -11,6 +11,7 @@ stages:
 variables:
   GIT_DEPTH: "0"
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PLAYWRIGHT_BROWSERS_PATH: "$CI_PROJECT_DIR/.cache/ms-playwright"
   QA_ARTIFACT_DIR: "$CI_PROJECT_DIR/.qa-artifacts/screenshots"
 
 regression:
@@ -19,7 +20,8 @@ regression:
   stage: test
   image: python:3.12-bookworm
   timeout: 20 minutes
-  interruptible: true
+  # Complete an already running regression despite the required frequent dev pushes.
+  interruptible: false
   cache:
     key:
       files:
@@ -27,10 +29,12 @@ regression:
         - requirements-dev.lock
     paths:
       - .cache/pip/
+      - .cache/ms-playwright/
   before_script:
     - python -m pip install --disable-pip-version-check -r requirements-dev.lock
     - python -m playwright install --with-deps chromium firefox
   script:
+    - python scripts/check_gitlab_registry.py
     - mkdir -p .qa-artifacts
     - python -m pytest -q --junitxml=.qa-artifacts/junit.xml
   artifacts:
