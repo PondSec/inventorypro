@@ -16,7 +16,7 @@ def test_reports_count_canonical_assets_and_both_maintenance_sources_once(unifie
     assert response.status_code==200
     assert captured['total_devices']==42 and captured['total_assets']==42
     assert captured['open_maintenance']==2 and captured['overdue_maintenance']==2
-    assert sum(row['device_count'] for row in captured['categories'])==40 # Two newly captured assets have no category.
+    assert sum(row['device_count'] for row in captured['categories'])==42
     role(client,'qa-stats-devices',['devices.view','stats.view'])
     assert client.get('/stats').status_code==200
     assert captured['total_devices']==40 and captured['total_assets']==40

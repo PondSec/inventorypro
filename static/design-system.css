@@ -215,8 +215,8 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 .kpi-tile small { display: block; font-size: 11px; line-height: 14px; color: var(--color-text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .inventory-viewbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .workspace-tabs { display: flex; align-items: center; gap: 4px; overflow-x: auto; min-width: 0; }
-.workspace-tabs a { display: inline-flex; align-items: center; min-height: 44px; padding: 10px 16px; font-size: 13px; white-space: nowrap; border-bottom: 2px solid transparent; color: var(--color-text-muted); }
-.workspace-tabs a[aria-current=page] { border-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
+.workspace-tabs :is(a,button) { display: inline-flex; align-items: center; min-height: 44px; padding: 10px 16px; font-size: 13px; white-space: nowrap; border:0; border-bottom: 2px solid transparent; border-radius:0; background:transparent; color: var(--color-text-muted); }
+.workspace-tabs :is(a[aria-current=page],button[aria-selected=true]) { border-color: var(--color-accent); color: var(--color-accent); font-weight: 600; background:transparent; }
 .inventory-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .inventory-actions .btn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
 .inventory-actions .ui-icon { width: 16px; height: 16px; }
@@ -283,7 +283,7 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 @container stock (max-width: 900px) {
   .inventory-viewbar { flex-wrap: wrap; gap: 4px; }
   .inventory-actions { margin-left: auto; }
-  .workspace-tabs a { padding-inline: 10px; font-size: 12px; }
+  .workspace-tabs :is(a,button) { padding-inline: 10px; font-size: 12px; }
   .kpi-tile { padding-inline: 10px; gap: 8px; }
   .kpi-tile__icon { width: 30px; height: 30px; }
   .kpi-tile__icon .ui-icon { width: 20px; height: 20px; }

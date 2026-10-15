@@ -14684,6 +14684,9 @@ def stats():
         GROUP BY c.id
     ''').fetchall()
     categories_data = [dict(c) for c in categories] if categories else []
+    if canonical_assets.unified(get_db()):
+        uncategorized=db.execute('SELECT count(*) FROM devices WHERE category_id IS NULL').fetchone()[0]
+        if uncategorized:categories_data.append({'id':None,'name':'Ohne Kategorie','device_count':uncategorized})
     
     # 3. Verbesserte Statusverteilung mit Default-Werten
     status_data = {'Verwendet': 0, 'Lager': 0, 'Defekt': 0, 'Unbekannt': 0}
@@ -14693,7 +14696,7 @@ def stats():
             specs = json.loads(device['specs']) if device['specs'] else {}
             status = specs.get('Status') or specs.get('status') or 'Verwendet'
             # Normalisiere den Status (entferne Leerzeichen, mache erste Buchstabe groß)
-            status = status.strip().capitalize()
+            status = str(status).strip().capitalize()
             # Falls der Status nicht in unserer Liste ist, zählen wir als "Verwendet"
             if status in status_data:
                 status_data[status] += 1
@@ -14874,6 +14877,11 @@ def stats():
     asset_ticket_stats = []
     today = utc_now().date()
     ticket_counts = []
+    canonical_owners={}
+    if canonical_assets.unified(get_db()):
+        from inventorypro.domains.inventory.unified_list import source
+        sql=source(devices_allowed=user_can('devices.view') or user_can('devices.manage'),assets_allowed=user_can('assets.view') or user_can('assets.manage'))
+        canonical_owners={row['id']:row['assigned_to'] for row in get_db().execute(sql+'SELECT id,assigned_to FROM inventory')}
     for row in asset_ticket_rows:
         commissioning_date = parse_date(row['commissioning_date']) or parse_date(row['acquisition_date'])
         age_months = None
@@ -14884,7 +14892,7 @@ def stats():
             "id": row["id"],
             "name": row["name"],
             "ticket_count": row["ticket_count"] or 0,
-            "assigned_user": row["assigned_user"] or "—",
+            "assigned_user": canonical_owners.get(row['id'],row["assigned_user"]) or "—",
             "age_months": age_months,
             "warranty_status": warranty_status(row["warranty_end"])
         })
