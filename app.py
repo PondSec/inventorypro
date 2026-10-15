@@ -53,6 +53,7 @@ from inventorypro.domains.inventory import assets as canonical_assets
 from inventorypro.domains.inventory.ticket_assets import normalize_links as normalize_ticket_asset_links
 from inventorypro.domains.exports.tables import INVENTORY_TABLES,available_tables,dependency_order
 from inventorypro.domains.inventory.graph import CanonicalGraph
+from urllib.parse import urlencode
 from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
@@ -8964,6 +8965,10 @@ def logout():
 def index():
     access = get_user_access(get_db())
     if canonical_assets.unified(get_db()):
+        if request.args.get('view') in {'taxonomy','asset-taxonomy'}:return redirect('/inventory/categories')
+        if request.args.get('create') in {'device','asset'}:return redirect('/inventory/assets/new')
+        location=request.args.get('location','')
+        if location.isdigit() and int(location)>0:return redirect('/inventory?'+urlencode({'location':location}))
         destination=get_post_login_redirect(access)
         return redirect(destination if destination!='/' else '/account/security')
     if not (user_can('categories.view') or user_can('categories.manage')):abort(403)

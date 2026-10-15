@@ -115,6 +115,10 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
         if kind not in {'device', 'asset'}:
             abort(404)
         db = get_db()
+        if kind=='device' and canonical_assets.unified(db):
+            mapped=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=?',(object_id,)).fetchone()
+            if not mapped:abort(404)
+            kind='asset';object_id=mapped[0]
         if kind=='asset' and canonical_assets.unified(db):
             try:canonical_assets.require(db,user_can,object_id)
             except canonical_assets.AssetError as error:abort(error.status)
@@ -136,7 +140,10 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
         db = get_db()
         if canonical_assets.unified(db):
             mapped=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=?',(object_id,)).fetchone()
-            if mapped:return redirect('/inventory/assets/'+str(mapped[0])+('?' + request.query_string.decode() if request.query_string else ''))
+            if mapped:
+                arguments=request.args.to_dict()
+                if arguments.get('tab')=='hardware':arguments['tab']='details'
+                return redirect('/inventory/assets/'+str(mapped[0])+('?' + urlencode(arguments) if arguments else ''))
         row = db.execute('''SELECT d.*, c.name AS category_name, l.name AS location_name
             FROM devices d LEFT JOIN categories c ON c.id=d.category_id
             LEFT JOIN locations l ON l.id=d.location_id WHERE d.id=?''', (object_id,)).fetchone()

@@ -154,6 +154,21 @@ def test_location_delete_keeps_new_asset_location_until_explicit_reassignment(un
     assert client.delete(f'/api/locations/{location}').status_code==200
 
 
+def test_historical_device_links_open_canonical_detail_tabs_and_maintenance(unified_client):
+    client=unified_client
+    with inventory_app.app.app_context():mapped=inventory_app.get_db().execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=1').fetchone()[0]
+    redirected=client.get('/inventory/devices/1?tab=hardware')
+    assert redirected.status_code==302 and redirected.location==f'/inventory/assets/{mapped}?tab=details'
+    assert client.get(redirected.location).status_code==200
+    assert client.post(f'/api/inventory/assets/{mapped}/maintenance',json={'title':'QA canonical preview task','due_date':'2026-11-01'}).status_code==201
+    panel=client.get('/api/inventory/device/1/panel').json
+    assert panel['id']==mapped and panel['kind']=='asset' and panel['unified']
+    assert panel['tasks'][0]['title']=='QA canonical preview task'
+    assert b'QA canonical preview task' in client.get('/api/inventory/device/1/panel?format=html').data
+    assert client.get('/?location=1&view=devices').location=='/inventory?location=1'
+    assert client.get('/?view=taxonomy').location=='/inventory/categories'
+
+
 def test_legacy_mutation_guard_cannot_bypass_csrf_or_mfa(unified_client,monkeypatch):
     client=unified_client;monkeypatch.setitem(inventory_app.app.config,'TESTING',False)
     assert client.delete('/api/devices/1').status_code==403

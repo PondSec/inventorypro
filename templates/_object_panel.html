@@ -14,14 +14,14 @@
         {{ property('Inventar-/Seriennr.',object.serial_number | default(''),'copy',copy=True) }}
         {% if object.asset_tag %}{{ property('Asset-Tag',object.asset_tag,'tag',copy=True) }}{% endif %}
     </dl></div>
-    {% call accordion('Hardware & Spezifikationen' if object.kind == 'device' else 'Eigenschaften','cpu',open=True) %}
+    {% call accordion('Hardware & Spezifikationen' if object.kind == 'device' or object.icon in ['laptop','smartphone','printer','network','drive','monitor','server'] else 'Eigenschaften','cpu',open=True) %}
         <dl class="compact-properties">{% for key,value in object.specs.items() if key | lower not in ['hersteller','manufacturer','modell','model','mpn','assettag','asset-tag'] %}{{ property(key,value) }}{% else %}<p class="muted">Keine weiteren Eigenschaften erfasst.</p>{% endfor %}</dl>
     {% endcall %}
     {% if object.can_links %}{% call accordion('Enthaltene Assets' if object.unified else 'Zubehör & Komponenten' if object.kind == 'device' else 'Verknüpfte Geräte','package',object.links | length) %}{% include '_object_panel_links.html' %}{% endcall %}{% endif %}
     {% if object.unified and object.used_in %}{% call accordion('Verwendet in','layers',object.used_in | length) %}{% for parent in object.used_in %}<a class="object-list-item" href="/inventory/assets/{{ parent.id }}"><strong>{{ parent.name }}</strong><small>Menge: {{ parent.quantity }}</small></a>{% endfor %}{% endcall %}{% endif %}
     {% if object.can_maintenance or object.kind == 'asset' %}{% call accordion('Wartung & Garantie','tool') %}
-        {% if object.kind == 'device' %}{% for task in object.tasks %}<article class="object-list-item"><strong>{{ task.title }}</strong><small>{{ task.due_date or 'Ohne Termin' }} · {{ 'Offen' if task.status == 'open' else 'Erledigt' if task.status == 'completed' else task.status }}</small></article>{% else %}<p class="muted">Keine Wartungsaufgaben erfasst.</p>{% endfor %}
-        {% else %}<dl class="compact-properties">{{ property('Beschafft am',object.acquisition_date) }}{{ property('In Betrieb seit',object.commissioning_date) }}{{ property('Garantie bis',object.warranty_end) }}</dl>{% endif %}
+        {% if object.can_maintenance %}{% for task in object.tasks %}<article class="object-list-item"><strong>{{ task.title }}</strong><small>{{ task.due_date or 'Ohne Termin' }} · {{ 'Offen' if task.status == 'open' else 'Erledigt' if task.status in ['completed','done'] else task.status }}</small></article>{% else %}<p class="muted">Keine Wartungsaufgaben erfasst.</p>{% endfor %}{% endif %}
+        {% if object.kind == 'asset' %}<dl class="compact-properties">{{ property('Beschafft am',object.acquisition_date) }}{{ property('In Betrieb seit',object.commissioning_date) }}{{ property('Garantie bis',object.warranty_end) }}</dl>{% endif %}
     {% endcall %}{% endif %}
     {% if object.kind == 'asset' and object.can_relations %}{% call accordion('Beziehungen','link-2',object.relations | length) %}{% for related in object.relations %}<a class="object-list-item" href="/inventory/assets/{{ related.id }}"><strong>{{ related.name }}</strong><small>{{ related.relation or 'Verknüpfung' }}</small></a>{% else %}<p class="muted">Keine Beziehungen erfasst.</p>{% endfor %}{% endcall %}{% endif %}
     {% if object.can_tickets %}{% call accordion('Verknüpfte Tickets','message-square',object.tickets | length) %}{% include '_object_panel_tickets.html' %}{% endcall %}{% endif %}
