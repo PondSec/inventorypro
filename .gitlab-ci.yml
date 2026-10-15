@@ -14,6 +14,8 @@ variables:
   QA_ARTIFACT_DIR: "$CI_PROJECT_DIR/.qa-artifacts/screenshots"
 
 regression:
+  tags:
+    - inventorypro-test
   stage: test
   image: python:3.12-bookworm
   timeout: 20 minutes
