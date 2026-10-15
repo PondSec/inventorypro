@@ -80,6 +80,20 @@ class ServerSettingsTestCase(unittest.TestCase):
         update_response = self.client.put("/api/settings/server", json=settings)
         self.assertEqual(update_response.status_code, 400)
 
+    def test_settings_links_always_select_an_existing_section(self):
+        self.login()
+        for requested, expected in [
+            ("branding", "customize"), ("customize", "customize"),
+            ("notifications", "server"), ("security", "server"),
+            ("unknown", "server"), ("server", "server"),
+        ]:
+            with self.subTest(section=requested):
+                response = self.client.get("/settings", query_string={"section": requested})
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(f'window.inventoryInitialSection = "{expected}";'.encode(), response.data)
+                self.assertIn(b'href="/settings?section=customize"', response.data)
+                self.assertNotIn(b'href="/settings?section=notifications"', response.data)
+
     def test_signed_update_policy_is_validated_and_published(self):
         self.login()
         response = self.client.get("/api/settings/server")

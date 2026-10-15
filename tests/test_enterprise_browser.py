@@ -80,6 +80,21 @@ def test_auto_updates_toggle_persists_with_csrf(live_inventory, browser):
     context.close()
 
 
+def test_settings_tabs_select_real_sections_and_preserve_legacy_links(live_inventory, browser):
+    context = browser.new_context(viewport={'width': 1280, 'height': 900})
+    page = context.new_page()
+    sign_in(page, live_inventory)
+    page.goto(live_inventory + '/settings?section=branding')
+    expect(page.locator("section[x-show=\"activeSection === 'customize'\"]")).to_be_visible()
+    page.get_by_role('link', name='Server', exact=True).click()
+    expect(page.get_by_role('checkbox', name='Automatische Updates aktivieren')).to_be_visible()
+    page.go_back()
+    expect(page.locator("section[x-show=\"activeSection === 'customize'\"]")).to_be_visible()
+    page.goto(live_inventory + '/settings?section=notifications')
+    expect(page.get_by_role('checkbox', name='Automatische Updates aktivieren')).to_be_visible()
+    context.close()
+
+
 @pytest.mark.parametrize('width', [320, 390, 1440])
 def test_shell_responsive_focus_and_theme(live_inventory, browser, tmp_path, width):
     context = browser.new_context(viewport={'width': width, 'height': 900}, reduced_motion='reduce')

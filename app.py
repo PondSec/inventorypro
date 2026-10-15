@@ -2866,7 +2866,7 @@ def inject_app_shell_defaults():
 
     endpoint = request.endpoint or ""
     path = request.path or "/"
-    section = (request.args.get("section") or "server").strip() or "server"
+    section = normalize_settings_section(request.args.get("section"))
 
     page_defaults = {
         "page_module": "dashboard",
@@ -2971,10 +2971,7 @@ def inject_app_shell_defaults():
     if endpoint in {"server_settings_page", "terminal_settings_page"}:
         settings_tabs = [
             {"href": "/settings?section=server", "label": "Server", "icon": "server", "active": endpoint == "server_settings_page" and section == "server"},
-            {"href": "/settings?section=branding", "label": "Branding", "icon": "image", "active": endpoint == "server_settings_page" and section == "branding"},
-            {"href": "/settings?section=notifications", "label": "Benachrichtigungen", "icon": "bell", "active": endpoint == "server_settings_page" and section == "notifications"},
-            {"href": "/settings?section=security", "label": "Sicherheit", "icon": "shield", "active": endpoint == "server_settings_page" and section == "security"},
-            {"href": "/settings?section=server#inventory-links", "label": "Inventory Links", "icon": "link-2", "active": endpoint == "server_settings_page" and section == "server"}
+            {"href": "/settings?section=customize", "label": "Darstellung", "icon": "sliders", "active": endpoint == "server_settings_page" and section == "customize"}
         ]
         if is_superuser or "terminal.view" in permissions:
             settings_tabs.append(
@@ -9076,12 +9073,21 @@ def users_page():
     access = get_user_access(get_db())
     return render_template('users.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
+def normalize_settings_section(section):
+    section = (section or "server").strip()
+    if section == "branding":
+        return "customize"
+    return section if section in {"server", "customize", "terminal"} else "server"
+
+
 @app.route('/settings')
 @login_required
 @require_permission('server_settings.manage')
 def server_settings_page():
     access = get_user_access(get_db())
-    initial_section = request.args.get("section") or "server"
+    initial_section = normalize_settings_section(request.args.get("section"))
+    if initial_section == "terminal" and not (access["is_superuser"] or "terminal.view" in access["permissions"]):
+        initial_section = "server"
     return render_template(
         'server_settings.html',
         username=session.get('username'),

@@ -1,7 +1,7 @@
 {% extends 'base_app.html' %}
 {% set page_title = 'Einstellungen' %}
 {% set page_module = 'settings' %}
-{% set hide_page_intro = true %}
+{% set page_description = 'Server, automatische Updates und Darstellung verwalten.' %}
 {% block title %}Einstellungen | Inventory Pro{% endblock %}
 {% block html_attrs %}x-data="serverSettingsApp()"{% endblock %}
 {% block extra_head %}
@@ -13,30 +13,6 @@
 {% endblock %}
 {% block content %}
 <div class="max-w-6xl space-y-6">
-                    <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-                        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                            <div>
-                                <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Einstellungen</p>
-                                <h2 class="text-2xl font-semibold text-slate-900">Steuere Server, Layout und Branding aus einem Bereich</h2>
-                                <p class="mt-2 text-sm text-slate-500">Wechsle zwischen Servereinstellungen und dem neuen Customize-Modul, um die Oberfläche vollständig zu individualisieren.</p>
-                            </div>
-                            <div class="flex flex-wrap gap-3">
-                                <button type="button" @click="activeSection = 'server'" :class="activeSection === 'server' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 text-slate-600'" class="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition">
-                                    <i data-feather="server" class="h-4 w-4"></i>
-                                    Servereinstellungen
-                                </button>
-                                <button type="button" @click="activeSection = 'customize'" :class="activeSection === 'customize' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 text-slate-600'" class="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition">
-                                    <i data-feather="sliders" class="h-4 w-4"></i>
-                                    Customize
-                                </button>
-                                <button type="button" x-show="canViewTerminal" @click="activeSection = 'terminal'" :class="activeSection === 'terminal' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 text-slate-600'" class="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition">
-                                    <i data-feather="terminal" class="h-4 w-4"></i>
-                                    Terminal
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
                     <section x-show="activeSection === 'server'" x-transition>
                         <div class="mb-6 rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4 text-sm text-indigo-700">
                             <div class="flex items-start gap-3">
