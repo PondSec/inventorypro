@@ -14643,6 +14643,9 @@ def maintenance_summary():
 def stats():
     db = get_db()
     access = get_user_access(db)
+    if canonical_assets.unified(db):
+        from inventorypro.domains.inventory.reporting import ReportingReader
+        db=ReportingReader(db,user_can,access)
     
     # 1. Grundstatistiken mit Default-Werten
     total_devices = db.execute('SELECT COUNT(*) FROM devices').fetchone()[0] or 0
