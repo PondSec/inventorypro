@@ -21,7 +21,7 @@
         {% if can_devices and not unified_inventory %}<a href="/inventory?kind=device" {% if inventory.kind == 'device' %}aria-current="page"{% endif %}>Geräte</a>{% endif %}
         {% if can_assets and not unified_inventory %}<a href="/inventory?kind=asset" {% if inventory.kind == 'asset' %}aria-current="page"{% endif %}>Sets & Zubehör</a>{% endif %}
         {% if is_superuser or 'locations.view' in permissions or 'locations.manage' in permissions %}<a href="/locations">Standorte</a>{% endif %}
-        {% if is_superuser or 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}<a href="/?view=taxonomy">Vorlagen</a>{% endif %}
+        {% if is_superuser or 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}<a href="{{ '/inventory/categories' if unified_inventory else '/?view=taxonomy' }}">{{ 'Asset-Kategorien' if unified_inventory else 'Vorlagen' }}</a>{% endif %}
     </nav>
     <div class="inventory-actions">{% if can_export %}<a class="btn btn-secondary" href="{{ inventory_link() | replace('/inventory?', '/inventory/export?') }}" data-inventory-export>{{ icon('download') }}Exportieren</a>{% endif %}{% if 'devices.manage' in permissions or (unified_inventory and 'assets.manage' in permissions) or is_superuser %}<a class="btn btn-primary" href="/inventory/new">{{ icon('plus') }}{{ 'Asset hinzufügen' if unified_inventory else 'Gerät hinzufügen' }}</a>{% endif %}</div>
 </div>

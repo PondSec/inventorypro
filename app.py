@@ -48,6 +48,7 @@ from inventorypro.domains.catalog.seed import initialize_catalog
 from inventorypro.domains.catalog.matching import sync_object as sync_product_object
 from inventorypro.domains.inventory.routes import build_inventory_blueprint
 from inventorypro.domains.inventory.asset_routes import build_assets_blueprint
+from inventorypro.domains.inventory.category_routes import build_category_blueprint
 from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
@@ -15572,6 +15573,9 @@ app.register_blueprint(build_catalog_blueprint(
     get_db=get_db, get_access=get_user_access, user_can=user_can, login_required=login_required,
     get_uploads_dir=lambda: UPLOADS_DIR, rate_limiter=RATE_LIMIT_CACHE, log_activity=log_activity,
 ))
+
+app.register_blueprint(build_category_blueprint(get_db=get_db,user_can=user_can,get_access=get_user_access,login_required=login_required,
+    parse_fields=parse_field_definitions,normalize_fields=normalize_field_definitions,log_activity=log_activity))
 
 app.register_blueprint(build_assets_blueprint(get_db=get_db,user_can=user_can,get_access=get_user_access,login_required=login_required,
     parse_fields=parse_field_definitions,validate_specs=validate_dynamic_specs,log_activity=log_activity,get_uploads_dir=lambda: UPLOADS_DIR))

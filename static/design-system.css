@@ -480,3 +480,12 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 .component-selection-row { display: flex; align-items: center; gap: 8px; padding-block: 8px; }
 .component-selection-row strong { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; }
 .component-selection-row input { max-width: 90px; }
+.category-editor { width: min(760px,calc(100vw - 32px)); }
+.category-fields { display: grid; gap: 12px; }
+.category-field { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 12px; border: 1px solid var(--color-border); border-radius: 6px; padding: 12px; min-width: 0; }
+.category-field legend { color: var(--color-text-muted); font-size: 12px; padding-inline: 4px; }
+.category-field label { display: grid; gap: 4px; min-width: 0; }
+.category-field .btn { justify-self: start; }
+@media(max-width:640px) { .category-field { grid-template-columns: minmax(0,1fr); } }
+
+.ui-dialog { margin: auto; }

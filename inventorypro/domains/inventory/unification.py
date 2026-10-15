@@ -29,6 +29,7 @@ def convert_inventory(db):
             category=db.execute('''INSERT INTO asset_categories(name,icon,description,fields,created_at)
                 VALUES (?,?,?,?,?)''',(_category_name(db,row['name']),row['icon'],row['description'],row['fields'],row['created_at'])).lastrowid
             db.execute('INSERT INTO asset_legacy_categories(category_id,asset_category_id) VALUES (?,?)',(row['id'],category))
+            db.execute("INSERT INTO asset_category_scope(category_id,scope) VALUES (?,'devices')",(category,))
             result['categories']+=1
         for row in db.execute('''SELECT d.*,m.asset_category_id FROM devices d
                 LEFT JOIN asset_legacy_devices existing ON existing.device_id=d.id
