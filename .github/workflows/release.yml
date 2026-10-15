@@ -1,80 +1,96 @@
-name: Release Inventory Pro
+name: Prepare reviewed GitLab release and legacy update bridge
 
+# Deliberate release request on dev; ordinary application pushes never publish.
 on:
   push:
-    branches: [main]
+    branches: [dev]
+    paths: [.release/request.json]
 
 permissions:
   contents: write
   packages: write
 
 concurrency:
-  group: inventorypro-release-main
+  group: inventorypro-release-dev
   cancel-in-progress: false
 
 jobs:
-  release:
+  prepare:
+    if: github.repository == 'PondSec/inventorypro'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Prepare release metadata
+      - name: Verify release request against authoritative GitLab dev
         id: meta
-        shell: bash
+        run: python scripts/validate_release_request.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - name: Regression including Chromium and Firefox
         run: |
-          image_name="ghcr.io/${GITHUB_REPOSITORY,,}"
-          version="0.0.${GITHUB_RUN_NUMBER}"
-          echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
+          python -m pip install --disable-pip-version-check -r requirements-dev.lock
+          python -m playwright install --with-deps chromium firefox
+          python -m pytest -q --junitxml=release-test-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-test-results
+          path: release-test-results.xml
+      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-
-      - name: Authenticate package registry
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and publish immutable application image
+      - uses: docker/login-action@v3
+        with:
+          registry: gitlab.pondsec.com
+          username: ${{ secrets.INVENTORY_GITLAB_DEPLOY_USER }}
+          password: ${{ secrets.INVENTORY_GITLAB_DEPLOY_TOKEN }}
+      - name: Build identical immutable images in both registries
         id: image
         uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
-          build-args: |
-            APP_VERSION=${{ steps.meta.outputs.version }}
+          build-args: APP_VERSION=${{ steps.meta.outputs.version }}
           tags: |
-            ${{ steps.meta.outputs.image_name }}:${{ steps.meta.outputs.version }}
-            ${{ steps.meta.outputs.image_name }}:latest
+            gitlab.pondsec.com/pondsec/inventorypro:${{ steps.meta.outputs.version }}
+            ghcr.io/pondsec/inventorypro:${{ steps.meta.outputs.version }}
           labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.source=https://gitlab.pondsec.com/PondSec/inventorypro
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
-
-      - name: Create signed update manifest
+      - name: Sign both update feeds using the already shipped key
         env:
           INVENTORY_UPDATE_SIGNING_KEY: ${{ secrets.INVENTORY_UPDATE_SIGNING_KEY }}
+          RELEASE_VERSION: ${{ steps.meta.outputs.version }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         run: |
-          python -m pip install --disable-pip-version-check --quiet cryptography
-          python scripts/sign_release_manifest.py \
-            --version "${{ steps.meta.outputs.version }}" \
-            --image "${{ steps.meta.outputs.image_name }}@${{ steps.image.outputs.digest }}" \
-            --release-url "${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.meta.outputs.version }}" \
-            --output update-manifest.json
-
-      - name: Package deployment source
-        run: |
-          git archive --format=tar.gz --output "inventorypro-${{ steps.meta.outputs.version }}.tar.gz" "${GITHUB_SHA}"
-
-      - name: Publish GitHub release
+          python scripts/prepare_update_bridge.py --version "$RELEASE_VERSION" \
+            --gitlab-image "gitlab.pondsec.com/pondsec/inventorypro@$IMAGE_DIGEST" \
+            --legacy-image "ghcr.io/pondsec/inventorypro@$IMAGE_DIGEST" \
+            --output-dir release-artifacts
+          mv release-artifacts/update-manifest.json release-artifacts/gitlab-update-manifest.json
+          mv release-artifacts/legacy-update-manifest.json release-artifacts/update-manifest.json
+          git archive --format=tar.gz --output "release-artifacts/inventorypro-$RELEASE_VERSION.tar.gz" HEAD
+      - name: Upload GitLab package artifacts without switching the live release feed
+        env:
+          INVENTORY_GITLAB_DEPLOY_TOKEN: ${{ secrets.INVENTORY_GITLAB_DEPLOY_TOKEN }}
+          RELEASE_VERSION: ${{ steps.meta.outputs.version }}
+        run: python scripts/upload_release_package.py
+      - name: Create draft compatibility release for final acceptance
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          gh release create "v${{ steps.meta.outputs.version }}" \
-            --target "${GITHUB_SHA}" \
-            --title "Inventory Pro v${{ steps.meta.outputs.version }}" \
-            --generate-notes \
-            update-manifest.json "inventorypro-${{ steps.meta.outputs.version }}.tar.gz"
+          gh release create "v$RELEASE_VERSION" --draft --target "$GITHUB_SHA" \
+            --title "Inventory Pro v$RELEASE_VERSION" \
+            --notes 'GitLab enterprise update. Publication pending image and upgrade acceptance.' \
+            release-artifacts/*
