@@ -34,4 +34,15 @@
         {% if inventory.page < inventory.pages %}<a class="btn btn-secondary" rel="next" href="{{ inventory_link(page=inventory.page+1) }}">Weiter</a>{% endif %}
     </nav>
 </section>
+<details class="workspace-panel" data-saved-views>
+    <summary>Gespeicherte Ansichten</summary>
+    <p class="list-summary">Suchbegriff, Filter und Sortierung für dieses Konto in diesem Browser speichern.</p>
+    <form class="list-toolbar" data-save-view>
+        <label class="grow">Name der Ansicht<input class="input" name="view_name" maxlength="60" required autocomplete="off" placeholder="Zum Beispiel: Geräte ohne Standort"></label>
+        <button class="btn btn-secondary" type="submit">Aktuelle Ansicht speichern</button>
+    </form>
+    <p role="status" data-view-status></p>
+    <ul class="saved-view-list" data-view-list></ul>
+</details>
 {% endblock %}
+{% block page_scripts %}<script src="/static/inventory-views.js?v=1"></script>{% endblock %}

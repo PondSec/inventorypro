@@ -156,3 +156,7 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .planning-result { font-size: 18px; }
 .packing-top-view { position: relative; height: auto; max-width: 700px; background: var(--color-surface-muted); border: 2px solid var(--color-border-strong); margin-block: 20px; }
 .packing-top-view > div { position: absolute; border: 2px solid var(--color-surface); opacity: .85; display: grid; place-items: center; color: white; font-weight: 700; min-width: 1px; min-height: 1px; }
+.saved-view-list { margin: 12px 0 0; padding: 0; list-style: none; }
+.saved-view-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 8px; border-bottom: 1px solid var(--color-border); }
+.saved-view-list a { color: var(--color-accent); overflow-wrap: anywhere; }
+[data-view-status] { margin-top: 12px; }

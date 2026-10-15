@@ -237,3 +237,28 @@ def test_storage_wizard_reuses_dimensions_saves_and_opens_existing_3d(live_inven
     expect(page.locator('.binpacking-modal-panel')).to_be_visible(timeout=15000)
     page.screenshot(path=str(tmp_path/'planning-3d.png'))
     context.close()
+
+
+def test_saved_inventory_views_restore_filters_and_escape_names(live_inventory, browser):
+    context = browser.new_context(viewport={'width': 1280, 'height': 900})
+    page = context.new_page()
+    sign_in(page, live_inventory)
+    page.goto(live_inventory + '/inventory?q=QA-039&kind=device&sort=name&direction=desc')
+    page.get_by_text('Gespeicherte Ansichten', exact=True).click()
+    label = '<img src=x onerror=alert(1)>'
+    page.get_by_label('Name der Ansicht', exact=True).fill(label)
+    page.get_by_role('button', name='Aktuelle Ansicht speichern').click()
+    expect(page.locator('[data-view-status]')).to_have_text('Ansicht gespeichert.')
+    expect(page.locator('[data-view-list] img')).to_have_count(0)
+    page.goto(live_inventory + '/inventory')
+    page.get_by_text('Gespeicherte Ansichten', exact=True).click()
+    page.locator('[data-view-list]').get_by_role('link', name=label, exact=True).click()
+    expect(page.get_by_role('link', name='Notebook 039', exact=True)).to_be_visible()
+    expect(page.get_by_role('link', name='Notebook 038', exact=True)).to_have_count(0)
+    assert 'q=QA-039' in page.url and 'direction=desc' in page.url
+    page.get_by_text('Gespeicherte Ansichten', exact=True).click()
+    page.locator('[data-view-list]').get_by_role('button').click()
+    page.reload()
+    page.get_by_text('Gespeicherte Ansichten', exact=True).click()
+    expect(page.locator('[data-view-list] li')).to_have_count(0)
+    context.close()
