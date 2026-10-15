@@ -38,7 +38,10 @@ explizite Freigabe im Updater und im Freigabeprozess. Kein Registry-/Releasebetr
 wurde allein durch eine erfolgreiche Git-Übertragung als funktionsfähig gewertet.
 
 GitLab: `update-manifest.json` als permanenter Release-Assetpfad
-`/update-manifest.json` für `/-/releases/permalink/latest/downloads/update-manifest.json`.
+`/update-manifest.json` für den API-Permalink
+`/api/v4/projects/PondSec%2Finventorypro/releases/permalink/latest/downloads/update-manifest.json`.
+Das Asset selbst muss unter einem GitLab-API-Paketdownload liegen, damit keine
+Weiterleitung auf eine durch Browserprüfungen blockierte Webroute erfolgt.
 GitHub: `legacy-update-manifest.json` unter dem Assetnamen `update-manifest.json`
 veröffentlichen. Beide Images müssen denselben getesteten Quellstand enthalten.
 Keine GitLab-Redirects am alten Endpunkt einsetzen: alte Hostfreigaben lehnen sie ab.

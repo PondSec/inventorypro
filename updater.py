@@ -35,7 +35,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 LOGGER = logging.getLogger("inventorypro.updater")
 MANIFEST_MAX_BYTES = 256 * 1024
 DEFAULT_MANIFEST_URL = (
-    "https://gitlab.pondsec.com/PondSec/inventorypro/-/releases/permalink/latest/downloads/update-manifest.json"
+    "https://gitlab.pondsec.com/api/v4/projects/PondSec%2Finventorypro/releases/permalink/latest/downloads/update-manifest.json"
 )
 SEMVER_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$")
 SHA256_IMAGE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$")
