@@ -66,8 +66,10 @@ def test_auto_updates_toggle_persists_with_csrf(live_inventory, browser):
     sign_in(page, live_inventory)
     page.goto(live_inventory + '/settings')
     toggle = page.get_by_role('checkbox', name='Automatische Updates aktivieren')
-    expect(toggle).to_be_visible()
+    page.get_by_role('tab', name='Sicherung', exact=True).click()
     page.get_by_label('E-Mail-Adresse für Backup-Benachrichtigungen').fill('qa@example.com')
+    page.get_by_role('tab', name='Updates', exact=True).click()
+    expect(toggle).to_be_visible()
     for enabled in (True, False):
         toggle.set_checked(enabled)
         save = page.locator('form').filter(has=toggle).locator('button[type=submit]')
@@ -87,11 +89,11 @@ def test_settings_tabs_select_real_sections_and_preserve_legacy_links(live_inven
     page.goto(live_inventory + '/settings?section=branding')
     expect(page.locator("section[x-show=\"activeSection === 'customize'\"]")).to_be_visible()
     page.get_by_role('link', name='Server', exact=True).click()
-    expect(page.get_by_role('checkbox', name='Automatische Updates aktivieren')).to_be_visible()
+    expect(page.get_by_label('Serveradresse', exact=True)).to_be_visible()
     page.go_back()
     expect(page.locator("section[x-show=\"activeSection === 'customize'\"]")).to_be_visible()
     page.goto(live_inventory + '/settings?section=notifications')
-    expect(page.get_by_role('checkbox', name='Automatische Updates aktivieren')).to_be_visible()
+    expect(page.get_by_label('Serveradresse', exact=True)).to_be_visible()
     context.close()
 
 

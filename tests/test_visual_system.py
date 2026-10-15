@@ -89,6 +89,7 @@ def test_module_groups_and_sidebar_footer_are_keyboard_operable(live_inventory, 
     settings.focus(); page.keyboard.press('Enter')
     expect(sidebar.get_by_role('link',name='Server & Updates',exact=True)).to_be_visible()
     sidebar.get_by_role('link',name='Server & Updates',exact=True).click()
+    page.get_by_role('tab',name='Updates',exact=True).click()
     expect(page.get_by_role('checkbox',name='Automatische Updates aktivieren')).to_be_visible()
     sidebar.get_by_role('button',name='Menü minimieren oder erweitern').click()
     expect(page.locator('body')).to_have_class(__import__('re').compile('sidebar-collapsed'))
