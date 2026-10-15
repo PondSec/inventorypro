@@ -67,6 +67,12 @@
 document.querySelectorAll('[data-row-menu] .row-menu-panel').forEach(menu => {
   if (typeof menu.showPopover === 'function') menu.setAttribute('popover','manual');
 });
+function positionRowMenu(host,menu) {
+  const rect=host.querySelector('summary').getBoundingClientRect();
+  if(rect.bottom<0 || rect.top>innerHeight || rect.right<0 || rect.left>innerWidth){host.open=false;return;}
+  menu.style.left=Math.max(8,Math.min(innerWidth-menu.offsetWidth-8,rect.right-menu.offsetWidth))+'px';
+  menu.style.top=(rect.bottom+menu.offsetHeight+8>innerHeight ? Math.max(8,rect.top-menu.offsetHeight) : rect.bottom+4)+'px';
+}
 document.addEventListener('toggle', event => {
   const host = event.target;
   if (!host.matches?.('[data-row-menu]')) return;
@@ -76,13 +82,14 @@ document.addEventListener('toggle', event => {
   if (!host.open) {if (menu.hasAttribute('popover')) menu.hidePopover();return;}
   document.querySelectorAll('[data-row-menu][open]').forEach(other => {if (other !== host) other.open = false;});
   if (menu.hasAttribute('popover')) menu.showPopover();
-  const rect = host.querySelector('summary').getBoundingClientRect();
-  menu.style.left = Math.max(8, Math.min(innerWidth-menu.offsetWidth-8, rect.right-menu.offsetWidth)) + 'px';
-  menu.style.top = (rect.bottom+menu.offsetHeight+8 > innerHeight ? Math.max(8,rect.top-menu.offsetHeight) : rect.bottom+4) + 'px';
+  positionRowMenu(host,menu);
 }, true);
 document.addEventListener('scroll', event => {
-  if (!event.target.closest?.('.row-menu-panel')) document.querySelectorAll('[data-row-menu][open]').forEach(menu => {menu.open=false;});
+  if (!event.target.closest?.('.row-menu-panel')) document.querySelectorAll('[data-row-menu][open]').forEach(host => {
+    const menu=host.querySelector('.row-menu-panel');if(menu)positionRowMenu(host,menu);
+  });
 }, true);
+window.addEventListener('resize',()=>document.querySelectorAll('[data-row-menu][open]').forEach(host=>{const menu=host.querySelector('.row-menu-panel');if(menu)positionRowMenu(host,menu);}));
 
 /* Copyable identifiers retain a useful selection even without Clipboard API. */
 document.addEventListener('click', async event => {
