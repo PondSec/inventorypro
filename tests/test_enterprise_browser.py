@@ -297,7 +297,7 @@ def test_inventory_preview_focus_escape_and_history(live_inventory, browser):
     page.reload()
     expect(dialog).to_be_visible()
     dialog.get_by_role('link', name='Detailseite').click()
-    expect(page.locator('.object-summary')).to_contain_text('QA-039')
+    expect(page.locator('.object-header')).to_contain_text('QA-039')
     page.go_back()
     expect(dialog).to_be_visible()
     context.close()
@@ -325,7 +325,7 @@ def test_inventory_modified_click_multi_tab_and_no_script_navigation(live_invent
     # default-prevention contract above is verified independently in both engines.
     detail = context.new_page()
     detail.goto(link.evaluate('link => link.href'))
-    expect(detail.locator('.object-summary')).to_contain_text('QA-039')
+    expect(detail.locator('.object-header')).to_contain_text('QA-039')
     detail.wait_for_timeout(500)
     assert len(requests) <= 3, 'Two tabs must not repeatedly refresh each other’s customization cache'
     expect(page.locator('[data-inventory-preview]')).not_to_be_visible()
@@ -333,7 +333,7 @@ def test_inventory_modified_click_multi_tab_and_no_script_navigation(live_invent
     page.route('**/static/inventory-preview.js*', lambda route: route.abort())
     page.reload()
     page.get_by_role('link', name='Notebook 039', exact=True).click()
-    expect(page.locator('.object-summary')).to_contain_text('QA-039')
+    expect(page.locator('.object-header')).to_contain_text('QA-039')
     context.close()
 
 

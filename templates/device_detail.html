@@ -1,36 +1,34 @@
 {% extends 'base_app.html' %}
-{% set page_title = device.name %}
-{% set page_section_label = 'Inventar · Gerät' %}
-{% set hide_page_intro = true %}
+{% from '_ui.html' import icon, property, accordion, status with context %}
+{% set page_title=device.name %}{% set page_section_label='Inventar' %}{% set hide_page_intro=true %}
 {% block title %}{{ device.name }} | Inventory Pro{% endblock %}
-{% block topbar_actions %}{% if can_edit %}<a class="btn btn-primary" href="/?view=devices&edit_device={{ device.id }}">Bearbeiten</a>{% endif %}{% endblock %}
+{% block workspace_heading %}{% endblock %}
 {% block content %}
-<a href="/inventory">← Zum Bestand</a>
-<section class="object-summary" aria-label="Gerät im Überblick">
-    <dl><div><dt>Identifikationsnummer</dt><dd>{{ device.serial_number or 'Nicht erfasst' }}</dd></div><div><dt>Vorlage</dt><dd>{{ device.category_name or 'Nicht festgelegt' }}</dd></div><div><dt>Standort</dt><dd>{{ device.location_name or 'Nicht festgelegt' }}</dd></div><div><dt>Status</dt><dd>Im Bestand</dd></div></dl>
+{% include '_object_detail_header.html' %}
+<div class="object-detail-grid">
+<section class="workspace-panel ui-section object-detail-primary" aria-labelledby="detail-heading"><h2 id="detail-heading">{{ dict(tabs)[tab] }}</h2>
+{% if tab=='overview' %}
+{% include '_object_overview_properties.html' %}
+<h3>Notizen</h3><div class="detail-note-list">{% for note in notes %}<article class="detail-note"><p>{{ note.note }}</p><small>{{ note.created_at | inventory_date(true) }}</small></article>{% else %}<p class="muted">Noch keine Notizen.</p>{% endfor %}</div>
+{% if can_edit %}<form data-inventory-action="/api/devices/{{ device.id }}/notes" class="catalog-form"><label>Neue Notiz<textarea class="input" name="note" required rows="3"></textarea></label><button class="btn btn-primary" type="submit">Notiz hinzufügen</button><p role="status" data-form-status></p></form>{% endif %}
+{% elif tab=='hardware' %}<dl class="detail-properties">{% for key,value in device.specs.items() %}{{ property(key,value) }}{% else %}<p class="muted">Keine zusätzlichen Hardwareeigenschaften erfasst.</p>{% endfor %}</dl>
+{% elif tab in ['accessories','assignment'] %}
+{% if tab=='assignment' %}{% for assignment in object.assignments %}<article class="object-list-item"><strong>{{ assignment.assigned_user or assignment.assigned_team }}</strong><small>über <a href="/inventory/assets/{{ assignment.asset_id }}?tab=assignment">{{ assignment.asset_name }}</a>{% if assignment.due_at %} · Rückgabe {{ assignment.due_at | inventory_date }}{% endif %}</small></article>{% else %}<p class="muted">Nicht zugewiesen. Zuweisungen werden am verknüpften Set geführt.</p>{% endfor %}{% endif %}
+{% if object.can_links %}<div class="data-table-scroll"><table class="data-table"><thead><tr><th>Komponente / Set</th><th>Menge</th><th>Hinweis</th></tr></thead><tbody>{% for asset in assets %}<tr><td><a href="/inventory/assets/{{ asset.id }}">{{ asset.name }}</a></td><td>{{ asset.quantity }}</td><td>{{ asset.notes or '—' }}</td></tr>{% else %}<tr><td colspan="3">Keine sichtbaren Verknüpfungen vorhanden.</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">Keine Berechtigung für verknüpfte Sets.</p>{% endif %}
+{% if 'assets.manage' in permissions or is_superuser %}<a class="btn btn-secondary" href="/?view=assets">Zuordnungen bearbeiten</a>{% endif %}
+{% elif tab=='maintenance' %}
+{% if object.can_maintenance %}<div class="data-table-scroll"><table class="data-table"><thead><tr><th>Aufgabe</th><th>Fällig</th><th>Status</th></tr></thead><tbody>{% for task in tasks %}<tr><td>{{ task.title }}</td><td>{{ task.due_date | inventory_date if task.due_date else 'Ohne Termin' }}</td><td>{{ status('Offen' if task.status=='open' else 'Erledigt' if task.status=='completed' else task.status,'warning' if task.status=='open' else 'success') }}</td></tr>{% else %}<tr><td colspan="3">Keine Wartungsaufgaben vorhanden.</td></tr>{% endfor %}</tbody></table></div>
+{% if 'maintenance.manage' in permissions or is_superuser %}<form data-inventory-action="/api/maintenance" class="catalog-form"><input type="hidden" name="device_id" value="{{ device.id }}"><label>Aufgabe<input class="input" name="title" required></label><label>Fällig am<input class="input" type="date" name="due_date"></label><button class="btn btn-primary" type="submit">Wartung anlegen</button><p role="status" data-form-status></p></form>{% endif %}
+{% else %}<p class="muted">Keine Berechtigung zum Anzeigen von Wartungen.</p>{% endif %}
+{% elif tab=='tickets' %}{% if object.can_tickets %}{% include '_object_panel_tickets.html' %}{% else %}<p class="muted">Keine Berechtigung für Tickets.</p>{% endif %}
+{% elif tab=='history' %}{% include '_object_detail_history.html' %}{% endif %}
 </section>
-<nav class="detail-tabs" aria-label="Gerätedetails">{% for key, label in tabs %}<a href="?tab={{ key }}" {% if key == tab %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
-<section class="workspace-panel detail-panel" aria-labelledby="detail-heading">
-<h2 id="detail-heading">{{ dict(tabs)[tab] }}</h2>
-{% if tab == 'overview' %}
-    <p>Erfasst am {{ device.created_at }} · Interne Kennung {{ device.id }}</p>
-    <h3>Notizen</h3>{% for note in notes %}<article class="detail-note"><p>{{ note.note }}</p><small>{{ note.created_at }}</small></article>{% else %}<p>Noch keine Notizen.</p>{% endfor %}
-    {% if can_edit %}<form data-inventory-action="/api/devices/{{ device.id }}/notes" class="detail-form"><label>Neue Notiz<textarea class="input" name="note" required rows="3"></textarea></label><button class="btn btn-primary" type="submit">Notiz hinzufügen</button><p role="status" data-form-status></p></form>{% endif %}
-{% elif tab == 'hardware' %}
-    <dl class="property-list">{% for key, value in device.specs.items() %}<div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>{% else %}<p>Keine zusätzlichen Hardwareeigenschaften erfasst.</p>{% endfor %}</dl>
-{% elif tab in ['accessories', 'assignment'] %}
-    {% if tab == 'assignment' %}<p>Zuweisungen werden an den zugehörigen Komponenten und Sets geführt. Öffnen Sie den jeweiligen Eintrag, um Verantwortliche und Übergaben zu prüfen.</p>{% endif %}
-    <div class="data-table-scroll"><table class="data-table"><thead><tr><th>Komponente / Set</th><th>Menge</th><th>Hinweis</th></tr></thead><tbody>{% for asset in assets %}<tr><td><a href="/inventory/assets/{{ asset.id }}">{{ asset.name }}</a></td><td>{{ asset.quantity }}</td><td>{{ asset.notes or '—' }}</td></tr>{% else %}<tr><td colspan="3">Keine sichtbaren Verknüpfungen vorhanden.</td></tr>{% endfor %}</tbody></table></div>
-    {% if 'assets.manage' in permissions or is_superuser %}<a class="btn btn-secondary" href="/?view=assets">Komponenten und Zuordnungen bearbeiten</a>{% endif %}
-{% elif tab == 'maintenance' %}
-    {% if 'maintenance.view' in permissions or 'maintenance.manage' in permissions or is_superuser %}
-    <div class="data-table-scroll"><table class="data-table"><thead><tr><th>Aufgabe</th><th>Fällig</th><th>Status</th></tr></thead><tbody>{% for task in tasks %}<tr><td>{{ task.title }}</td><td>{{ task.due_date or 'Ohne Termin' }}</td><td>{{ 'Offen' if task.status == 'open' else task.status }}</td></tr>{% else %}<tr><td colspan="3">Keine Wartungsaufgaben vorhanden.</td></tr>{% endfor %}</tbody></table></div>
-    {% if 'maintenance.manage' in permissions or is_superuser %}<form data-inventory-action="/api/maintenance" class="detail-form"><input type="hidden" name="device_id" value="{{ device.id }}"><label>Aufgabe<input class="input" name="title" required></label><label>Fällig am<input class="input" type="date" name="due_date"></label><button class="btn btn-primary" type="submit">Wartung anlegen</button><p role="status" data-form-status></p></form>{% endif %}
-    {% else %}<p>Keine Berechtigung zum Anzeigen von Wartungen.</p>{% endif %}
-{% elif tab == 'history' %}
-    {% if 'activity.view' in permissions or is_superuser %}<p>Die letzten 100 Geräteänderungen.</p><ol class="activity-list">{% for entry in history %}<li>{{ entry.created_at }} · {{ entry.username }} · {{ entry.action }}</li>{% else %}<li>Noch keine protokollierten Änderungen.</li>{% endfor %}</ol>{% else %}<p>Keine Berechtigung für den Änderungsverlauf.</p>{% endif %}
-{% endif %}
-</section>
-{% if can_edit %}<details class="workspace-panel"><summary>Weitere Geräteaktionen</summary><p>Tags, Anhänge und bestehende Verwaltungsaktionen sind weiterhin im Bearbeitungskontext erreichbar.</p><a href="/?view=devices&manage_device={{ device.id }}">Geräteverwaltung öffnen</a></details>{% endif %}
+<aside class="object-detail-context" aria-label="Gerätekontext">
+{% if tab!='hardware' %}{% call accordion('Hardware & Spezifikationen','cpu',open=True) %}<dl class="compact-properties">{% for key,value in device.specs.items() if key | lower not in ['hersteller','manufacturer','modell','model','mpn'] %}{% if loop.index<=6 %}{{ property(key,value) }}{% endif %}{% else %}<p class="muted">Keine weiteren Eigenschaften.</p>{% endfor %}</dl><a href="?tab=hardware">Alle Eigenschaften</a>{% endcall %}{% endif %}
+{% if object.can_links and tab!='accessories' %}{% call accordion('Zubehör & Komponenten','package',object.links | length) %}{% include '_object_panel_links.html' %}{% endcall %}{% endif %}
+{% if object.can_tickets and tab!='tickets' %}{% call accordion('Verknüpfte Tickets','message-square',object.tickets | length) %}{% include '_object_panel_tickets.html' %}{% endcall %}{% endif %}
+{% set photo=device.photo %}{% include '_image_credit.html' %}
+{% if can_edit %}<a class="btn btn-secondary" href="/?view=devices&manage_device={{ device.id }}">{{ icon('more-horizontal') }}Weitere Geräteaktionen</a>{% endif %}
+</aside></div>
 {% endblock %}
 {% block page_scripts %}<script src="/static/inventory-detail.js?v=1"></script>{% endblock %}

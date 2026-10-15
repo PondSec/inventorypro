@@ -106,7 +106,7 @@ def load_panel(db, kind, object_id, *, can, access, ticket_visible):
                 obj['tickets'].append({key: ticket.get(key) for key in ('id','title','status','priority','due_date')})
             if len(obj['tickets']) == 100:
                 break
-    obj['history'] = [dict(r) for r in db.execute('SELECT action,username,created_at FROM activity_log WHERE entity_type=? AND entity_id=? ORDER BY id DESC LIMIT 100', (kind, object_id))] if obj['can_history'] else []
+    obj['history'] = [dict(r) for r in db.execute('SELECT action,username,created_at FROM activity_log WHERE entity_type IN (?,?) AND entity_id=? ORDER BY id DESC LIMIT 100', (kind, 'asset_entry' if kind=='asset' else kind, object_id))] if obj['can_history'] else []
     obj['status'] = 'Ausgemustert' if obj.get('retirement_date') else 'Im Bestand'
     obj['status_tone'] = 'neutral' if obj.get('retirement_date') else 'success'
     obj['tabs'] = [('overview', 'Übersicht'), ('details', 'Details')]

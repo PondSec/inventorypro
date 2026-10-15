@@ -79,3 +79,25 @@ def test_device_assignments_keep_their_actual_source(client):
         db.execute("INSERT INTO asset_assignment_history(asset_id,status) VALUES (?,'available')",(asset,))
         db.commit()
     assert client.get(f'/api/inventory/device/{device}/panel').json['assignments'] == []
+
+
+def test_full_asset_tabs_preserve_lifecycle_and_permission_scoped_links(client):
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db()
+        asset=db.execute("INSERT INTO assets(name,specs,purchase_cost,currency,warranty_end) VALUES ('QA Full Set','{\"Power\":\"65 W\"}',125,'EUR','2028-01-01')").lastrowid
+        db.execute('INSERT INTO asset_devices(asset_id,device_id,quantity) VALUES (?,1,2)',(asset,))
+        db.execute("INSERT INTO activity_log(action,username,entity_type,entity_id) VALUES ('QA lifecycle changed','admin','asset_entry',?)",(asset,));db.commit()
+    for tab in ['overview','details','accessories','assignment','lifecycle','tickets','history']:
+        response=client.get(f'/inventory/assets/{asset}?tab={tab}')
+        assert response.status_code==200
+        if tab=='details':assert b'65 W' in response.data
+        if tab=='accessories':assert b'Notebook 000' in response.data
+        if tab=='lifecycle':assert b'125' in response.data and b'EUR' in response.data
+        if tab=='history':assert b'QA lifecycle changed' in response.data
+    assert client.get(f'/inventory/assets/{asset}?tab=wrong').status_code==404
+    from test_product_catalog_routes import role
+    role(client,'assets-detail-only',['assets.view'])
+    response=client.get(f'/inventory/assets/{asset}?tab=accessories')
+    assert response.status_code==200 and b'Notebook 000' not in response.data
+    assert b'Bild verwalten' not in response.data
+    assert b'QA lifecycle changed' not in client.get(f'/inventory/assets/{asset}?tab=history').data

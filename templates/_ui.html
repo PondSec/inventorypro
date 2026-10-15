@@ -32,10 +32,10 @@
 </span>
 {%- endmacro %}
 
-{% macro object_header(object, heading_id='object-panel-name') -%}
+{% macro object_header(object, heading_id='object-panel-name', full=False) -%}
 <div class="object-header">
     {{ thumbnail(object.icon, object.image_url | default(''), large=True) }}
-    <div class="object-header__copy"><h2 id="{{ heading_id }}">{{ object.name }}</h2>
+    <div class="object-header__copy"><{{ 'h1' if full else 'h2' }} id="{{ heading_id }}">{{ object.name }}</{{ 'h1' if full else 'h2' }}>
         <div class="object-header__meta"><span>{{ object.serial_number or ('Gerät #' if object.kind == 'device' else 'Set #') ~ object.id }}</span>{% if object.serial_number %}<button type="button" class="copy-control" data-copy-value="{{ object.serial_number }}" aria-label="Identifikationsnummer kopieren">{{ icon('copy') }}</button>{% endif %}{{ status(object.status,object.status_tone) }}</div>
     </div>
 </div>

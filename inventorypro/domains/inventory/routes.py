@@ -144,7 +144,7 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
         if not isinstance(device['specs'], dict):
             device['specs'] = {}
         tabs = [('overview', 'Übersicht'), ('hardware', 'Hardware'), ('accessories', 'Zubehör'),
-                ('assignment', 'Zuweisung'), ('maintenance', 'Wartung'), ('history', 'Verlauf')]
+                ('assignment', 'Zuweisung'), ('maintenance', 'Wartung'), ('tickets', 'Tickets'), ('history', 'Verlauf')]
         tab = request.args.get('tab', 'overview')
         if tab not in dict(tabs):
             abort(404)
@@ -152,9 +152,11 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
             JOIN asset_devices ad ON ad.asset_id=a.id WHERE ad.device_id=? ORDER BY a.name''', (object_id,)).fetchall() if can_read('asset') else []
         tasks = db.execute('SELECT * FROM maintenance_tasks WHERE device_id=? ORDER BY due_date, id', (object_id,)).fetchall() if user_can('maintenance.view') or user_can('maintenance.manage') else []
         history = db.execute("SELECT action, username, created_at FROM activity_log WHERE entity_type='device' AND entity_id=? ORDER BY id DESC LIMIT 100", (object_id,)).fetchall() if user_can('activity.view') else []
+        obj=load_panel(db,'device',object_id,can=user_can,access=get_access(db),ticket_visible=ticket_visible)
+        obj['photo']=device['photo'];obj['image_url']=device['photo']['large_url']
         notes = db.execute('SELECT * FROM device_notes WHERE device_id=? ORDER BY id DESC LIMIT 100', (object_id,)).fetchall()
         return render_template('device_detail.html', device=device, assets=assets, tasks=tasks, history=history,
-                               notes=notes, tabs=tabs, tab=tab, can_edit=user_can('devices.manage'), **context())
+                               notes=notes, object=obj, tabs=tabs, tab=tab, can_edit=user_can('devices.manage'), **context())
 
     @blueprint.get('/inventory/assets/<int:object_id>')
     @login_required
@@ -168,6 +170,11 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
             return response
         asset=response.get_json()
         asset['photo']=resolve(get_db(),get_uploads_dir(),'asset',object_id)
-        return render_template('asset_detail.html', asset=asset, can_edit=user_can('assets.manage'), **context())
+        obj=load_panel(get_db(),'asset',object_id,can=user_can,access=get_access(get_db()),ticket_visible=ticket_visible)
+        obj['photo']=asset['photo'];obj['image_url']=asset['photo']['large_url']
+        tabs=[('overview','Übersicht'),('details','Eigenschaften'),('accessories','Geräte'),('assignment','Zuweisung'),('lifecycle','Lebenszyklus'),('tickets','Tickets'),('history','Verlauf')]
+        tab=request.args.get('tab','overview')
+        if tab not in dict(tabs):abort(404)
+        return render_template('asset_detail.html', asset=asset, object=obj, tabs=tabs, tab=tab, can_edit=user_can('assets.manage'), **context())
 
     return blueprint
