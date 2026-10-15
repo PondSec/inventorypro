@@ -1,6 +1,11 @@
 (() => {
   const root = document.documentElement;
-  const stored = localStorage.getItem('theme');
+  const storage = {
+    getItem(key) { try { return localStorage.getItem(key); } catch (_) { return null; } },
+    setItem(key, value) { try { localStorage.setItem(key, value); } catch (_) {} },
+    removeItem(key) { try { localStorage.removeItem(key); } catch (_) {} },
+  };
+  const stored = storage.getItem('theme');
   const initial = stored || 'light';
   const customizationCacheKey = 'inventorypro.customization.cache';
   const customizationLocalKey = 'inventorypro.customization.local';
@@ -46,6 +51,10 @@
     root.style.setProperty('--color-accent-strong', '#9ab7ff');
     root.style.setProperty('--color-accent-soft', 'rgba(122, 162, 247, 0.16)');
     root.style.setProperty('--focus-ring', 'rgba(122, 162, 247, 0.34)');
+    root.style.setProperty('--color-success', '#4ade80');
+    root.style.setProperty('--color-warning', '#fbbf24');
+    root.style.setProperty('--color-danger', '#f87171');
+    root.style.setProperty('--color-info', '#38bdf8');
     root.style.setProperty('--input-bg', '#0f151d');
     root.style.setProperty('--input-text', '#e6edf3');
     root.style.setProperty('--input-border', '#263442');
@@ -86,7 +95,7 @@
     } else {
       root.classList.remove('dark');
     }
-    localStorage.setItem('theme', mode);
+    storage.setItem('theme', mode);
     refreshModeAwareTheme();
     updateButtons();
   };
@@ -378,7 +387,7 @@
   };
 
   const getCachedCustomization = () => {
-    const cached = localStorage.getItem(customizationCacheKey);
+    const cached = storage.getItem(customizationCacheKey);
     if (!cached) return null;
     try {
       return JSON.parse(cached);
@@ -389,12 +398,12 @@
   };
 
   const migrateLegacyCustomization = () => {
-    const legacy = localStorage.getItem(legacyCustomizationKey);
+    const legacy = storage.getItem(legacyCustomizationKey);
     if (!legacy) return null;
     try {
       const parsed = JSON.parse(legacy);
       const migrated = migrateCustomization(parsed);
-      localStorage.removeItem(legacyCustomizationKey);
+      storage.removeItem(legacyCustomizationKey);
       setCachedCustomization({ customization: migrated, cachedAt: new Date().toISOString() });
       return migrated;
     } catch (error) {
@@ -404,11 +413,11 @@
   };
 
   const setCachedCustomization = (payload) => {
-    localStorage.setItem(customizationCacheKey, JSON.stringify(payload));
+    storage.setItem(customizationCacheKey, JSON.stringify(payload));
   };
 
   const getLocalOverride = () => {
-    const storedOverride = localStorage.getItem(customizationLocalKey);
+    const storedOverride = storage.getItem(customizationLocalKey);
     if (!storedOverride) return null;
     try {
       return JSON.parse(storedOverride);
@@ -420,10 +429,10 @@
 
   const setLocalOverride = (override) => {
     if (!override) {
-      localStorage.removeItem(customizationLocalKey);
+      storage.removeItem(customizationLocalKey);
       return;
     }
-    localStorage.setItem(customizationLocalKey, JSON.stringify(override));
+    storage.setItem(customizationLocalKey, JSON.stringify(override));
   };
 
   const loadCustomization = async () => {

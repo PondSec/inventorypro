@@ -372,3 +372,37 @@ def test_knowledge_search_uses_current_query_and_pages(live_inventory, browser, 
     page.get_by_role('button').filter(has=page.locator('p', has_text='QA knowledge 059')).first.click()
     expect(page.locator('h3').filter(has_text='QA knowledge 059')).to_be_visible()
     context.close()
+
+
+def test_semantic_status_contrast_and_theme_without_browser_storage(live_inventory, browser):
+    context = browser.new_context(viewport={'width': 1280, 'height': 900})
+    page = context.new_page()
+    sign_in(page, live_inventory)
+    def luminance(hex_color):
+        channels = [int(hex_color[index:index+2], 16) / 255 for index in (1, 3, 5)]
+        linear = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4 for value in channels]
+        return sum(value * weight for value, weight in zip(linear, (.2126, .7152, .0722)))
+    for theme in ('light', 'dark'):
+        page.evaluate('(theme) => InventoryTheme.set(theme)', theme)
+        colors = page.evaluate('''() => {
+            const css = getComputedStyle(document.documentElement);
+            return Object.fromEntries(['surface','success','warning','danger','info'].map(name =>
+                [name, css.getPropertyValue('--color-' + name).trim()]));
+        }''')
+        for state in ('success','warning','danger','info'):
+            values = sorted([luminance(colors[state]), luminance(colors['surface'])])
+            assert (values[1]+.05)/(values[0]+.05) >= 4.5, (theme, state, colors)
+    context.close()
+    blocked = browser.new_context()
+    blocked.add_init_script('''Object.defineProperty(window, 'localStorage', {
+        get() { throw new DOMException('Storage blocked', 'SecurityError'); }
+    });''')
+    page = blocked.new_page()
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.goto(live_inventory + '/login')
+    expect(page.get_by_label('Benutzername')).to_be_visible()
+    page.get_by_role('button', name='Dark Mode').click()
+    assert page.evaluate('document.documentElement.classList.contains("dark")')
+    assert not errors, errors
+    blocked.close()

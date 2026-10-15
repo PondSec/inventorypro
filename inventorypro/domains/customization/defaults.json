@@ -22,10 +22,10 @@
       "border": "#e5e7eb",
       "shadow": "rgba(15, 23, 42, 0.12)",
       "focus": "rgba(37, 99, 235, 0.35)",
-      "success": "#16a34a",
-      "warning": "#f59e0b",
+      "success": "#15803d",
+      "warning": "#92400e",
       "danger": "#dc2626",
-      "info": "#0ea5e9"
+      "info": "#0369a1"
     },
     "typography": {
       "fontFamily": "\"Inter\", \"Segoe UI\", system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
