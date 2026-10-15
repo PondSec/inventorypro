@@ -40,3 +40,21 @@ def test_dependency_graph_and_mutations_cannot_bypass_asset_scopes(unified_clien
     response=client.post('/api/dependency-links',json={'source_type':'asset','source_id':legacy,'target_type':'asset','target_id':secret['id']})
     assert response.status_code==403
     with inventory_app.app.app_context():assert inventory_app.get_db().execute('SELECT 1 FROM dependency_links WHERE id=?',(link,)).fetchone()
+
+
+def test_software_installations_keep_legacy_ids_but_enforce_canonical_access(unified_client):
+    client=unified_client;secret=create(client,'QA hidden installation asset')
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();software=db.execute("INSERT INTO software(name) VALUES ('QA scoped software')").lastrowid
+        visible=db.execute('INSERT INTO software_installations(software_id,device_id) VALUES (?,1)',(software,)).lastrowid
+        hidden=db.execute('INSERT INTO software_installations(software_id,asset_id) VALUES (?,?)',(software,secret['id'])).lastrowid
+        mapped=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=1').fetchone()[0];db.commit()
+    role(client,'qa-scoped-software',['software.view','software.manage','devices.view'])
+    items=client.get('/api/software-installations').json
+    assert [row['id'] for row in items]==[visible]
+    assert items[0]['asset_id']==mapped and items[0]['device_id'] is None
+    assert client.delete(f'/api/software-installations/{hidden}').status_code==403
+    assert client.post('/api/software-installations',json={'software_id':software,'asset_id':secret['id']}).status_code==403
+    assert client.post('/api/software-installations',json={'software_id':software,'asset_id':'bad'}).status_code==403
+    assert client.put(f'/api/software-installations/{visible}',json={'installed_version':'QA 2.0'}).status_code==200
+    with inventory_app.app.app_context():assert inventory_app.get_db().execute('SELECT device_id FROM software_installations WHERE id=?',(visible,)).fetchone()[0]==1

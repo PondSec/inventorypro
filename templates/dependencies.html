@@ -164,7 +164,7 @@
 
                     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                         <h2 class="text-lg font-semibold text-slate-900">Software-Installationen</h2>
-                        <p class="text-sm text-slate-500">Verknüpfung zu Geräten, Assets und Umgebungen.</p>
+                        <p class="text-sm text-slate-500">Software einem Asset und einer Umgebung zuordnen.</p>
                         <div class="mt-4 grid gap-3 md:grid-cols-2">
                             <select x-model="newInstallation.software_id" aria-label="Installierte Software" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="">Software auswählen</option>
@@ -178,12 +178,12 @@
                                     <option :value="asset.id" x-text="asset.name"></option>
                                 </template>
                             </select>
-                            <select x-model="newInstallation.device_id" aria-label="Zugeordnetes Gerät" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                            {% if not unified_inventory %}<select x-model="newInstallation.device_id" aria-label="Zugeordnetes Gerät" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="">Gerät auswählen</option>
                                 <template x-for="device in nodeOptions.device || []" :key="`device-${device.id}`">
                                     <option :value="device.id" x-text="device.name"></option>
                                 </template>
-                            </select>
+                            </select>{% endif %}
                             <input x-model="newInstallation.installed_version" placeholder="Installierte Version" aria-label="Installierte Version" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                             <select x-model="newInstallation.environment" aria-label="Installationsumgebung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                                 <option value="production">Production</option>

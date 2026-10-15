@@ -10725,6 +10725,7 @@ def software_installations():
         if not user_can('software.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
+        if canonical_assets.unified(db) and not canonical_assets.installation_visible(db,user_can,data):return jsonify(error='Keine Berechtigung für das zugeordnete Asset'),403
         software_id = data.get('software_id')
         device_id = data.get('device_id')
         asset_id = data.get('asset_id')
@@ -10775,7 +10776,14 @@ def software_installations():
         query += ' WHERE ' + ' AND '.join(conditions)
     query += ' ORDER BY si.created_at DESC'
     rows = db.execute(query, params).fetchall()
-    return jsonify([dict(row) for row in rows])
+    result=[dict(row) for row in rows]
+    if canonical_assets.unified(db):
+        result=[row for row in result if canonical_assets.installation_visible(db,user_can,row)]
+        for row in result:
+            if row['device_id']:
+                row['asset_id']=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=?',(row['device_id'],)).fetchone()[0]
+                row['asset_name']=row['device_name'];row['device_id']=None;row['device_name']=None
+    return jsonify(result)
 
 @app.route('/api/software-installations/<int:installation_id>', methods=['PUT', 'DELETE'])
 @login_required
@@ -10786,6 +10794,7 @@ def software_installation_detail(installation_id):
     installation = db.execute('SELECT * FROM software_installations WHERE id = ?', (installation_id,)).fetchone()
     if not installation:
         return jsonify({"error": "Installation nicht gefunden"}), 404
+    if canonical_assets.unified(db) and not canonical_assets.installation_visible(db,user_can,dict(installation)):return jsonify(error='Keine Berechtigung für das zugeordnete Asset'),403
 
     if request.method == 'PUT':
         data = request.get_json() or {}

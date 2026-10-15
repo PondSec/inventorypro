@@ -36,6 +36,22 @@ def require(db,can,identifier,*,write=False):
     if not can_access(db,can,identifier,write=write):raise AssetError('Keine Berechtigung für dieses Asset.',403)
 
 
+def installation_visible(db,can,row):
+    try:
+        identifiers=[]
+        for key in ['asset_id','device_id']:
+            value=row.get(key)
+            if value in (None,''):continue
+            if isinstance(value,bool) or not isinstance(value,(int,str)) or not str(value).isdigit() or int(value)<=0:return False
+            if key=='asset_id':identifiers.append(int(value))
+            else:
+                mapped=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=?',(value,)).fetchone()
+                if not mapped:return False
+                identifiers.append(mapped[0])
+        return all(can_access(db,can,identifier) for identifier in identifiers)
+    except (AssetError,ValueError,TypeError):return False
+
+
 def scope_predicate(can,*,write=False,alias='a'):
     scopes=[scope for scope in ['devices','assets'] if can(scope+'.manage') or (not write and can(scope+'.view'))]
     expression=f"coalesce((SELECT scope FROM asset_permission_scope s WHERE s.asset_id={alias}.id),CASE WHEN EXISTS(SELECT 1 FROM asset_legacy_devices m WHERE m.asset_id={alias}.id) THEN 'devices' ELSE 'assets' END)"
