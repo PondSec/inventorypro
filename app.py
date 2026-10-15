@@ -2853,6 +2853,9 @@ def require_permission(permission_key):
 def get_post_login_redirect(access):
     if access.get("user") and access["user"].get("must_change_password"):
         return url_for('force_password_change')
+    if canonical_assets.unified(get_db()):
+        if access['is_superuser'] or any(key in access['permissions'] for key in ['assets.view','assets.manage','devices.view','devices.manage']):return '/inventory'
+        if any(key in access['permissions'] for key in ['categories.view','categories.manage','asset_categories.view','asset_categories.manage']):return '/inventory/categories'
     if access["is_superuser"]:
         return url_for('index')
     landing_targets = [
@@ -2933,8 +2936,14 @@ def enforce_password_change():
 
 def init_db():
     ensure_runtime_directories()
+    conversion_enabled=app.config.get('INVENTORY_UNIFIED_ASSETS_ENABLED',True)
+    if conversion_enabled:
+        from inventorypro.domains.inventory.upgrade import backup_before_conversion
+        backup=backup_before_conversion(DATABASE)
+        if backup:app.logger.info('Sicherung vor Asset-Übernahme erstellt: %s',backup)
     with app.app_context():
         db = get_db()
+        if not db.in_transaction:db.execute('BEGIN IMMEDIATE')
         c = db.cursor()
 
         # Tabellen erstellen (wie zuvor)
@@ -3181,7 +3190,7 @@ def init_db():
 
         model_state_exists=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inventory_model_state'").fetchone()
         unified_assets=model_state_exists and c.execute('SELECT unified_assets FROM inventory_model_state WHERE id=1').fetchone()[0]
-        if not unified_assets:
+        if not unified_assets and not conversion_enabled:
             c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_category_name ON assets(category_id, name)')
 
         c.execute('''
@@ -3219,18 +3228,18 @@ def init_db():
             )
         ''')
 
-        c.execute('INSERT OR IGNORE INTO asset_categories (name) VALUES (?)', ("Assets",))
+        if not unified_assets:c.execute('INSERT OR IGNORE INTO asset_categories (name) VALUES (?)', ("Assets",))
         default_category_row = db.execute(
             'SELECT id FROM asset_categories WHERE name = ?',
             ("Assets",),
         ).fetchone()
-        if default_category_row and not unified_assets:
+        if default_category_row and not unified_assets and not conversion_enabled:
             db.execute(
                 'UPDATE assets SET category_id = ? WHERE category_id IS NULL',
                 (default_category_row["id"],),
             )
 
-        if not unified_assets:
+        if not unified_assets and not conversion_enabled:
             db.execute('UPDATE asset_devices SET quantity = 1 WHERE quantity IS NULL')
             duplicate_rows = db.execute('''
                 SELECT asset_id, device_id,
@@ -4643,7 +4652,7 @@ def init_db():
                 "Formfaktor": "text"
             }))
         ]
-        c.executemany('''
+        if not unified_assets:c.executemany('''
             INSERT OR IGNORE INTO categories (name, icon, description, fields)
             VALUES (?, ?, ?, ?)
         ''', default_categories)
@@ -4755,7 +4764,7 @@ def init_db():
                 "SLA": "text"
             }))
         ]
-        c.executemany('''
+        if not unified_assets:c.executemany('''
             INSERT OR IGNORE INTO asset_categories (name, icon, description, fields)
             VALUES (?, ?, ?, ?)
         ''', default_asset_categories)
@@ -4764,7 +4773,7 @@ def init_db():
             ("Lager", "Zentrales Lager"),
             ("Büro", "Arbeitsplätze und Office-Equipment")
         ]
-        c.executemany('''
+        if not unified_assets:c.executemany('''
             INSERT OR IGNORE INTO locations (name, description)
             VALUES (?, ?)
         ''', default_locations)
@@ -4811,6 +4820,10 @@ def init_db():
             apply_migrations(db, Path(__file__).with_name("migrations"))
         except MigrationError as error:
             raise RuntimeError("Datenbankmigration konnte nicht sicher angewendet werden.") from error
+        if conversion_enabled:
+            from inventorypro.domains.inventory.unification import convert_inventory
+            converted=convert_inventory(db)
+            if any(converted.values()):app.logger.info('Asset-Übernahme abgeschlossen: %s',converted)
         initialize_catalog(db, UPLOADS_DIR)
         db.commit()
 
@@ -8948,9 +8961,12 @@ def logout():
 
 @app.route('/')
 @login_required
-@require_permissions('categories.view', 'categories.manage')
 def index():
     access = get_user_access(get_db())
+    if canonical_assets.unified(get_db()):
+        destination=get_post_login_redirect(access)
+        return redirect(destination if destination!='/' else '/account/security')
+    if not (user_can('categories.view') or user_can('categories.manage')):abort(403)
     return render_template('index.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/users')

@@ -4,7 +4,7 @@ import app as inventory_app
 
 
 @pytest.fixture(autouse=True)
-def enable_flask_test_mode():
+def enable_flask_test_mode(monkeypatch):
     """Keep legacy workflow tests focused on their domain behaviour.
 
     CSRF enforcement is enabled in production and covered explicitly in the
@@ -12,6 +12,9 @@ def enable_flask_test_mode():
     """
     previous_value = inventory_app.app.config.get("TESTING", False)
     inventory_app.app.config["TESTING"] = True
+    # Historical contract suites deliberately exercise the pre-upgrade state.
+    # Dedicated startup tests explicitly enable the production default.
+    monkeypatch.setitem(inventory_app.app.config,'INVENTORY_UNIFIED_ASSETS_ENABLED',False)
     yield
     inventory_app.app.config["TESTING"] = previous_value
 

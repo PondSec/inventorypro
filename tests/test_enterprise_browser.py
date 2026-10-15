@@ -36,7 +36,7 @@ def sign_in(page, base_url):
     page.get_by_label('Benutzername').fill('admin')
     page.locator('input[name=password]').fill('Synthetic-Test-Only-42!')
     page.get_by_role('button', name='Anmelden', exact=True).click()
-    page.wait_for_url(base_url + '/')
+    page.wait_for_url(lambda url:url in {base_url+'/',base_url+'/inventory'})
     page.wait_for_load_state('networkidle')
 
 

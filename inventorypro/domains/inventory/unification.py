@@ -1,7 +1,7 @@
 """Transactional conversion into assets, retaining legacy IDs for dependent modules.
 
-This service is deliberately not called during startup until all new write/read
-paths are switched together. Old business rows are never deleted here.
+Startup calls this after checksummed schema migrations and a private backup.
+Old business rows are never deleted here.
 """
 from collections import defaultdict
 
