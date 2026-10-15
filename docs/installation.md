@@ -5,7 +5,7 @@
 Voraussetzung: Docker Engine mit Compose oder gestartetes Docker Desktop.
 
 ```sh
-git clone --branch dev https://gitlab.pondsec.com/PondSec/inventorypro.git
+git clone --branch main https://gitlab.pondsec.com/PondSec/inventorypro.git
 cd inventorypro
 docker compose up --detach --build --wait app
 docker compose exec app cat /data/instance/initial_admin_credentials.txt
@@ -107,7 +107,7 @@ Der Sidecar muss bereits eingerichtet sein; ein Schalter allein installiert kein
 privilegierten Docker-Dienst.
 
 Bei bewusst manueller Aktualisierung erst Backup erstellen, dann im bestehenden
-Checkout `git pull --ff-only origin dev` und `docker compose up --detach --build --wait app`
+Checkout `git pull --ff-only` und `docker compose up --detach --build --wait app`
 verwenden. Bei lokalen Änderungen oder abweichenden Branches abbrechen und die
 Historie klären. Kein Datenvolume löschen.
 
