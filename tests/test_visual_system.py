@@ -166,3 +166,20 @@ def test_composite_filter_borders_are_never_covered_by_inner_fields(live_invento
     page.get_by_role('searchbox',name='Bestand durchsuchen',exact=True).focus()
     assert page.locator('.filter-search').evaluate("el=>getComputedStyle(el).outlineStyle")=='solid'
     context.close()
+
+
+def test_compact_rows_and_primary_actions_keep_theme_contrast(live_inventory,browser):
+    page=browser.new_page(viewport={'width':1672,'height':941});sign_in(page,live_inventory)
+    page.goto(live_inventory+'/inventory')
+    for theme in ['light','dark']:
+        page.evaluate('(theme)=>InventoryTheme.set(theme)',theme)
+        page.mouse.move(0,0)
+        expect(page.locator('tbody tr').first).to_be_visible()
+        bounds=page.locator('tbody tr').first.bounding_box()
+        assert bounds and 40<=bounds['height']<=45,(theme,bounds)
+        action=page.locator('.topbar-actions .btn-primary')
+        expect(action).to_have_css('background-color','rgb(37, 99, 235)')
+        expect(action).to_have_css('color','rgb(255, 255, 255)')
+    page.goto(live_inventory+'/dependencies')
+    expect(page.locator('main section').first).to_have_css('box-shadow','none')
+    page.close()

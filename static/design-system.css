@@ -6,7 +6,7 @@
   --control-height: 34px;
   --thumbnail-size: 40px;
   --detail-width: 424px;
-  --row-height: 52px;
+  --row-height: 44px;
 }
 .ui-icon { width: 18px; height: 18px; flex-shrink: 0; stroke-width: 1.7; }
 .app-body, .auth-body { font-family: var(--font-sans); font-size: var(--font-size-base); line-height: 1.5; }
@@ -70,7 +70,7 @@
 .app-body .list-summary { padding-block: 10px; font-size: 12px; }
 .app-body :is(.data-table,table.responsive-table) { font-size: 13px; }
 .app-body .data-table th { height: 38px; padding: 8px 12px; font-size: 12px; text-transform: none; background: var(--table-header-bg); }
-.app-body .data-table td { height: var(--row-height); padding: 8px 12px; vertical-align: middle; }
+.app-body .data-table td { height: var(--row-height); padding: 2px 12px; vertical-align: middle; }
 .app-body .data-table td:first-child a { color: var(--color-text); font-weight: 600; }
 .app-body .data-table tbody tr:hover td { background: var(--color-accent-soft); }
 .preview-row { cursor: pointer; }
@@ -413,7 +413,7 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 .module-list-scroll { max-height: max(240px,calc(100dvh - 390px)); }
 .module-table { width: 100%; }
 .module-table th { white-space: nowrap; }
-.app-body .module-table td { height: 56px; }
+.app-body .module-table td { height: var(--row-height); }
 .list-row-trigger { display: block; text-align: left; width: 100%; color: var(--color-text); }
 .list-row-trigger strong { display: block; font-size: 13px; font-weight: 600; }
 .list-row-trigger small { display: block; max-width: 60ch; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; color: var(--color-text-muted); font-size: 12px; }
@@ -501,3 +501,9 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 .settings-task-panel .gap-6 { gap: 16px; }
 .settings-savebar { position: sticky; bottom: 0; z-index: 10; padding: 12px 16px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; }
 @media(max-width:700px) { .app-body .settings-task-panel { padding: 16px; } .settings-server-form { padding-bottom: 90px; } .settings-savebar { position: fixed; left: 12px; right: 12px; bottom: 12px; padding: 12px; max-height: 28dvh; overflow: auto; } .settings-savebar [role=alert] { flex-basis: 100%; } }
+
+/* Existing modules consume the same action and surface tokens during consolidation. */
+.app-body .app-content :is(.shadow-sm,.shadow-md,.shadow-lg) { box-shadow: none; }
+.app-body .app-content button { border-radius: 6px; }
+.app-body :is(button,a):is(.bg-indigo-600,.bg-blue-600,.bg-slate-900):not([role=tab]) { background: var(--button-bg); color: var(--button-text); min-height: var(--control-height); padding: 6px 12px; font-size: 13px; line-height: 20px; border-radius: 6px; box-shadow: none; }
+.app-body :is(button,a):is(.bg-indigo-600,.bg-blue-600,.bg-slate-900):not([role=tab]):hover { background: var(--button-bg-hover); }

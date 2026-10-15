@@ -1670,7 +1670,7 @@ button {
 .rounded-2xl.border.border-slate-200.bg-slate-50\/80,
 .rounded-2xl.border.border-slate-200.bg-slate-50\/60,
 .modal-panel.bg-white {
-  box-shadow: 0 20px 45px -34px rgba(15, 23, 42, 0.42);
+  box-shadow: none;
 }
 
 input,
@@ -1734,12 +1734,9 @@ textarea {
   color: #94a3b8 !important;
 }
 
-.dark .shadow-sm,
-.dark .shadow-md,
-.dark .shadow-lg,
 .dark .shadow-xl,
 .dark .shadow-2xl {
-  box-shadow: 0 24px 48px -34px rgba(2, 6, 23, 0.9) !important;
+  box-shadow: var(--shadow-lg);
 }
 
 .dark .sidebar-link:hover,
