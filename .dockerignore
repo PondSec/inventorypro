@@ -5,7 +5,7 @@
 .pytest_cache
 .venv
 __pycache__/
-backups/
+/backups/
 instance/runtime_config.json
 inventory.db
 playwright-report/
