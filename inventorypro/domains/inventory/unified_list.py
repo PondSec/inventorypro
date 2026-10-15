@@ -11,20 +11,39 @@ def filters(legacy_filters):
     return result
 
 
+def _literal_scope(can,alias):
+    predicate,args=scope_predicate(can,alias=alias)
+    for scope in args:predicate=predicate.replace('?',"'"+scope+"'",1)
+    return predicate
+
+
 def source(*,devices_allowed,assets_allowed):
     def can(key):return devices_allowed if key.startswith('devices.') else assets_allowed if key.startswith('assets.') else False
-    predicate,args=scope_predicate(can)
-    # The values are fixed internal permission domain names, not request input.
-    for scope in args:predicate=predicate.replace('?',"'"+scope+"'",1)
+    predicate=_literal_scope(can,'a');parent_scope=_literal_scope(can,'p')
+    parents="""WITH RECURSIVE ancestors(id) AS (
+        SELECT parent_asset_id FROM asset_components WHERE child_asset_id=a.id
+        UNION SELECT c.parent_asset_id FROM asset_components c JOIN ancestors r ON c.child_asset_id=r.id)
+        SELECT id FROM ancestors"""
+    relatives="""WITH RECURSIVE ancestors(id) AS (
+        SELECT parent_asset_id FROM asset_components WHERE child_asset_id=a.id
+        UNION SELECT c.parent_asset_id FROM asset_components c JOIN ancestors r ON c.child_asset_id=r.id),
+        descendants(id) AS (SELECT child_asset_id FROM asset_components WHERE parent_asset_id=a.id
+        UNION SELECT c.child_asset_id FROM asset_components c JOIN descendants r ON c.parent_asset_id=r.id)
+        SELECT id FROM ancestors UNION SELECT id FROM descendants"""
+    def owner(identifier):return f"""SELECT coalesce(u.username,t.name,'') FROM asset_assignment_history ah
+        LEFT JOIN users u ON u.id=ah.assigned_to_user_id LEFT JOIN teams t ON t.id=ah.assigned_to_team_id
+        WHERE ah.asset_id={identifier} AND ah.id=(SELECT latest.id FROM asset_assignment_history latest WHERE latest.asset_id={identifier}
+        ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1) AND ah.status IN ('assigned','checked_out','transferred')"""
+    inherited_owner=f"SELECT group_concat(DISTINCT nullif(({owner('p.id')}),'')) FROM assets p WHERE p.id IN ({parents}) AND {parent_scope}"
+    inherited_location=f"SELECT group_concat(DISTINCT pl.name) FROM assets p JOIN locations pl ON pl.id=p.location_id WHERE p.id IN ({relatives}) AND {parent_scope}"
+    location_ids=f"SELECT group_concat(DISTINCT p.location_id) FROM assets p WHERE p.id IN ({relatives}) AND {parent_scope}"
     return f'''WITH inventory AS (SELECT a.id,'asset' AS kind,a.name,c.name AS category,a.category_id,
-        a.serial_number,a.location_id,l.name AS location,a.created_at,
+        a.serial_number,a.location_id,coalesce(l.name,({inherited_location})) AS location,
+        ','||coalesce(cast(a.location_id AS TEXT),({location_ids}),'')||',' AS location_ids,a.created_at,
         CASE WHEN trim(coalesce(a.retirement_date,''))<>'' THEN 1 ELSE 0 END AS retired,
         CASE WHEN trim(coalesce(a.acquisition_date,''))='' AND trim(coalesce(a.commissioning_date,''))=''
           AND trim(coalesce(a.warranty_end,''))='' THEN 1 ELSE 0 END AS lifecycle_missing,
         coalesce((SELECT max(created_at) FROM activity_log WHERE entity_type IN ('asset','asset_entry') AND entity_id=a.id),a.created_at) AS updated_at,
-        coalesce((SELECT coalesce(u.username,t.name,'') FROM asset_assignment_history ah
-            LEFT JOIN users u ON u.id=ah.assigned_to_user_id LEFT JOIN teams t ON t.id=ah.assigned_to_team_id
-            WHERE ah.asset_id=a.id AND ah.id=(SELECT latest.id FROM asset_assignment_history latest WHERE latest.asset_id=a.id
-                ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1) AND ah.status IN ('assigned','checked_out','transferred')),'') AS assigned_to
+        coalesce(nullif(({owner('a.id')}),''),({inherited_owner}),'') AS assigned_to
         FROM assets a LEFT JOIN asset_categories c ON c.id=a.category_id LEFT JOIN locations l ON l.id=a.location_id
         WHERE {predicate}) '''

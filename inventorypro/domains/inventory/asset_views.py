@@ -19,6 +19,21 @@ def load_asset_panel(db,identifier,*,can,access,ticket_visible):
         WHERE ah.asset_id=? ORDER BY ah.created_at DESC,ah.id DESC LIMIT 1''',(identifier,)).fetchone()
     if row and row['status'] in {'assigned','checked_out','transferred'}:obj['assignments']=[dict(row)]
     predicate,args=assets.scope_predicate(can)
+    if not obj['assignments']:
+        inherited=db.execute(f'''WITH RECURSIVE parents(id) AS (
+            SELECT parent_asset_id FROM asset_components WHERE child_asset_id=?
+            UNION SELECT c.parent_asset_id FROM asset_components c JOIN parents p ON c.child_asset_id=p.id)
+            SELECT ah.status,u.username AS assigned_user,t.name AS assigned_team,a.name AS asset_name,a.id AS asset_id,ah.due_at
+            FROM parents p JOIN assets a ON a.id=p.id JOIN asset_assignment_history ah ON ah.asset_id=a.id
+            LEFT JOIN users u ON u.id=ah.assigned_to_user_id LEFT JOIN teams t ON t.id=ah.assigned_to_team_id
+            WHERE ah.id=(SELECT latest.id FROM asset_assignment_history latest WHERE latest.asset_id=a.id ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)
+            AND ah.status IN ('assigned','checked_out','transferred') AND {predicate} ORDER BY a.name LIMIT 100''',[identifier,*args])
+        obj['assignments']=[dict(row) for row in inherited]
+    if not obj['location']:
+        from .unified_list import source
+        sql=source(devices_allowed=can('devices.view') or can('devices.manage'),assets_allowed=can('assets.view') or can('assets.manage'))
+        location=db.execute(sql+'SELECT location FROM inventory WHERE id=?',(identifier,)).fetchone()
+        if location:obj['location']=location[0]
     obj['relations']=[dict(row) for row in db.execute(f'''SELECT a.id,a.name,rt.name AS relation FROM asset_relations ar
         JOIN assets a ON a.id=CASE WHEN ar.asset_id=? THEN ar.related_asset_id ELSE ar.asset_id END
         LEFT JOIN asset_relation_types rt ON rt.id=ar.relation_type_id WHERE (ar.asset_id=? OR ar.related_asset_id=?) AND {predicate}

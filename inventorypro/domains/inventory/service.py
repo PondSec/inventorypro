@@ -96,7 +96,7 @@ def inventory_query(arguments, *, devices_allowed, assets_allowed, maintenance_a
         where.append('kind=? AND category_id=?'); params.extend([match[1],int(match[2])])
     if state['location']:
         if is_unified:
-            where.append('location_id=?');params.append(state['location'])
+            where.append("instr(location_ids,','||?||',')>0");params.append(state['location'])
         else:
             where.append("(location_id=? OR (kind='asset' AND id IN (SELECT ad.asset_id FROM asset_devices ad JOIN devices d ON d.id=ad.device_id WHERE d.location_id=?)))")
             params.extend([state['location'],state['location']])
@@ -118,7 +118,7 @@ def list_inventory(db, arguments, *, devices_allowed, assets_allowed, maintenanc
         count(CASE WHEN {available_filters['due_maintenance'] if maintenance_allowed else '0'} THEN 1 END) AS maintenance,
         count(CASE WHEN {available_filters['incomplete']} THEN 1 END) AS incomplete FROM inventory''').fetchone())
     categories = [dict(r) for r in db.execute(source + 'SELECT DISTINCT kind,category_id AS id,category AS name FROM inventory WHERE category_id IS NOT NULL' + (' AND kind=?' if state['kind'] else '') + ' ORDER BY category COLLATE NOCASE,kind', [state['kind']] if state['kind'] else [])]
-    locations = [dict(r) for r in db.execute(source+'SELECT DISTINCT l.id,l.name FROM locations l WHERE l.id IN (SELECT location_id FROM inventory) ORDER BY l.name COLLATE NOCASE')] if is_unified else [dict(r) for r in db.execute(source + '''SELECT DISTINCT l.id,l.name FROM locations l WHERE
+    locations = [dict(r) for r in db.execute(source+"SELECT DISTINCT l.id,l.name FROM locations l WHERE EXISTS(SELECT 1 FROM inventory WHERE instr(location_ids,','||l.id||',')>0) ORDER BY l.name COLLATE NOCASE")] if is_unified else [dict(r) for r in db.execute(source + '''SELECT DISTINCT l.id,l.name FROM locations l WHERE
         l.id IN (SELECT location_id FROM inventory WHERE kind='device') OR
         l.id IN (SELECT d.location_id FROM devices d JOIN asset_devices ad ON ad.device_id=d.id
                  WHERE ad.asset_id IN (SELECT id FROM inventory WHERE kind='asset')) ORDER BY l.name COLLATE NOCASE''')]
@@ -140,18 +140,28 @@ def workspace_tasks(db, can, access):
     def add(key, label, sql, url, description, params=(), severity='attention'):
         count = db.execute(sql, params).fetchone()[0]
         tasks.append(dict(key=key, label=label, count=count, url=url, description=description, severity=severity))
-    if can('devices.view') or can('devices.manage'):
-        add('identity', 'Inventardaten vervollständigen',
-            "SELECT count(*) FROM devices WHERE location_id IS NULL OR trim(coalesce(serial_number,''))=''",
-            '/inventory?kind=device&filter=missing_identity', 'Geräte ohne Standort oder Identifikationsnummer')
-    if can('assets.view') or can('assets.manage'):
-        add('lifecycle', 'Beschaffungsdaten ergänzen',
-            "SELECT count(*) FROM assets WHERE trim(coalesce(acquisition_date,''))='' AND trim(coalesce(commissioning_date,''))='' AND trim(coalesce(warranty_end,''))=''",
-            '/inventory?kind=asset&filter=missing_lifecycle', 'Komponenten und Sets ohne Lifecycle-Daten')
-    if can('maintenance.view') or can('maintenance.manage'):
-        add('maintenance', 'Überfällige Wartung',
-            "SELECT count(DISTINCT device_id) FROM maintenance_tasks WHERE status='open' AND date(due_date)<date('now')",
-            '/inventory?kind=device&filter=overdue_maintenance', 'Betroffene Geräte mit offenen, überfälligen Aufgaben', severity='critical')
+    if unified(db):
+        devices_allowed=can('devices.view') or can('devices.manage');assets_allowed=can('assets.view') or can('assets.manage')
+        if devices_allowed or assets_allowed:
+            source=unified_list.source(devices_allowed=devices_allowed,assets_allowed=assets_allowed)
+            criteria=unified_list.filters(FILTERS)
+            for key,label,criterion,description in [('identity','Inventardaten vervollständigen','missing_identity','Assets ohne Standort oder Identifikationsnummer'),('lifecycle','Beschaffungsdaten ergänzen','missing_lifecycle','Assets ohne Lifecycle-Daten')]:
+                add(key,label,source+'SELECT count(*) FROM inventory WHERE '+criteria[criterion],'/inventory?filter='+criterion,description)
+            if can('maintenance.view') or can('maintenance.manage'):
+                add('maintenance','Überfällige Wartung',source+'SELECT count(*) FROM inventory WHERE '+criteria['overdue_maintenance'],'/inventory?filter=overdue_maintenance','Sichtbare Assets mit offenen, überfälligen Aufgaben',severity='critical')
+    else:
+        if can('devices.view') or can('devices.manage'):
+            add('identity', 'Inventardaten vervollständigen',
+                "SELECT count(*) FROM devices WHERE location_id IS NULL OR trim(coalesce(serial_number,''))=''",
+                '/inventory?kind=device&filter=missing_identity', 'Geräte ohne Standort oder Identifikationsnummer')
+        if can('assets.view') or can('assets.manage'):
+            add('lifecycle', 'Beschaffungsdaten ergänzen',
+                "SELECT count(*) FROM assets WHERE trim(coalesce(acquisition_date,''))='' AND trim(coalesce(commissioning_date,''))='' AND trim(coalesce(warranty_end,''))=''",
+                '/inventory?kind=asset&filter=missing_lifecycle', 'Komponenten und Sets ohne Lifecycle-Daten')
+        if can('maintenance.view') or can('maintenance.manage'):
+            add('maintenance', 'Überfällige Wartung',
+                "SELECT count(DISTINCT device_id) FROM maintenance_tasks WHERE status='open' AND date(due_date)<date('now')",
+                '/inventory?kind=device&filter=overdue_maintenance', 'Betroffene Geräte mit offenen, überfälligen Aufgaben', severity='critical')
     if can('tickets.view_all') or can('tickets.view_own'):
         scope, params = '', []
         if not access['is_superuser'] and not can('tickets.view_all'):

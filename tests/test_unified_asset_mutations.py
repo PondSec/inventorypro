@@ -100,3 +100,28 @@ def test_used_child_and_independent_ticket_references_block_unsafe_delete(isolat
         assert db.execute('SELECT 1 FROM tickets WHERE id=?',(ticket,)).fetchone()
         assert assets.get_asset(db,all_permissions,child['id'])['name']=='RAM'
         assert not db.execute('PRAGMA foreign_key_check').fetchall()
+
+
+def test_nested_assignment_and_location_are_inherited_only_through_visible_assets(isolated_inventory):
+    from inventorypro.domains.inventory.service import list_inventory
+    from inventorypro.domains.inventory.asset_views import load_asset_panel
+    with isolated_inventory.app_context():
+        db=inventory_app.get_db();convert_inventory(db)
+        site=db.execute("INSERT INTO locations(name) VALUES ('QA Lab')").lastrowid
+        workstation=create(db,'QA Workplace',location_id=site);pc=create(db,'QA Mini PC');ram=create(db,'QA RAM')
+        assets.set_component(db,all_permissions,workstation['id'],pc['id'],1,'',workstation['revision'])
+        assets.set_component(db,all_permissions,pc['id'],ram['id'],2,'',pc['revision'])
+        user=db.execute("SELECT id FROM users WHERE username='admin'").fetchone()[0]
+        db.execute("INSERT INTO asset_assignment_history(asset_id,assigned_to_user_id,status) VALUES (?,?,'assigned')",(workstation['id'],user))
+        result=list_inventory(db,{'q':'QA RAM','location':str(site),'assigned':'yes'},devices_allowed=True,assets_allowed=True)
+        assert result['total']==1 and result['rows'][0]['assigned_to']=='admin'
+        assert result['rows'][0]['location']=='QA Lab'
+        panel=load_asset_panel(db,ram['id'],can=all_permissions,access={},ticket_visible=lambda *args:False)
+        assert panel['location']=='QA Lab' and panel['assignments'][0]['asset_id']==workstation['id']
+        # Make the containing workplace visible only to the historical device scope.
+        db.execute("UPDATE asset_permission_scope SET scope='devices' WHERE asset_id=?",(workstation['id'],))
+        result=list_inventory(db,{'q':'QA RAM','assigned':'yes'},devices_allowed=False,assets_allowed=True)
+        assert result['total']==0
+        asset_only=lambda key:key in {'assets.view'}
+        hidden=load_asset_panel(db,ram['id'],can=asset_only,access={},ticket_visible=lambda *args:False)
+        assert not hidden['assignments'] and not hidden['location']

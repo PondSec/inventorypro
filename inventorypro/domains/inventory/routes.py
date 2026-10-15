@@ -60,7 +60,7 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
         def link(**changes):
             return '/inventory?' + urlencode({**{key: result[key] for key in ('q','kind','filter','sort','direction','category','location','assigned','page','per_page')}, **changes})
         return render_template('inventory_workspace.html', inventory=result, inventory_link=link,
-                               can_devices=can_read('device'), can_assets=can_read('asset'), can_maintenance=maintenance_allowed,
+                               can_devices=can_read('device'), can_assets=can_read('asset') or (canonical_assets.unified(get_db()) and can_read('device')), can_maintenance=maintenance_allowed,
                                can_export=user_can('server_settings.manage') and get_export_settings(get_db())['importExport']['exportAllowed'], **context())
 
     @blueprint.get('/inventory/export')
@@ -90,7 +90,7 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
             writer = csv.writer(text,delimiter=';')
             writer.writerow(['Bezeichnung','Art','Vorlage','Identifikation','Standort','Zugewiesen an','Status','Letzte Änderung'])
             for row in cursor:
-                writer.writerow(protect_spreadsheet_row([row['name'],'Gerät' if row['kind']=='device' else 'Set / Zubehör',row['category'],
+                writer.writerow(protect_spreadsheet_row([row['name'],'Asset' if canonical_assets.unified(db) else 'Gerät' if row['kind']=='device' else 'Set / Zubehör',row['category'],
                     row['serial_number'],row['location'],row['assigned_to'],'Ausgemustert' if row['retired'] else 'Im Bestand',row['updated_at']]))
             text.flush();text.detach();output.seek(0)
             response = send_file(output,mimetype='text/csv',as_attachment=True,download_name='inventorypro-bestand.csv',max_age=0)

@@ -9,7 +9,7 @@
         {{ property('Hersteller',object.manufacturer,'tool') }}
         {{ property('Modell',object.model,'cpu') }}
         {{ property('Standort',object.location,'map-pin') }}
-        <div class="object-property"><dt>{{ icon('users') }}<span>Zugewiesen an</span></dt><dd>{% for assignment in object.assignments %}<span class="assignment-person"><span class="user-avatar">{{ (assignment.assigned_user or assignment.assigned_team or '?')[:2] | upper }}</span>{{ assignment.assigned_user or assignment.assigned_team }}{% if object.kind == 'device' %}<small>über {{ assignment.asset_name }}</small>{% endif %}</span>{% else %}<span class="muted">Nicht zugewiesen</span>{% endfor %}</dd></div>
+        <div class="object-property"><dt>{{ icon('users') }}<span>Zugewiesen an</span></dt><dd>{% for assignment in object.assignments %}<span class="assignment-person"><span class="user-avatar">{{ (assignment.assigned_user or assignment.assigned_team or '?')[:2] | upper }}</span>{{ assignment.assigned_user or assignment.assigned_team }}{% if object.kind == 'device' or assignment.asset_id != object.id %}<small>über {{ assignment.asset_name }}</small>{% endif %}</span>{% else %}<span class="muted">Nicht zugewiesen</span>{% endfor %}</dd></div>
         {{ property('Erstellt am',object.created_at | inventory_date,'calendar') }}
         {{ property('Inventar-/Seriennr.',object.serial_number | default(''),'copy',copy=True) }}
         {% if object.asset_tag %}{{ property('Asset-Tag',object.asset_tag,'tag',copy=True) }}{% endif %}
