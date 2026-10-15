@@ -36,5 +36,6 @@ Die Prüfdaten erfüllen die alten API-Invarianten (gültige Kategorie, Erstelle
 Additive neue Spalten werden beim Vergleich erlaubt; vorhandene Spaltenwerte und
 Zeilenanzahlen werden geprüft. Das Skript verändert keine Kundencontainer.
 
-Diese Prüfung ersetzt nicht den noch ausstehenden Test der endgültigen signierten
-Manifeste, der alten/neuen Updater und der veröffentlichten Multiarch-Images.
+Diese historische Kandidatenprüfung wurde vor der Freigabe durch die erfolgreiche
+Abnahme der endgültigen signierten Manifeste, alten/neuen Updater und tatsächlichen
+Multiarch-Images ergänzt: [Releaseabnahme 0.3.0](release-0.3.0-qa.md).

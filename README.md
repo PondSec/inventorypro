@@ -89,6 +89,11 @@ Die Tests decken unter anderem Rollen- und Sicherheitsgrenzen, Ticket- und Revie
 
 ## Releases
 
+Stable [0.3.0](https://gitlab.pondsec.com/PondSec/inventorypro/-/releases/v0.3.0) ist
+einschließlich [GitHub-Kompatibilitätsfeed](https://github.com/PondSec/inventorypro/releases/tag/v0.3.0)
+veröffentlicht. Tatsächlich ausgeführte Installation, Datenübernahme, Signatur-
+und Updaterprüfungen: [Releaseabnahme](docs/release-0.3.0-qa.md).
+
 Ein ausdrücklich versionierter Releaseauftrag auf `dev` startet die vorhandene Vorbereitungspipeline. Sie prüft den Quellstand gegen GitLab, führt die Regression aus, baut das Multiarch-Image und signiert beide Update-Manifeste mit dem bereits ausgelieferten Schlüssel. Zunächst entsteht ein Entwurf. Nach Image-, Upgrade- und Rollbackabnahme werden GitLab-Stable und der kompatible GitHub-Feed freigegeben. Gewöhnliche Commits und ein Merge nach `main` veröffentlichen kein ungeprüftes Update. Der private Signaturschlüssel bleibt ausschließlich im bestehenden Actions-Secret `INVENTORY_UPDATE_SIGNING_KEY`.
 
 ## Lizenz und Kontakt

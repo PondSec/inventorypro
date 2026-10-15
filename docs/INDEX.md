@@ -10,6 +10,7 @@
 - [Health-Modul](modules/health.md) und [Wartungskonsole](modules/terminal.md)
 - [Technisches Audit](enterprise/AUDIT.md)
 - [Ausgeführte Qualitätssicherung](enterprise/QUALITY.md)
+- [Stable 0.3.0: signierte Release- und Updaterabnahme](release-0.3.0-qa.md)
 - [Updatekompatibilität und Veröffentlichung](enterprise/UPDATE-COMPATIBILITY.md)
 - [Lager- und Platzplanung](enterprise/STORAGE-PLANNING.md)
 
