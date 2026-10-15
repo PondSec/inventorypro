@@ -403,7 +403,7 @@ def test_knowledge_search_uses_current_query_and_pages(live_inventory, browser, 
     page = context.new_page()
     sign_in(page, live_inventory)
     page.goto(live_inventory + '/knowledge')
-    search = page.get_by_label('Suche', exact=True)
+    search = page.get_by_label('Artikel durchsuchen', exact=True)
     search.fill('QA knowledge')
     navigation = page.get_by_role('navigation', name='Seiten in der Wissensbasis')
     expect(navigation).to_contain_text('60 Einträge')
@@ -411,7 +411,7 @@ def test_knowledge_search_uses_current_query_and_pages(live_inventory, browser, 
     expect(navigation).to_contain_text('Seite 2 von 3')
     search.fill('QA knowledge 059')
     expect(navigation).to_contain_text('Seite 1 von 1 · 1 Einträge')
-    page.get_by_role('button').filter(has=page.locator('p', has_text='QA knowledge 059')).first.click()
+    page.get_by_role('button').filter(has=page.locator('strong', has_text='QA knowledge 059')).first.click()
     expect(page.locator('h3').filter(has_text='QA knowledge 059')).to_be_visible()
     context.close()
 
