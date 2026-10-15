@@ -1303,7 +1303,7 @@
                     <i data-feather="x" class="w-5 h-5"></i>
                 </button>
             </div>
-            <form @submit.prevent="saveAsset()" class="space-y-4 p-6">
+            <form @submit.prevent="saveAsset()" @input="assetDirty = true" @change="assetDirty = true" class="space-y-4 p-6">
                 <input type="hidden" x-model="currentAsset.id">
                 <div x-show="assetFormMessage" class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" x-text="assetFormMessage"></div>
                 <div class="grid gap-4 md:grid-cols-2">
@@ -1525,27 +1525,20 @@
                         <p x-show="currentAsset.relations.length === 0" class="text-xs text-slate-400">Noch keine Beziehungen definiert.</p>
                     </div>
                 </div>
-                <div>
-                    <label class="text-sm font-semibold text-slate-700">Geräte zuordnen</label>
-                    <div class="mt-3 space-y-4">
-                        <template x-for="category in categories" :key="category.id">
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                <p class="text-sm font-semibold text-slate-700" x-text="category.name"></p>
-                                <div class="mt-3 grid gap-2 sm:grid-cols-2">
-                                    <template x-for="device in getDevicesForCategory(category.id)" :key="device.id">
-                                        <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                                            <input type="checkbox" :value="device.id" x-model="currentAsset.device_ids" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-                                            <span class="truncate" x-text="device.name"></span>
-                                        </label>
-                                    </template>
-                                    <p x-show="getDevicesForCategory(category.id).length === 0" class="text-xs text-slate-400">Keine Geräte in dieser Kategorie.</p>
-                                </div>
-                            </div>
-                        </template>
-                        <p x-show="categories.length === 0" class="text-xs text-slate-400">Bitte zuerst Kategorien und Geräte anlegen.</p>
+                <fieldset class="workspace-panel" data-testid="device-assignment-picker">
+                    <legend>Geräte zuordnen</legend>
+                    <div class="list-toolbar">
+                        <label class="grow">Geräte suchen<input class="input" type="search" aria-label="Geräte für Zuordnung suchen" x-model="assetDeviceQuery" @input.stop="assetDevicePage = 1" placeholder="Name, Nummer oder Standort"></label>
+                        <label>Vorlage<select class="input" x-model="assetDeviceCategory" @change.stop="assetDevicePage = 1"><option value="">Alle Vorlagen</option><template x-for="category in categories" :key="category.id"><option :value="category.id" x-text="category.name"></option></template></select></label>
                     </div>
-                    <p x-show="getAssetFieldError('device_ids')" class="mt-2 text-xs text-rose-600" x-text="getAssetFieldError('device_ids')"></p>
-                </div>
+                    <p class="list-summary" aria-live="polite"><strong x-text="currentAsset.device_ids.length"></strong> Geräte ausgewählt · <span x-text="matchingAssetDevices().length"></span> Treffer</p>
+                    <label class="selection-filter"><input type="checkbox" x-model="assetDeviceOnlySelected" @change.stop="assetDevicePage = 1"> Nur Auswahl anzeigen</label>
+                    <div class="selected-chips"><template x-for="device in selectedAssetDevices().slice(0, 10)" :key="device.id"><button type="button" @click="toggleAssetDevice(device.id)" :aria-label="`${device.name} aus Auswahl entfernen`"><span x-text="device.name"></span> ×</button></template></div>
+                    <div class="picker-results"><template x-for="device in visibleAssetDevices()" :key="device.id"><label class="picker-result"><input type="checkbox" :checked="currentAsset.device_ids.some(id => Number(id) === device.id)" @change="toggleAssetDevice(device.id)"><span><strong x-text="device.name"></strong><small x-text="[device.serial_number, device.location_name].filter(Boolean).join(' · ')"></small></span></label></template></div>
+                    <p x-show="!matchingAssetDevices().length">Keine passenden Geräte. Suche oder Filter anpassen.</p>
+                    <div class="list-pagination"><button class="btn btn-secondary" type="button" :disabled="assetDevicePage <= 1" @click="assetDevicePage--">Zurück</button><span x-text="`Seite ${assetDevicePage}`"></span><button class="btn btn-secondary" type="button" :disabled="assetDevicePage * 20 >= matchingAssetDevices().length" @click="assetDevicePage++">Weiter</button></div>
+                    <p x-show="getAssetFieldError('device_ids')" role="alert" x-text="getAssetFieldError('device_ids')"></p>
+                </fieldset>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" @click="closeAssetModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
                     <button type="submit" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Speichern</button>
@@ -1871,20 +1864,20 @@
         </div>
     </div>
 
-    <div x-show="isDeviceModalOpen" @click.away="closeDeviceModal()" data-testid="device-modal-container" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
+    <div x-show="isDeviceModalOpen" @click.away="closeDeviceModal()" data-testid="device-modal-container" role="dialog" aria-modal="true" aria-labelledby="device-form-title" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
         <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto scrollbar-hide" data-testid="device-modal">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Gerät</p>
-                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingDevice ? 'Gerät bearbeiten' : 'Neues Gerät'"></h3>
+                    <h3 id="device-form-title" class="text-lg font-semibold text-slate-900" x-text="editingDevice ? 'Gerät bearbeiten' : 'Neues Gerät'"></h3>
                 </div>
                 <button @click="closeDeviceModal()" data-modal-close data-testid="device-modal-close" class="icon-button text-slate-400 hover:text-slate-600" aria-label="Geräte-Modal schließen">
                     <i data-feather="x" class="w-5 h-5"></i>
                 </button>
             </div>
-            <form @submit.prevent="saveDevice()" class="space-y-4 p-6">
+            <form @submit.prevent="saveDevice()" @input="deviceDirty = true" @change="deviceDirty = true" class="space-y-4 p-6">
                 <input type="hidden" x-model="currentDevice.id">
-                <div x-show="deviceFormMessage" class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" x-text="deviceFormMessage"></div>
+                <div role="alert" x-show="deviceFormMessage" class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" x-text="deviceFormMessage"></div>
                 <div x-show="!editingDevice && currentDevice.category_id" class="rounded-2xl border border-blue-100 bg-blue-50/80 p-4">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
@@ -1904,14 +1897,14 @@
                 </div>
                 <div class="grid gap-4 lg:grid-cols-2">
                     <div>
-                        <label class="text-sm font-semibold text-slate-700">Name*</label>
-                        <input type="text" x-model="currentDevice.name" required :class="getDeviceFieldError('name') ? 'border-rose-300 bg-rose-50/70' : ''" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                        <label for="device-name" class="text-sm font-semibold text-slate-700">Name (Pflichtfeld)</label>
+                        <input type="text" id="device-name" x-model="currentDevice.name" :aria-invalid="!!getDeviceFieldError('name')" required :class="getDeviceFieldError('name') ? 'border-rose-300 bg-rose-50/70' : ''" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
                         <p x-show="getDeviceFieldError('name')" class="mt-2 text-xs font-medium text-rose-600" x-text="getDeviceFieldError('name')"></p>
                     </div>
                     <div>
-                        <label class="text-sm font-semibold text-slate-700">Kategorie*</label>
-                        <select x-model="currentDevice.category_id" @change="handleDeviceCategoryChange()" required :class="getDeviceFieldError('category_id') ? 'border-rose-300 bg-rose-50/70' : ''" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="">-- Kategorie wählen --</option>
+                        <label for="device-category" class="text-sm font-semibold text-slate-700">Vorlage (Pflichtfeld)</label>
+                        <select id="device-category" x-model="currentDevice.category_id" :aria-invalid="!!getDeviceFieldError('category_id')" @change="handleDeviceCategoryChange()" required :class="getDeviceFieldError('category_id') ? 'border-rose-300 bg-rose-50/70' : ''" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">-- Vorlage wählen --</option>
                             <template x-for="category in categories" :key="category.id">
                                 <option :value="category.id" x-text="category.name"></option>
                             </template>
@@ -1919,12 +1912,12 @@
                         <p x-show="getDeviceFieldError('category_id')" class="mt-2 text-xs font-medium text-rose-600" x-text="getDeviceFieldError('category_id')"></p>
                     </div>
                     <div>
-                        <label class="text-sm font-semibold text-slate-700">Inventar-/Seriennummer</label>
-                        <input type="text" x-model="currentDevice.serial_number" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                        <label for="device-serial" class="text-sm font-semibold text-slate-700">Inventar-/Seriennummer</label>
+                        <input type="text" id="device-serial" x-model="currentDevice.serial_number" :aria-invalid="!!getDeviceFieldError('serial_number')" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <div>
-                        <label class="text-sm font-semibold text-slate-700">Standort</label>
-                        <select x-model="currentDevice.location_id" :class="getDeviceFieldError('location_id') ? 'border-rose-300 bg-rose-50/70' : ''" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
+                        <label for="device-location" class="text-sm font-semibold text-slate-700">Standort</label>
+                        <select id="device-location" x-model="currentDevice.location_id" :aria-invalid="!!getDeviceFieldError('location_id')" :class="getDeviceFieldError('location_id') ? 'border-rose-300 bg-rose-50/70' : ''" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option value="">-- Standort wählen --</option>
                             <template x-for="location in locations" :key="location.id">
                                 <option :value="location.id" x-text="location.name"></option>
@@ -1933,8 +1926,9 @@
                         <p x-show="getDeviceFieldError('location_id')" class="mt-2 text-xs font-medium text-rose-600" x-text="getDeviceFieldError('location_id')"></p>
                     </div>
                 </div>
-                <div>
-                    <label class="text-sm font-semibold text-slate-700">Spezifikationen</label>
+                <details class="optional-fields" :open="editingDevice">
+                    <summary>Hardware und weitere Eigenschaften (optional)</summary>
+
                     <div class="mt-2 space-y-2">
                         <template x-for="field in getCategoryFieldEntries(currentDevice.category_id)" :key="field.name">
                             <div>
@@ -2000,10 +1994,10 @@
                             <p x-show="currentDevice.extraSpecs.length === 0" class="text-xs text-slate-400">Keine zusätzlichen Spezifikationen angelegt.</p>
                         </div>
                     </div>
-                </div>
+                </details>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" @click="closeDeviceModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
-                    <button type="submit" class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Speichern</button>
+                    <button type="submit" :disabled="deviceSaving" class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">Speichern</button>
                 </div>
             </form>
         </div>

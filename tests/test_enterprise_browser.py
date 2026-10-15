@@ -142,3 +142,44 @@ def test_dashboard_task_links_open_exact_work_list(live_inventory, browser):
     assert 'filter=missing_identity' in page.url
     expect(page.locator('.list-summary')).to_contain_text('40 Einträge')
     context.close()
+
+
+def test_quick_capture_preserves_unsaved_fields_and_saves(live_inventory, browser):
+    context=browser.new_context(viewport={'width':1280,'height':900})
+    page=context.new_page()
+    sign_in(page,live_inventory)
+    page.goto(live_inventory+'/inventory/new')
+    modal=page.get_by_test_id('device-modal')
+    expect(modal).to_be_visible()
+    page.get_by_label('Name (Pflichtfeld)',exact=True).fill('QA new notebook')
+    page.get_by_label('Vorlage (Pflichtfeld)',exact=True).select_option(label='Notebooks')
+    page.get_by_label('Inventar-/Seriennummer',exact=True).fill('QA-CAPTURE')
+    page.once('dialog', lambda dialog: dialog.dismiss())
+    page.get_by_test_id('device-modal-close').click()
+    expect(modal).to_be_visible()
+    expect(page.get_by_label('Name (Pflichtfeld)',exact=True)).to_have_value('QA new notebook')
+    with page.expect_response(lambda response: response.url.endswith('/api/devices') and response.request.method=='POST') as created:
+        modal.get_by_role('button',name='Speichern',exact=True).click()
+    assert created.value.status==201,created.value.text()
+    expect(modal).not_to_be_visible()
+    page.goto(live_inventory+'/inventory?q=QA-CAPTURE')
+    expect(page.get_by_role('link',name='QA new notebook',exact=True)).to_be_visible()
+    context.close()
+
+
+def test_device_selection_is_searchable_paginated_and_visible(live_inventory,browser):
+    context=browser.new_context(viewport={'width':1280,'height':900})
+    page=context.new_page()
+    sign_in(page,live_inventory)
+    page.get_by_test_id('dashboard-action-menu-toggle').click()
+    page.get_by_role('button',name='Komponente oder Set erfassen',exact=True).click()
+    picker=page.get_by_test_id('device-assignment-picker')
+    expect(picker).to_be_visible()
+    expect(picker.locator('.picker-result')).to_have_count(20)
+    picker.get_by_role('searchbox').fill('QA-039')
+    expect(picker.locator('.picker-result')).to_have_count(1)
+    picker.locator('.picker-result input').check()
+    expect(picker.get_by_role('button',name='Notebook 039 aus Auswahl entfernen')).to_be_visible()
+    picker.get_by_role('searchbox').fill('QA-001')
+    expect(picker.get_by_role('button',name='Notebook 039 aus Auswahl entfernen')).to_be_visible()
+    context.close()

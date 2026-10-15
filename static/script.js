@@ -122,6 +122,14 @@ document.addEventListener('alpine:init', () => {
         deviceTags: [],
         deviceNotes: [],
         deviceFormErrors: {},
+        deviceDirty: false,
+        deviceSaving: false,
+        assetDirty: false,
+        assetSaving: false,
+        assetDeviceQuery: '',
+        assetDeviceCategory: '',
+        assetDevicePage: 1,
+        assetDeviceOnlySelected: false,
         deviceFormMessage: '',
         maintenanceTasks: [],
         maintenanceAttachments: {},
@@ -250,6 +258,9 @@ document.addEventListener('alpine:init', () => {
             this.$watch('specQuery', () => this.searchDevices());
             this.refreshFeatherIcons();
             this.startLiveRefresh();
+            window.addEventListener('beforeunload', event => {
+                if (this.deviceDirty || this.assetDirty) { event.preventDefault(); event.returnValue = ''; }
+            });
             await this.applyInventoryIntent();
         },
 
@@ -529,6 +540,26 @@ document.addEventListener('alpine:init', () => {
             if (response.ok) {
                 this.assets = await response.json();
             }
+        },
+
+        matchingAssetDevices() {
+            const query = this.assetDeviceQuery.trim().toLocaleLowerCase('de');
+            return this.allDevices.filter(device =>
+                (!this.assetDeviceCategory || Number(device.category_id) === Number(this.assetDeviceCategory)) &&
+                (!this.assetDeviceOnlySelected || this.currentAsset.device_ids.some(id => Number(id) === device.id)) &&
+                (!query || [device.name, device.serial_number, device.location_name].join(' ').toLocaleLowerCase('de').includes(query)));
+        },
+        visibleAssetDevices() {
+            const rows = this.matchingAssetDevices();
+            return rows.slice((this.assetDevicePage - 1) * 20, this.assetDevicePage * 20);
+        },
+        selectedAssetDevices() {
+            return this.allDevices.filter(device => this.currentAsset.device_ids.some(id => Number(id) === device.id));
+        },
+        toggleAssetDevice(deviceId) {
+            const ids = this.currentAsset.device_ids.map(Number);
+            this.currentAsset.device_ids = ids.includes(deviceId) ? ids.filter(id => id !== deviceId) : [...ids, deviceId];
+            this.assetDirty = true;
         },
 
         async loadAssetEntryOptions() {
@@ -1229,6 +1260,7 @@ document.addEventListener('alpine:init', () => {
 
         // Device Methods
         async openAddDeviceModal() {
+            this.deviceDirty = false;
             this.clearDeviceFormState();
             if (this.categories.length === 0) {
                 await this.loadCategories();
@@ -1252,6 +1284,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         openEditDeviceModal(device) {
+            this.deviceDirty = false;
             this.clearDeviceFormState();
             const specs = JSON.parse(device.specs || '{}');
             const categoryFields = this.getCategoryFields(device.category_id) || {};
@@ -1283,6 +1316,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         closeDeviceModal() {
+            if (this.deviceSaving) return;
+            if (this.deviceDirty && !confirm('Ungespeicherte Änderungen verwerfen?')) return;
+            this.deviceDirty = false;
             this.isDeviceModalOpen = false;
             this.clearDeviceFormState();
         },
@@ -1409,6 +1445,8 @@ document.addEventListener('alpine:init', () => {
         },
 
         async saveDevice() {
+            if (this.deviceSaving) return;
+            this.deviceSaving = true;
             try {
                 this.clearDeviceFormState();
                 const specs = { ...this.currentDevice.specs };
@@ -1462,12 +1500,14 @@ document.addEventListener('alpine:init', () => {
 
                 await this.loadDevices(this.activeCategory);
                 await this.loadAllDevices();
+                this.deviceDirty = false;
+                this.deviceSaving = false;
                 this.closeDeviceModal();
                 await this.loadActivityFeed();
             } catch (error) {
                 console.error('Error saving device:', error);
                 this.deviceFormMessage = error.message || 'Gerät konnte nicht gespeichert werden';
-            }
+            } finally { this.deviceSaving = false; }
         },
 
         async deleteDevice(deviceId) {
@@ -1906,6 +1946,8 @@ document.addEventListener('alpine:init', () => {
             if (this.purchaseOrders.length === 0) {
                 await this.loadPurchaseOrders();
             }
+            this.assetDirty = false;
+            this.assetDevicePage = 1;
             this.isAssetModalOpen = true;
         },
 
@@ -1962,7 +2004,9 @@ document.addEventListener('alpine:init', () => {
                 if (this.purchaseOrders.length === 0) {
                     await this.loadPurchaseOrders();
                 }
-                this.isAssetModalOpen = true;
+                this.assetDirty = false;
+            this.assetDevicePage = 1;
+            this.isAssetModalOpen = true;
             } catch (error) {
                 console.error('Error loading asset:', error);
                 alert(error.message);
@@ -1970,6 +2014,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         closeAssetModal() {
+            if (this.assetSaving) return;
+            if (this.assetDirty && !confirm('Ungespeicherte Änderungen verwerfen?')) return;
+            this.assetDirty = false;
             this.isAssetModalOpen = false;
             this.clearAssetFormState();
         },
@@ -1999,6 +2046,8 @@ document.addEventListener('alpine:init', () => {
         },
 
         async saveAsset() {
+            if (this.assetSaving) return;
+            this.assetSaving = true;
             try {
                 this.clearAssetFormState();
                 const specs = { ...this.currentAsset.specs };
@@ -2070,12 +2119,14 @@ document.addEventListener('alpine:init', () => {
 
                 await this.loadAssets();
                 await this.loadAssetEntryOptions();
+                this.assetDirty = false;
+                this.assetSaving = false;
                 this.closeAssetModal();
                 await this.loadActivityFeed();
             } catch (error) {
                 console.error('Error saving asset:', error);
                 this.assetFormMessage = error.message || 'Asset konnte nicht gespeichert werden';
-            }
+            } finally { this.assetSaving = false; }
         },
 
         async deleteAsset(assetId) {
