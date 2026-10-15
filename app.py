@@ -52,6 +52,7 @@ from inventorypro.domains.inventory.category_routes import build_category_bluepr
 from inventorypro.domains.inventory import assets as canonical_assets
 from inventorypro.domains.inventory.ticket_assets import normalize_links as normalize_ticket_asset_links
 from inventorypro.domains.exports.tables import INVENTORY_TABLES,available_tables,dependency_order
+from inventorypro.domains.inventory.graph import CanonicalGraph
 from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
@@ -6089,12 +6090,19 @@ def prune_dependency_links(db):
 
 def fetch_entity_options(db):
     options = {}
+    canonical=canonical_dependency_graph(db)
     for entity_type, meta in DEPENDENCY_ENTITY_TYPES.items():
+        if canonical and entity_type=='device':continue
         rows = db.execute(
             f"SELECT id, {meta['name_col']} AS name FROM {meta['table']} ORDER BY {meta['name_col']}"
         ).fetchall()
-        options[entity_type] = [dict(row) for row in rows]
+        options[entity_type] = [dict(row) for row in rows if not canonical or canonical.node(entity_type,row['id'])]
     return options
+
+def canonical_dependency_graph(db):
+    if not canonical_assets.unified(db):return None
+    if not hasattr(g,'_canonical_graph'):g._canonical_graph=CanonicalGraph(db,user_can,get_user_access(db),ensure_ticket_access)
+    return g._canonical_graph
 
 def build_dependency_edges(db):
     edges = []
@@ -6285,6 +6293,15 @@ def build_dependency_edges(db):
                 "implicit": True
             })
 
+    canonical=canonical_dependency_graph(db)
+    if canonical:
+        normalized=[canonical.edge(edge) for edge in edges if not (edge.get('implicit') and edge['relation']=='uses_device')]
+        edges=[edge for edge in normalized if edge]+canonical.implicit_edges()
+        distinct={}
+        for edge in edges:
+            key=(edge['source_type'],edge['source_id'],edge['target_type'],edge['target_id'],edge['relation'],edge.get('id'))
+            distinct[key]=edge
+        edges=list(distinct.values())
     return edges
 
 def dependency_node_key(entity_type, entity_id):
@@ -6292,6 +6309,8 @@ def dependency_node_key(entity_type, entity_id):
 
 def build_dependency_nodes(db):
     nodes = []
+    if canonical_assets.unified(db):
+        return [dict(key=dependency_node_key(kind,row['id']),id=row['id'],type=kind,label=row['name']) for kind,rows in fetch_entity_options(db).items() for row in rows]
     for entity_type, meta in DEPENDENCY_ENTITY_TYPES.items():
         rows = db.execute(
             f"SELECT id, {meta['name_col']} AS name FROM {meta['table']} ORDER BY {meta['name_col']}"
@@ -6439,12 +6458,13 @@ def analyze_dependency_impact(db, source_type, source_id, max_depth=None):
     if impacted_ticket_ids:
         placeholders = ",".join("?" for _ in impacted_ticket_ids)
         ticket_rows = db.execute(f'''
-            SELECT id, title, status, priority, escalation_level, due_date
+            SELECT *
             FROM tickets
             WHERE id IN ({placeholders})
             ORDER BY created_at DESC
         ''', tuple(impacted_ticket_ids)).fetchall()
-        tickets = [dict(row) for row in ticket_rows]
+        canonical=canonical_dependency_graph(db)
+        tickets = [{key:row[key] for key in ['id','title','status','priority','escalation_level','due_date']} for row in ticket_rows if not canonical or row['id'] in canonical.tickets]
 
     critical_tickets = [
         ticket for ticket in tickets
@@ -11291,6 +11311,11 @@ def dependency_links():
             target_id = int(target_id)
         except (TypeError, ValueError):
             return jsonify({"error": "Ungültige IDs"}), 400
+        canonical=canonical_dependency_graph(db)
+        if canonical:
+            source=canonical.node(source_type,source_id);target=canonical.node(target_type,target_id)
+            if not source or not target:return jsonify(error='Keine Berechtigung für Quelle oder Ziel'),403
+            source_type,source_id=source;target_type,target_id=target
         if not fetch_entity_label(db, source_type, source_id) or not fetch_entity_label(db, target_type, target_id):
             return jsonify({"error": "Quelle oder Ziel existiert nicht"}), 400
         try:
@@ -11315,7 +11340,11 @@ def dependency_links():
         return jsonify({"error": "Keine Berechtigung"}), 403
     rows = prune_dependency_links(db)
     links = []
+    canonical=canonical_dependency_graph(db)
     for row in rows:
+        if canonical:
+            row=canonical.edge(row)
+            if not row:continue
         source_label = fetch_entity_label(db, row["source_type"], row["source_id"]) or f"{row['source_type']} #{row['source_id']}"
         target_label = fetch_entity_label(db, row["target_type"], row["target_id"]) or f"{row['target_type']} #{row['target_id']}"
         links.append({
@@ -11334,6 +11363,8 @@ def dependency_link_detail(link_id):
     link_row = db.execute('SELECT * FROM dependency_links WHERE id = ?', (link_id,)).fetchone()
     if not link_row:
         return jsonify({"error": "Abhängigkeit nicht gefunden"}), 404
+    canonical=canonical_dependency_graph(db)
+    if canonical and not canonical.edge(link_row):return jsonify(error='Keine Berechtigung für diese Verknüpfung'),403
 
     if request.method == 'PUT':
         data = request.get_json() or {}
@@ -11403,6 +11434,13 @@ def impact_analysis():
     max_depth = request.args.get('depth')
     if source_type not in DEPENDENCY_ENTITY_TYPES or not source_id:
         return jsonify({"error": "Quelle ist erforderlich"}), 400
+    try:source_id=int(source_id)
+    except (ValueError,TypeError):return jsonify(error='Ungültige Quelle'),400
+    canonical=canonical_dependency_graph(db)
+    if canonical:
+        source=canonical.node(source_type,source_id)
+        if not source:return jsonify(error='Keine Berechtigung für diese Quelle'),403
+        source_type,source_id=source
     label = fetch_entity_label(db, source_type, int(source_id))
     if not label:
         return jsonify({"error": "Quelle nicht gefunden"}), 404
