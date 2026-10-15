@@ -14,7 +14,9 @@ class AssetError(ValueError):
 
 
 def unified(db):
-    return bool(db.execute('SELECT unified_assets FROM inventory_model_state WHERE id=1').fetchone()[0])
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inventory_model_state'").fetchone():return False
+    state=db.execute('SELECT unified_assets FROM inventory_model_state WHERE id=1').fetchone()
+    return bool(state and state[0])
 
 
 def permission_scope(db,identifier):

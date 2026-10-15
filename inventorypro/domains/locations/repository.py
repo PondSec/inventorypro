@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from inventorypro.domains.inventory.assets import unified
 
 from .validators import LocationInput
 
@@ -41,8 +42,11 @@ class LocationRepository:
         connection: sqlite3.Connection,
         location_id: int,
     ) -> tuple[int, int]:
+        # Converted devices are already represented in assets. Count each
+        # physical record once, including newly created canonical assets.
+        table = 'assets' if unified(connection) else 'devices'
         device_count = connection.execute(
-            "SELECT COUNT(*) FROM devices WHERE location_id = ?", (location_id,)
+            f"SELECT COUNT(*) FROM {table} WHERE location_id = ?", (location_id,)
         ).fetchone()[0]
         assignment_count = connection.execute(
             "SELECT COUNT(*) FROM asset_assignments WHERE location_id = ?",

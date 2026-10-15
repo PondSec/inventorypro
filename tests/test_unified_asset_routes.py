@@ -139,6 +139,21 @@ def test_tags_notes_and_files_keep_scoped_access_after_conversion(unified_client
     assert client.get(url).status_code==403
 
 
+def test_location_delete_keeps_new_asset_location_until_explicit_reassignment(unified_client):
+    client=unified_client
+    assert client.post('/api/locations',json={'name':'QA canonical place'}).status_code==201
+    location=next(row['id'] for row in client.get('/api/locations').json if row['name']=='QA canonical place')
+    response=client.post('/api/inventory/assets',json={'name':'QA location asset','location_id':location})
+    assert response.status_code==201
+    asset=response.json
+    blocked=client.delete(f'/api/locations/{location}')
+    assert blocked.status_code==409 and blocked.json['references']['devices']==1
+    assert client.get(f"/api/inventory/assets/{asset['id']}").json['location_id']==location
+    moved=client.put(f"/api/inventory/assets/{asset['id']}",json={'location_id':None,'expectedRevision':asset['revision']})
+    assert moved.status_code==200
+    assert client.delete(f'/api/locations/{location}').status_code==200
+
+
 def test_legacy_mutation_guard_cannot_bypass_csrf_or_mfa(unified_client,monkeypatch):
     client=unified_client;monkeypatch.setitem(inventory_app.app.config,'TESTING',False)
     assert client.delete('/api/devices/1').status_code==403
