@@ -243,9 +243,9 @@
                                     </thead>
                                     <tbody>
                                         <template x-for="device in filteredDevices" :key="device.id">
-                                            <tr @click="openDeviceDetail(device)">
+                                            <tr @click="window.location.assign(`/inventory/devices/${device.id}`)" tabindex="0" @keydown.enter="window.location.assign(`/inventory/devices/${device.id}`)">
                                                 <td class="py-4 px-4 sm:px-6">
-                                                    <p class="max-w-[14rem] truncate font-semibold text-slate-900 sm:max-w-none" x-text="device.name"></p>
+                                                    <a :href="`/inventory/devices/${device.id}`" @click.stop class="max-w-[14rem] truncate font-semibold text-slate-900 sm:max-w-none" x-text="device.name"></a>
                                                     <p class="text-xs text-slate-500" x-text="device.created_at?.slice(0, 10) || ''"></p>
                                                 </td>
                                                 <td class="py-4 px-4 sm:px-6 max-w-0">
@@ -476,7 +476,8 @@
         <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
-                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Geräteübersicht</p>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Geräteverwaltung</p>
+                    <a class="btn btn-secondary" :href="`/inventory/devices/${selectedDevice?.id}`">Detailseite öffnen</a>
                     <h3 class="text-xl font-semibold text-slate-900" x-text="selectedDevice?.name"></h3>
                 </div>
                 <button @click="closeDeviceDetail()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Detailansicht schließen">

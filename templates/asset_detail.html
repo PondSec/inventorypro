@@ -1,0 +1,14 @@
+{% extends 'base_app.html' %}
+{% set page_title = asset.name %}
+{% set page_section_label = 'Inventar · Komponente / Set' %}
+{% set hide_page_intro = true %}
+{% block title %}{{ asset.name }} | Inventory Pro{% endblock %}
+{% block topbar_actions %}{% if can_edit %}<a class="btn btn-primary" href="/?view=assets&edit_asset={{ asset.id }}">Bearbeiten</a>{% endif %}{% endblock %}
+{% block content %}
+<a href="/inventory">← Zum Bestand</a>
+<section class="object-summary"><dl><div><dt>Vorlage</dt><dd>{{ asset.category_name or 'Ohne Vorlage' }}</dd></div><div><dt>Standorte</dt><dd>{{ asset.locations | join(', ') or 'Nicht festgelegt' }}</dd></div><div><dt>Status</dt><dd>{{ 'Ausgemustert' if asset.retirement_date else 'Im Bestand' }}</dd></div></dl></section>
+<section class="workspace-panel detail-panel"><h2>Übersicht</h2><p>{{ asset.notes or 'Keine Beschreibung erfasst.' }}</p><dl class="property-list">{% for key, value in asset.specs.items() %}<div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl></section>
+<section class="workspace-panel detail-panel"><h2>Verknüpfte Geräte</h2><div class="data-table-scroll"><table class="data-table"><thead><tr><th>Gerät</th><th>Identifikation</th><th>Menge</th><th>Standort</th></tr></thead><tbody>{% for device in asset.devices %}<tr><td><a href="/inventory/devices/{{ device.id }}">{{ device.name }}</a></td><td>{{ device.serial_number or '—' }}</td><td>{{ device.quantity }}</td><td>{{ device.location_name or 'Nicht festgelegt' }}</td></tr>{% else %}<tr><td colspan="4">Keine Geräte zugeordnet.</td></tr>{% endfor %}</tbody></table></div></section>
+<details class="workspace-panel detail-panel"><summary>Beschaffung und Lebenszyklus</summary><dl class="property-list">{% for key, label in [('acquisition_date','Beschafft am'), ('commissioning_date','In Betrieb seit'), ('warranty_end','Garantie bis'), ('vendor_name','Lieferant'), ('purchase_order_number','Bestellung'), ('purchase_cost','Anschaffungskosten'), ('currency','Währung'), ('cost_center','Kostenstelle'), ('retirement_date','Ausgemustert am'), ('retirement_reason','Ausmusterungsgrund')] %}<div><dt>{{ label }}</dt><dd>{{ asset.get(key) or 'Nicht erfasst' }}</dd></div>{% endfor %}</dl></details>
+<details class="workspace-panel detail-panel"><summary>Zuweisung, Beziehungen und weitere Aktionen</summary><p>Übergaben, Rücknahmen, Dokumente, Historie und die Lagerplanung sind im bestehenden Verwaltungskontext vollständig verfügbar.</p><a class="btn btn-secondary" href="/?view=assets&manage_asset={{ asset.id }}">Komponentenverwaltung öffnen</a></details>
+{% endblock %}

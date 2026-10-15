@@ -247,6 +247,24 @@ document.addEventListener('alpine:init', () => {
             this.$watch('specQuery', () => this.searchDevices());
             this.refreshFeatherIcons();
             this.startLiveRefresh();
+            await this.applyInventoryIntent();
+        },
+
+        async applyInventoryIntent() {
+            const intent = new URLSearchParams(location.search);
+            const deviceId = Number(intent.get('edit_device') || intent.get('manage_device'));
+            const assetId = Number(intent.get('edit_asset') || intent.get('manage_asset'));
+            if (intent.get('create') === 'device' && this.can('devices.manage')) this.openAddDeviceModal();
+            if (Number.isSafeInteger(deviceId) && deviceId > 0) {
+                const device = this.devices.find(item => item.id === deviceId);
+                if (device && intent.has('edit_device') && this.can('devices.manage')) this.openEditDeviceModal(device);
+                else if (device && intent.has('manage_device')) await this.openDeviceDetail(device);
+            }
+            if (Number.isSafeInteger(assetId) && assetId > 0) {
+                const asset = this.assets.find(item => item.id === assetId);
+                if (asset && intent.has('edit_asset') && this.can('assets.manage')) await this.openEditAssetModal(asset);
+                else if (asset && intent.has('manage_asset')) await this.openAssetDetail(asset);
+            }
         },
 
         refreshFeatherIcons() {

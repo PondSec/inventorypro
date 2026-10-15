@@ -40,6 +40,7 @@ from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
 import smtplib
 
+from inventorypro.domains.inventory.routes import build_inventory_blueprint
 from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
@@ -15693,6 +15694,11 @@ build_inventory_link_static_headers = INVENTORY_LINK_SESSION_SERVICE.build_stati
 perform_inventory_link_test = INVENTORY_LINK_SESSION_SERVICE.perform_test
 InventoryLinkConnectionError = InventoryLinkServiceConnectionError
 InventoryLinkNoRedirect = InventoryLinkServiceNoRedirect
+
+app.register_blueprint(build_inventory_blueprint(
+    get_db=get_db, user_can=user_can, get_access=get_user_access,
+    login_required=login_required, load_asset=asset_entry_detail,
+))
 
 app.register_blueprint(
     build_backups_blueprint(

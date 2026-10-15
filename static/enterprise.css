@@ -73,3 +73,41 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .enterprise-page { grid-template-columns: minmax(0, 1fr); }
 .service-page { display: block; }
 .ticket-workspace { min-width: 0; }
+.workspace-panel { padding: 20px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); }
+.list-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.list-toolbar label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
+.list-toolbar .grow { flex: 1 1 240px; }
+.list-toolbar .input { width: 100%; min-height: 38px; }
+.list-summary { padding-block: 16px; color: var(--color-text-muted); }
+.data-table-scroll { width: 100%; overflow: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.data-table th { padding: 10px 12px; color: var(--color-text-muted); background: var(--color-surface-muted); font-weight: 600; white-space: nowrap; }
+.data-table td { padding: 12px; border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
+.data-table td:first-child a { color: var(--color-accent); font-weight: 600; }
+.data-table tbody tr:hover { background: var(--color-surface-muted); }
+.status-badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius-sm); background: var(--color-surface-muted); white-space: nowrap; }
+.list-pagination { display: flex; gap: 16px; align-items: center; justify-content: end; padding-top: 16px; }
+.object-summary { border-bottom: 1px solid var(--color-border); padding-block: 16px; }
+.object-summary dl { display: flex; flex-wrap: wrap; gap: 20px 40px; margin: 0; }
+.object-summary dt { font-size: 12px; color: var(--color-text-muted); }
+.object-summary dd { margin: 4px 0 0; font-weight: 600; }
+.detail-tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--color-border); }
+.detail-tabs a { padding: 12px 16px; white-space: nowrap; border-bottom: 3px solid transparent; }
+.detail-tabs a[aria-current=page] { color: var(--color-accent); border-color: var(--color-accent); font-weight: 600; }
+.detail-panel h2 { font-size: 18px; margin: 0 0 16px; }
+.detail-panel h3 { font-size: 15px; margin: 20px 0 12px; }
+.property-list > div { display: grid; grid-template-columns: minmax(120px, 1fr) 2fr; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--color-border); }
+.property-list dt { color: var(--color-text-muted); }
+.property-list dd { margin: 0; overflow-wrap: anywhere; }
+.detail-note { padding-block: 12px; border-bottom: 1px solid var(--color-border); }
+.detail-note p { white-space: pre-wrap; }
+.detail-form { display: grid; gap: 12px; max-width: 640px; margin-top: 20px; }
+.detail-form label { display: grid; gap: 6px; }
+.detail-form .btn { justify-self: start; }
+.workspace-panel > summary { cursor: pointer; font-weight: 600; }
+.empty-state { padding: 32px; text-align: center; }
+@media (max-width: 640px) {
+  .workspace-panel { padding: 14px; }
+  .list-toolbar > label { flex: 1 1 100%; }
+  .data-table { min-width: 680px; }
+}

@@ -1,0 +1,37 @@
+{% extends 'base_app.html' %}
+{% set page_title = 'Gesamter Bestand' %}
+{% set page_section_label = 'Inventar' %}
+{% set hide_page_intro = true %}
+{% block title %}Gesamter Bestand | Inventory Pro{% endblock %}
+{% block topbar_actions %}{% if 'devices.manage' in permissions or is_superuser %}<a class="btn btn-primary" href="/inventory/new">Erfassen</a>{% endif %}{% endblock %}
+{% block content %}
+<section class="workspace-panel" aria-label="Bestand durchsuchen">
+    <form method="get" class="list-toolbar" role="search">
+        <label class="grow">Suche<input class="input" type="search" name="q" value="{{ inventory.q }}" placeholder="Name, Nummer, Vorlage oder Standort"></label>
+        <label>Einträge<select class="input" name="kind"><option value="">Alle</option>{% if can_devices %}<option value="device" {{ 'selected' if inventory.kind == 'device' }}>Geräte</option>{% endif %}{% if can_assets %}<option value="asset" {{ 'selected' if inventory.kind == 'asset' }}>Komponenten und Sets</option>{% endif %}</select></label>
+        <label>Arbeitsliste<select class="input" name="filter">
+            {% for value, label in [('', 'Gesamter Bestand'), ('missing_identity', 'Unvollständige Geräte'), ('missing_location', 'Ohne Standort'), ('missing_serial', 'Ohne Identifikationsnummer'), ('maintenance', 'Offene Wartung'), ('overdue_maintenance', 'Überfällige Wartung'), ('missing_lifecycle', 'Fehlende Lifecycle-Daten'), ('uncategorized', 'Ohne Vorlage')] %}
+            <option value="{{ value }}" {{ 'selected' if inventory.filter == value }}>{{ label }}</option>{% endfor %}
+        </select></label>
+        <input type="hidden" name="sort" value="{{ inventory.sort }}"><input type="hidden" name="direction" value="{{ inventory.direction }}">
+        <button class="btn btn-primary" type="submit">Anwenden</button><a class="btn btn-secondary" href="/inventory">Zurücksetzen</a>
+    </form>
+    <div class="list-summary" role="status">{{ inventory.total }} Einträge{% if inventory.q %} für „{{ inventory.q }}“{% endif %}</div>
+    <div class="data-table-scroll" tabindex="0" aria-label="Bestandstabelle, horizontal scrollbar">
+        <table class="data-table">
+            <thead><tr>{% for key, label in [('name', 'Bezeichnung'), ('kind', 'Art'), ('category', 'Vorlage'), ('serial_number', 'Identifikation')] %}
+                <th scope="col" aria-sort="{{ ('ascending' if inventory.direction == 'asc' else 'descending') if inventory.sort == key else 'none' }}"><a href="{{ inventory_link(sort=key, direction='desc' if inventory.sort == key and inventory.direction == 'asc' else 'asc', page=1) }}">{{ label }} {% if inventory.sort == key %}{{ '↑' if inventory.direction == 'asc' else '↓' }}{% endif %}</a></th>{% endfor %}
+                <th scope="col">Standort</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Aktionen</span></th>
+            </tr></thead>
+            <tbody>{% for row in inventory.rows %}
+            <tr><td><a href="/inventory/{{ 'devices' if row.kind == 'device' else 'assets' }}/{{ row.id }}">{{ row.name }}</a></td><td>{{ 'Gerät' if row.kind == 'device' else 'Komponente / Set' }}</td><td>{{ row.category or 'Ohne Vorlage' }}</td><td>{{ row.serial_number or '—' }}</td><td>{{ row.location or 'Nicht festgelegt' }}</td><td><span class="status-badge">{{ 'Ausgemustert' if row.retired else 'Im Bestand' }}</span></td><td><a class="btn btn-secondary" aria-label="{{ row.name }} öffnen" href="/inventory/{{ 'devices' if row.kind == 'device' else 'assets' }}/{{ row.id }}">Öffnen</a></td></tr>
+            {% else %}<tr><td colspan="7"><div class="empty-state"><h2>Keine passenden Einträge</h2><p>Ändern Sie die Suche oder setzen Sie die Filter zurück.</p><a href="/inventory">Alle Einträge anzeigen</a></div></td></tr>{% endfor %}</tbody>
+        </table>
+    </div>
+    <nav class="list-pagination" aria-label="Seiten im Bestand">
+        {% if inventory.page > 1 %}<a class="btn btn-secondary" rel="prev" href="{{ inventory_link(page=inventory.page-1) }}">Zurück</a>{% endif %}
+        <span>Seite {{ inventory.page }} von {{ inventory.pages }}</span>
+        {% if inventory.page < inventory.pages %}<a class="btn btn-secondary" rel="next" href="{{ inventory_link(page=inventory.page+1) }}">Weiter</a>{% endif %}
+    </nav>
+</section>
+{% endblock %}

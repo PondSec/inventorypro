@@ -107,3 +107,26 @@ def test_shell_responsive_focus_and_theme(live_inventory, browser, tmp_path, wid
         page.keyboard.press('Escape')
         expect(panel).not_to_be_visible()
     context.close()
+
+
+def test_inventory_search_detail_and_existing_editor(live_inventory, browser):
+    context = browser.new_context(viewport={'width': 1280, 'height': 900})
+    page = context.new_page()
+    sign_in(page, live_inventory)
+    page.goto(live_inventory + '/inventory')
+    page.get_by_role('searchbox', name='Suche', exact=True).fill('QA-039')
+    page.get_by_role('button', name='Anwenden', exact=True).click()
+    expect(page.locator('tbody tr')).to_have_count(1)
+    page.get_by_role('link', name='Notebook 039', exact=True).click()
+    expect(page.get_by_role('heading', name='Notebook 039', exact=True)).to_be_visible()
+    page.get_by_role('link', name='Hardware', exact=True).click()
+    expect(page.get_by_role('heading', name='Hardware', exact=True)).to_be_visible()
+    page.go_back()
+    expect(page.get_by_role('heading', name='Übersicht', exact=True)).to_be_visible()
+    note = 'Synthetic note from browser'
+    page.get_by_label('Neue Notiz', exact=True).fill(note)
+    page.get_by_role('button', name='Notiz hinzufügen').click()
+    expect(page.get_by_text(note, exact=True)).to_be_visible()
+    page.get_by_role('link', name='Bearbeiten', exact=True).click()
+    expect(page.get_by_test_id('device-modal')).to_be_visible(timeout=15000)
+    context.close()

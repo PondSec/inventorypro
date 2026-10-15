@@ -38,8 +38,9 @@
                 <p class="sidebar-panel-title">Inventar</p>
                 <div class="mt-3 space-y-1">
                     {{ render_nav_link('/?view=overview', 'Dashboard', 'home', current_path == '/' and inventory_view == 'overview') }}
-                    {{ render_nav_link('/?view=devices', 'Geräte', 'monitor', current_path == '/' and inventory_view == 'devices') }}
-                    {{ render_nav_link('/?view=assets', 'Komponenten und Sets', 'package', current_path == '/' and inventory_view == 'assets') }}
+                    {{ render_nav_link('/inventory', 'Gesamter Bestand', 'layers', current_path == '/inventory' and not request.args.get('kind')) }}
+                    {{ render_nav_link('/inventory?kind=device', 'Geräte', 'monitor', current_path.startswith('/inventory/devices/') or (current_path == '/inventory' and request.args.get('kind') == 'device')) }}
+                    {{ render_nav_link('/inventory?kind=asset', 'Komponenten und Sets', 'package', current_path.startswith('/inventory/assets/') or (current_path == '/inventory' and request.args.get('kind') == 'asset')) }}
                     {% if 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}
                     {{ render_nav_link('/?view=taxonomy', 'Vorlagen und Felder', 'layers', current_path == '/' and inventory_view == 'taxonomy') }}
                     {% endif %}
