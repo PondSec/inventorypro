@@ -13384,6 +13384,9 @@ def feature_flags():
 @require_permission('timemachine.view')
 def time_machine_changes():
     db = get_db()
+    if canonical_assets.unified(db):
+        from inventorypro.domains.inventory.timeline import TimelineReader
+        db=TimelineReader(db,user_can,get_user_access(db),canonical_dependency_graph(db))
     activity_rows = db.execute('''
         SELECT id, action, entity_type, entity_id, details, created_at, username
         FROM activity_log
@@ -13401,14 +13404,14 @@ def time_machine_changes():
         "logout": "abgemeldet"
     }
     entity_labels = {
-        "asset": "Asset-Eintrag",
-        "asset_entry": "Asset-Eintrag",
+        "asset": "Asset",
+        "asset_entry": "Asset",
         "asset_category": "Asset-Kategorie",
-        "device": "Gerät",
+        "device": "Asset",
         "ticket": "Ticket",
         "roadmap": "Roadmap",
         "roadmap_step": "Roadmap-Schritt",
-        "dependency_link": "Dependency",
+        "dependency_link": "Abhängigkeit",
         "team": "Team",
         "department": "Abteilung",
         "software": "Software",
@@ -13419,7 +13422,7 @@ def time_machine_changes():
         "asset": "assets",
         "asset_entry": "assets",
         "asset_category": "assets",
-        "device": "devices",
+        "device": "assets",
         "ticket": "tickets",
         "roadmap": "roadmaps",
         "roadmap_step": "roadmaps",
@@ -13558,6 +13561,9 @@ def time_machine_changes():
 @require_permission('timemachine.view')
 def time_machine_state():
     db = get_db()
+    if canonical_assets.unified(db):
+        from inventorypro.domains.inventory.timeline import TimelineReader
+        db=TimelineReader(db,user_can,get_user_access(db),canonical_dependency_graph(db))
     timestamp_raw = request.args.get('timestamp')
     timestamp = parse_time_machine_timestamp(timestamp_raw) or utc_now()
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
@@ -13604,14 +13610,14 @@ def time_machine_state():
     last_change_label = "—"
     if last_change_row:
         entity_labels = {
-            "asset": "Asset-Eintrag",
-            "asset_entry": "Asset-Eintrag",
+            "asset": "Asset",
+            "asset_entry": "Asset",
             "asset_category": "Asset-Kategorie",
-            "device": "Gerät",
+            "device": "Asset",
             "ticket": "Ticket",
             "roadmap": "Roadmap",
             "roadmap_step": "Roadmap-Schritt",
-            "dependency_link": "Dependency",
+            "dependency_link": "Abhängigkeit",
             "team": "Team",
             "department": "Abteilung",
             "software": "Software",
