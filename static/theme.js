@@ -499,7 +499,12 @@
   document.addEventListener('DOMContentLoaded', updateButtons);
   window.addEventListener('storage', (event) => {
     if (event.key === customizationCacheKey || event.key === customizationLocalKey) {
-      loadCustomization();
+      // Another tab already fetched these values. Never fetch/write the cache in
+      // response to its notification: cachedAt would make both tabs echo forever.
+      const cached = getCachedCustomization();
+      const base = cached?.customization || defaultCustomization;
+      const override = getLocalOverride();
+      applyCustomization(override ? deepMerge(base, override) : base);
     }
   });
 })();

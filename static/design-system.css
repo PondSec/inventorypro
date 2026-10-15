@@ -53,6 +53,9 @@
 .app-body .data-table td { height: var(--row-height); padding: 8px 12px; vertical-align: middle; }
 .app-body .data-table td:first-child a { color: var(--color-text); font-weight: 600; }
 .app-body .data-table tbody tr:hover td { background: var(--color-accent-soft); }
+.preview-row { cursor: pointer; }
+.app-body .data-table tr[data-preview-selected] td { background: var(--color-accent-soft); }
+.app-body .data-table tr:focus-within td { background: var(--color-accent-soft); }
 .app-body .status-badge { border-radius: 999px; padding: 3px 10px; font-size: 11px; line-height: 16px; font-weight: 600; color: var(--color-text-muted); background: var(--color-surface-muted); }
 .status-badge[data-tone=success] { color: var(--color-success); background: color-mix(in srgb,var(--color-success) 10%,var(--color-surface)); }
 .status-badge[data-tone=warning] { color: var(--color-warning); background: color-mix(in srgb,var(--color-warning) 10%,var(--color-surface)); }

@@ -21,11 +21,11 @@
         <table class="data-table">
             <thead><tr>{% for key, label in [('name', 'Bezeichnung'), ('kind', 'Art'), ('category', 'Vorlage'), ('serial_number', 'Identifikation')] %}
                 <th scope="col" aria-sort="{{ ('ascending' if inventory.direction == 'asc' else 'descending') if inventory.sort == key else 'none' }}"><a href="{{ inventory_link(sort=key, direction='desc' if inventory.sort == key and inventory.direction == 'asc' else 'asc', page=1) }}">{{ label }} {% if inventory.sort == key %}{{ '↑' if inventory.direction == 'asc' else '↓' }}{% endif %}</a></th>{% endfor %}
-                <th scope="col">Standort</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Aktionen</span></th>
+                <th scope="col">Standort</th><th scope="col">Status</th>
             </tr></thead>
             <tbody>{% for row in inventory.rows %}
-            <tr data-preview-key="{{ row.kind }}-{{ row.id }}" data-preview="{{ {'name': row.name, 'kind': 'Gerät' if row.kind == 'device' else 'Komponente / Set', 'category': row.category, 'serial': row.serial_number, 'location': row.location, 'status': 'Ausgemustert' if row.retired else 'Im Bestand'} | tojson | forceescape }}"><td><a href="/inventory/{{ 'devices' if row.kind == 'device' else 'assets' }}/{{ row.id }}">{{ row.name }}</a></td><td>{{ 'Gerät' if row.kind == 'device' else 'Komponente / Set' }}</td><td>{{ row.category or 'Ohne Vorlage' }}</td><td>{{ row.serial_number or '—' }}</td><td>{{ row.location or 'Nicht festgelegt' }}</td><td><span class="status-badge">{{ 'Ausgemustert' if row.retired else 'Im Bestand' }}</span></td><td><button type="button" class="btn btn-secondary" data-open-preview aria-label="{{ row.name }} kurz ansehen">Vorschau</button> <a class="btn btn-secondary" aria-label="{{ row.name }} öffnen" href="/inventory/{{ 'devices' if row.kind == 'device' else 'assets' }}/{{ row.id }}">Öffnen</a></td></tr>
-            {% else %}<tr><td colspan="7"><div class="empty-state"><h2>Keine passenden Einträge</h2><p>Ändern Sie die Suche oder setzen Sie die Filter zurück.</p><a href="/inventory">Alle Einträge anzeigen</a></div></td></tr>{% endfor %}</tbody>
+            <tr data-preview-key="{{ row.kind }}-{{ row.id }}" data-preview="{{ {'name': row.name, 'kind': 'Gerät' if row.kind == 'device' else 'Komponente / Set', 'category': row.category, 'serial': row.serial_number, 'location': row.location, 'status': 'Ausgemustert' if row.retired else 'Im Bestand'} | tojson | forceescape }}"><td><a data-object-link href="/inventory/{{ 'devices' if row.kind == 'device' else 'assets' }}/{{ row.id }}">{{ row.name }}</a></td><td>{{ 'Gerät' if row.kind == 'device' else 'Komponente / Set' }}</td><td>{{ row.category or 'Ohne Vorlage' }}</td><td>{{ row.serial_number or '—' }}</td><td>{{ row.location or 'Nicht festgelegt' }}</td><td><span class="status-badge">{{ 'Ausgemustert' if row.retired else 'Im Bestand' }}</span></td></tr>
+            {% else %}<tr><td colspan="6"><div class="empty-state"><h2>Keine passenden Einträge</h2><p>Ändern Sie die Suche oder setzen Sie die Filter zurück.</p><a href="/inventory">Alle Einträge anzeigen</a></div></td></tr>{% endfor %}</tbody>
         </table>
     </div>
     <nav class="list-pagination" aria-label="Seiten im Bestand">
@@ -46,11 +46,11 @@
 </details>
 {% endblock %}
 {% block overlays %}
-<dialog class="quick-preview" aria-labelledby="preview-heading" data-inventory-preview>
+<dialog id="inventory-preview" class="quick-preview" aria-labelledby="preview-heading" data-inventory-preview>
     <header><h2 id="preview-heading">Kurzansicht</h2><button type="button" class="btn btn-secondary" data-close-preview autofocus>Schließen</button></header>
     <p class="list-summary">Die wichtigsten Angaben aus der aktuellen Bestandsliste.</p>
     <dl class="property-list" data-preview-fields></dl>
     <a class="btn btn-primary" data-preview-detail>Vollständige Details öffnen</a>
 </dialog>
 {% endblock %}
-{% block page_scripts %}<script src="/static/inventory-views.js?v=1"></script><script src="/static/inventory-preview.js?v=1"></script>{% endblock %}
+{% block page_scripts %}<script src="/static/inventory-views.js?v=1"></script><script src="/static/inventory-preview.js?v=2"></script>{% endblock %}

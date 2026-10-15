@@ -269,8 +269,10 @@ def test_inventory_preview_focus_escape_and_history(live_inventory, browser):
     page = context.new_page()
     sign_in(page, live_inventory)
     page.goto(live_inventory + '/inventory?q=QA-039')
-    trigger = page.get_by_role('button', name='Notebook 039 kurz ansehen', exact=True)
-    trigger.click()
+    trigger = page.get_by_role('link', name='Notebook 039', exact=True)
+    expect(page.locator('.data-table button')).to_have_count(0)
+    expect(page.get_by_role('link', name='Öffnen', exact=True)).to_have_count(0)
+    page.locator('[data-preview-key] td').nth(4).click()
     dialog = page.get_by_role('dialog', name='Kurzansicht')
     expect(dialog).to_be_visible()
     expect(dialog).to_contain_text('QA-039')
@@ -281,7 +283,8 @@ def test_inventory_preview_focus_escape_and_history(live_inventory, browser):
     page.keyboard.press('Escape')
     expect(dialog).not_to_be_visible()
     expect(trigger).to_be_focused()
-    trigger.click()
+    trigger.focus()
+    page.keyboard.press('Enter')
     page.go_back()
     expect(dialog).not_to_be_visible()
     page.go_forward()
@@ -292,6 +295,40 @@ def test_inventory_preview_focus_escape_and_history(live_inventory, browser):
     expect(page.locator('.object-summary')).to_contain_text('QA-039')
     page.go_back()
     expect(dialog).to_be_visible()
+    context.close()
+
+
+def test_inventory_modified_click_multi_tab_and_no_script_navigation(live_inventory, browser):
+    context = browser.new_context(viewport={'width': 1440, 'height': 900})
+    page = context.new_page()
+    sign_in(page, live_inventory)
+    page.goto(live_inventory + '/inventory?q=QA-039')
+    requests = []
+    context.on('request', lambda request: requests.append(request.url) if request.url.endswith('/api/customize') else None)
+    link = page.get_by_role('link', name='Notebook 039', exact=True)
+    for modifier in ('ctrlKey', 'metaKey'):
+        assert link.evaluate('''(link, modifier) => {
+            let blocked;
+            document.addEventListener('click', event => {
+                blocked = event.defaultPrevented; event.preventDefault();
+            }, {once:true});
+            link.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, [modifier]:true}));
+            return blocked;
+        }''', modifier) is False
+    # Follow the native link target in a second real tab. Cmd/middle-click popup
+    # events are unreliable in the macOS headless Chromium protocol; the handlers'
+    # default-prevention contract above is verified independently in both engines.
+    detail = context.new_page()
+    detail.goto(link.evaluate('link => link.href'))
+    expect(detail.locator('.object-summary')).to_contain_text('QA-039')
+    detail.wait_for_timeout(500)
+    assert len(requests) <= 3, 'Two tabs must not repeatedly refresh each other’s customization cache'
+    expect(page.locator('[data-inventory-preview]')).not_to_be_visible()
+    detail.close()
+    page.route('**/static/inventory-preview.js*', lambda route: route.abort())
+    page.reload()
+    page.get_by_role('link', name='Notebook 039', exact=True).click()
+    expect(page.locator('.object-summary')).to_contain_text('QA-039')
     context.close()
 
 
