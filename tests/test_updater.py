@@ -198,6 +198,7 @@ class InventoryUpdaterTestCase(unittest.TestCase):
             23 * 60 * 60 + 30 * 60,
         )
 
+    @patch.dict(os.environ, {"COMPOSE_PROJECT_NAME": "synthetic-qa"})
     def test_main_waits_for_the_maintenance_anchor_after_each_check(self):
         updater.atomic_write_json(updater.POLICY_PATH, {
             "schemaVersion": 1,

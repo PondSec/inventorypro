@@ -51,6 +51,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--legacy-manifest', type=Path, required=True)
     parser.add_argument('--modern-manifest', type=Path, required=True)
+    parser.add_argument('--local-baseline', action='store_true', help='Test a locally built installation with immutable local rollback')
     args = parser.parse_args()
     project = 'inventorypro-release-qa-' + secrets.token_hex(4)
     with tempfile.TemporaryDirectory(prefix=project) as temporary:
@@ -69,6 +70,11 @@ def main():
         command(['docker', 'run', '--rm', '--platform', 'linux/amd64', '--entrypoint', 'pip',
                  '-v', f'{dependencies}:/qa-dependencies',
                  LEGACY, 'install', '--disable-pip-version-check', '--target', '/qa-dependencies', 'openpyxl==3.1.5', 'et-xmlfile==2.0.0'])
+        baseline_image = LEGACY
+        if args.local_baseline:
+            baseline_image = project + ':local-baseline'
+            (fixture / 'Dockerfile').write_text(f'FROM {LEGACY}\nCOPY runtime/inventorypro /app/inventorypro\nCOPY runtime/migrations /app/migrations\nCOPY dependencies /usr/local/lib/python3.12/site-packages\nLABEL inventorypro.qa="local-baseline"\n')
+            command(['docker', 'build', '--platform', 'linux/amd64', '-t', baseline_image, str(fixture)])
         data = fixture / 'data'
         data.mkdir()
         compose_file = fixture / 'compose.json'
@@ -82,6 +88,9 @@ def main():
                                    'INVENTORY_INITIAL_ADMIN_PASSWORD': secrets.token_urlsafe(32)},
                    'volumes': [f'{data}:/data', f'{runtime / "inventorypro"}:/app/inventorypro:ro',
                                f'{runtime / "migrations"}:/app/migrations:ro', f'{dependencies}:/qa-dependencies:ro']}
+        if args.local_baseline:
+            service['volumes'] = [f'{data}:/data']
+            service['environment'].pop('PYTHONPATH', None)
         compose = {'name': project, 'services': {'app': service}}
         compose_file.write_text(json.dumps(compose))
         compose_file.chmod(0o600)
@@ -99,7 +108,7 @@ def main():
             module.PUBLIC_KEY_VALUE = ''
             module.HEALTH_TIMEOUT_SECONDS = 90
             module.HEALTH_POLL_SECONDS = 1
-        os.environ['INVENTORY_IMAGE'] = LEGACY
+        os.environ['INVENTORY_IMAGE'] = baseline_image
         try:
             command(old.compose_args('up', '-d', '--no-build'))
             port = command(old.compose_args('port', 'app', '5000')).split(':')[-1]
@@ -129,7 +138,7 @@ def main():
             modern.fetch_manifest = lambda _: modern_manifest
             # The release image must supply its own complete runtime package.
             service['volumes'] = [f'{data}:/data']
-            service['environment'].pop('PYTHONPATH')
+            service['environment'].pop('PYTHONPATH', None)
             compose_file.write_text(json.dumps(compose))
             def internal_health(module_source):
                 # Use the actual service network, as a real updater sidecar does.
@@ -150,7 +159,24 @@ def main():
                 return result.returncode == 0
             old.wait_for_health = lambda: internal_health(old_file)
             modern.wait_for_health = lambda: internal_health(ROOT / 'updater.py')
-            assert old.perform_update({'enabled': True}) == 'updated'
+            if args.local_baseline:
+                healthy = modern.wait_for_health
+                checks = []
+                def reject_local_upgrade_once():
+                    checks.append(True)
+                    if len(checks) == 1:
+                        return False
+                    return healthy()
+                modern.wait_for_health = reject_local_upgrade_once
+                assert modern.perform_update({'enabled': True}) == 'rolled_back'
+                assert modern.active_image_reference().startswith('sha256:')
+                print('PASS: locally built installation rolled back to its exact immutable local image.', flush=True)
+                modern.wait_for_health = healthy
+                # Backup folder names include seconds; avoid collision between immediate acceptance retries.
+                time.sleep(1.1)
+                assert modern.perform_update({'enabled': True}) == 'updated'
+            else:
+                assert old.perform_update({'enabled': True}) == 'updated'
             port = command(old.compose_args('port', 'app', '5000')).split(':')[-1]
             modern.HEALTH_URL = f'http://127.0.0.1:{port}/login'
             wait_health(modern.HEALTH_URL)
@@ -166,7 +192,7 @@ def main():
             container = old.active_container_id()
             version = command(['docker', 'exec', container, 'python', '-c', 'import os; print(os.environ["APP_VERSION"])'])
             assert version == legacy_manifest['version']
-            print('PASS: real legacy updater installed signed release, migrated schema, retained device fields/uploads and created backup.')
+            print('PASS: ' + ('new updater upgraded local installation' if args.local_baseline else 'real legacy updater installed signed release') + ', migrated schema, retained device fields/uploads and created backup.')
             # A newly installed updater uses GitLab and can restore an earlier GHCR app.
             # Force a post-migration health rejection, then use a real health check for rollback.
             modern.STATE_PATH.unlink()
@@ -189,9 +215,11 @@ def main():
                 assert db.execute('SELECT name,category_id,serial_number,specs FROM devices').fetchall() == original
                 assert not db.execute("SELECT name FROM sqlite_master WHERE name='qa_failed_migration'").fetchone()
                 assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
-            print('PASS: new updater used GitLab image; forced health failure restored prior schema/data and healthy GHCR image.')
+            print('PASS: new updater used GitLab image; forced health failure restored prior schema/data and healthy previous image.')
         finally:
             subprocess.run(old.compose_args('down', '--volumes', '--remove-orphans'), capture_output=True)
+            if args.local_baseline:
+                subprocess.run(['docker', 'image', 'rm', baseline_image], capture_output=True)
 
 
 if __name__ == '__main__':

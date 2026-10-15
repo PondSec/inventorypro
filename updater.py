@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import fcntl
+import http.client
 import json
 import logging
 import os
@@ -335,6 +336,11 @@ def active_image_reference() -> str:
         if any(normalized.startswith(f"{repository}@sha256:") for repository in
                {ALLOWED_IMAGE_REPOSITORY, "ghcr.io/pondsec/inventorypro"}):
             return normalized
+    # Locally built installations still have an immutable Docker content ID.
+    # Only the actually running image may become this rollback target; manifests
+    # continue to require a signed, allowlisted registry digest.
+    if not repo_digests.strip() and re.fullmatch(r"sha256:[a-f0-9]{64}", image_id):
+        return image_id
     raise UpdateError("Aktives Image hat keinen freigegebenen, wiederherstellbaren Digest.")
 
 
@@ -397,7 +403,7 @@ def wait_for_health() -> bool:
             with urllib.request.urlopen(request, timeout=5) as response:
                 if 200 <= response.status < 400:
                     return True
-        except (urllib.error.URLError, TimeoutError):
+        except (OSError, http.client.HTTPException):
             pass
         time.sleep(max(1, HEALTH_POLL_SECONDS))
     return False
@@ -411,7 +417,8 @@ def update_environment(image: str) -> dict[str, str]:
 
 def deploy_image(image: str) -> None:
     environment = update_environment(image)
-    command(compose_args("pull", APP_SERVICE), environment)
+    if not re.fullmatch(r"sha256:[a-f0-9]{64}", image):
+        command(compose_args("pull", APP_SERVICE), environment)
     command(compose_args("up", "--detach", "--no-deps", "--no-build", APP_SERVICE), environment)
 
 
@@ -496,8 +503,23 @@ def run_once(now: datetime | None = None) -> str:
     return perform_update(policy)
 
 
+def configure_compose_project():
+    project = os.environ.get("COMPOSE_PROJECT_NAME", "").strip()
+    if not project:
+        hostname = os.environ.get("HOSTNAME", "")
+        if not re.fullmatch(r"[a-f0-9]{12,64}", hostname):
+            raise UpdateError("Compose-Projektname fehlt; COMPOSE_PROJECT_NAME konfigurieren.")
+        project = command(["docker", "inspect", "--format",
+                           '{{index .Config.Labels "com.docker.compose.project"}}', hostname])
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", project):
+        raise UpdateError("Kein gültiger Compose-Projektname am Updater gefunden.")
+    os.environ["COMPOSE_PROJECT_NAME"] = project
+    LOGGER.info("Updater verwendet Compose-Projekt %s", project)
+
+
 def main() -> int:
     configure_logging()
+    configure_compose_project()
     LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
     with LOCK_PATH.open("a+", encoding="utf-8") as lock_file:
         try:
