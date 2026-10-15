@@ -44,6 +44,9 @@
                     {% if 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}
                     {{ render_nav_link('/?view=taxonomy', 'Vorlagen und Felder', 'layers', current_path == '/' and inventory_view == 'taxonomy') }}
                     {% endif %}
+                    {% if 'assets.view' in permissions or 'assets.manage' in permissions %}
+                    {{ render_nav_link('/inventory/planning', 'Lager- und Platzplanung', 'package', current_path == '/inventory/planning') }}
+                    {% endif %}
                     {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
                     {{ render_nav_link('/locations', 'Standorte', 'map-pin', current_path == '/locations') }}
                     {% endif %}

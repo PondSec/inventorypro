@@ -1,0 +1,54 @@
+{% extends 'base_app.html' %}
+{% set page_title = 'Lager- und Platzplanung' %}
+{% set page_section_label = 'Inventar' %}
+{% set hide_page_intro = true %}
+{% block title %}Lager- und Platzplanung | Inventory Pro{% endblock %}
+{% block html_attrs %}x-data="storagePlanning()"{% endblock %}
+{% block content %}
+<ol class="wizard-steps" aria-label="Einrichtungsschritte"><template x-for="(label,index) in labels" :key="index"><li :aria-current="step===index+1 ? 'step' : null"><span x-text="index+1"></span><strong x-text="label"></strong></li></template></ol>
+<section class="workspace-panel" x-cloak @input="changed=true">
+    <h2 class="wizard-heading" tabindex="-1" x-ref="stepHeading" x-text="labels[step-1]"></h2>
+    <div role="alert" class="form-error" x-show="error"><p x-text="error"></p></div>
+    <section x-show="step===1">
+        <p>Wählen Sie einen vorhandenen Behälter oder benennen Sie einen Lagerplatz für eine neue Planung.</p>
+        <label class="detail-form">Lagerplatz oder Behälter<input class="input" x-model="containerName" @input="containerId=null" placeholder="z. B. Regal A · Fach 3"></label>
+    </section>
+    <section x-show="step===1 || step===3" class="planning-selection">
+        <div class="list-toolbar"><label class="grow">Inventareinträge suchen<input class="input" type="search" x-model="query" @input.debounce.250ms="search()" placeholder="Name oder Vorlage"></label><button class="btn btn-secondary" type="button" @click="search()">Suchen</button></div>
+        <p x-show="loading" role="status">Einträge werden geladen …</p>
+        <div class="picker-results"><template x-for="asset in options" :key="asset.id"><div class="picker-result"><span class="grow"><strong x-text="asset.name"></strong><small x-text="asset.category || 'Ohne Vorlage'"></small></span><button class="btn btn-secondary" type="button" x-show="step===1" @click="chooseContainer(asset)">Als Behälter wählen</button><button class="btn btn-secondary" type="button" x-show="step===3" :disabled="asset.id===containerId || items.some(item=>item.id===asset.id)" @click="addItem(asset)">Hinzufügen</button></div></template></div>
+        <p x-show="!loading && !options.length">Keine passenden Inventareinträge vorhanden.</p>
+        <nav class="list-pagination" aria-label="Inventareinträge auswählen"><button class="btn btn-secondary" type="button" @click="search(page-1)" :disabled="page<=1">Zurückblättern</button><span x-text="`Seite ${page} von ${pages}`"></span><button class="btn btn-secondary" type="button" @click="search(page+1)" :disabled="page>=pages">Weiterblättern</button></nav>
+    </section>
+    <section x-show="step===2">
+        <p>Geeignete vorhandene Maße werden automatisch übernommen. Prüfen Sie die nutzbaren Innenmaße. Werte ohne hinterlegte Einheit werden zunächst als Millimeter angezeigt.</p>
+        <label class="detail-form">Maßeinheit<select class="input" x-model="unit" @change="changeUnit()"><option value="mm">Millimeter (mm)</option><option value="cm">Zentimeter (cm)</option><option value="m">Meter (m)</option><option value="in">Zoll (in)</option></select></label>
+        <div class="dimension-grid"><template x-for="axis in axes" :key="axis.key"><label><span x-text="`${axis.label} (${unit})`"></span><input class="input" type="number" min="0.001" step="any" x-model="container[axis.key]" :aria-label="`Behälter ${axis.label}`"></label></template></div>
+        <template x-for="warning in containerWarnings" :key="warning"><p class="form-error" x-text="warning"></p></template>
+        <details class="optional-fields" x-show="containerFields.length"><summary>Andere vorhandene Maßfelder verwenden</summary><div class="dimension-grid"><template x-for="axis in axes" :key="axis.key"><label><span x-text="axis.label"></span><select class="input" @change="applyField(axis.key,$event.target.value)"><option value="">Feld wählen</option><template x-for="field in containerFields" :key="field.name"><option :value="field.name" x-text="`${field.name} (${field.unit})`"></option></template></select></label></template></div></details>
+    </section>
+    <section x-show="step===3">
+        <h3>Ausgewählte Gegenstände</h3><p>Abmessungen in <strong x-text="unit"></strong>. Mengen beschreiben diese Planung; Zuordnungen im Inventar bleiben unverändert.</p>
+        <template x-for="item in items" :key="item.id"><fieldset class="planning-item"><legend x-text="item.name"></legend><div class="dimension-grid"><template x-for="axis in axes" :key="axis.key"><label><span x-text="axis.label"></span><input class="input" type="number" min="0.001" step="any" x-model="item.dimensions[axis.key]" :aria-label="`${item.name} ${axis.label}`"></label></template><label>Menge<input class="input" type="number" min="1" max="200" step="1" x-model.number="item.quantity" :aria-label="`${item.name} Menge`"></label></div><button class="btn btn-secondary" type="button" @click="removeItem(item.id)">Entfernen</button></fieldset></template>
+        <p x-show="!items.length">Noch keine Gegenstände ausgewählt.</p>
+    </section>
+    <section x-show="step===4">
+        <p>Der Packvorschlag berücksichtigt Abmessungen und Abstände. Gewicht, Schwerpunkt, Tragfähigkeit und Handhabung müssen zusätzlich geprüft werden.</p>
+        <label class="selection-filter"><input type="checkbox" x-model="allowRotation"> Gegenstände dürfen gedreht werden</label>
+        <div class="dimension-grid"><label>Wandabstand (<span x-text="unit"></span>)<input class="input" type="number" min="0" step="any" x-model="clearance" aria-label="Wandabstand"></label><label>Abstand zwischen Gegenständen (<span x-text="unit"></span>)<input class="input" type="number" min="0" step="any" x-model="gap" aria-label="Abstand zwischen Gegenständen"></label></div>
+    </section>
+    <section x-show="step===5 && preview">
+        <p class="planning-result" role="status"><strong x-text="preview?.placed_count"></strong> von <strong x-text="preview?.total_count"></strong> Stück eingeplant.</p>
+        <p x-text="preview?.message"></p>
+        <label class="detail-form">Ebene in der Draufsicht<select class="input" x-model.number="layerIndex"><template x-for="(layer,index) in (preview?.layers || [])" :key="index"><option :value="index" x-text="`Ebene ${index+1} · Höhe ${layer.z} mm`"></option></template></select></label>
+        <div class="packing-top-view" :style="previewStyle()" role="img" aria-label="Draufsicht auf die gewählte Packebene; die Packliste darunter enthält alle Maße"><template x-for="(placement,index) in layerItems()" :key="index"><div :style="boxStyle(placement)" :title="placement.asset_name"><span x-text="placement.step"></span></div></template></div>
+        <div class="data-table-scroll"><table class="data-table"><caption>Packliste · alle Koordinaten und Maße in Millimetern</caption><thead><tr><th>Schritt</th><th>Gegenstand</th><th>Position X / Y / Z</th><th>Breite × Höhe × Tiefe</th><th>Bereich</th></tr></thead><tbody><template x-for="(placement,index) in (preview?.placements || [])" :key="index"><tr><td x-text="placement.step"></td><td x-text="placement.asset_name"></td><td x-text="`${placement.x} / ${placement.y} / ${placement.z}`"></td><td x-text="`${placement.width} × ${placement.height} × ${placement.depth}`"></td><td x-text="placement.zone_label"></td></tr></template></tbody></table></div>
+        <section x-show="preview?.unplaced_count"><h3>Nicht eingeplant</h3><ul><template x-for="(item,index) in (preview?.unplaced_assets || [])" :key="index"><li x-text="item.name"></li></template></ul><p>Das Verfahren hat dafür keine Platzierung gefunden. Andere Anordnungen können möglich sein.</p></section>
+        {% if 'assets.manage' in permissions or is_superuser %}<div class="list-toolbar"><label class="grow">Planname<input class="input" x-model="planName" maxlength="120" placeholder="Packplan benennen"></label><button class="btn btn-primary" type="button" @click="save()" :disabled="busy || !!savedId">Plan speichern</button></div>{% endif %}
+        <p x-show="savedId" role="status">Plan gespeichert. Die bestehende 3D-Ansicht ist optional verfügbar.</p><button class="btn btn-secondary" type="button" x-show="savedId" @click="open3d()">3D-Ansicht öffnen</button>
+    </section>
+    <footer class="wizard-actions"><button class="btn btn-secondary" type="button" x-show="step>1" :disabled="busy" @click="step--; error=''">Vorheriger Schritt</button><button class="btn btn-primary" type="button" x-show="step<5" :disabled="busy" @click="next()" x-text="busy ? 'Wird berechnet …' : (step===4 ? 'Packliste berechnen' : 'Nächster Schritt')"></button></footer>
+</section>
+<details class="workspace-panel"><summary>Gespeicherte Pläne (letzte 50)</summary><ul class="task-list"><template x-for="plan in savedPlans" :key="plan.id"><li><button class="btn btn-secondary" type="button" @click="openSaved(plan.id)" x-text="plan.name"></button></li></template></ul><p x-show="!savedPlans.length">Noch keine Pläne gespeichert.</p></details>
+{% endblock %}
+{% block page_scripts %}<script src="/static/storage-planning.js?v=1"></script>{% endblock %}

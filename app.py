@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import sqlite3
 import json
+import math
 import hashlib
 from datetime import datetime, timedelta
 from functools import wraps
@@ -40,6 +41,7 @@ from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
 import smtplib
 
+from inventorypro.domains.planning.routes import build_planning_blueprint
 from inventorypro.domains.inventory.routes import build_inventory_blueprint
 from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
 from inventorypro.config import resolve_application_secret
@@ -7539,12 +7541,14 @@ def parse_numeric_dimension(specs, field_name):
     raw_value = specs_object.get(field_name)
     if isinstance(raw_value, str):
         raw_value = raw_value.replace(",", ".").strip()
-    return parse_float(raw_value)
+    return None if isinstance(raw_value, bool) else parse_float(raw_value)
 
 def resolve_dimension_triplet(specs, mapping, clearance=0):
     values = {}
     missing_fields = []
     invalid_fields = []
+    if not isinstance(clearance, (int, float)) or not math.isfinite(clearance) or clearance < 0:
+        return {}, [], [{"axis": "clearance", "field": "clearance", "value": "invalid"}]
 
     for axis in BINPACKING_DIMENSIONS:
         field_name = str((mapping or {}).get(axis) or "").strip()
@@ -7556,7 +7560,7 @@ def resolve_dimension_triplet(specs, mapping, clearance=0):
         if parsed_value is None:
             missing_fields.append({"axis": axis, "field": field_name})
             continue
-        if parsed_value <= 0:
+        if not math.isfinite(parsed_value) or parsed_value <= 0:
             invalid_fields.append({"axis": axis, "field": field_name, "value": parsed_value})
             continue
         values[axis] = parsed_value
@@ -8064,7 +8068,7 @@ def build_asset_binpacking_preview(db, asset):
         else:
             message = (
                 f"{len(placements)} von {len(items)} Inhalten wurden eingeplant. "
-                "Die Restliste zeigt, was nicht in dieses Storage-Asset passt."
+                "Die Restliste zeigt, was in diesem Vorschlag noch nicht platziert wurde."
             )
 
     return {
@@ -15694,6 +15698,11 @@ build_inventory_link_static_headers = INVENTORY_LINK_SESSION_SERVICE.build_stati
 perform_inventory_link_test = INVENTORY_LINK_SESSION_SERVICE.perform_test
 InventoryLinkConnectionError = InventoryLinkServiceConnectionError
 InventoryLinkNoRedirect = InventoryLinkServiceNoRedirect
+
+app.register_blueprint(build_planning_blueprint(
+    get_db=get_db, user_can=user_can, get_access=get_user_access, login_required=login_required,
+    pack=pack_assets_into_storage, build_layers=build_binpacking_layers, enrich_layers=enrich_binpacking_layers, log_activity=log_activity,
+))
 
 app.register_blueprint(build_inventory_blueprint(
     get_db=get_db, user_can=user_can, get_access=get_user_access,

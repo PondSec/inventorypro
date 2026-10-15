@@ -268,6 +268,15 @@ document.addEventListener('alpine:init', () => {
             const intent = new URLSearchParams(location.search);
             const deviceId = Number(intent.get('edit_device') || intent.get('manage_device'));
             const assetId = Number(intent.get('edit_asset') || intent.get('manage_asset'));
+            const planId = Number(intent.get('preview_plan'));
+            if (Number.isSafeInteger(planId) && planId > 0 && this.can('assets.view')) {
+                const response = await fetch(`/api/planning/plans/${planId}`);
+                if (response.ok) {
+                    const plan = await response.json();
+                    this.selectedAsset = { id: null, name: plan.name, binpacking: plan.preview };
+                    this.openBinpackingPreview(this.selectedAsset);
+                }
+            }
             if (intent.get('create') === 'device' && this.can('devices.manage')) this.openAddDeviceModal();
             if (Number.isSafeInteger(deviceId) && deviceId > 0) {
                 const device = this.devices.find(item => item.id === deviceId);

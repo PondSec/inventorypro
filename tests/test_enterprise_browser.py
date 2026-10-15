@@ -183,3 +183,42 @@ def test_device_selection_is_searchable_paginated_and_visible(live_inventory,bro
     picker.get_by_role('searchbox').fill('QA-001')
     expect(picker.get_by_role('button',name='Notebook 039 aus Auswahl entfernen')).to_be_visible()
     context.close()
+
+
+def test_storage_wizard_reuses_dimensions_saves_and_opens_existing_3d(live_inventory,browser,isolated_inventory,tmp_path):
+    import json
+    import app as inventory_app
+    with isolated_inventory.app_context():
+        db=inventory_app.get_db()
+        fields={name:{'type':'number','unit':'cm'} for name in ['Breite','Höhe','Tiefe']}
+        category=db.execute('INSERT INTO asset_categories(name,fields) VALUES (?,?)',('Planning QA',json.dumps(fields))).lastrowid
+        for name,value in [('QA Container',10),('QA Box',2)]:
+            db.execute('INSERT INTO assets(name,category_id,specs) VALUES (?,?,?)',(name,category,json.dumps({axis:value for axis in fields})))
+        db.commit()
+    context=browser.new_context(viewport={'width':1280,'height':1000},reduced_motion='reduce')
+    page=context.new_page()
+    sign_in(page,live_inventory)
+    page.goto(live_inventory+'/inventory/planning')
+    page.get_by_role('searchbox',name='Inventareinträge suchen').fill('QA Container')
+    page.locator('.picker-result').filter(has_text='QA Container').get_by_role('button',name='Als Behälter wählen').click()
+    page.get_by_role('button',name='Nächster Schritt').click()
+    expect(page.get_by_label('Behälter Breite',exact=True)).to_have_value('100')
+    expect(page.get_by_label('Behälter Höhe',exact=True)).to_have_value('100')
+    page.get_by_role('button',name='Nächster Schritt').click()
+    page.get_by_role('searchbox',name='Inventareinträge suchen').fill('QA Box')
+    page.locator('.picker-result').filter(has_text='QA Box').get_by_role('button',name='Hinzufügen').click()
+    expect(page.get_by_label('QA Box Breite',exact=True)).to_have_value('20')
+    page.get_by_role('button',name='Nächster Schritt').click()
+    page.get_by_label('Wandabstand',exact=True).fill('2')
+    page.get_by_label('Abstand zwischen Gegenständen',exact=True).fill('3')
+    page.get_by_role('button',name='Packliste berechnen').click()
+    expect(page.locator('.planning-result')).to_contain_text('1 von 1 Stück eingeplant.')
+    page.get_by_label('Planname',exact=True).fill('Browser QA plan')
+    with page.expect_response(lambda response:response.url.endswith('/api/planning/plans') and response.request.method=='POST') as saved:
+        page.get_by_role('button',name='Plan speichern',exact=True).click()
+    assert saved.value.status==201,saved.value.text()
+    page.screenshot(path=str(tmp_path/'planning-packlist.png'),full_page=True)
+    page.get_by_role('button',name='3D-Ansicht öffnen',exact=True).click()
+    expect(page.locator('.binpacking-modal-panel')).to_be_visible(timeout=15000)
+    page.screenshot(path=str(tmp_path/'planning-3d.png'))
+    context.close()
