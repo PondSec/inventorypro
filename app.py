@@ -49,6 +49,8 @@ from inventorypro.domains.catalog.matching import sync_object as sync_product_ob
 from inventorypro.domains.inventory.routes import build_inventory_blueprint
 from inventorypro.domains.inventory.asset_routes import build_assets_blueprint
 from inventorypro.domains.inventory.category_routes import build_category_blueprint
+from inventorypro.domains.inventory import assets as canonical_assets
+from inventorypro.domains.inventory.ticket_assets import normalize_links as normalize_ticket_asset_links
 from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
@@ -8258,6 +8260,20 @@ def build_asset_summary(db, asset_row, device_rows=None):
 
 def build_asset_summaries(db, asset_rows):
     rows = list(asset_rows)
+    if canonical_assets.unified(db):
+        from inventorypro.domains.inventory.unified_list import source
+        sql=source(devices_allowed=user_can('devices.view') or user_can('devices.manage'),assets_allowed=user_can('assets.view') or user_can('assets.manage'))
+        visible={row['id']:dict(row) for row in db.execute(sql+'SELECT id,location FROM inventory')}
+        summaries=[]
+        for row in rows:
+            if row['id'] not in visible:continue
+            asset=canonical_assets.get_asset(db,user_can,row['id'])
+            serials=sorted({item['serial_number'] for item in [asset,*asset['components']] if item.get('serial_number')})
+            summaries.append({**dict(row),'specs':asset['specs'],'serial_numbers':serials,
+                'locations':[visible[row['id']]['location']] if visible[row['id']]['location'] else [],
+                'manufacturer':extract_manufacturer(asset['specs']),'category_name':asset.get('category'),
+                'warranty_status':warranty_status(asset.get('warranty_end'))})
+        return summaries
     device_rows_by_asset = get_assets_devices_info(
         db,
         [row["id"] for row in rows],
@@ -11772,7 +11788,10 @@ def tickets():
             resolution_notes = ''
         tags = json.dumps(data.get('tags') or [])
         custom_fields = json.dumps(data.get('custom_fields') or [])
-        asset_ids = data.get('asset_ids') or []
+        asset_ids = data.get('asset_ids',[])
+        if asset_ids is None:asset_ids=[]
+        try:asset_ids=normalize_ticket_asset_links(db,user_can,asset_ids)
+        except canonical_assets.AssetError as error:return jsonify(error=str(error)),error.status
         resolved_at = utc_now().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
         field_errors = {}
         if not title:
@@ -12226,8 +12245,23 @@ def search_ticket_assets():
     page = max(1, request.args.get('page', 1, type=int))
     per_page = min(50, max(10, request.args.get('per_page', 20, type=int)))
     filters, params = [], []
+    if canonical_assets.unified(db):
+        predicate,scope_args=canonical_assets.scope_predicate(user_can)
+        filters.append(predicate);params.extend(scope_args)
     if search:
-        filters.append('''(
+        if canonical_assets.unified(db):
+            child_scope,child_args=canonical_assets.scope_predicate(user_can,alias='child')
+            filters.append(f'''(a.name LIKE ? OR a.specs LIKE ? OR a.serial_number LIKE ?
+                OR EXISTS (SELECT 1 FROM locations l WHERE l.id=a.location_id AND l.name LIKE ?)
+                OR EXISTS (WITH RECURSIVE contents(id) AS (
+                    SELECT child_asset_id FROM asset_components WHERE parent_asset_id=a.id
+                    UNION SELECT c.child_asset_id FROM asset_components c JOIN contents p ON c.parent_asset_id=p.id)
+                    SELECT 1 FROM contents JOIN assets child ON child.id=contents.id
+                    LEFT JOIN locations l ON l.id=child.location_id
+                    WHERE {child_scope} AND (child.name LIKE ? OR child.serial_number LIKE ? OR l.name LIKE ?)))''')
+            params.extend([f'%{search}%']*4+child_args+[f'%{search}%']*3)
+        else:
+            filters.append('''(
             a.name LIKE ? OR a.specs LIKE ? OR EXISTS (
                 SELECT 1
                 FROM asset_devices ad
@@ -12237,7 +12271,7 @@ def search_ticket_assets():
                   AND (d.name LIKE ? OR d.serial_number LIKE ? OR l.name LIKE ?)
             )
         )''')
-        params.extend([f'%{search}%'] * 5)
+            params.extend([f'%{search}%'] * 5)
     where_clause = (' WHERE ' + ' AND '.join(filters)) if filters else ''
     base = '''
         FROM assets a
@@ -12561,6 +12595,8 @@ def ticket_detail(ticket_id):
             ).fetchall()
         ]
         if asset_ids is not None:
+            try:asset_ids=normalize_ticket_asset_links(db,user_can,asset_ids,existing=previous_asset_ids)
+            except canonical_assets.AssetError as error:return jsonify(error=str(error)),error.status
             normalized_asset_ids = sorted({
                 asset_id
                 for asset_id in (normalize_optional_int(value) for value in asset_ids)
