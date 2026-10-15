@@ -1,55 +1,87 @@
 {% extends 'base_app.html' %}
-{% set page_title = 'Gesamter Bestand' %}
+{% from '_ui.html' import icon, thumbnail, status, kpi_tile with context %}
+{% set page_title = 'Inventar' %}
 {% set page_section_label = 'Inventar' %}
-{% set hide_page_intro = true %}
-{% block title %}Gesamter Bestand | Inventory Pro{% endblock %}
-{% block topbar_actions %}{% if 'devices.manage' in permissions or is_superuser %}<a class="btn btn-primary" href="/inventory/new">Erfassen</a>{% endif %}{% endblock %}
+{% set page_description = 'Verwalten Sie Geräte, Komponenten und IT-Assets zentral an einem Ort.' %}
+{% set page_breadcrumbs = [{'label':'Inventar','href':'/inventory'}, {'label':'Geräte' if inventory.kind == 'device' else 'Sets & Zubehör' if inventory.kind == 'asset' else 'Übersicht'}] %}
+{% block title %}Inventar | Inventory Pro{% endblock %}
+{% block page_class %} stock-workspace-page{% endblock %}
+{% block app_content_class %} stock-content{% endblock %}
+{% block topbar_actions %}{{ super() }}{% endblock %}
 {% block content %}
-<section class="workspace-panel" aria-label="Bestand durchsuchen">
-    <form method="get" class="list-toolbar" role="search">
-        <label class="grow">Suche<input class="input" type="search" name="q" value="{{ inventory.q }}" placeholder="Name, Nummer, Vorlage oder Standort"></label>
-        <label>Einträge<select class="input" name="kind"><option value="">Alle</option>{% if can_devices %}<option value="device" {{ 'selected' if inventory.kind == 'device' }}>Geräte</option>{% endif %}{% if can_assets %}<option value="asset" {{ 'selected' if inventory.kind == 'asset' }}>Komponenten und Sets</option>{% endif %}</select></label>
-        <label>Arbeitsliste<select class="input" name="filter">
-            {% for value, label in [('', 'Gesamter Bestand'), ('missing_identity', 'Unvollständige Geräte'), ('missing_location', 'Ohne Standort'), ('missing_serial', 'Ohne Identifikationsnummer'), ('maintenance', 'Offene Wartung'), ('overdue_maintenance', 'Überfällige Wartung'), ('missing_lifecycle', 'Fehlende Lifecycle-Daten'), ('uncategorized', 'Ohne Vorlage')] %}
-            <option value="{{ value }}" {{ 'selected' if inventory.filter == value }}>{{ label }}</option>{% endfor %}
-        </select></label>
-        <input type="hidden" name="sort" value="{{ inventory.sort }}"><input type="hidden" name="direction" value="{{ inventory.direction }}">
-        <button class="btn btn-primary" type="submit">Anwenden</button><a class="btn btn-secondary" href="/inventory">Zurücksetzen</a>
-    </form>
-    <div class="list-summary" role="status">{{ inventory.total }} Einträge{% if inventory.q %} für „{{ inventory.q }}“{% endif %}</div>
-    <div class="data-table-scroll" tabindex="0" aria-label="Bestandstabelle, horizontal scrollbar">
-        <table class="data-table">
-            <thead><tr>{% for key, label in [('name', 'Bezeichnung'), ('kind', 'Art'), ('category', 'Vorlage'), ('serial_number', 'Identifikation')] %}
-                <th scope="col" aria-sort="{{ ('ascending' if inventory.direction == 'asc' else 'descending') if inventory.sort == key else 'none' }}"><a href="{{ inventory_link(sort=key, direction='desc' if inventory.sort == key and inventory.direction == 'asc' else 'asc', page=1) }}">{{ label }} {% if inventory.sort == key %}{{ '↑' if inventory.direction == 'asc' else '↓' }}{% endif %}</a></th>{% endfor %}
-                <th scope="col">Standort</th><th scope="col">Status</th>
+<div class="kpi-grid" aria-label="Bestandskennzahlen">
+    {{ kpi_tile('Gesamtbestand',inventory.summary.total,'box','Alle sichtbaren Kategorien','/inventory') }}
+    {% if can_assets %}{{ kpi_tile('Zugewiesen',inventory.summary.assigned,'users','Geräte und Sets','/inventory?assigned=yes') }}{% endif %}
+    {% if can_maintenance %}{{ kpi_tile('Wartung fällig',inventory.summary.maintenance,'tool','Bis in 30 Tagen, inklusive überfällig','/inventory?kind=device&filter=due_maintenance','danger' if inventory.summary.maintenance else 'neutral') }}{% endif %}
+    {{ kpi_tile('Unvollständig',inventory.summary.incomplete,'file-text','Fehlende Inventar- oder Lifecycle-Daten','/inventory?filter=incomplete') }}
+</div>
+<div class="inventory-viewbar">
+    <nav class="workspace-tabs" aria-label="Inventaransichten">
+        <a href="/inventory" {% if not inventory.kind %}aria-current="page"{% endif %}>Bestand</a>
+        {% if can_devices %}<a href="/inventory?kind=device" {% if inventory.kind == 'device' %}aria-current="page"{% endif %}>Geräte</a>{% endif %}
+        {% if can_assets %}<a href="/inventory?kind=asset" {% if inventory.kind == 'asset' %}aria-current="page"{% endif %}>Sets & Zubehör</a>{% endif %}
+        {% if is_superuser or 'locations.view' in permissions or 'locations.manage' in permissions %}<a href="/locations">Standorte</a>{% endif %}
+        {% if is_superuser or 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}<a href="/?view=taxonomy">Vorlagen</a>{% endif %}
+    </nav>
+    <div class="inventory-actions">{% if can_export %}<a class="btn btn-secondary" href="{{ inventory_link() | replace('/inventory?', '/inventory/export?') }}" data-inventory-export>{{ icon('download') }}Exportieren</a>{% endif %}{% if 'devices.manage' in permissions or is_superuser %}<a class="btn btn-primary" href="/inventory/new">{{ icon('plus') }}Gerät hinzufügen</a>{% endif %}</div>
+</div>
+<section class="inventory-workspace" aria-label="Bestand durchsuchen">
+    <div class="inventory-filterbar">
+        <form id="inventory-filters" method="get" class="inventory-filters" role="search" aria-label="Bestandsfilter" data-inventory-filters>
+            <label class="filter-search">{{ icon('search') }}<span class="sr-only">Bestand durchsuchen</span><input type="search" name="q" value="{{ inventory.q }}" placeholder="Geräte, Seriennummern, Standort oder Person suchen …"></label>
+            <label class="filter-select">{{ icon('filter') }}<span class="sr-only">Kategorie</span><select name="category" aria-label="Kategorie"><option value="">Kategorie</option>{% for category in inventory.categories %}<option value="{{ category.kind }}:{{ category.id }}" {{ 'selected' if inventory.category == category.kind ~ ':' ~ category.id }}>{{ category.name or 'Ohne Vorlage' }}</option>{% endfor %}</select></label>
+            <label class="filter-select">{{ icon('map-pin') }}<span class="sr-only">Standort</span><select name="location" aria-label="Standort"><option value="">Standort</option>{% for site in inventory.locations %}<option value="{{ site.id }}" {{ 'selected' if inventory.location == site.id }}>{{ site.name }}</option>{% endfor %}</select></label>
+            <label class="filter-select">{{ icon('list') }}<span class="sr-only">Status</span><select name="filter" aria-label="Status"><option value="">Status</option>{% for value,label in [('active','Im Bestand'),('retired','Ausgemustert'),('incomplete','Unvollständig'),('missing_identity','Unvollständige Geräte'),('missing_location','Ohne Standort'),('missing_serial','Ohne Identifikationsnummer'),('missing_lifecycle','Fehlende Lifecycle-Daten'),('uncategorized','Ohne Vorlage')] %}<option value="{{ value }}" {{ 'selected' if inventory.filter == value }}>{{ label }}</option>{% endfor %}{% if can_maintenance %}{% for value,label in [('due_maintenance','Wartung fällig'),('maintenance','Offene Wartung'),('overdue_maintenance','Überfällige Wartung')] %}<option value="{{ value }}" {{ 'selected' if inventory.filter == value }}>{{ label }}</option>{% endfor %}{% endif %}</select></label>
+            {% if can_assets %}<label class="filter-select">{{ icon('users') }}<span class="sr-only">Zugewiesen an</span><select name="assigned" aria-label="Zugewiesen an"><option value="">Zugewiesen an</option><option value="yes" {{ 'selected' if inventory.assigned == 'yes' }}>Zugewiesen</option><option value="no" {{ 'selected' if inventory.assigned == 'no' }}>Nicht zugewiesen</option></select></label>{% endif %}
+            <input type="hidden" name="sort" value="{{ inventory.sort }}"><input type="hidden" name="direction" value="{{ inventory.direction }}">
+            <button class="btn btn-primary filter-apply" type="submit">Anwenden</button>
+        </form>
+        <details class="inventory-more" data-filter-menu>
+            <summary class="btn btn-secondary">{{ icon('sliders') }}Mehr Filter</summary>
+            <div class="filter-popover">
+                <h2>Ansicht und Filter</h2>
+                <label class="form-label">Einträge<select form="inventory-filters" name="kind" aria-label="Einträge" data-kind-filter><option value="">Alle</option>{% if can_devices %}<option value="device" {{ 'selected' if inventory.kind == 'device' }}>Geräte</option>{% endif %}{% if can_assets %}<option value="asset" {{ 'selected' if inventory.kind == 'asset' }}>Sets & Zubehör</option>{% endif %}</select></label>
+                <a class="btn btn-secondary" href="/inventory">Filter zurücksetzen</a>
+                <details data-saved-views><summary>Gespeicherte Ansichten</summary><p class="list-summary">Für dieses Konto in diesem Browser speichern.</p><form class="detail-form" data-save-view><label>Name der Ansicht<input class="input" name="view_name" maxlength="60" required autocomplete="off" placeholder="Zum Beispiel: Geräte ohne Standort"></label><button class="btn btn-secondary" type="submit">Aktuelle Ansicht speichern</button></form><p role="status" data-view-status></p><ul class="saved-view-list" data-view-list></ul></details>
+            </div>
+        </details>
+    </div>
+    {% if inventory.q or inventory.filter or inventory.category or inventory.location or inventory.assigned %}<div class="active-filters"><span>{{ inventory.total }} Treffer{% if inventory.q %} für „{{ inventory.q }}“{% endif %}</span><a href="{{ inventory_link(q='',filter='',category='',location='',assigned='',page=1) }}">Filter zurücksetzen {{ icon('x') }}</a></div>{% endif %}
+    {% if can_export %}<div class="selection-toolbar" data-selection-toolbar hidden><span role="status" data-selection-count></span><a class="btn btn-secondary" data-selection-export>Auswahl exportieren</a><button type="button" class="btn btn-secondary" data-clear-selection>Auswahl aufheben</button></div>{% endif %}
+    <div class="data-table-scroll inventory-table-scroll" tabindex="0" aria-label="Bestandstabelle, scrollbar">
+        <table class="data-table inventory-table">
+            <thead><tr>{% if can_export %}<th class="selection-column"><input type="checkbox" data-select-all aria-label="Alle Einträge dieser Seite auswählen"></th>{% endif %}
+                {% for key,label in [('name','Name'),('category','Typ'),('location','Standort')] %}<th scope="col" aria-sort="{{ ('ascending' if inventory.direction == 'asc' else 'descending') if inventory.sort == key else 'none' }}"><a href="{{ inventory_link(sort=key,direction='desc' if inventory.sort == key and inventory.direction == 'asc' else 'asc',page=1) }}">{{ label }}{% if inventory.sort == key %} {{ '↑' if inventory.direction == 'asc' else '↓' }}{% endif %}</a></th>{% endfor %}
+                {% if can_assets %}<th scope="col"><a href="{{ inventory_link(sort='assigned_to',direction='desc' if inventory.sort == 'assigned_to' and inventory.direction == 'asc' else 'asc',page=1) }}">Zugewiesen an</a></th>{% endif %}<th scope="col">Status</th><th scope="col"><a href="{{ inventory_link(sort='updated_at',direction='desc' if inventory.sort != 'updated_at' or inventory.direction == 'asc' else 'asc',page=1) }}">Letzte Änderung</a></th><th class="row-actions-column"><span class="sr-only">Aktionen</span></th>
             </tr></thead>
             <tbody>{% for row in inventory.rows %}
-            <tr data-preview-key="{{ row.kind }}-{{ row.id }}" data-preview="{{ {'name': row.name, 'kind': 'Gerät' if row.kind == 'device' else 'Komponente / Set', 'category': row.category, 'serial': row.serial_number, 'location': row.location, 'status': 'Ausgemustert' if row.retired else 'Im Bestand'} | tojson | forceescape }}"><td><a data-object-link href="/inventory/{{ 'devices' if row.kind == 'device' else 'assets' }}/{{ row.id }}">{{ row.name }}</a></td><td>{{ 'Gerät' if row.kind == 'device' else 'Komponente / Set' }}</td><td>{{ row.category or 'Ohne Vorlage' }}</td><td>{{ row.serial_number or '—' }}</td><td>{{ row.location or 'Nicht festgelegt' }}</td><td><span class="status-badge">{{ 'Ausgemustert' if row.retired else 'Im Bestand' }}</span></td></tr>
-            {% else %}<tr><td colspan="6"><div class="empty-state"><h2>Keine passenden Einträge</h2><p>Ändern Sie die Suche oder setzen Sie die Filter zurück.</p><a href="/inventory">Alle Einträge anzeigen</a></div></td></tr>{% endfor %}</tbody>
+            <tr data-preview-key="{{ row.kind }}-{{ row.id }}" data-preview="{{ {'name':row.name,'kind':'Gerät' if row.kind == 'device' else 'Set / Zubehör','category':row.category,'serial':row.serial_number,'location':row.location,'status':'Ausgemustert' if row.retired else 'Im Bestand'} | tojson | forceescape }}">
+                {% if can_export %}<td class="selection-column"><input type="checkbox" data-select-entry="{{ row.kind }}-{{ row.id }}" aria-label="{{ row.name }} auswählen"></td>{% endif %}
+                <td class="object-name-cell"><a class="object-link" data-object-link aria-label="{{ row.name }}" href="/inventory/{{ 'devices' if row.kind == 'device' else 'assets' }}/{{ row.id }}">{{ thumbnail(row.icon,row.image_url | default('')) }}<span class="object-label-text"><strong title="{{ row.name }}">{{ row.name }}</strong><small>{{ row.serial_number or ('Set #' ~ row.id if row.kind == 'asset' else 'Ohne Identifikation') }}</small></span></a></td>
+                <td><span class="type-badge" title="{{ row.category or 'Ohne Vorlage' }}">{{ row.category or ('Gerät' if row.kind == 'device' else 'Set / Zubehör') }}</span></td>
+                <td><span class="table-meta">{{ icon('map-pin') }}<span title="{{ row.location or 'Nicht festgelegt' }}">{{ row.location or 'Nicht festgelegt' }}</span></span></td>
+                {% if can_assets %}<td>{% if row.assigned_to %}<span class="table-person" {% if row.kind == 'device' %}title="Zuweisung über verknüpfte Sets: {{ row.assigned_to }}"{% endif %}><span class="user-avatar">{{ row.assigned_to[:2] | upper }}</span><span>{{ row.assigned_to }}</span></span>{% else %}<span class="table-meta muted">{{ icon('users') }}Nicht zugewiesen</span>{% endif %}</td>{% endif %}
+                <td>{{ status('Ausgemustert' if row.retired else 'Im Bestand','neutral' if row.retired else 'success') }}</td><td class="table-date">{{ row.updated_at | inventory_date(true) }}</td>
+                <td class="row-actions-column"><details data-row-menu class="row-menu"><summary aria-label="Aktionen für {{ row.name }}">{{ icon('more-horizontal') }}</summary><div class="row-menu-panel"><a href="/inventory/{{ 'devices' if row.kind == 'device' else 'assets' }}/{{ row.id }}">Detailseite</a>{% if is_superuser or (row.kind == 'device' and 'devices.manage' in permissions) or (row.kind == 'asset' and 'assets.manage' in permissions) %}<a href="/?view={{ 'devices' if row.kind == 'device' else 'assets' }}&edit_{{ row.kind }}={{ row.id }}">Bearbeiten</a>{% endif %}</div></details></td>
+            </tr>
+            {% else %}<tr><td colspan="{{ 6 + (1 if can_assets else 0) + (1 if can_export else 0) }}"><div class="empty-state">{{ icon('search') }}<h2>Keine passenden Einträge</h2><p>Ändern Sie die Suche oder setzen Sie die Filter zurück.</p><a href="/inventory">Alle Einträge anzeigen</a></div></td></tr>{% endfor %}</tbody>
         </table>
     </div>
-    <nav class="list-pagination" aria-label="Seiten im Bestand">
-        {% if inventory.page > 1 %}<a class="btn btn-secondary" rel="prev" href="{{ inventory_link(page=inventory.page-1) }}">Zurück</a>{% endif %}
-        <span>Seite {{ inventory.page }} von {{ inventory.pages }}</span>
-        {% if inventory.page < inventory.pages %}<a class="btn btn-secondary" rel="next" href="{{ inventory_link(page=inventory.page+1) }}">Weiter</a>{% endif %}
-    </nav>
+    <footer class="table-pagination">
+        <span class="list-summary" role="status">{{ ((inventory.page-1)*inventory.per_page+1) if inventory.total else 0 }}–{{ [inventory.page*inventory.per_page,inventory.total] | min }} von {{ inventory.total }} Einträgen</span>
+        <nav class="pagination-pages" aria-label="Seiten im Bestand"><span class="sr-only">Seite {{ inventory.page }} von {{ inventory.pages }}</span>
+            {% if inventory.page > 1 %}<a rel="prev" href="{{ inventory_link(page=inventory.page-1) }}" aria-label="Vorherige Seite">{{ icon('chevron-left') }}</a>{% else %}<span aria-hidden="true">{{ icon('chevron-left') }}</span>{% endif %}
+            {% set previous = namespace(number=0) %}{% for number in inventory.page_numbers %}{% if number > previous.number+1 %}<span aria-hidden="true">…</span>{% endif %}<a href="{{ inventory_link(page=number) }}" {% if number == inventory.page %}aria-current="page"{% endif %} aria-label="Seite {{ number }}">{{ number }}</a>{% set previous.number=number %}{% endfor %}
+            {% if inventory.page < inventory.pages %}<a rel="next" href="{{ inventory_link(page=inventory.page+1) }}" aria-label="Nächste Seite">{{ icon('chevron-right') }}</a>{% else %}<span aria-hidden="true">{{ icon('chevron-right') }}</span>{% endif %}
+        </nav>
+        <label class="page-size">Einträge pro Seite<select name="per_page" aria-label="Einträge pro Seite" form="inventory-filters" data-page-size>{% for size in [10,20,25,50,100] %}<option value="{{ size }}" {{ 'selected' if inventory.per_page == size }}>{{ size }}</option>{% endfor %}{% if inventory.per_page not in [10,20,25,50,100] %}<option value="{{ inventory.per_page }}" selected>{{ inventory.per_page }}</option>{% endif %}</select></label>
+    </footer>
 </section>
-<details class="workspace-panel" data-saved-views>
-    <summary>Gespeicherte Ansichten</summary>
-    <p class="list-summary">Suchbegriff, Filter und Sortierung für dieses Konto in diesem Browser speichern.</p>
-    <form class="list-toolbar" data-save-view>
-        <label class="grow">Name der Ansicht<input class="input" name="view_name" maxlength="60" required autocomplete="off" placeholder="Zum Beispiel: Geräte ohne Standort"></label>
-        <button class="btn btn-secondary" type="submit">Aktuelle Ansicht speichern</button>
-    </form>
-    <p role="status" data-view-status></p>
-    <ul class="saved-view-list" data-view-list></ul>
-</details>
 {% endblock %}
 {% block overlays %}
 <dialog id="inventory-preview" class="object-panel" aria-labelledby="object-panel-name" data-inventory-preview>
     <div class="object-panel-close"><button type="button" class="icon-button" data-close-preview aria-label="Details schließen" autofocus><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
-    <div data-object-content></div>
-    <p class="sr-only" role="status" data-copy-status></p>
+    <div data-object-content></div><p class="sr-only" role="status" data-copy-status></p>
 </dialog>
 {% endblock %}
-{% block page_scripts %}<script src="/static/inventory-views.js?v=1"></script><script src="/static/inventory-preview.js?v=3"></script>{% endblock %}
+{% block page_scripts %}<script src="/static/inventory-views.js?v=2"></script><script src="/static/inventory-preview.js?v=3"></script><script src="/static/inventory-table.js?v=1"></script>{% endblock %}

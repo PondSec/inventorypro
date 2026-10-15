@@ -6,7 +6,7 @@ from .objects import fallback_icon
 
 SORTS = {'name': 'name COLLATE NOCASE', 'kind': 'kind', 'category': 'category COLLATE NOCASE',
          'serial_number': 'serial_number COLLATE NOCASE', 'created_at': 'created_at',
-         'updated_at': 'updated_at', 'assigned_to': 'assigned_to COLLATE NOCASE'}
+         'updated_at': 'updated_at', 'assigned_to': 'assigned_to COLLATE NOCASE', 'location':'location COLLATE NOCASE'}
 FILTERS = {
     'missing_identity': "kind='device' AND (location_id IS NULL OR trim(coalesce(serial_number,''))='')",
     'missing_location': "kind='device' AND location_id IS NULL",
@@ -96,12 +96,12 @@ def list_inventory(db, arguments, *, devices_allowed, assets_allowed, maintenanc
         assets_allowed=assets_allowed, maintenance_allowed=maintenance_allowed)
     summary = {'total':0,'assigned':0,'maintenance':0,'incomplete':0}
     if not source:
-        return {'rows':[], 'total':0, 'pages':1, 'summary':summary, 'categories':[], 'locations':[], **state}
+        return {'rows':[], 'total':0, 'pages':1, 'page_numbers':[1], 'summary':summary, 'categories':[], 'locations':[], **state}
     summary = dict(db.execute(source + f'''SELECT count(*) AS total,
         count(CASE WHEN trim(assigned_to)<>'' THEN 1 END) AS assigned,
         count(CASE WHEN {FILTERS['due_maintenance'] if maintenance_allowed else '0'} THEN 1 END) AS maintenance,
         count(CASE WHEN {FILTERS['incomplete']} THEN 1 END) AS incomplete FROM inventory''').fetchone())
-    categories = [dict(r) for r in db.execute(source + 'SELECT DISTINCT kind,category_id AS id,category AS name FROM inventory WHERE category_id IS NOT NULL ORDER BY category COLLATE NOCASE,kind')]
+    categories = [dict(r) for r in db.execute(source + 'SELECT DISTINCT kind,category_id AS id,category AS name FROM inventory WHERE category_id IS NOT NULL' + (' AND kind=?' if state['kind'] else '') + ' ORDER BY category COLLATE NOCASE,kind', [state['kind']] if state['kind'] else [])]
     locations = [dict(r) for r in db.execute(source + '''SELECT DISTINCT l.id,l.name FROM locations l WHERE
         l.id IN (SELECT location_id FROM inventory WHERE kind='device') OR
         l.id IN (SELECT d.location_id FROM devices d JOIN asset_devices ad ON ad.device_id=d.id
@@ -109,13 +109,14 @@ def list_inventory(db, arguments, *, devices_allowed, assets_allowed, maintenanc
     total = db.execute(source + 'SELECT COUNT(*) FROM inventory' + predicate, parameters).fetchone()[0]
     pages = max(1, (total + state['per_page'] - 1) // state['per_page'])
     state['page'] = min(state['page'], pages)
+    page_numbers = sorted({1,pages,*range(max(1,state['page']-1),min(pages,state['page']+1)+1),*(range(1,min(5,pages)+1) if state['page']<=3 else [])})
     rows = db.execute(source + 'SELECT * FROM inventory' + predicate +
                       f" ORDER BY {SORTS[state['sort']]} {state['direction']},kind,id LIMIT ? OFFSET ?",
                       [*parameters,state['per_page'],(state['page']-1)*state['per_page']]).fetchall()
     rows = [dict(row) for row in rows]
     for row in rows:
         row['icon'] = fallback_icon(row['name'],row['category'] or '',row['kind'])
-    return {'rows':rows,'total':total,'pages':pages,'summary':summary,'categories':categories,'locations':locations,**state}
+    return {'rows':rows,'total':total,'pages':pages,'page_numbers':page_numbers,'summary':summary,'categories':categories,'locations':locations,**state}
 
 def workspace_tasks(db, can, access):
     """Return exact actionable counts, scoped like the corresponding work lists."""

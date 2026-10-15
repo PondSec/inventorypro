@@ -48,3 +48,7 @@
 {% macro accordion(title, icon_name='', count=none, open=False) -%}
 <details class="object-accordion" {% if open %}open{% endif %}><summary>{% if icon_name %}{{ icon(icon_name) }}{% endif %}<span>{{ title }}</span>{% if count is not none %}<span class="count-badge">{{ count }}</span>{% endif %}{{ icon('chevron-right') }}</summary><div class="object-accordion__body">{{ caller() }}</div></details>
 {%- endmacro %}
+
+{% macro kpi_tile(label,value,icon_name,description,href,tone='neutral') -%}
+<a class="kpi-tile" href="{{ href }}" data-tone="{{ tone }}"><span class="kpi-tile__icon">{{ icon(icon_name) }}</span><span class="kpi-tile__copy"><span class="kpi-tile__label">{{ label }}</span><strong>{{ value }}</strong><small title="{{ description }}">{{ description }}</small></span></a>
+{%- endmacro %}

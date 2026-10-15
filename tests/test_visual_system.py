@@ -1,5 +1,6 @@
 """The shared visual contract is checked in real browsers, using isolated data."""
 from playwright.sync_api import expect
+from pathlib import Path
 from test_enterprise_browser import browser, live_inventory, sign_in
 
 
@@ -7,7 +8,7 @@ def test_shell_geometry_and_keyboard_controls(live_inventory, browser):
     context=browser.new_context(viewport={'width':1440,'height':900})
     page=context.new_page();sign_in(page,live_inventory)
     page.goto(live_inventory+'/inventory')
-    expect(page.locator('main h1')).to_have_text('Gesamter Bestand')
+    expect(page.locator('main h1')).to_have_text('Inventar')
     geometry=page.evaluate('''()=>({sidebar:document.querySelector('.app-sidebar').getBoundingClientRect().width,
       topbar:document.querySelector('.app-header').getBoundingClientRect().height,
       content:document.querySelector('.enterprise-page').getBoundingClientRect().width,
@@ -36,7 +37,7 @@ def test_docked_object_panel_tabs_row_switch_and_mobile_transition(live_inventor
     expect(dialog).to_have_attribute('aria-modal','false')
     geometry = page.evaluate('''()=>({panel:document.querySelector('dialog').getBoundingClientRect().width,
         edge:document.querySelector('dialog').getBoundingClientRect().left,
-        list:document.querySelector('.workspace-panel').getBoundingClientRect().right})''')
+        list:document.querySelector('.inventory-workspace').getBoundingClientRect().right})''')
     assert 360 <= geometry['panel'] <= 430 and geometry['list'] <= geometry['edge']
     dialog.get_by_role('tab',name='Details',exact=True).focus()
     page.keyboard.press('Enter')
@@ -93,4 +94,54 @@ def test_module_groups_and_sidebar_footer_are_keyboard_operable(live_inventory, 
     expect(page.locator('body')).to_have_class(__import__('re').compile('sidebar-collapsed'))
     sidebar.locator('.nav-group > summary').filter(has_text='Inventar').click()
     expect(sidebar.get_by_role('link',name='Bestand',exact=True)).to_be_visible()
+    context.close()
+
+
+def test_inventory_pagination_stays_visible_with_large_page_and_row_menu(live_inventory, browser):
+    context = browser.new_context(viewport={'width':1672,'height':941})
+    page = context.new_page(); sign_in(page,live_inventory)
+    page.goto(live_inventory+'/inventory')
+    expect(page.locator('[data-preview-key]')).to_have_count(10)
+    footer = page.locator('.table-pagination')
+    expect(footer).to_contain_text('1–10 von 40 Einträgen')
+    assert footer.bounding_box()['y']+footer.bounding_box()['height'] <= 941
+    page.get_by_role('link',name='Nächste Seite',exact=True).click()
+    expect(footer).to_contain_text('11–20 von 40 Einträgen')
+    expect(page.get_by_role('link',name='Notebook 010',exact=True)).to_be_visible()
+    page.get_by_label('Einträge pro Seite',exact=True).select_option('100')
+    expect(page.locator('[data-preview-key]')).to_have_count(40)
+    assert footer.bounding_box()['y']+footer.bounding_box()['height'] <= 941
+    assert page.evaluate('document.documentElement.scrollHeight <= innerHeight+1')
+    page.locator('.inventory-table-scroll').evaluate('(table)=>table.scrollTop=table.scrollHeight')
+    menu = page.locator('[data-preview-key]').last.locator('[data-row-menu]')
+    menu.locator('summary').click()
+    expect(menu.get_by_role('link',name='Detailseite',exact=True)).to_be_visible()
+    rect = menu.locator('.row-menu-panel').bounding_box()
+    assert rect['y']>=0 and rect['y']+rect['height']<=941
+    page.keyboard.press('Escape');expect(menu).not_to_have_attribute('open','')
+    context.close()
+
+
+def test_inventory_filters_selection_export_and_create_menu(live_inventory, browser):
+    context = browser.new_context(viewport={'width':1672,'height':941},accept_downloads=True)
+    page = context.new_page(); sign_in(page,live_inventory)
+    page.goto(live_inventory+'/inventory')
+    page.get_by_label('Kategorie',exact=True).select_option(label='Notebooks')
+    expect(page.locator('[data-preview-key]')).to_have_count(10)
+    assert 'category=device' in page.url
+    page.get_by_role('searchbox',name='Bestand durchsuchen',exact=True).fill('QA-039')
+    page.get_by_role('searchbox',name='Bestand durchsuchen',exact=True).press('Enter')
+    expect(page.locator('[data-preview-key]')).to_have_count(1)
+    page.get_by_role('checkbox',name='Notebook 039 auswählen',exact=True).check()
+    expect(page.locator('[data-inventory-preview]')).not_to_be_visible()
+    expect(page.locator('[data-selection-count]')).to_have_text('1 Eintrag dieser Seite ausgewählt')
+    with page.expect_download() as download:
+        page.get_by_role('link',name='Auswahl exportieren',exact=True).click()
+    content = Path(download.value.path()).read_text(encoding='utf-8-sig')
+    assert 'Notebook 039' in content and 'Notebook 038' not in content
+    page.get_by_role('button',name='Auswahl aufheben',exact=True).click()
+    expect(page.locator('[data-selection-toolbar]')).not_to_be_visible()
+    page.locator('[data-create-menu] > summary').click()
+    page.get_by_role('link',name='Gerät erfassen',exact=True).click()
+    expect(page.get_by_test_id('device-modal')).to_be_visible()
     context.close()
