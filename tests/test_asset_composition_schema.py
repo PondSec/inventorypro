@@ -16,10 +16,11 @@ def test_asset_composition_is_additive_and_down_up_keeps_business_records(isolat
         db.execute('INSERT INTO asset_components(parent_asset_id,child_asset_id,quantity,notes) VALUES (?,?,3,?)',(ids[0],ids[1],'QA quantities'))
         assert db.execute('SELECT quantity,notes FROM asset_components').fetchone()[:]==(3,'QA quantities')
         db.commit();directory=Path(inventory_app.__file__).parent/'migrations'
-        assert rollback_migrations(db,directory)==['009_asset_composition']
+        later=[row[0] for row in db.execute("SELECT id FROM schema_migrations WHERE id>='009_asset_composition' ORDER BY id")]
+        assert rollback_migrations(db,directory,steps=len(later))==list(reversed(later))
         assert [tuple(row) for row in db.execute('SELECT * FROM devices ORDER BY id')]==before
         assert db.execute('SELECT count(*) FROM assets').fetchone()[0]==5
-        assert apply_migrations(db,directory)==['009_asset_composition']
+        assert apply_migrations(db,directory)==later
         assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
 
 
