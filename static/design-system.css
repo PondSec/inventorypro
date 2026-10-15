@@ -5,7 +5,7 @@
   --sidebar-collapsed-width: 64px;
   --control-height: 34px;
   --thumbnail-size: 40px;
-  --detail-width: 400px;
+  --detail-width: 424px;
   --row-height: 52px;
 }
 .ui-icon { width: 18px; height: 18px; flex-shrink: 0; stroke-width: 1.7; }
@@ -141,3 +141,59 @@
 .page-tab { display: inline-flex; align-items: center; gap: 7px; padding: 10px 2px; white-space: nowrap; color: var(--color-text-muted); font-size: 13px; border-bottom: 2px solid transparent; }
 .page-tab.active { border-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
 .page-tab .ui-icon,.page-tab svg { width: 16px; height: 16px; }
+
+/* Shared product and object components: the same geometry with photos or icons. */
+.product-thumbnail { display: inline-grid; place-items: center; width: var(--thumbnail-size); height: var(--thumbnail-size); flex: 0 0 var(--thumbnail-size); position: relative; color: var(--color-text-muted); background: var(--color-surface-muted); border-radius: 6px; overflow: hidden; }
+.product-thumbnail .product-fallback { width: 26px; height: 26px; }
+.product-thumbnail img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; padding: 3px; object-fit: contain; background: var(--color-surface); }
+.product-thumbnail--large { width: 104px; height: 72px; flex-basis: 104px; background: transparent; }
+.product-thumbnail--large .product-fallback { width: 68px; height: 68px; color: var(--color-text-muted); }
+.object-header { display: flex; align-items: center; gap: 16px; min-width: 0; padding: 0 0 16px; }
+.object-header__copy { flex: 1; min-width: 0; }
+.object-header h2 { margin: 0 0 8px; font-size: 18px; font-weight: 650; line-height: 1.35; overflow-wrap: anywhere; }
+.object-header__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.object-header__meta .status-badge { margin-left: auto; }
+.copy-control { display: inline-flex; align-items: center; justify-content: center; width: 26px; min-width: 26px; height: 26px; padding: 4px; border-radius: 4px; color: var(--color-text-muted); vertical-align: middle; }
+.copy-control .ui-icon { width: 15px; height: 15px; }
+.copy-control:hover { background: var(--color-surface-muted); color: var(--color-accent); }
+.object-panel { position: fixed; inset: 0 0 0 auto; margin: 0; width: min(var(--detail-width),100vw); height: 100dvh; max-width: 100vw; max-height: 100dvh; padding: 12px 16px 20px; overflow: auto; overscroll-behavior: contain; border: 0; border-left: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); z-index: 40; }
+.object-panel::backdrop { background: rgb(15 23 42 / 40%); }
+.object-panel--docked { top: var(--header-height); height: calc(100dvh - var(--header-height)); }
+.object-panel-close { display: flex; justify-content: flex-end; }
+.object-panel-close button { width: 30px; height: 30px; min-height: 30px !important; padding: 5px !important; border: 1px solid var(--color-border); }
+.object-loading-name { font-size: 18px; font-weight: 600; margin: 16px 0; }
+.object-skeleton { margin-top: 24px; height: 340px; border-radius: 8px; background: repeating-linear-gradient(var(--color-surface-muted) 0 20px,transparent 20px 42px); }
+.object-card { padding: 16px 14px; border: 1px solid var(--color-border); border-radius: 8px; margin-bottom: 8px; }
+.object-card h3 { font-size: 14px; font-weight: 600; margin: 0 0 12px; }
+.object-property { display: grid; grid-template-columns: minmax(0,44%) minmax(0,1fr); gap: 10px; padding: 7px 0; font-size: 13px; }
+.object-property dt { display: flex; align-items: start; gap: 10px; color: var(--color-text-muted); }
+.object-property dt .ui-icon { width: 16px; height: 16px; margin-top: 1px; }
+.object-property dd { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.compact-properties .object-property { padding: 4px 0; }
+.object-accordion { border: 1px solid var(--color-border); border-radius: 7px; margin-bottom: 8px; }
+.object-accordion > summary { display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-height: 38px; font-weight: 600; font-size: 12px; list-style: none; cursor: pointer; }
+.object-accordion > summary::-webkit-details-marker { display: none; }
+.object-accordion > summary .ui-icon { width: 16px; height: 16px; color: var(--color-text-muted); }
+.object-accordion > summary > span { flex: 1; }
+.object-accordion > summary .count-badge { flex: none; }
+.object-accordion > summary > .ui-icon:last-child { margin-left: auto; width: 14px; }
+.object-accordion[open] > summary > .ui-icon:last-child { transform: rotate(90deg); }
+.object-accordion__body { padding: 0 14px 12px; }
+.object-list-item { display: block; padding: 9px 0; border-bottom: 1px solid var(--color-border); font-size: 12px; overflow-wrap: anywhere; }
+.object-list-item:last-child { border-bottom: 0; }
+.object-list-item strong { display: block; color: var(--color-text); font-weight: 600; }
+.object-list-item small { display: block; color: var(--color-text-muted); font-size: 11px; margin-top: 3px; }
+a.object-list-item:hover strong { color: var(--color-accent); }
+.app-body .object-tabs { display: flex; gap: 16px; margin-bottom: 12px; overflow-x: auto; }
+.app-body .object-tabs [role=tab] { min-height: 38px; font-size: 12px; white-space: nowrap; padding: 8px 0; border-bottom-width: 2px; }
+.app-body .object-tabs [role=tab][aria-selected=true] { background: transparent; }
+.object-panel-actions { display: flex; gap: 8px; padding-top: 14px; margin-top: 12px; border-top: 1px solid var(--color-border); }
+.object-panel-actions .btn { display: inline-flex; align-items: center; gap: 7px; }
+.object-panel-actions .ui-icon { width: 15px; height: 15px; }
+.assignment-person { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
+.assignment-person .user-avatar { width: 25px; height: 25px; font-size: 10px; background: var(--color-accent-soft); color: var(--color-accent); }
+.assignment-person small { flex-basis: 100%; color: var(--color-text-muted); font-size: 10px; }
+.count-badge { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding-inline: 5px; border-radius: 999px; color: var(--color-accent); background: var(--color-accent-soft); font-size: 11px; }
+.muted { color: var(--color-text-muted); }
+.preserve-lines { white-space: pre-wrap; }
+@media (min-width:1280px) { .app-body.has-object-panel .app-content { padding-right: calc(var(--detail-width) + 24px); } }

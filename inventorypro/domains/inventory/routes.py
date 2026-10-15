@@ -1,5 +1,6 @@
 """Server-rendered, bookmarkable inventory lists and object detail pages."""
 import json
+from datetime import datetime
 from urllib.parse import urlencode
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, session
@@ -9,6 +10,15 @@ from .objects import load_panel
 
 def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, load_asset, ticket_visible):
     blueprint = Blueprint('inventory_workspace', __name__)
+
+    @blueprint.app_template_filter('inventory_date')
+    def inventory_date(value, include_time=False):
+        if not value:
+            return ''
+        try:
+            return datetime.fromisoformat(str(value).replace('Z', '+00:00')).strftime('%d.%m.%Y %H:%M' if include_time else '%d.%m.%Y')
+        except (TypeError, ValueError):
+            return str(value)
 
     def can_read(kind):
         prefix = 'devices' if kind == 'device' else 'assets'
@@ -52,6 +62,8 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
         obj = load_panel(db, kind, object_id, can=user_can, access=get_access(db), ticket_visible=ticket_visible)
         if obj is None:
             abort(404)
+        if request.args.get('format') == 'html':
+            return render_template('_object_panel.html', object=obj, **context())
         return jsonify(obj)
 
     @blueprint.get('/inventory/devices/<int:object_id>')

@@ -34,6 +34,11 @@ def test_panel_exposes_actual_product_fields_links_and_permitted_tabs(client):
     assert client.get(f'/api/inventory/asset/{asset}/panel').json['links'][0]['id'] == device
     assert client.get('/api/inventory/device/999999/panel').status_code == 404
     assert client.get('/api/inventory/invalid/1/panel').status_code == 404
+    fragment = client.get(f'/api/inventory/device/{device}/panel?format=html')
+    assert fragment.status_code == 200
+    assert b'object-panel-name' in fragment.data and b'32 GB' in fragment.data
+    assert b'&lt;script&gt;' in fragment.data and b'<script>x</script>' not in fragment.data
+    assert b'Kurzansicht' not in fragment.data
 
 
 def test_panel_does_not_leak_other_domains_or_other_users_tickets(client):
@@ -55,6 +60,9 @@ def test_panel_does_not_leak_other_domains_or_other_users_tickets(client):
     assert [ticket['title'] for ticket in payload['tickets']] == ['admin ticket']
     assert [tab[0] for tab in payload['tabs']] == ['overview','details','tickets']
     assert client.get(f'/api/inventory/asset/{asset}/panel').status_code == 403
+    fragment = client.get(f'/api/inventory/device/{device}/panel?format=html').data
+    assert b'QA Dock' not in fragment and b'someone-else ticket' not in fragment
+    assert b'QA Inspection' not in fragment and b'>Bearbeiten<' not in fragment
 
 
 def test_device_assignments_keep_their_actual_source(client):

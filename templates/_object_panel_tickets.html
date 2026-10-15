@@ -1,0 +1,2 @@
+{% for ticket in object.tickets %}<a class="object-list-item" href="/tickets/{{ ticket.id }}"><strong>#{{ ticket.id }} · {{ ticket.title }}</strong><small>{{ {'open':'Offen','in_progress':'In Bearbeitung','pending':'Wartend','resolved':'Gelöst','closed':'Geschlossen'}.get(ticket.status,ticket.status) }}{% if ticket.due_date %} · Fällig {{ ticket.due_date }}{% endif %}</small></a>{% else %}<p class="muted">Keine sichtbaren Tickets verknüpft.</p>{% endfor %}
+{% if object.tickets | length == 100 %}<p class="muted">Die ersten 100 sichtbaren Tickets.</p>{% endif %}

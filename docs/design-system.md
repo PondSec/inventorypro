@@ -11,19 +11,22 @@ werden durch gemeinsame Arbeitsabläufe verbunden.
   vor dem ersten Theme-Skript in App- und Auth-Shell aus. Keine getrennte
   JavaScript-Kopie der Konfiguration.
 - `static/style.css`: semantische Farbtokens, Light/Dark und bestehende Komponenten.
-- `static/enterprise.css`: gemeinsame Shell, kompakte Komponenten, responsive
-  Tabellen, Detailseiten, Vorschau, Auswahl und Planungsassistent.
+- `static/enterprise.css`: bestehende fachliche Komponenten und Planungsassistent.
+- `static/design-system.css`: verbindliche kompakte Shell, Navigation, Seitenkopf,
+  Kontrollgrößen, Tabellen- und Objektkomponenten des visuellen Relaunchs.
+- `templates/_ui.html`: gemeinsame Jinja-Primitiven für Seitenkopf, Status,
+  Produktbild/Icon, Objektkopf, Eigenschaften und Accordions.
 - `static/theme.js`: vorhandene Instanz-/Browseranpassungen, Themewechsel und Cache.
   Explizit gespeicherte Kundenanpassungen werden weiter angewendet.
 
 ## Sprache und Hierarchie
 
-Eine Hauptaufgabe pro Seite. Titel in der gemeinsamen Topbar, darunter nur nötiger
-Kontext und Aktionen. Keine zweite Navigation zur selben Funktion, kein dekorativer
+Eine Hauptaufgabe pro Seite. Titel und Breadcrumbs im gemeinsamen Seitenkopf; die 56-px-Topbar enthält
+Suche und Kontosteuerung. Die gruppierte Navigation ist standardmäßig 240 px breit. Keine zweite Navigation zur selben Funktion, kein dekorativer
 Startbereich. Objektbezeichnungen bleiben Links zur eigenen Detailseite.
 
-Systemschrift mit Inter/Segoe-UI-Fallback, Grundschrift 15 px, Tabellen 14 px,
-Metadaten mindestens 12 px. Abstandsskala 4/8/12/16/20/24/32/40/48/64 px.
+Systemschrift mit Inter/Segoe-UI-Fallback, Grundschrift 14 px, Tabellen 13 px,
+Metadaten 11–13 px, Seitentitel 26 px. Abstandsskala 4/8/12/16/20/24/32/40/48/64 px.
 Standardradien: 4/6/8 px; Buttons und Eingaben 6 px, Panels und Dialoge 8 px.
 Akzent Blau kennzeichnet Auswahl/primäre Aktion; Status immer zusätzlich als Text.
 Flächen, Text, Rahmen und Fokus beziehen ihre Farben aus semantischen Tokens,
@@ -43,8 +46,11 @@ Rollen; Backendprüfungen bleiben unabhängig davon verpflichtend.
   serverseitige Suche/Filter/Pagination im URL-Zustand.
 - Eigene Detailseiten mit `.object-summary`, `.detail-tabs`, `.detail-panel`.
   Fachlich optionale Informationen in nativen details/summary-Bereichen.
-- `.quick-preview`: native dialog-Kurzansicht für bereits sichtbare Bestandsdaten,
-  Link zur Detailseite, Escape, Fokusbegrenzung/-rückgabe und Browserhistorie.
+- `.object-panel`: natives dialog mit tatsächlichen Objektdaten, Produktkopf,
+  Reitern und Accordions. Ab 1280 px als 424-px-Split-View unter der Topbar;
+  die Arbeitsliste bleibt erreichbar. Schmal als modaler Drawer mit Fokusbegrenzung.
+  Escape, Fokus-Rückgabe, Browserhistorie und tabgenaue Links bleiben erhalten.
+  Objektdaten werden manuell beim Öffnen geladen, nicht für jede Tabellenzeile.
 - `[role=tablist]`: `static/components.js` bietet Pfeiltasten, Pos1/Ende und genau
   einen Tabstop. Zugehörige tabpanels über aria-controls/aria-labelledby verbinden.
 - Große Zuordnungen durchsuchen und paginieren; ausgewählte Einträge bleiben als

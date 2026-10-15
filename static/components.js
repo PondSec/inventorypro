@@ -60,3 +60,19 @@
     });
   });
 })();
+
+/* Copyable identifiers retain a useful selection even without Clipboard API. */
+document.addEventListener('click', async event => {
+  const button = event.target.closest('[data-copy-value]');
+  if (!button) return;
+  const feedback = document.querySelector('[data-copy-status]');
+  try {
+    await navigator.clipboard.writeText(button.dataset.copyValue);
+    if (feedback) feedback.textContent = 'Kopiert.';
+  } catch (_) {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(button.parentElement); selection.removeAllRanges(); selection.addRange(range);
+    if (feedback) feedback.textContent = 'Bitte mit Strg/Cmd+C kopieren.';
+  }
+});
