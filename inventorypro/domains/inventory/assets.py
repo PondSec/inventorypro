@@ -178,12 +178,19 @@ def delete_asset(db,can,identifier,expected):
         require(db,can,identifier,write=True);_check_revision(db,identifier,expected)
         if db.execute('SELECT 1 FROM asset_components WHERE child_asset_id=?',(identifier,)).fetchone():
             raise AssetError('Das Asset wird noch in anderen Assets verwendet. Bitte zuerst die Inhaltszuordnungen lösen oder das Asset ausmustern.',409)
-        # Independent history/tickets/plans must be deliberately handled, never
-        # silently removed by generic object deletion. Legacy backing rows stay.
-        if db.execute('SELECT 1 FROM asset_legacy_devices WHERE asset_id=?',(identifier,)).fetchone():
-            raise AssetError('Dieser übernommene Eintrag enthält historische Geräteverweise. Bitte zur Datenerhaltung ausmustern.',409)
-        db.execute('SAVEPOINT asset_delete')
-        try:db.execute('DELETE FROM assets WHERE id=?',(identifier,));db.execute('RELEASE SAVEPOINT asset_delete')
+        # Independent references block deletion. Owned legacy detail rows may
+        # be removed only as part of this explicit object deletion; unknown FKs
+        # roll the entire operation back, including compatibility cleanup.
+        try:
+            legacy=db.execute('SELECT device_id FROM asset_legacy_devices WHERE asset_id=?',(identifier,)).fetchone()
+            if legacy:
+                device_id=legacy[0]
+                for table in ['device_notes','device_tags','maintenance_tasks','software_installations']:
+                    db.execute(f'DELETE FROM {table} WHERE device_id=?',(device_id,))
+                db.execute("DELETE FROM dependency_links WHERE (source_type='device' AND source_id=?) OR (target_type='device' AND target_id=?)",(device_id,device_id))
+                db.execute('DELETE FROM asset_legacy_devices WHERE asset_id=?',(identifier,))
+                db.execute('DELETE FROM devices WHERE id=?',(device_id,))
+            db.execute("UPDATE attachments SET deleted_at=CURRENT_TIMESTAMP WHERE entity_type='asset' AND entity_id=? AND deleted_at IS NULL",(identifier,))
+            db.execute('DELETE FROM assets WHERE id=?',(identifier,))
         except sqlite3.IntegrityError as error:
-            db.execute('ROLLBACK TO SAVEPOINT asset_delete');db.execute('RELEASE SAVEPOINT asset_delete')
             raise AssetError('Das Asset wird noch von anderen Vorgängen verwendet. Bitte die Verknüpfungen prüfen oder das Asset ausmustern.',409) from error

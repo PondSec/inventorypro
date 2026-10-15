@@ -66,3 +66,16 @@ def test_canonical_asset_notes_maintenance_and_assignment_use_real_endpoints(uni
     page.goto(unified_live+'/inventory?q=QA%20maintained%20asset')
     expect(page.locator('tbody')).to_contain_text('admin')
     context.close()
+
+
+def test_explicit_asset_delete_uses_shared_action_menu_and_keeps_other_assets(unified_live,browser):
+    context=browser.new_context();page=context.new_page();sign_in(page,unified_live)
+    new_asset(page,unified_live,'QA asset to delete')
+    page.get_by_label('Weitere Assetaktionen',exact=True).click()
+    page.on('dialog',lambda dialog:dialog.accept())
+    page.get_by_role('button',name='Asset löschen',exact=True).click();page.wait_for_url('**/inventory')
+    page.get_by_role('searchbox',name='Bestand durchsuchen',exact=True).fill('QA asset to delete')
+    page.get_by_role('searchbox',name='Bestand durchsuchen',exact=True).press('Enter')
+    expect(page.get_by_text('Keine passenden Einträge',exact=False)).to_be_visible()
+    with inventory_app.app.app_context():assert inventory_app.get_db().execute('SELECT count(*) FROM devices').fetchone()[0]==40
+    context.close()

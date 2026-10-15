@@ -45,6 +45,11 @@
     try{await api(`/api/inventory/assets/${id}/components`,'PUT',{expectedRevision:revision,items:[...selected.values()]});location.reload();}
     catch(problem){dialog.querySelector('[data-component-status]').textContent=problem.message;saving=false;dialog.querySelector('[data-save-components]').disabled=false;}
   });
+  document.querySelector('[data-delete-asset]')?.addEventListener('click',async event=>{
+    if(!confirm('Asset löschen? Enthaltene Assets bleiben erhalten. Verknüpfte Vorgänge können die Löschung verhindern.'))return;
+    const button=event.currentTarget;button.disabled=true;
+    try{await api(`/api/inventory/assets/${id}`,'DELETE',{expectedRevision:revision});location.assign('/inventory');}catch(problem){showError(problem);button.disabled=false;}
+  });
   detail.querySelectorAll('[data-remove-component]').forEach(button=>button.addEventListener('click',async()=>{
     if(!confirm('Zuordnung entfernen? Das enthaltene Asset bleibt im Bestand.'))return;button.disabled=true;
     try{await api(`/api/inventory/assets/${id}/components/${button.dataset.removeComponent}`,'DELETE',{expectedRevision:revision});location.reload();}catch(problem){showError(problem);button.disabled=false;}

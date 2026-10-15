@@ -75,3 +75,46 @@ def test_legacy_photo_routes_use_same_canonical_server_image_after_conversion(un
     replacement=client.post(canonical,json={'action':'hide','expectedUpdatedAt':same['updated_at']})
     assert replacement.status_code==200 and client.get(legacy).json['source']=='fallback'
     assert client.get(uploaded.json['url']).status_code==404
+
+
+def test_explicit_converted_asset_deletion_handles_backing_rows_atomically(unified_client):
+    client=unified_client
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();identifier=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=1').fetchone()[0]
+        db.execute("INSERT INTO device_notes(device_id,note) VALUES (1,'QA owned note')");db.commit()
+    state=client.get(f'/api/inventory/assets/{identifier}').json
+    assert client.delete(f'/api/inventory/assets/{identifier}',json={'expectedRevision':state['revision']}).status_code==200
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();assert not db.execute('SELECT 1 FROM devices WHERE id=1').fetchone()
+        assert not db.execute('SELECT 1 FROM assets WHERE id=?',(identifier,)).fetchone()
+        assert db.execute('SELECT count(*) FROM devices').fetchone()[0]==39
+        assert db.execute('SELECT count(*) FROM assets').fetchone()[0]==39
+        assert not db.execute('PRAGMA foreign_key_check').fetchall()
+
+
+def test_old_asset_api_and_assignment_paths_cannot_bypass_converted_scope(unified_client):
+    from test_product_catalog_routes import role
+    client=unified_client
+    with inventory_app.app.app_context():identifier=inventory_app.get_db().execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=1').fetchone()[0]
+    role(client,'original-assets-only',['assets.view','assets.manage','asset.assign'])
+    assert client.get(f'/api/asset-entries/{identifier}').status_code==403
+    assert client.post(f'/assets/{identifier}/assign',json={}).status_code==403
+    assert client.delete(f'/api/devices/1').status_code==403
+
+
+def test_unknown_legacy_reference_rolls_back_owned_cleanup_and_mapping(unified_client):
+    client=unified_client
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();identifier=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=1').fetchone()[0]
+        db.execute('CREATE TABLE qa_independent_device_ref(id INTEGER PRIMARY KEY,device_id INTEGER REFERENCES devices(id))')
+        db.execute('INSERT INTO qa_independent_device_ref(device_id) VALUES (1)')
+        db.execute("INSERT INTO device_notes(device_id,note) VALUES (1,'QA keep after blocked delete')");db.commit()
+    state=client.get(f'/api/inventory/assets/{identifier}').json
+    response=client.delete(f'/api/inventory/assets/{identifier}',json={'expectedRevision':state['revision']})
+    assert response.status_code==409
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();assert db.execute('SELECT 1 FROM devices WHERE id=1').fetchone()
+        assert db.execute('SELECT 1 FROM asset_legacy_devices WHERE device_id=1 AND asset_id=?',(identifier,)).fetchone()
+        assert db.execute('SELECT 1 FROM device_notes WHERE note=?',('QA keep after blocked delete',)).fetchone()
+        assert db.execute('SELECT count(*) FROM assets').fetchone()[0]==40
+        assert not db.execute('PRAGMA foreign_key_check').fetchall()

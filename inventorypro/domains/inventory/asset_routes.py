@@ -25,6 +25,23 @@ def build_assets_blueprint(*,get_db,user_can,get_access,login_required,parse_fie
             locations=[dict(row) for row in get_db().execute('SELECT id,name FROM locations ORDER BY name')],
             vendors=[dict(row) for row in get_db().execute('SELECT id,name FROM vendors ORDER BY name')] if user_can('procurement.view') or user_can('procurement.manage') else [],
             orders=[dict(row) for row in get_db().execute('SELECT id,po_number AS name FROM purchase_orders ORDER BY id DESC LIMIT 500')] if user_can('procurement.view') or user_can('procurement.manage') else [])
+    @bp.before_app_request
+    def legacy_access_guard():
+        if not session.get('logged_in') or not (request.path.startswith('/api/asset-entries/') or request.path.startswith('/assets/') or request.endpoint=='handle_device' and request.method=='DELETE'):
+            return None
+        db=get_db()
+        if not assets.unified(db):return None
+        try:
+            if request.endpoint=='handle_device' and request.method=='DELETE':
+                legacy_id=(request.view_args or {}).get('device_id')
+                mapped=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=?',(legacy_id,)).fetchone()
+                if mapped:
+                    assets.delete_asset(db,user_can,mapped[0],assets.version(db,mapped[0]));write('delete',mapped[0]);return jsonify(status='deleted')
+            identifier=(request.view_args or {}).get('asset_id')
+            if identifier is not None:assets.require(db,user_can,identifier)
+        except assets.AssetError as problem:
+            db.rollback();return jsonify(error=str(problem)),problem.status
+        return None
     @bp.app_context_processor
     def inventory_mode():return {'unified_inventory':assets.unified(get_db())}
     @bp.errorhandler(assets.AssetError)
