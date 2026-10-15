@@ -37,8 +37,8 @@ services:
     environment:
       INVENTORY_UPDATE_POLICY_PATH: /data/instance/update_policy.json
       INVENTORY_UPDATE_STATE_PATH: /data/instance/update_state.json
-      INVENTORY_UPDATE_MANIFEST_URL: ${INVENTORY_UPDATE_MANIFEST_URL:-https://github.com/PondSec/inventorypro/releases/latest/download/update-manifest.json}
-      INVENTORY_UPDATE_ALLOWED_IMAGE_REPOSITORY: ${INVENTORY_UPDATE_ALLOWED_IMAGE_REPOSITORY:-ghcr.io/pondsec/inventorypro}
+      INVENTORY_UPDATE_MANIFEST_URL: ${INVENTORY_UPDATE_MANIFEST_URL:-https://gitlab.pondsec.com/PondSec/inventorypro/-/releases/permalink/latest/downloads/update-manifest.json}
+      INVENTORY_UPDATE_ALLOWED_IMAGE_REPOSITORY: ${INVENTORY_UPDATE_ALLOWED_IMAGE_REPOSITORY:-gitlab.pondsec.com/pondsec/inventorypro}
       INVENTORY_UPDATE_COMPOSE_FILE: /workspace/docker-compose.yml
       INVENTORY_UPDATE_COMPOSE_PROJECT_DIR: /workspace
       INVENTORY_UPDATE_HEALTH_URL: http://app:5000/login

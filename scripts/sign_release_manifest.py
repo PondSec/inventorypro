@@ -24,6 +24,23 @@ def canonical_manifest(manifest: dict[str, object]) -> bytes:
     return json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
+def build_manifest(version, image, private_key, release_url=""):
+    if not VERSION_PATTERN.fullmatch(version) or not IMAGE_PATTERN.fullmatch(image):
+        raise ValueError("Version und unveränderlicher Image-Digest sind erforderlich.")
+    manifest: dict[str, object] = {
+        "schemaVersion": 1,
+        "version": version,
+        "image": image,
+        "publishedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "signatureAlgorithm": "ed25519",
+    }
+    if release_url:
+        manifest["releaseUrl"] = release_url
+    signature = private_key.sign(canonical_manifest(manifest))
+    manifest["signature"] = base64.b64encode(signature).decode("ascii")
+    return manifest
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
@@ -45,17 +62,7 @@ def main() -> int:
     if not isinstance(private_key, Ed25519PrivateKey):
         raise SystemExit("INVENTORY_UPDATE_SIGNING_KEY muss ein Ed25519-Schlüssel sein.")
 
-    manifest: dict[str, object] = {
-        "schemaVersion": 1,
-        "version": version,
-        "image": image,
-        "publishedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "signatureAlgorithm": "ed25519",
-    }
-    if args.release_url:
-        manifest["releaseUrl"] = args.release_url
-    signature = private_key.sign(canonical_manifest(manifest))
-    manifest["signature"] = base64.b64encode(signature).decode("ascii")
+    manifest = build_manifest(version, image, private_key, args.release_url)
     args.output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
 

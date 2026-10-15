@@ -24,7 +24,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +35,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 LOGGER = logging.getLogger("inventorypro.updater")
 MANIFEST_MAX_BYTES = 256 * 1024
 DEFAULT_MANIFEST_URL = (
-    "https://github.com/PondSec/inventorypro/releases/latest/download/update-manifest.json"
+    "https://gitlab.pondsec.com/PondSec/inventorypro/-/releases/permalink/latest/downloads/update-manifest.json"
 )
 SEMVER_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$")
 SHA256_IMAGE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$")
@@ -59,13 +59,18 @@ APP_SERVICE = os.environ.get("INVENTORY_UPDATE_APP_SERVICE", "app")
 HEALTH_URL = os.environ.get("INVENTORY_UPDATE_HEALTH_URL", "http://app:5000/login")
 MANIFEST_URL = os.environ.get("INVENTORY_UPDATE_MANIFEST_URL", DEFAULT_MANIFEST_URL)
 ALLOWED_IMAGE_REPOSITORY = os.environ.get(
-    "INVENTORY_UPDATE_ALLOWED_IMAGE_REPOSITORY", "ghcr.io/pondsec/inventorypro"
+    "INVENTORY_UPDATE_ALLOWED_IMAGE_REPOSITORY", "gitlab.pondsec.com/pondsec/inventorypro"
 ).strip().lower()
 PUBLIC_KEY_FILE = os.environ.get("INVENTORY_UPDATE_PUBLIC_KEY_FILE", "/app/release-public-key.pem")
 PUBLIC_KEY_VALUE = os.environ.get("INVENTORY_UPDATE_PUBLIC_KEY", "")
 HEALTH_TIMEOUT_SECONDS = int(os.environ.get("INVENTORY_UPDATE_HEALTH_TIMEOUT_SECONDS", "180"))
 HEALTH_POLL_SECONDS = int(os.environ.get("INVENTORY_UPDATE_HEALTH_POLL_SECONDS", "5"))
 COMMAND_TIMEOUT_SECONDS = int(os.environ.get("INVENTORY_UPDATE_COMMAND_TIMEOUT_SECONDS", "300"))
+DEFAULT_CHECK_INTERVAL_MINUTES = 360
+DEFAULT_MAINTENANCE_WINDOW = "03:30"
+MAINTENANCE_WINDOW_PATTERN = re.compile(
+    r"^(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)(?::(?P<second>[0-5]\d))?$"
+)
 
 
 def configure_logging() -> None:
@@ -74,6 +79,11 @@ def configure_logging() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
+
+
+def utc_now() -> datetime:
+    """Return the current UTC time without timezone metadata for stored state."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def load_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -110,9 +120,28 @@ def atomic_write_json(path: Path, value: dict[str, Any]) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
+def normalize_maintenance_window(value: Any) -> str:
+    candidate = str(value or "").strip()
+    match = MAINTENANCE_WINDOW_PATTERN.fullmatch(candidate)
+    if not match or match.group("second") not in {None, "00"}:
+        raise UpdateError(
+            "Update-Wartungsfenster muss eine minutengenaue Uhrzeit sein "
+            "(z. B. 09:00, 9:00 oder 09:00:00)."
+        )
+    return f"{int(match.group('hour')):02d}:{match.group('minute')}"
+
+
 def normalize_policy(raw_policy: dict[str, Any]) -> dict[str, Any]:
     if raw_policy.get("schemaVersion") != 1:
         raise UpdateError("Unbekannte Update-Policy-Version.")
+    enabled = bool(raw_policy.get("autoUpdateEnabled"))
+    if not enabled:
+        return {
+            "enabled": False,
+            "channel": "stable",
+            "interval": DEFAULT_CHECK_INTERVAL_MINUTES,
+            "maintenance_window": DEFAULT_MAINTENANCE_WINDOW,
+        }
     channel = str(raw_policy.get("channel") or "").lower()
     if channel != "stable":
         raise UpdateError("Nur der signierte Stable-Kanal ist zulässig.")
@@ -122,11 +151,9 @@ def normalize_policy(raw_policy: dict[str, Any]) -> dict[str, Any]:
         raise UpdateError("Update-Prüfintervall ist ungültig.") from error
     if not 15 <= interval <= 1440:
         raise UpdateError("Update-Prüfintervall außerhalb des zulässigen Bereichs.")
-    window = str(raw_policy.get("maintenanceWindow") or "")
-    if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", window):
-        raise UpdateError("Update-Wartungsfenster ist ungültig.")
+    window = normalize_maintenance_window(raw_policy.get("maintenanceWindow"))
     return {
-        "enabled": bool(raw_policy.get("autoUpdateEnabled")),
+        "enabled": enabled,
         "channel": channel,
         "interval": interval,
         "maintenance_window": window,
@@ -140,6 +167,19 @@ def is_due(policy: dict[str, Any], now: datetime | None = None) -> bool:
     window_start = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
     elapsed_seconds = (current - window_start).total_seconds()
     return 0 <= elapsed_seconds < policy["interval"] * 60
+
+
+def seconds_until_next_maintenance_window(
+    policy: dict[str, Any], now: datetime | None = None
+) -> int:
+    """Return the delay until the next configured local maintenance time."""
+    current = now or datetime.now()
+    hour, minute = (int(part) for part in policy["maintenance_window"].split(":"))
+    next_window = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if next_window <= current:
+        next_window += timedelta(days=1)
+    delay_seconds = (next_window - current).total_seconds()
+    return max(1, int(delay_seconds) + int(delay_seconds % 1 > 0))
 
 
 class SafeHttpsRedirect(urllib.request.HTTPRedirectHandler):
@@ -162,7 +202,7 @@ def fetch_manifest(url: str) -> dict[str, Any]:
         host.strip().lower()
         for host in os.environ.get(
             "INVENTORY_UPDATE_ALLOWED_MANIFEST_HOSTS",
-            "github.com,objects.githubusercontent.com,release-assets.githubusercontent.com",
+            "gitlab.pondsec.com,github.com,objects.githubusercontent.com,release-assets.githubusercontent.com",
         ).split(",")
         if host.strip()
     }
@@ -292,7 +332,8 @@ def active_image_reference() -> str:
     repo_digests = command(["docker", "image", "inspect", "--format", "{{join .RepoDigests \"\\n\"}}", image_id])
     for digest in repo_digests.splitlines():
         normalized = digest.strip().lower()
-        if normalized.startswith(f"{ALLOWED_IMAGE_REPOSITORY}@sha256:"):
+        if any(normalized.startswith(f"{repository}@sha256:") for repository in
+               {ALLOWED_IMAGE_REPOSITORY, "ghcr.io/pondsec/inventorypro"}):
             return normalized
     raise UpdateError("Aktives Image hat keinen freigegebenen, wiederherstellbaren Digest.")
 
@@ -301,7 +342,7 @@ def backup_database(target_version: str) -> Path:
     database_path = DATA_PATH / "inventory.db"
     if not database_path.exists():
         raise UpdateError("Produktivdatenbank für Update-Backup nicht gefunden.")
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    timestamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
     backup_directory = DATA_PATH / "backups" / "updates" / f"{timestamp}-{target_version}"
     backup_directory.mkdir(parents=True, exist_ok=False)
     os.chmod(backup_directory, 0o700)
@@ -333,6 +374,21 @@ def backup_database(target_version: str) -> Path:
     return backup_directory
 
 
+
+def restore_database(backup_directory: Path) -> None:
+    """Restore the quiesced SQLite snapshot while the application is stopped."""
+    source_path = backup_directory / "inventory.db"
+    try:
+        with sqlite3.connect(f"file:{source_path}?mode=ro", uri=True) as source:
+            if source.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise UpdateError("Rollback-Backup ist beschädigt.")
+            with sqlite3.connect(DATA_PATH / "inventory.db", timeout=30) as target:
+                source.backup(target)
+                target.commit()
+    except sqlite3.Error as error:
+        raise UpdateError("Datenbank-Rollback fehlgeschlagen.") from error
+
+
 def wait_for_health() -> bool:
     deadline = time.monotonic() + HEALTH_TIMEOUT_SECONDS
     request = urllib.request.Request(HEALTH_URL, method="GET")
@@ -361,7 +417,7 @@ def deploy_image(image: str) -> None:
 
 def write_state(state: dict[str, Any], **changes: Any) -> None:
     state.update(changes)
-    state["updatedAt"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    state["updatedAt"] = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     atomic_write_json(STATE_PATH, state)
 
 
@@ -383,13 +439,22 @@ def perform_update(policy: dict[str, Any]) -> str:
         previousImage=current_image,
         backupPath=str(backup_directory),
     )
+    stopped = False
     try:
+        # Take the final snapshot with writers stopped, before new migrations run.
+        command(compose_args("stop", APP_SERVICE))
+        stopped = True
+        backup_directory = backup_database(target_version + "-quiesced")
+        write_state(state, backupPath=str(backup_directory))
         deploy_image(manifest["image"])
         if not wait_for_health():
             raise UpdateError("Neue Version hat den Healthcheck nicht bestanden.")
     except UpdateError as error:
         LOGGER.error("Update auf %s fehlgeschlagen, starte Rollback: %s", target_version, error)
         try:
+            if stopped:
+                command(compose_args("stop", APP_SERVICE))
+                restore_database(backup_directory)
             deploy_image(current_image)
             if not wait_for_health():
                 raise UpdateError("Rollback-Container hat den Healthcheck nicht bestanden.")
@@ -445,7 +510,10 @@ def main() -> int:
                 result = run_once()
                 LOGGER.info("Updater-Ergebnis: %s", result)
                 policy = normalize_policy(load_json(POLICY_PATH))
-                sleep_seconds = policy["interval"] * 60
+                sleep_seconds = min(
+                    policy["interval"] * 60,
+                    seconds_until_next_maintenance_window(policy),
+                )
             except UpdateError as error:
                 LOGGER.error("Updater abgebrochen: %s", error)
                 sleep_seconds = 15 * 60
