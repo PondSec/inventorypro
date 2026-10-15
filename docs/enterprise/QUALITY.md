@@ -1,5 +1,48 @@
 # Ausgeführte Qualitätssicherung
 
+## Enterprise-Relaunch: Release-Kandidat 0.3.0
+
+15.10.2026, isolierte synthetische Daten. Vollständiger macOS-Lauf mit Python
+3.14.7, Chromium 149 und Firefox 151: **573 Tests und 46 Unterfälle bestanden**,
+401 Sekunden, JUnit 619 Fälle ohne Fehler/Fehlschläge. Anschließend hinzugefügte
+Prüfungen separat: sichere Software-/Organisationslöschung (fünf Fälle), finale
+Tab-/Themeverträge (20 Fälle) und Pixelregression (zwei Browserfälle, acht Bilder)
+bestanden. Die finalen signierten Images werden separat durch die Release-Pipeline
+geprüft; dieser Bericht nimmt deren Ergebnis nicht vorweg.
+
+- 360 reale Ansichten in 1920/1672/1440/1280/390 Pixeln, jeweils Light/Dark, plus
+  Anmeldung: null JS-Fehler, null Seitenüberläufe, null unerwartete HTTP-Fehler.
+  133 GET-Routen und 45 Templates inventarisiert. Nach dem Sichtvergleich wurden
+  die letzten alten Dark-Theme-Regeln korrigiert und betroffene Ansichten ergänzt.
+- 1.020 synthetische Assets mit 400 lizenzierten Katalogbildern, 620 Fallbacks und
+  600 Zuweisungen. Keine Kundenaufnahmen in Testartefakten oder Git.
+- Acht geprüfte macOS-Pixelbaselines mit echtem MacBook-Starterbild, beiden
+  Browsern/Themes und Desktop/Mobil; Wiederholung gegen gespeicherte Bilder
+  erfolgreich. Linux besitzt keine freigegebene Pixelbaseline, führt aber
+  Funktions-, Geometrie-, Theme- und Tastaturverträge aus.
+- Docker Desktop 29.7.2, native Linux ARM64, Python 3.12: tatsächliche Neuinstallation
+  des Kandidaten, HTTP-Erstlogin/Passwortwechselpflicht, private persistente Secrets,
+  vollständige Module/Migrationen/Katalogdateien und Neustart bestanden.
+- Tatsächliches veröffentlichtes 0.2.0-Image → Kandidat → Vorabsicherung → altes
+  Image: Geräte/Assets/Mengen/Rollen/Tickets/Upload/Policy/Secret erhalten,
+  automatische Übernahme idempotent, Datenbank integer. Produktbildabruf und
+  Ticketlöschung mit Roadmapverweis über HTTP bestanden.
+- Produktfoto-Upload wird in unabhängiger Sitzung abgerufen; Bilddaten bleiben
+  serverseitig im persistenten Volume. Öffentliche Suche prüft vollständiges
+  Modell/Hersteller bzw. GTIN sowie Lizenz; keine Inventarnamen/Seriennummern/
+  Standorte/Personen werden an die Quelle gesendet. Mehrdeutige Treffer bleiben
+  ohne automatische Zuordnung. Öffentlicher Dienst bleibt administratorseitig
+  aktivierbar; Starterbild und gecachte Bilder benötigen keine Onlineverbindung.
+- Einschränkungen: keine Windows-/Safari-Installationsabnahme, keine pauschale
+  WCAG-Zertifizierung. Alte nicht eingerichtete Updater können nicht automatisch
+  starten; abgeschaltete Updates und Wartungsfenster werden respektiert.
+
+Details: [Changelog](../changelog-ui.md),
+Chromium/Firefox pixel regression,
+[Dockerübernahme](../docker-asset-upgrade-qa.md).
+
+## Historische Abnahme des veröffentlichten 0.2.0
+
 Stand 15.10.2026. Ausschließlich synthetische Daten und isolierte Testprojekte.
 Entwicklungscheckout liegt außerhalb des iCloud-Verzeichnisses.
 

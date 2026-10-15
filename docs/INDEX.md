@@ -1,6 +1,9 @@
 # Dokumentation
 
 - [Installation und Betrieb](installation.md)
+- [Automatische Assetübernahme und Sicherung](asset-upgrade.md)
+- [Produktbilder und gemeinsamer Speicher](product-images.md)
+- [Ausgeführte Dockerübernahme](docker-asset-upgrade-qa.md)
 - [Bekannte Einschränkungen](known-issues.md)
 - [Designsystem](design-system.md) und [Bedienmuster](ui-patterns.md)
 - [UI-Änderungshistorie](changelog-ui.md)

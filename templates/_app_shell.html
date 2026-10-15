@@ -17,122 +17,70 @@
     </a>
 {%- endmacro %}
 
+{% macro nav_group(label, icon, active=False) -%}
+<details class="nav-group" {% if active %}open{% endif %}>
+    <summary title="{{ label }}"><span class="sidebar-link-icon"><i data-feather="{{ icon }}" aria-hidden="true"></i></span><span class="sidebar-text">{{ label }}</span><i data-feather="chevron-down" class="nav-group__chevron" aria-hidden="true"></i></summary>
+    <div class="nav-group__items">{{ caller() }}</div>
+</details>
+{%- endmacro %}
+
 {% macro render_sidebar(current_module='dashboard') -%}
     {% set current_path = request.path %}
     {% set inventory_view = request.args.get('view', 'overview') %}
     {% set can_devices = is_superuser or 'devices.view' in permissions or 'devices.manage' in permissions %}
     {% set can_assets = is_superuser or 'assets.view' in permissions or 'assets.manage' in permissions %}
     {% set can_settings = is_superuser or 'server_settings.manage' in permissions %}
+    {% set can_analysis = is_superuser or 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
     <aside class="app-sidebar sidebar enterprise-sidebar" aria-label="Hauptnavigation">
         <div class="sidebar-header enterprise-sidebar__header">
-            <a href="/" class="flex items-center gap-3" aria-label="Inventory Pro Startseite">
-                <span class="sidebar-logo" data-brand-logo>
-                    <i data-feather="cpu" data-brand-logo-icon class="w-5 h-5"></i>
-                </span>
-                <div class="sidebar-meta">
-                    <p class="sidebar-title sidebar-text" data-brand-name>Inventory Pro</p>
-                    <p class="sidebar-subtitle sidebar-text" data-brand-tagline>{{ 'Verknüpfte Instanz' if current_path.startswith('/inventory-links/') else 'Inventarisierung' }}</p>
-                </div>
+            <a href="{{ '/inventory' if can_devices or can_assets else '/' }}" class="sidebar-brand" aria-label="Inventory Pro Startseite">
+                <span class="sidebar-logo" data-brand-logo><i data-feather="box" data-brand-logo-icon class="w-5 h-5" aria-hidden="true"></i></span>
+                <span class="sidebar-title sidebar-text" data-brand-name>Inventory Pro</span>
+                <span class="sr-only" data-brand-tagline>{{ 'Verknüpfte Instanz' if current_path.startswith('/inventory-links/') else 'Inventarisierung' }}</span>
             </a>
         </div>
-
-        <div class="sidebar-content sidebar-scroll scrollbar-hide">
-            <div class="sidebar-panel">
-                <p class="sidebar-panel-title">Inventar</p>
-                <div class="mt-3 space-y-1">
-                    {{ render_nav_link('/?view=overview', 'Dashboard', 'home', current_path == '/' and inventory_view == 'overview') }}
-                    {% if can_devices or can_assets %}
-                    {{ render_nav_link('/inventory', 'Gesamter Bestand', 'layers', current_path == '/inventory' and not request.args.get('kind')) }}
-                    {% endif %}
-                    {% if can_devices %}
-                    {{ render_nav_link('/inventory?kind=device', 'Geräte', 'monitor', current_path.startswith('/inventory/devices/') or (current_path == '/inventory' and request.args.get('kind') == 'device')) }}
-                    {% endif %}
-                    {% if can_assets %}
-                    {{ render_nav_link('/inventory?kind=asset', 'Komponenten und Sets', 'package', current_path.startswith('/inventory/assets/') or (current_path == '/inventory' and request.args.get('kind') == 'asset')) }}
-                    {% endif %}
-                    {% if 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}
-                    {{ render_nav_link('/?view=taxonomy', 'Vorlagen und Felder', 'layers', current_path == '/' and inventory_view == 'taxonomy') }}
-                    {% endif %}
-                    {% if 'assets.view' in permissions or 'assets.manage' in permissions %}
-                    {{ render_nav_link('/inventory/planning', 'Lager- und Platzplanung', 'package', current_path == '/inventory/planning') }}
-                    {% endif %}
-                    {% if 'locations.view' in permissions or 'locations.manage' in permissions %}
-                    {{ render_nav_link('/locations', 'Standorte', 'map-pin', current_path == '/locations') }}
-                    {% endif %}
-                </div>
-            </div>
-
-            <div class="sidebar-panel">
-                <p class="sidebar-panel-title">Service und Zusammenarbeit</p>
-                <div class="mt-3 space-y-1">
-                    {% if 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}
-                    {{ render_nav_link('/tickets', 'Ticketsystem', 'life-buoy', current_path.startswith('/tickets')) }}
-                    {% endif %}
-                    {% if 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}
-                    {{ render_nav_link('/knowledge', 'Wissensbasis', 'book-open', current_path == '/knowledge') }}
-                    {% endif %}
-                    {% if 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}
-                    {{ render_nav_link('/roadmap', 'Roadmap', 'git-merge', current_path == '/roadmap') }}
-                    {% endif %}
-                    {% if 'procurement.view' in permissions or 'procurement.manage' in permissions %}
-                    {{ render_nav_link('/procurement', 'Beschaffung', 'shopping-cart', current_path == '/procurement') }}
-                    {% endif %}
-                </div>
-            </div>
-
-            {% if 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
-            <div class="sidebar-panel">
-                <p class="sidebar-panel-title">Analyse und Betrieb</p>
-                <div class="mt-3 space-y-1">
-                    {% if 'stats.view' in permissions %}
-                    {{ render_nav_link('/stats', 'Auswertungen', 'bar-chart-2', current_path == '/stats') }}
-                    {% endif %}
-                    {% if 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}
-                    {{ render_nav_link('/dependencies', 'Abhängigkeiten', 'share-2', current_path == '/dependencies') }}
-                    {% endif %}
-                    {% if 'timemachine.view' in permissions %}
-                    {{ render_nav_link('/time-machine', 'Zeitmaschine', 'clock', current_path == '/time-machine') }}
-                    {% endif %}
-                    {% if 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
-                    {{ render_nav_link('/health', 'Systemzustand', 'activity', current_path == '/health') }}
-                    {% endif %}
-                </div>
-            </div>
+        <nav class="sidebar-content sidebar-scroll scrollbar-hide" aria-label="Module">
+            {% if can_devices or can_assets or 'locations.view' in permissions or 'locations.manage' in permissions or 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}
+            {% call nav_group('Inventar', 'layers', current_path == '/' or current_path.startswith('/inventory') and not current_path.startswith('/inventory-links') or current_path == '/locations') %}
+                {% if can_devices or can_assets %}{{ render_nav_link('/inventory', 'Bestand', 'grid', current_path == '/inventory' and not request.args.get('kind')) }}{% endif %}
+                {% if can_devices and not unified_inventory %}{{ render_nav_link('/inventory?kind=device', 'Geräte', 'monitor', current_path.startswith('/inventory/devices/') or current_path == '/inventory' and request.args.get('kind') == 'device') }}{% endif %}
+                {% if can_assets and not unified_inventory %}{{ render_nav_link('/inventory?kind=asset', 'Sets & Zubehör', 'package', current_path.startswith('/inventory/assets/') or current_path == '/inventory' and request.args.get('kind') == 'asset') }}{% endif %}
+                {% if is_superuser or 'locations.view' in permissions or 'locations.manage' in permissions %}{{ render_nav_link('/locations', 'Standorte', 'map-pin', current_path == '/locations') }}{% endif %}
+                {% if is_superuser or 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}{{ render_nav_link('/inventory/categories' if unified_inventory else '/?view=taxonomy', 'Asset-Kategorien' if unified_inventory else 'Vorlagen', 'sliders', current_path == '/inventory/categories' or current_path == '/' and inventory_view == 'taxonomy') }}{% endif %}
+                {% if can_devices or can_assets or can_settings %}{{ render_nav_link('/inventory/catalog', 'Produktkatalog', 'image', current_path.startswith('/inventory/catalog')) }}{% endif %}
+                {% if can_assets or unified_inventory and can_devices %}{{ render_nav_link('/inventory/planning', 'Lager- und Platzplanung', 'archive', current_path == '/inventory/planning') }}{% endif %}
+            {% endcall %}
             {% endif %}
-
-            {% if inventory_links or can_settings %}
-            <div class="sidebar-panel">
-                <div class="flex items-center justify-between gap-3">
-                    <p class="sidebar-panel-title">Verknüpfte Instanzen</p>
-                    {% if can_settings %}<a href="/settings?section=server#inventory-links" class="text-[11px] font-semibold text-slate-500 hover:text-slate-700">Verwalten</a>{% endif %}
-                </div>
-                <div class="mt-3 space-y-1">
-                    {% if inventory_links %}
-                    {% for link in inventory_links %}
-                    {{ render_nav_link('/inventory-links/' ~ link.id ~ '/portal', link.displayName, 'link-2', current_path == '/inventory-links/' ~ link.id ~ '/portal', badge=link.healthStatus, badge_tone='success' if link.healthStatus == 'ok' else 'warning' if link.healthStatus == 'unauthorized' else 'danger') }}
-                    {% endfor %}
-                    {% elif can_settings %}
-                    {{ render_nav_link('/settings?section=server#inventory-links', 'Link hinzufügen', 'plus-circle', False) }}
-                    {% endif %}
-                </div>
-            </div>
-
+            {% if is_superuser or 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions or 'ticket_categories.manage' in permissions or 'ticket_alerts.manage' in permissions or 'notifications.manage' in permissions %}
+            {% call nav_group('Service Desk', 'headphones', current_path.startswith('/tickets') or current_path.startswith('/admin/tickets')) %}
+                {% if is_superuser or 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions %}{{ render_nav_link('/tickets', 'Tickets', 'inbox', current_path.startswith('/tickets')) }}{% endif %}
+                {% if is_superuser or 'ticket_categories.manage' in permissions or 'ticket_alerts.manage' in permissions or 'notifications.manage' in permissions %}{{ render_nav_link('/admin/tickets', 'Administration', 'sliders', current_path.startswith('/admin/tickets')) }}{% endif %}
+            {% endcall %}
             {% endif %}
-
-            {% if 'users.manage' in permissions or 'server_settings.manage' in permissions %}
-            <div class="sidebar-panel">
-                <p class="sidebar-panel-title">Administration</p>
-                <div class="mt-3 space-y-1">
-                    {% if 'users.manage' in permissions %}
-                    {{ render_nav_link('/users', 'Benutzer & Rollen', 'users', current_path == '/users') }}
-                    {% endif %}
-                    {% if 'server_settings.manage' in permissions %}
-                    {{ render_nav_link('/settings', 'Einstellungen', 'settings', current_path == '/settings' or current_path == '/settings/terminal') }}
-                    {% endif %}
-                </div>
-            </div>
+            {% if is_superuser or 'procurement.view' in permissions or 'procurement.manage' in permissions %}{{ render_nav_link('/procurement', 'Beschaffung', 'shopping-cart', current_path == '/procurement') }}{% endif %}
+            {% if is_superuser or 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}{{ render_nav_link('/knowledge', 'Wissensbasis', 'book-open', current_path == '/knowledge') }}{% endif %}
+            {% if is_superuser or 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}{{ render_nav_link('/roadmap', 'Roadmap', 'git-merge', current_path == '/roadmap') }}{% endif %}
+            {% if can_analysis %}
+            {% call nav_group('Auswertung', 'bar-chart-2', current_path in ['/stats','/dependencies','/time-machine','/health']) %}
+                {% if is_superuser or 'stats.view' in permissions %}{{ render_nav_link('/stats', 'Statistiken', 'bar-chart-2', current_path == '/stats') }}{% endif %}
+                {% if is_superuser or 'dependencies.view' in permissions or 'dependencies.manage' in permissions %}{{ render_nav_link('/dependencies', 'Abhängigkeiten', 'share-2', current_path == '/dependencies') }}{% endif %}
+                {% if is_superuser or 'timemachine.view' in permissions %}{{ render_nav_link('/time-machine', 'Zeitmaschine', 'clock', current_path == '/time-machine') }}{% endif %}
+                {% if is_superuser or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}{{ render_nav_link('/health', 'Systemzustand', 'activity', current_path == '/health') }}{% endif %}
+            {% endcall %}
             {% endif %}
-        </div>
+            {% call nav_group('Einstellungen', 'settings', current_path.startswith('/settings') or current_path == '/users' or current_path.startswith('/account')) %}
+                {% if can_settings %}{{ render_nav_link('/settings', 'Server & Updates', 'server', current_path == '/settings' and request.args.get('section') != 'customize') }}{{ render_nav_link('/settings?section=customize', 'Darstellung', 'sliders', current_path == '/settings' and request.args.get('section') == 'customize') }}{{ render_nav_link('/settings/terminal', 'Terminal', 'terminal', current_path == '/settings/terminal') }}{% endif %}
+                {% if is_superuser or 'users.manage' in permissions %}{{ render_nav_link('/users', 'Benutzer & Rollen', 'users', current_path == '/users') }}{% endif %}
+                {{ render_nav_link('/account/security', 'Kontosicherheit', 'shield', current_path == '/account/security') }}
+                {% if can_settings %}{{ render_nav_link('/settings?section=server#inventory-links', 'Verknüpfte Instanzen', 'link-2', False) }}{% endif %}
+            {% endcall %}
+            {% if inventory_links %}
+            {% call nav_group('Verknüpfte Instanzen', 'link-2', current_path.startswith('/inventory-links/')) %}
+                {% for link in inventory_links %}{{ render_nav_link('/inventory-links/' ~ link.id ~ '/portal', link.displayName, 'link-2', current_path == '/inventory-links/' ~ link.id ~ '/portal', badge=link.healthStatus, badge_tone='success' if link.healthStatus == 'ok' else 'warning') }}{% endfor %}
+            {% endcall %}
+            {% endif %}
+        </nav>
+        <footer class="sidebar-footer"><button type="button" data-sidebar-toggle class="sidebar-collapse" aria-label="Menü minimieren oder erweitern"><i data-feather="sidebar" class="ui-icon" aria-hidden="true"></i><span class="sidebar-text">Menü minimieren</span></button></footer>
     </aside>
 {%- endmacro %}
 

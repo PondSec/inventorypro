@@ -1,0 +1,2 @@
+{% for related in object.links %}<a class="object-list-item" href="/inventory/{{ 'devices' if related.kind == 'device' else 'assets' }}/{{ related.id }}"><strong>{{ related.name }}</strong><small>Menge {{ related.quantity }}{% if related.notes %} · {{ related.notes }}{% endif %}</small></a>{% else %}<p class="muted">Keine Verknüpfungen vorhanden.</p>{% endfor %}
+{% if object.links | length == 100 %}<p class="muted">Die ersten 100 Verknüpfungen. Weitere Einträge finden Sie auf der Detailseite.</p>{% endif %}

@@ -50,7 +50,7 @@ APP_SECRET_KEY-Werte und Verschlüsselungsschlüssel werden nicht verändert.
 ## Erste Schritte
 
 1. Eigenes Passwort setzen und unter Kontosicherheit TOTP aktivieren.
-2. Einen Standort anlegen und ein erstes Gerät erfassen.
+2. Einen Standort anlegen und ein erstes Asset erfassen.
 3. Benutzer/Rollen nach Aufgaben vergeben.
 4. In Einstellungen ein Backup ausführen und eine Wiederherstellung in einer
    separaten Testinstanz prüfen.
@@ -78,6 +78,11 @@ Signierte neue Versionen kommen ausschließlich aus der freigegebenen GitLab-Reg
 
 Bereits vorhandene alte Sidecars behalten ihre bisherigen Fähigkeiten und den
 kompatiblen Feed; der Quellcode allein tauscht keinen laufenden Sidecar aus.
+
+Beim ersten Start der neuen Assetversion wird der vorhandene Bestand nach einer
+geschützten Datenbankkopie automatisch übernommen. Ablauf und Rückfallsicherung:
+[Asset-Übernahme](asset-upgrade.md). Vorhandene Ports, Datenvolumes und die
+gespeicherte Auto-Update-Einstellung bleiben erhalten.
 
 ## Persistenz und Sicherung
 

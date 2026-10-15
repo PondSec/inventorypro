@@ -15,11 +15,11 @@
       "secondary": "#6366f1",
       "accent": "#2563eb",
       "neutral": "#64748b",
-      "background": "#f6f7fb",
+      "background": "#f6f8fc",
       "surface": "#ffffff",
       "text": "#0f172a",
-      "textMuted": "#6b7280",
-      "border": "#e5e7eb",
+      "textMuted": "#596985",
+      "border": "#e3e9f2",
       "shadow": "rgba(15, 23, 42, 0.12)",
       "focus": "rgba(37, 99, 235, 0.35)",
       "success": "#15803d",
@@ -31,10 +31,10 @@
       "fontFamily": "\"Inter\", \"Segoe UI\", system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
       "fontSizes": {
         "xs": "12px",
-        "sm": "14px",
-        "base": "15px",
+        "sm": "13px",
+        "base": "14px",
         "lg": "18px",
-        "xl": "22px"
+        "xl": "26px"
       },
       "fontWeights": {
         "normal": 400,
@@ -44,7 +44,7 @@
       },
       "lineHeights": {
         "tight": 1.2,
-        "normal": 1.6,
+        "normal": 1.5,
         "relaxed": 1.75
       },
       "letterSpacing": {
@@ -85,7 +85,7 @@
     },
     "layout": {
       "containerWidth": 1200,
-      "sidebarWidth": 280,
+      "sidebarWidth": 240,
       "tableDensity": "normal"
     },
     "states": {
@@ -171,7 +171,7 @@
   "layoutPrefs": {
     "density": 1,
     "containerWidth": 1200,
-    "sidebarWidth": 280,
+    "sidebarWidth": 240,
     "tableDensity": "normal",
     "rowHeight": 44,
     "zebraStriping": true,

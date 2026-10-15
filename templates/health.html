@@ -1,6 +1,7 @@
 {% extends 'base_app.html' %}
 {% set page_title = 'Systemzustand' %}
 {% set page_module = 'health' %}
+{% set page_section_label = 'Auswertung' %}
 {% set hide_page_intro = true %}
 {% block title %}Systemzustand | Inventory Pro{% endblock %}
 {% block html_attrs %}x-data="healthApp()"{% endblock %}
@@ -43,7 +44,7 @@
                 </section>
 
                 <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div role="tablist" aria-label="Systemzustand" class="flex flex-wrap items-center gap-2">
+                    <div role="tablist" aria-label="Systemzustand" class="workspace-tabs">
                         <template x-for="tab in tabs" :key="tab.key">
                             <button type="button" role="tab" :id="'health-tab-' + tab.key" :aria-controls="'health-panel-' + tab.key" :aria-selected="activeTab === tab.key" @click="activeTab = tab.key" :class="activeTab === tab.key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">
                                 <span x-text="tab.label"></span>
@@ -57,13 +58,13 @@
                         <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                             <div class="flex items-center justify-between">
                                 <div>
-                                    <h3 class="text-sm font-semibold text-slate-900">Recent Events</h3>
+                                    <h3 class="text-sm font-semibold text-slate-900">Letzte Ereignisse</h3>
                                     <p class="text-xs text-slate-500">Letzte Statuswechsel</p>
                                 </div>
                             </div>
                             <div class="mt-4 space-y-3">
                                 <template x-if="summary.events.length === 0">
-                                    <p class="text-sm text-slate-500">Keine Events verfügbar.</p>
+                                    <p class="text-sm text-slate-500">Keine Ereignisse vorhanden.</p>
                                 </template>
                                 <template x-for="event in summary.events" :key="event.id">
                                     <div class="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
@@ -81,12 +82,12 @@
                         </div>
                         <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                             <div>
-                                <h3 class="text-sm font-semibold text-slate-900">Open Incidents</h3>
-                                <p class="text-xs text-slate-500">Aktive Incidents mit CRIT-Dauer.</p>
+                                <h3 class="text-sm font-semibold text-slate-900">Offene Störungen</h3>
+                                <p class="text-xs text-slate-500">Aktive Störungen mit kritischer Dauer.</p>
                             </div>
                             <div class="mt-4 space-y-3">
                                 <template x-if="summary.incidents.length === 0">
-                                    <p class="text-sm text-slate-500">Keine offenen Incidents.</p>
+                                    <p class="text-sm text-slate-500">Keine offenen Störungen.</p>
                                 </template>
                                 <template x-for="incident in summary.incidents" :key="incident.id">
                                     <div class="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
@@ -110,8 +111,8 @@
                         <input type="text" x-model="serviceFilter" aria-label="Services durchsuchen" placeholder="Service suchen" class="rounded-full border border-slate-200 px-4 py-2 text-sm">
                         <span class="text-xs text-slate-400" x-text="`${filteredServices.length} Services`"></span>
                     </div>
-                    <div class="table-wrapper table-responsive rounded-3xl border border-slate-200 bg-white shadow-sm">
-                        <table class="table w-full text-sm responsive-table">
+                    <div class="data-table-scroll workspace-panel module-primary">
+                        <table class="data-table module-table">
                             <thead class="bg-slate-50 text-xs uppercase text-slate-400">
                                 <tr>
                                     <th class="px-4 py-3 text-left">Service</th>
@@ -147,18 +148,18 @@
 
                 <section role="tabpanel" id="health-panel-checks" aria-labelledby="health-tab-checks" x-show="activeTab === 'checks'" x-transition class="space-y-4">
                     <div class="filter-bar flex flex-wrap items-center justify-between gap-3">
-                        <input type="text" x-model="checkFilter" aria-label="Prüfungen durchsuchen" placeholder="Check suchen" class="rounded-full border border-slate-200 px-4 py-2 text-sm">
+                        <input type="text" x-model="checkFilter" aria-label="Prüfungen durchsuchen" placeholder="Prüfung suchen" class="rounded-full border border-slate-200 px-4 py-2 text-sm">
                         <span class="text-xs text-slate-400" x-text="`${filteredChecks.length} Checks`"></span>
                     </div>
-                    <div class="table-wrapper table-responsive rounded-3xl border border-slate-200 bg-white shadow-sm">
-                        <table class="table w-full text-sm responsive-table">
+                    <div class="data-table-scroll workspace-panel module-primary">
+                        <table class="data-table module-table">
                             <thead class="bg-slate-50 text-xs uppercase text-slate-400">
                                 <tr>
                                     <th class="px-4 py-3 text-left">Check</th>
                                     <th class="px-4 py-3 text-left">Kategorie</th>
                                     <th class="px-4 py-3 text-left">Status</th>
-                                    <th class="px-4 py-3 text-left">Interval</th>
-                                    <th class="px-4 py-3 text-right">Enabled</th>
+                                    <th class="px-4 py-3 text-left">Intervall</th>
+                                    <th class="px-4 py-3 text-right">Aktiv</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -176,13 +177,13 @@
                                         <td class="px-4 py-3 text-right">
                                             <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
                                                 <input type="checkbox" class="rounded" :checked="check.enabled" @change="toggleCheck(check)">
-                                                <span x-text="check.enabled ? 'On' : 'Off'"></span>
+                                                <span x-text="check.enabled ? 'Ein' : 'Aus'"></span>
                                             </label>
                                         </td>
                                     </tr>
                                 </template>
                                 <tr x-show="filteredChecks.length === 0">
-                                    <td colspan="5" class="px-4 py-6 text-center text-sm text-slate-500">Keine Checks gefunden.</td>
+                                    <td colspan="5" class="px-4 py-6 text-center text-sm text-slate-500">Keine passenden Prüfungen.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -190,14 +191,14 @@
                 </section>
 
                 <section role="tabpanel" id="health-panel-incidents" aria-labelledby="health-tab-incidents" x-show="activeTab === 'incidents'" x-transition class="space-y-4">
-                    <div class="table-wrapper table-responsive rounded-3xl border border-slate-200 bg-white shadow-sm">
-                        <table class="table w-full text-sm responsive-table">
+                    <div class="data-table-scroll workspace-panel module-primary">
+                        <table class="data-table module-table">
                             <thead class="bg-slate-50 text-xs uppercase text-slate-400">
                                 <tr>
-                                    <th class="px-4 py-3 text-left">Incident</th>
+                                    <th class="px-4 py-3 text-left">Störung</th>
                                     <th class="px-4 py-3 text-left">Status</th>
-                                    <th class="px-4 py-3 text-left">Opened</th>
-                                    <th class="px-4 py-3 text-left">Ack/Mute</th>
+                                    <th class="px-4 py-3 text-left">Eröffnet</th>
+                                    <th class="px-4 py-3 text-left">Bestätigung / Stummschaltung</th>
                                     <th class="px-4 py-3 text-right">Aktionen</th>
                                 </tr>
                             </thead>
@@ -326,11 +327,11 @@
         function healthApp() {
             return {
                 tabs: [
-                    { key: 'overview', label: 'Overview' },
-                    { key: 'services', label: 'Services' },
-                    { key: 'checks', label: 'Checks' },
-                    { key: 'incidents', label: 'Incidents' },
-                    { key: 'history', label: 'History' }
+                    { key: 'overview', label: 'Übersicht' },
+                    { key: 'services', label: 'Dienste' },
+                    { key: 'checks', label: 'Prüfungen' },
+                    { key: 'incidents', label: 'Störungen' },
+                    { key: 'history', label: 'Verlauf' }
                 ],
                 activeTab: 'overview',
                 summary: { overall_status: 'UNKNOWN', last_updated: null, summary_cards: [], events: [], incidents: [] },

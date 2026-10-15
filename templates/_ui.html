@@ -1,0 +1,54 @@
+{# Shared visual primitives; keep semantic HTML and caller-owned real actions. #}
+{% macro icon(name, class='') -%}<i data-feather="{{ name }}" class="ui-icon {{ class }}" aria-hidden="true"></i>{%- endmacro %}
+{% macro page_header(title, section='', description='', breadcrumbs=[]) -%}
+<header class="page-heading">
+    <div class="page-heading__copy">
+        <nav class="page-crumbs" aria-label="Pfad">
+            {% if breadcrumbs %}{% for item in breadcrumbs %}{% if item.href %}<a href="{{ item.href }}">{{ item.label }}</a>{% else %}<span>{{ item.label }}</span>{% endif %}{% if not loop.last %}<span aria-hidden="true">›</span>{% endif %}{% endfor %}
+            {% else %}<span>{{ section or 'Inventory Pro' }}</span><span aria-hidden="true">›</span><span>{{ title }}</span>{% endif %}
+        </nav>
+        <h1>{{ title }}</h1>{% if description %}<p>{{ description }}</p>{% endif %}
+    </div>
+    <div class="page-heading__actions">{{ caller() if caller is defined else '' }}</div>
+</header>
+{%- endmacro %}
+{% macro status(label, tone='neutral') -%}<span class="status-badge" data-tone="{{ tone }}">{{ label }}</span>{%- endmacro %}
+{% macro section(title, description='') -%}<section class="workspace-panel ui-section"><header><h2>{{ title }}</h2>{% if description %}<p>{{ description }}</p>{% endif %}</header>{{ caller() }}</section>{%- endmacro %}
+{% macro empty_state(title, description='', icon_name='inbox') -%}<div class="empty-state">{{ icon(icon_name) }}<h2>{{ title }}</h2>{% if description %}<p>{{ description }}</p>{% endif %}{{ caller() if caller is defined else '' }}</div>{%- endmacro %}
+
+{% macro thumbnail(icon_name='component', image_url='', large=False) -%}
+<span class="product-thumbnail{% if large %} product-thumbnail--large{% endif %}">
+    {% if image_url %}<img src="{{ image_url }}" width="{{ 104 if large else 40 }}" height="{{ 72 if large else 40 }}" alt="" loading="{{ 'eager' if large else 'lazy' }}" decoding="async">{% endif %}
+    <svg class="product-fallback" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    {% if icon_name == 'laptop' %}<rect x="4" y="3" width="16" height="13" rx="1.5"/><path d="M2 19h20l-2-3H4zM9 19h6"/>
+    {% elif icon_name == 'smartphone' %}<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 5h4M11 19h2"/>
+    {% elif icon_name == 'printer' %}<path d="M7 8V3h10v5M7 17H4V8h16v9h-3M7 14h10v7H7zM17 11h.01"/>
+    {% elif icon_name == 'server' %}<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M4 9h16M4 15h16M7 6h.01M7 12h.01M7 18h.01M11 6h6M11 12h6M11 18h6"/>
+    {% elif icon_name == 'network' %}<rect x="2" y="8" width="20" height="9" rx="2"/><path d="M5 12h2M10 12h2M15 12h2M6 8V4M18 8V4M6 17v3M18 17v3"/>
+    {% elif icon_name == 'drive' %}<rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="10" r="4"/><path d="m12 10 5 7M7 19h.01M10 19h.01"/>
+    {% elif icon_name == 'monitor' %}<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+    {% else %}<path d="m12 2 9 5v10l-9 5-9-5V7zM3 7l9 5 9-5M12 12v10M7.5 4.5l9 5"/>{% endif %}
+    </svg>
+</span>
+{%- endmacro %}
+
+{% macro object_header(object, heading_id='object-panel-name', full=False) -%}
+<div class="object-header">
+    {{ thumbnail(object.icon, object.image_url | default(''), large=True) }}
+    <div class="object-header__copy"><{{ 'h1' if full else 'h2' }} id="{{ heading_id }}">{{ object.name }}</{{ 'h1' if full else 'h2' }}>
+        <div class="object-header__meta"><span>{{ object.serial_number or ('Asset #' if object.unified else 'Gerät #' if object.kind == 'device' else 'Set #') ~ object.id }}</span>{% if object.serial_number %}<button type="button" class="copy-control" data-copy-value="{{ object.serial_number }}" aria-label="Identifikationsnummer kopieren">{{ icon('copy') }}</button>{% endif %}{{ status(object.status,object.status_tone) }}</div>
+    </div>
+</div>
+{%- endmacro %}
+
+{% macro property(label, value, icon_name='', copy=False) -%}
+<div class="object-property"><dt>{% if icon_name %}{{ icon(icon_name) }}{% endif %}<span>{{ label }}</span></dt><dd>{{ value if value not in (none, '') else 'Nicht erfasst' }}{% if copy and value %}<button class="copy-control" type="button" data-copy-value="{{ value }}" aria-label="{{ label }} kopieren">{{ icon('copy') }}</button>{% endif %}</dd></div>
+{%- endmacro %}
+
+{% macro accordion(title, icon_name='', count=none, open=False) -%}
+<details class="object-accordion" {% if open %}open{% endif %}><summary>{% if icon_name %}{{ icon(icon_name) }}{% endif %}<span>{{ title }}</span>{% if count is not none %}<span class="count-badge">{{ count }}</span>{% endif %}{{ icon('chevron-right') }}</summary><div class="object-accordion__body">{{ caller() }}</div></details>
+{%- endmacro %}
+
+{% macro kpi_tile(label,value,icon_name,description,href,tone='neutral') -%}
+<a class="kpi-tile" href="{{ href }}" data-tone="{{ tone }}"><span class="kpi-tile__icon">{{ icon(icon_name) }}</span><span class="kpi-tile__copy"><span class="kpi-tile__label">{{ label }}</span><strong>{{ value }}</strong><small title="{{ description }}">{{ description }}</small></span></a>
+{%- endmacro %}

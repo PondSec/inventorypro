@@ -17,3 +17,5 @@ venv/
 release-artifacts/
 instance/
 tests/
+
+/docs/

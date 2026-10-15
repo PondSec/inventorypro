@@ -1,6 +1,7 @@
 document.addEventListener('alpine:init', () => {
     Alpine.data('procurementApp', () => ({
         activeTab: 'vendors',
+        listSearch:'',listPage:1,perPage:10,selectedRecord:null,workspaceError:'',saving:false,modalSnapshots:{},orderLoaded:true,
         vendors: [],
         contracts: [],
         purchaseOrders: [],
@@ -67,6 +68,17 @@ document.addEventListener('alpine:init', () => {
         },
 
         async init() {
+            for(const name of ['loadVendors','loadContracts','loadOrders','refreshRenewals','fetchOrder','saveVendor','saveContract','saveOrder','deleteVendor','deleteContract','deleteOrder']) {
+                const operation=this[name].bind(this);
+                this[name]=async (...args)=>{
+                    const write=name.startsWith('save') || name.startsWith('delete');
+                    if(write && this.saving)return;if(write)this.saving=true;
+                    this.workspaceError='';
+                    try{return await operation(...args);}catch(error){this.workspaceError=error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';}
+                    finally{if(write)this.saving=false;}
+                };
+            }
+            window.addEventListener('beforeunload',event=>{if(['Vendor','Contract','Order'].some(kind=>this[kind.toLowerCase()+'ModalOpen'] && this.formDirty(kind))){event.preventDefault();event.returnValue='';}});
             await this.loadVendors();
             await this.loadContracts();
             await this.loadOrders();
@@ -77,6 +89,30 @@ document.addEventListener('alpine:init', () => {
                     feather.replace();
                 }
             });
+        },
+
+        formDirty(kind){return this.modalSnapshots[kind]!==undefined && this.modalSnapshots[kind]!==JSON.stringify(this['current'+kind]);},
+        rememberForm(kind){this.modalSnapshots[kind]=JSON.stringify(this['current'+kind]);},
+        async request(url,options={}) {
+            const response=await fetch(url,options);
+            if(response.redirected)throw new Error('Die Sitzung ist abgelaufen. Bitte erneut anmelden.');
+            if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error || 'Die Änderung konnte nicht gespeichert werden. Ihre Eingaben bleiben erhalten.');}
+            return response;
+        },
+        filteredRows(tab=this.activeTab) {
+            const rows=tab==='vendors' ? this.vendors : tab==='contracts' ? this.contracts : this.purchaseOrders;
+            const query=this.listSearch.trim().toLocaleLowerCase('de');
+            return query ? rows.filter(row=>Object.values(row).filter(value=>typeof value==='string' || typeof value==='number').join(' ').toLocaleLowerCase('de').includes(query)) : rows;
+        },
+        listPages(){return Math.max(1,Math.ceil(this.filteredRows().length/this.perPage));},
+        pageRows(tab=this.activeTab){const page=Math.min(this.listPage,Math.max(1,Math.ceil(this.filteredRows(tab).length/this.perPage)));return this.filteredRows(tab).slice((page-1)*this.perPage,page*this.perPage);},
+        showRecord(kind,data){this.selectedRecord={kind,data};},
+        editSelected(){const {kind,data}=this.selectedRecord;if(kind==='vendor')this.openVendorModal(data);else if(kind==='contract')this.openContractModal(data);else this.openOrderModal(data);},
+        recordFields(){
+            if(!this.selectedRecord)return [];
+            const {kind,data}=this.selectedRecord;
+            const fields=kind==='vendor' ? {vendor_type:'Typ',contact_name:'Kontakt',email:'E-Mail',phone:'Telefon',website:'Website',address:'Adresse',rating:'Bewertung',notes:'Notizen'} : kind==='contract' ? {vendor_name:'Lieferant',contract_type:'Typ',status:'Status',start_date:'Start',end_date:'Ende',renewal_type:'Verlängerung',renewal_notice_days:'Kündigungsfrist in Tagen',cost:'Kosten',currency:'Währung',owner:'Verantwortlich',service_level:'Service-Level',notes:'Notizen'} : {vendor_name:'Lieferant',status:'Status',order_date:'Bestellt am',expected_date:'Erwartete Lieferung',received_date:'Erhalten am',requester:'Angefragt von',approver:'Freigabe',cost_center:'Kostenstelle',tax:'Steuer',total:'Gesamt',currency:'Währung',item_count:'Positionen',notes:'Notizen'};
+            return Object.entries(fields).map(([key,label])=>[label,data[key] ?? 'Nicht erfasst']);
         },
 
         can(permissionKey) {
@@ -103,28 +139,28 @@ document.addEventListener('alpine:init', () => {
         },
 
         async loadVendors() {
-            const response = await fetch('/api/vendors');
+            const response = await this.request('/api/vendors');
             if (response.ok) {
                 this.vendors = await response.json();
             }
         },
 
         async loadContracts() {
-            const response = await fetch('/api/contracts');
+            const response = await this.request('/api/contracts');
             if (response.ok) {
                 this.contracts = await response.json();
             }
         },
 
         async loadOrders() {
-            const response = await fetch('/api/purchase-orders');
+            const response = await this.request('/api/purchase-orders');
             if (response.ok) {
                 this.purchaseOrders = await response.json();
             }
         },
 
         async refreshRenewals() {
-            const response = await fetch('/api/procurement/renewals');
+            const response = await this.request('/api/procurement/renewals');
             if (response.ok) {
                 this.renewals = await response.json();
                 this.updateOverview();
@@ -146,9 +182,11 @@ document.addEventListener('alpine:init', () => {
                 rating: 3,
                 notes: ''
             };
+            this.rememberForm('Vendor');
         },
 
-        closeVendorModal() {
+        closeVendorModal(force=false) {
+            if(!force && (this.saving || (this.formDirty('Vendor') && !confirm('Nicht gespeicherte Änderungen verwerfen?'))))return;
             this.vendorModalOpen = false;
         },
 
@@ -156,13 +194,13 @@ document.addEventListener('alpine:init', () => {
             const payload = { ...this.currentVendor };
             let response;
             if (this.editingVendor) {
-                response = await fetch(`/api/vendors/${this.currentVendor.id}`, {
+                response = await this.request(`/api/vendors/${this.currentVendor.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
             } else {
-                response = await fetch('/api/vendors', {
+                response = await this.request('/api/vendors', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -171,7 +209,7 @@ document.addEventListener('alpine:init', () => {
             if (response.ok) {
                 await this.loadVendors();
                 this.updateOverview();
-                this.closeVendorModal();
+                this.closeVendorModal(true);
             } else {
                 const error = await response.json();
                 alert(error.error || 'Lieferant konnte nicht gespeichert werden');
@@ -180,7 +218,7 @@ document.addEventListener('alpine:init', () => {
 
         async deleteVendor(id) {
             if (!confirm('Lieferant wirklich loeschen?')) return;
-            const response = await fetch(`/api/vendors/${id}`, { method: 'DELETE' });
+            const response = await this.request(`/api/vendors/${id}`, { method: 'DELETE' });
             if (response.ok) {
                 await this.loadVendors();
                 this.updateOverview();
@@ -209,9 +247,11 @@ document.addEventListener('alpine:init', () => {
                 service_level: '',
                 notes: ''
             };
+            this.rememberForm('Contract');
         },
 
-        closeContractModal() {
+        closeContractModal(force=false) {
+            if(!force && (this.saving || (this.formDirty('Contract') && !confirm('Nicht gespeicherte Änderungen verwerfen?'))))return;
             this.contractModalOpen = false;
         },
 
@@ -219,13 +259,13 @@ document.addEventListener('alpine:init', () => {
             const payload = { ...this.currentContract };
             let response;
             if (this.editingContract) {
-                response = await fetch(`/api/contracts/${this.currentContract.id}`, {
+                response = await this.request(`/api/contracts/${this.currentContract.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
             } else {
-                response = await fetch('/api/contracts', {
+                response = await this.request('/api/contracts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -235,7 +275,7 @@ document.addEventListener('alpine:init', () => {
                 await this.loadContracts();
                 this.updateOverview();
                 await this.refreshRenewals();
-                this.closeContractModal();
+                this.closeContractModal(true);
             } else {
                 const error = await response.json();
                 alert(error.error || 'Vertrag konnte nicht gespeichert werden');
@@ -244,7 +284,7 @@ document.addEventListener('alpine:init', () => {
 
         async deleteContract(id) {
             if (!confirm('Vertrag wirklich loeschen?')) return;
-            const response = await fetch(`/api/contracts/${id}`, { method: 'DELETE' });
+            const response = await this.request(`/api/contracts/${id}`, { method: 'DELETE' });
             if (response.ok) {
                 await this.loadContracts();
                 this.updateOverview();
@@ -255,11 +295,12 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        openOrderModal(order = null) {
+        async openOrderModal(order = null) {
+            this.orderLoaded=!order;
             this.editingOrder = !!order;
             this.orderModalOpen = true;
             if (order) {
-                this.fetchOrder(order.id);
+                await this.fetchOrder(order.id);
             } else {
                 this.currentOrder = {
                     id: null,
@@ -278,16 +319,19 @@ document.addEventListener('alpine:init', () => {
                     items: []
                 };
             }
+            this.rememberForm('Order');
         },
 
-        closeOrderModal() {
+        closeOrderModal(force=false) {
+            if(!force && (this.saving || (this.formDirty('Order') && !confirm('Nicht gespeicherte Änderungen verwerfen?'))))return;
             this.orderModalOpen = false;
         },
 
         async fetchOrder(id) {
-            const response = await fetch(`/api/purchase-orders/${id}`);
+            const response = await this.request(`/api/purchase-orders/${id}`);
             if (response.ok) {
                 const data = await response.json();
+                this.orderLoaded=true;
                 this.currentOrder = {
                     id: data.id,
                     po_number: data.po_number || '',
@@ -328,6 +372,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async saveOrder() {
+            if(!this.orderLoaded)throw new Error('Die Bestellung konnte nicht geladen werden. Bitte erneut öffnen.');
             const payload = {
                 ...this.currentOrder,
                 items: this.currentOrder.items.map(item => ({
@@ -339,13 +384,13 @@ document.addEventListener('alpine:init', () => {
             };
             let response;
             if (this.editingOrder) {
-                response = await fetch(`/api/purchase-orders/${this.currentOrder.id}`, {
+                response = await this.request(`/api/purchase-orders/${this.currentOrder.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
             } else {
-                response = await fetch('/api/purchase-orders', {
+                response = await this.request('/api/purchase-orders', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -354,7 +399,7 @@ document.addEventListener('alpine:init', () => {
             if (response.ok) {
                 await this.loadOrders();
                 this.updateOverview();
-                this.closeOrderModal();
+                this.closeOrderModal(true);
             } else {
                 const error = await response.json();
                 alert(error.error || 'Bestellung konnte nicht gespeichert werden');
@@ -363,7 +408,7 @@ document.addEventListener('alpine:init', () => {
 
         async deleteOrder(id) {
             if (!confirm('Bestellung wirklich loeschen?')) return;
-            const response = await fetch(`/api/purchase-orders/${id}`, { method: 'DELETE' });
+            const response = await this.request(`/api/purchase-orders/${id}`, { method: 'DELETE' });
             if (response.ok) {
                 await this.loadOrders();
                 this.updateOverview();

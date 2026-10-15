@@ -1,149 +1,22 @@
 {% extends 'base_app.html' %}
-{% set page_title = 'Beschaffung' %}
-{% set page_module = 'procurement' %}
-{% set hide_page_intro = true %}
+{% from '_ui.html' import icon with context %}
+{% set page_title='Beschaffung' %}{% set page_section_label='Beschaffung' %}{% set page_description='Lieferanten, Verträge, Bestellungen und anstehende Erneuerungen verwalten.' %}
 {% block title %}Beschaffung | Inventory Pro{% endblock %}
 {% block html_attrs %}x-data="procurementApp()"{% endblock %}
-{% block extra_head %}
-<script>
-        window.inventoryPermissions = {{ permissions | tojson }};
-        window.inventoryIsSuperuser = {{ 'true' if is_superuser else 'false' }};
-    </script>
-{% endblock %}
+{% block page_actions %}<button type="button" class="btn btn-secondary" @click="refreshRenewals">{{ icon('refresh-cw') }}Aktualisieren</button><button type="button" class="btn btn-primary" x-show="can('procurement.manage') && activeTab!=='renewals'" @click="activeTab==='vendors' ? openVendorModal() : activeTab==='contracts' ? openContractModal() : openOrderModal()">{{ icon('plus') }}<span x-text="activeTab==='vendors' ? 'Lieferant hinzufügen' : activeTab==='contracts' ? 'Vertrag hinzufügen' : 'Bestellung hinzufügen'"></span></button>{% endblock %}
 {% block content %}
-<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div class="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                            <p class="mt-1 text-sm text-slate-500">Verträge, Bestellungen und anstehende Erneuerungen zentral steuern.</p>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Lieferanten</p>
-                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.vendors"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Verträge</p>
-                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.contracts"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Bestellungen</p>
-                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.orders"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Verlängerungen</p>
-                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.renewals"></p>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div class="flex flex-wrap items-center justify-between gap-4">
-                        <div class="flex flex-wrap gap-2" role="tablist" aria-label="Beschaffungsbereiche">
-                            <button type="button" id="procurement-tab-vendors" role="tab" aria-controls="procurement-panel-vendors" :aria-selected="activeTab === 'vendors'" @click="activeTab = 'vendors'" class="rounded-full px-4 py-2 text-sm font-semibold" :class="activeTab === 'vendors' ? 'bg-slate-900 text-white' : 'text-slate-600'">Lieferanten</button>
-                            <button type="button" id="procurement-tab-contracts" role="tab" aria-controls="procurement-panel-contracts" :aria-selected="activeTab === 'contracts'" @click="activeTab = 'contracts'" class="rounded-full px-4 py-2 text-sm font-semibold" :class="activeTab === 'contracts' ? 'bg-slate-900 text-white' : 'text-slate-600'">Verträge</button>
-                            <button type="button" id="procurement-tab-orders" role="tab" aria-controls="procurement-panel-orders" :aria-selected="activeTab === 'orders'" @click="activeTab = 'orders'" class="rounded-full px-4 py-2 text-sm font-semibold" :class="activeTab === 'orders' ? 'bg-slate-900 text-white' : 'text-slate-600'">Bestellungen</button>
-                            <button type="button" id="procurement-tab-renewals" role="tab" aria-controls="procurement-panel-renewals" :aria-selected="activeTab === 'renewals'" @click="activeTab = 'renewals'" class="rounded-full px-4 py-2 text-sm font-semibold" :class="activeTab === 'renewals' ? 'bg-slate-900 text-white' : 'text-slate-600'">Verlängerungen</button>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            <button x-show="can('procurement.manage') && activeTab === 'vendors'" @click="openVendorModal()" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Lieferant hinzufügen</button>
-                            <button x-show="can('procurement.manage') && activeTab === 'contracts'" @click="openContractModal()" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Vertrag hinzufügen</button>
-                            <button x-show="can('procurement.manage') && activeTab === 'orders'" @click="openOrderModal()" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Bestellung hinzufügen</button>
-                            <button @click="refreshRenewals" class="rounded-full border border-slate-200 bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Aktualisieren</button>
-                        </div>
-                    </div>
-
-                    <div id="procurement-panel-vendors" role="tabpanel" aria-labelledby="procurement-tab-vendors" class="mt-6" x-show="activeTab === 'vendors'">
-                        <div class="grid gap-4 md:grid-cols-2">
-                            <template x-for="vendor in vendors" :key="vendor.id">
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                    <div class="flex items-start justify-between gap-3">
-                                        <div>
-                                            <p class="text-sm font-semibold text-slate-900" x-text="vendor.name"></p>
-                                            <p class="text-xs text-slate-500" x-text="vendor.vendor_type || 'Kein Typ'" ></p>
-                                        </div>
-                                        <div class="flex shrink-0 items-center gap-2" x-show="can('procurement.manage')">
-                                            <button @click="openVendorModal(vendor)" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-white">Bearbeiten</button>
-                                            <button @click="deleteVendor(vendor.id)" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Löschen</button>
-                                        </div>
-                                    </div>
-                                    <div class="mt-3 grid gap-2 text-xs text-slate-600">
-                                        <p><span class="font-semibold">Kontakt:</span> <span x-text="vendor.contact_name || '-'" ></span></p>
-                                        <p><span class="font-semibold">E-Mail:</span> <span x-text="vendor.email || '-'" ></span></p>
-                                        <p><span class="font-semibold">Telefon:</span> <span x-text="vendor.phone || '-'" ></span></p>
-                                        <p><span class="font-semibold">Bewertung:</span> <span x-text="vendor.rating || 3" ></span>/5</p>
-                                    </div>
-                                    <p class="mt-2 text-xs text-slate-500" x-text="vendor.notes || ''"></p>
-                                </div>
-                            </template>
-                        </div>
-                        <p x-show="vendors.length === 0" class="text-xs text-slate-400">Noch keine Lieferanten angelegt.</p>
-                    </div>
-
-                    <div id="procurement-panel-contracts" role="tabpanel" aria-labelledby="procurement-tab-contracts" class="mt-6" x-show="activeTab === 'contracts'">
-                        <div class="space-y-3">
-                            <template x-for="contract in contracts" :key="contract.id">
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                    <div class="flex items-start justify-between gap-3">
-                                        <div>
-                                            <p class="text-sm font-semibold text-slate-900" x-text="contract.name"></p>
-                                            <p class="text-xs text-slate-500" x-text="contract.vendor_name || 'Kein Lieferant'"></p>
-                                        </div>
-                                        <div class="flex shrink-0 items-center gap-2" x-show="can('procurement.manage')">
-                                            <button @click="openContractModal(contract)" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-white">Bearbeiten</button>
-                                            <button @click="deleteContract(contract.id)" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Löschen</button>
-                                        </div>
-                                    </div>
-                                    <div class="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
-                                        <div><span class="font-semibold">Typ:</span> <span x-text="contract.contract_type || '-'" ></span></div>
-                                        <div><span class="font-semibold">Status:</span> <span x-text="contract.status || '-'" ></span></div>
-                                        <div><span class="font-semibold">Ende:</span> <span x-text="contract.end_date || '-'" ></span></div>
-                                        <div><span class="font-semibold">Renewal:</span> <span x-text="contract.renewal_type || '-'" ></span></div>
-                                        <div><span class="font-semibold">Kündigungsfrist:</span> <span x-text="contract.renewal_notice_days || 0" ></span> Tage</div>
-                                        <div><span class="font-semibold">Kosten:</span> <span x-text="formatCurrency(contract.cost, contract.currency)"></span></div>
-                                    </div>
-                                    <p class="mt-2 text-xs text-slate-500" x-text="contract.notes || ''"></p>
-                                </div>
-                            </template>
-                        </div>
-                        <p x-show="contracts.length === 0" class="text-xs text-slate-400">Noch keine Verträge angelegt.</p>
-                    </div>
-
-                    <div id="procurement-panel-orders" role="tabpanel" aria-labelledby="procurement-tab-orders" class="mt-6" x-show="activeTab === 'orders'">
-                        <div class="space-y-3">
-                            <template x-for="order in purchaseOrders" :key="order.id">
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                    <div class="flex items-start justify-between gap-3">
-                                        <div>
-                                            <p class="text-sm font-semibold text-slate-900" x-text="order.po_number"></p>
-                                            <p class="text-xs text-slate-500" x-text="order.vendor_name || 'Kein Lieferant'"></p>
-                                        </div>
-                                        <div class="flex shrink-0 items-center gap-2" x-show="can('procurement.manage')">
-                                            <button @click="openOrderModal(order)" class="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-white">Bearbeiten</button>
-                                            <button @click="deleteOrder(order.id)" class="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Löschen</button>
-                                        </div>
-                                    </div>
-                                    <div class="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
-                                        <div><span class="font-semibold">Status:</span> <span x-text="order.status || '-'" ></span></div>
-                                        <div><span class="font-semibold">Bestelldatum:</span> <span x-text="order.order_date || '-'" ></span></div>
-                                        <div><span class="font-semibold">Lieferung:</span> <span x-text="order.expected_date || '-'" ></span></div>
-                                        <div><span class="font-semibold">Positionen:</span> <span x-text="order.item_count || 0"></span></div>
-                                        <div><span class="font-semibold">Total:</span> <span x-text="formatCurrency(order.total, order.currency)"></span></div>
-                                        <div><span class="font-semibold">Kostenstelle:</span> <span x-text="order.cost_center || '-'" ></span></div>
-                                    </div>
-                                </div>
-                            </template>
-                        </div>
-                        <p x-show="purchaseOrders.length === 0" class="text-xs text-slate-400">Noch keine Bestellungen angelegt.</p>
-                    </div>
-
-                    <div id="procurement-panel-renewals" role="tabpanel" aria-labelledby="procurement-tab-renewals" class="mt-6" x-show="activeTab === 'renewals'">
+<div class="kpi-grid procurement-kpis">{% for key,label,symbol in [('vendors','Lieferanten','users'),('contracts','Verträge','file-text'),('orders','Bestellungen','shopping-cart'),('renewals','Verlängerungen','calendar')] %}<button class="kpi-tile" type="button" @click="activeTab='{{ key }}';listPage=1;selectedRecord=null"><span class="kpi-tile__icon">{{ icon(symbol) }}</span><span class="kpi-tile__copy"><span class="kpi-tile__label">{{ label }}</span><strong x-text="overview.{{ key }}"></strong><small>{{ 'Nächste 90 Tage' if key=='renewals' else 'Gesamt' }}</small></span></button>{% endfor %}</div>
+<section class="workspace-panel module-primary procurement-workspace">
+<nav class="module-tabs" role="tablist" aria-label="Beschaffungsbereiche">{% for key,label in [('vendors','Lieferanten'),('contracts','Verträge'),('orders','Bestellungen'),('renewals','Verlängerungen')] %}<button type="button" id="procurement-tab-{{ key }}" role="tab" aria-controls="procurement-panel-{{ key }}" :aria-selected="activeTab==='{{ key }}'" @click="activeTab='{{ key }}';listPage=1;selectedRecord=null">{{ label }}</button>{% endfor %}</nav>
+<div class="ui-toolbar ui-inset" x-show="activeTab!=='renewals'"><label class="filter-search">{{ icon('search') }}<input type="search" aria-label="Beschaffung durchsuchen" x-model="listSearch" @input="listPage=1" placeholder="Name, Lieferant oder Status suchen …"></label><span class="muted" x-text="`${filteredRows().length} Einträge`"></span></div>
+<p class="form-error ui-inset" role="alert" x-show="workspaceError" x-text="workspaceError"></p>
+<div id="procurement-panel-vendors" role="tabpanel" aria-labelledby="procurement-tab-vendors" x-show="activeTab==='vendors'"><div class="data-table-scroll module-list-scroll"><table class="data-table module-table"><thead><tr><th>Lieferant</th><th>Typ</th><th>Kontakt</th><th>E-Mail</th><th>Telefon</th><th><span class="sr-only">Aktionen</span></th></tr></thead><tbody><template x-for="vendor in pageRows('vendors')" :key="vendor.id"><tr class="preview-row" @click="showRecord('vendor',vendor)"><td><button type="button" class="list-row-trigger" @click.stop="showRecord('vendor',vendor)"><strong x-text="vendor.name || '—'"></strong></button></td><td x-text="vendor.vendor_type || '—'"></td><td x-text="vendor.contact_name || '—'"></td><td x-text="vendor.email || '—'"></td><td x-text="vendor.phone || '—'"></td><td @click.stop><details class="row-menu" data-row-menu x-show="can('procurement.manage')"><summary class="icon-button" :aria-label="`Aktionen für ${vendor.name}`">{{ icon('more-horizontal') }}</summary><div class="row-menu-panel"><button type="button" @click="openVendorModal(vendor)">Bearbeiten</button><button type="button" @click="deleteVendor(vendor.id)">Löschen</button></div></details></td></tr></template></tbody></table><p class="ui-empty" x-show="!filteredRows().length">Keine passenden Einträge.</p></div></div><div id="procurement-panel-contracts" role="tabpanel" aria-labelledby="procurement-tab-contracts" x-show="activeTab==='contracts'"><div class="data-table-scroll module-list-scroll"><table class="data-table module-table"><thead><tr><th>Vertrag</th><th>Lieferant</th><th>Status</th><th>Ende</th><th>Kosten</th><th><span class="sr-only">Aktionen</span></th></tr></thead><tbody><template x-for="contract in pageRows('contracts')" :key="contract.id"><tr class="preview-row" @click="showRecord('contract',contract)"><td><button type="button" class="list-row-trigger" @click.stop="showRecord('contract',contract)"><strong x-text="contract.name || '—'"></strong></button></td><td x-text="contract.vendor_name || '—'"></td><td><span class="status-badge" x-text="contract.status || '—'"></span></td><td x-text="contract.end_date || '—'"></td><td x-text="formatCurrency(contract.cost,contract.currency)"></td><td @click.stop><details class="row-menu" data-row-menu x-show="can('procurement.manage')"><summary class="icon-button" :aria-label="`Aktionen für ${contract.name}`">{{ icon('more-horizontal') }}</summary><div class="row-menu-panel"><button type="button" @click="openContractModal(contract)">Bearbeiten</button><button type="button" @click="deleteContract(contract.id)">Löschen</button></div></details></td></tr></template></tbody></table><p class="ui-empty" x-show="!filteredRows().length">Keine passenden Einträge.</p></div></div><div id="procurement-panel-orders" role="tabpanel" aria-labelledby="procurement-tab-orders" x-show="activeTab==='orders'"><div class="data-table-scroll module-list-scroll"><table class="data-table module-table"><thead><tr><th>Bestellung</th><th>Lieferant</th><th>Status</th><th>Lieferung</th><th>Gesamt</th><th><span class="sr-only">Aktionen</span></th></tr></thead><tbody><template x-for="order in pageRows('orders')" :key="order.id"><tr class="preview-row" @click="showRecord('order',order)"><td><button type="button" class="list-row-trigger" @click.stop="showRecord('order',order)"><strong x-text="order.po_number || '—'"></strong></button></td><td x-text="order.vendor_name || '—'"></td><td><span class="status-badge" x-text="order.status || '—'"></span></td><td x-text="order.expected_date || '—'"></td><td x-text="formatCurrency(order.total,order.currency)"></td><td @click.stop><details class="row-menu" data-row-menu x-show="can('procurement.manage')"><summary class="icon-button" :aria-label="`Aktionen für ${order.po_number}`">{{ icon('more-horizontal') }}</summary><div class="row-menu-panel"><button type="button" @click="openOrderModal(order)">Bearbeiten</button><button type="button" @click="deleteOrder(order.id)">Löschen</button></div></details></td></tr></template></tbody></table><p class="ui-empty" x-show="!filteredRows().length">Keine passenden Einträge.</p></div></div><div class="ui-inset">                    <div id="procurement-panel-renewals" role="tabpanel" aria-labelledby="procurement-tab-renewals" class="mt-6" x-show="activeTab === 'renewals'">
                         <div class="grid gap-4 lg:grid-cols-2">
                             <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <p class="text-sm font-semibold text-slate-900">Verträge mit Ablauf</p>
-                                        <p class="text-xs text-slate-500" x-text="`Naechste ${renewals.days} Tage`"></p>
+                                        <p class="text-xs text-slate-500" x-text="`Nächste ${renewals.days} Tage`"></p>
                                     </div>
                                     <i data-feather="alert-circle" class="w-4 h-4 text-slate-400"></i>
                                 </div>
@@ -164,7 +37,7 @@
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <p class="text-sm font-semibold text-slate-900">Garantien laufen aus</p>
-                                        <p class="text-xs text-slate-500" x-text="`Naechste ${renewals.days} Tage`"></p>
+                                        <p class="text-xs text-slate-500" x-text="`Nächste ${renewals.days} Tage`"></p>
                                     </div>
                                     <i data-feather="shield" class="w-4 h-4 text-slate-400"></i>
                                 </div>
@@ -183,13 +56,15 @@
                             </div>
                         </div>
                     </div>
-                </section>
+</div><nav class="table-pagination" x-show="activeTab!=='renewals'" aria-label="Seiten in der Beschaffung"><button type="button" class="btn btn-secondary" :disabled="listPage<=1" @click="listPage--">Zurück</button><span class="muted" x-text="`Seite ${listPage} von ${listPages()}`"></span><label class="page-size">Einträge pro Seite<select aria-label="Einträge pro Seite" x-model.number="perPage" @change="listPage=1"><option>10</option><option>25</option><option>50</option></select></label><button type="button" class="btn btn-secondary" :disabled="listPage>=listPages()" @click="listPage++">Weiter</button></nav>
+</section>
+<section class="workspace-panel ui-section" x-show="selectedRecord"><template x-if="selectedRecord"><div><header class="ui-panel-heading"><h2 x-text="selectedRecord.data.name || selectedRecord.data.po_number"></h2><div class="ui-actions"><button class="btn btn-primary" type="button" x-show="can('procurement.manage')" @click="editSelected()">Bearbeiten</button><button type="button" class="btn btn-secondary" @click="selectedRecord=null">Schließen</button></div></header><dl class="detail-properties"><template x-for="field in recordFields()" :key="field[0]"><div class="object-property"><dt x-text="field[0]"></dt><dd x-text="field[1] ?? 'Nicht erfasst'"></dd></div></template></dl></div></template></section>
 {% endblock %}
 {% block overlays %}
 
 
-    <div x-show="vendorModalOpen" @click.away="closeVendorModal()" role="dialog" aria-modal="true" aria-labelledby="vendor-modal-title" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
-        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-lg">
+    <div x-show="vendorModalOpen" x-cloak @click.away="closeVendorModal()" role="dialog" aria-modal="true" aria-labelledby="vendor-modal-title" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
+        <div class="modal-panel ui-modal">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Lieferant</p>
@@ -199,57 +74,57 @@
                     <i data-feather="x" class="w-5 h-5"></i>
                 </button>
             </div>
-            <form @submit.prevent="saveVendor" class="space-y-4 p-6">
+            <p class="form-error" role="alert" x-show="workspaceError" x-text="workspaceError"></p><form @submit.prevent="saveVendor" class="ui-form-fields">
                 <div>
                     <label class="text-sm font-semibold text-slate-700">Name*</label>
-                    <input type="text" x-model="currentVendor.name" aria-label="Name des Lieferanten" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <input type="text" x-model="currentVendor.name" aria-label="Name des Lieferanten" required class="input">
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Typ</label>
-                        <input type="text" x-model="currentVendor.vendor_type" aria-label="Typ des Lieferanten" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="text" x-model="currentVendor.vendor_type" aria-label="Typ des Lieferanten" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Bewertung (1-5)</label>
-                        <input type="number" min="1" max="5" x-model="currentVendor.rating" aria-label="Bewertung des Lieferanten von eins bis fünf" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="number" min="1" max="5" x-model="currentVendor.rating" aria-label="Bewertung des Lieferanten von eins bis fünf" class="input">
                     </div>
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Kontakt</label>
-                        <input type="text" x-model="currentVendor.contact_name" aria-label="Kontaktperson des Lieferanten" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="text" x-model="currentVendor.contact_name" aria-label="Kontaktperson des Lieferanten" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">E-Mail</label>
-                        <input type="email" x-model="currentVendor.email" aria-label="E-Mail-Adresse des Lieferanten" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="email" x-model="currentVendor.email" aria-label="E-Mail-Adresse des Lieferanten" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Telefon</label>
-                        <input type="text" x-model="currentVendor.phone" aria-label="Telefonnummer des Lieferanten" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="text" x-model="currentVendor.phone" aria-label="Telefonnummer des Lieferanten" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Website</label>
-                        <input type="text" x-model="currentVendor.website" aria-label="Website des Lieferanten" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="text" x-model="currentVendor.website" aria-label="Website des Lieferanten" class="input">
                     </div>
                 </div>
                 <div>
                     <label class="text-xs font-semibold text-slate-500">Adresse</label>
-                    <textarea rows="2" x-model="currentVendor.address" aria-label="Adresse des Lieferanten" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"></textarea>
+                    <textarea rows="2" x-model="currentVendor.address" aria-label="Adresse des Lieferanten" class="input"></textarea>
                 </div>
                 <div>
                     <label class="text-xs font-semibold text-slate-500">Notizen</label>
-                    <textarea rows="2" x-model="currentVendor.notes" aria-label="Notizen zum Lieferanten" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"></textarea>
+                    <textarea rows="2" x-model="currentVendor.notes" aria-label="Notizen zum Lieferanten" class="input"></textarea>
                 </div>
                 <div class="flex justify-end gap-3">
-                    <button type="button" @click="closeVendorModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
-                    <button type="submit" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Speichern</button>
+                    <button type="button" @click="closeVendorModal()" class="btn btn-secondary">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <div x-show="contractModalOpen" @click.away="closeContractModal()" role="dialog" aria-modal="true" aria-labelledby="contract-modal-title" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
-        <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-2xl">
+    <div x-show="contractModalOpen" x-cloak @click.away="closeContractModal()" role="dialog" aria-modal="true" aria-labelledby="contract-modal-title" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
+        <div class="modal-panel ui-modal ui-modal--wide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Vertrag</p>
@@ -259,15 +134,15 @@
                     <i data-feather="x" class="w-5 h-5"></i>
                 </button>
             </div>
-            <form @submit.prevent="saveContract" class="space-y-4 p-6">
+            <p class="form-error" role="alert" x-show="workspaceError" x-text="workspaceError"></p><form @submit.prevent="saveContract" class="ui-form-fields">
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div>
                         <label class="text-sm font-semibold text-slate-700">Name*</label>
-                        <input type="text" x-model="currentContract.name" aria-label="Name des Vertrags" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm">
+                        <input type="text" x-model="currentContract.name" aria-label="Name des Vertrags" required class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Lieferant</label>
-                        <select x-model="currentContract.vendor_id" aria-label="Lieferant des Vertrags" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <select x-model="currentContract.vendor_id" aria-label="Lieferant des Vertrags" class="input">
                             <option value="">-- Lieferant wählen --</option>
                             <template x-for="vendor in vendors" :key="vendor.id">
                                 <option :value="vendor.id" x-text="vendor.name"></option>
@@ -278,11 +153,11 @@
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Typ</label>
-                        <input type="text" x-model="currentContract.contract_type" aria-label="Vertragstyp" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="text" x-model="currentContract.contract_type" aria-label="Vertragstyp" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Status</label>
-                        <select x-model="currentContract.status" aria-label="Vertragsstatus" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <select x-model="currentContract.status" aria-label="Vertragsstatus" class="input">
                             <option value="active">Aktiv</option>
                             <option value="pending">Ausstehend</option>
                             <option value="expired">Abgelaufen</option>
@@ -291,7 +166,7 @@
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Renewal</label>
-                        <select x-model="currentContract.renewal_type" aria-label="Vertragsverlängerung" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <select x-model="currentContract.renewal_type" aria-label="Vertragsverlängerung" class="input">
                             <option value="manual">Manuell</option>
                             <option value="auto">Auto</option>
                         </select>
@@ -300,25 +175,25 @@
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Start</label>
-                        <input type="date" x-model="currentContract.start_date" aria-label="Startdatum des Vertrags" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="date" x-model="currentContract.start_date" aria-label="Startdatum des Vertrags" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Ende</label>
-                        <input type="date" x-model="currentContract.end_date" aria-label="Enddatum des Vertrags" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="date" x-model="currentContract.end_date" aria-label="Enddatum des Vertrags" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Kündigungsfrist (Tage)</label>
-                        <input type="number" min="0" x-model="currentContract.renewal_notice_days" aria-label="Kündigungsfrist in Tagen" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="number" min="0" x-model="currentContract.renewal_notice_days" aria-label="Kündigungsfrist in Tagen" class="input">
                     </div>
                 </div>
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Kosten</label>
-                        <input type="number" step="0.01" min="0" x-model="currentContract.cost" aria-label="Vertragskosten" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="number" step="0.01" min="0" x-model="currentContract.cost" aria-label="Vertragskosten" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Währung</label>
-                        <select x-model="currentContract.currency" aria-label="Währung des Vertrags" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <select x-model="currentContract.currency" aria-label="Währung des Vertrags" class="input">
                             <option value="EUR">EUR</option>
                             <option value="USD">USD</option>
                             <option value="GBP">GBP</option>
@@ -327,26 +202,26 @@
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Owner</label>
-                        <input type="text" x-model="currentContract.owner" aria-label="Verantwortliche Person für den Vertrag" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="text" x-model="currentContract.owner" aria-label="Verantwortliche Person für den Vertrag" class="input">
                     </div>
                 </div>
                 <div>
                     <label class="text-xs font-semibold text-slate-500">Service-Level</label>
-                    <input type="text" x-model="currentContract.service_level" aria-label="Service-Level des Vertrags" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    <input type="text" x-model="currentContract.service_level" aria-label="Service-Level des Vertrags" class="input">
                 </div>
                 <div>
                     <label class="text-xs font-semibold text-slate-500">Notizen</label>
-                    <textarea rows="2" x-model="currentContract.notes" aria-label="Notizen zum Vertrag" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"></textarea>
+                    <textarea rows="2" x-model="currentContract.notes" aria-label="Notizen zum Vertrag" class="input"></textarea>
                 </div>
                 <div class="flex justify-end gap-3">
-                    <button type="button" @click="closeContractModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
-                    <button type="submit" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Speichern</button>
+                    <button type="button" @click="closeContractModal()" class="btn btn-secondary">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <div x-show="orderModalOpen" @click.away="closeOrderModal()" role="dialog" aria-modal="true" aria-labelledby="order-modal-title" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
+    <div x-show="orderModalOpen" x-cloak @click.away="closeOrderModal()" role="dialog" aria-modal="true" aria-labelledby="order-modal-title" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6" x-transition>
         <div class="modal-panel bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
@@ -357,15 +232,15 @@
                     <i data-feather="x" class="w-5 h-5"></i>
                 </button>
             </div>
-            <form @submit.prevent="saveOrder" class="space-y-4 p-6">
+            <p class="form-error" role="alert" x-show="workspaceError" x-text="workspaceError"></p><form @submit.prevent="saveOrder" class="ui-form-fields">
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div>
                         <label class="text-sm font-semibold text-slate-700">Bestellnummer*</label>
-                        <input type="text" x-model="currentOrder.po_number" aria-label="Bestellnummer" required class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm">
+                        <input type="text" x-model="currentOrder.po_number" aria-label="Bestellnummer" required class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Lieferant</label>
-                        <select x-model="currentOrder.vendor_id" aria-label="Lieferant der Bestellung" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <select x-model="currentOrder.vendor_id" aria-label="Lieferant der Bestellung" class="input">
                             <option value="">-- Lieferant wählen --</option>
                             <template x-for="vendor in vendors" :key="vendor.id">
                                 <option :value="vendor.id" x-text="vendor.name"></option>
@@ -376,7 +251,7 @@
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Status</label>
-                        <select x-model="currentOrder.status" aria-label="Bestellstatus" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <select x-model="currentOrder.status" aria-label="Bestellstatus" class="input">
                             <option value="draft">Entwurf</option>
                             <option value="ordered">Bestellt</option>
                             <option value="received">Erhalten</option>
@@ -386,35 +261,35 @@
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Bestelldatum</label>
-                        <input type="date" x-model="currentOrder.order_date" aria-label="Bestelldatum" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="date" x-model="currentOrder.order_date" aria-label="Bestelldatum" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Liefertermin</label>
-                        <input type="date" x-model="currentOrder.expected_date" aria-label="Voraussichtlicher Liefertermin" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="date" x-model="currentOrder.expected_date" aria-label="Voraussichtlicher Liefertermin" class="input">
                     </div>
                 </div>
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Anforderer</label>
-                        <input type="text" x-model="currentOrder.requester" aria-label="Anfordernde Person" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="text" x-model="currentOrder.requester" aria-label="Anfordernde Person" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Genehmiger</label>
-                        <input type="text" x-model="currentOrder.approver" aria-label="Genehmigende Person" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="text" x-model="currentOrder.approver" aria-label="Genehmigende Person" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Kostenstelle</label>
-                        <input type="text" x-model="currentOrder.cost_center" aria-label="Kostenstelle der Bestellung" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="text" x-model="currentOrder.cost_center" aria-label="Kostenstelle der Bestellung" class="input">
                     </div>
                 </div>
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Steuer</label>
-                        <input type="number" step="0.01" min="0" x-model="currentOrder.tax" aria-label="Steuerbetrag der Bestellung" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="number" step="0.01" min="0" x-model="currentOrder.tax" aria-label="Steuerbetrag der Bestellung" class="input">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Währung</label>
-                        <select x-model="currentOrder.currency" aria-label="Währung der Bestellung" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <select x-model="currentOrder.currency" aria-label="Währung der Bestellung" class="input">
                             <option value="EUR">EUR</option>
                             <option value="USD">USD</option>
                             <option value="GBP">GBP</option>
@@ -423,13 +298,13 @@
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-slate-500">Eingegangen</label>
-                        <input type="date" x-model="currentOrder.received_date" aria-label="Eingangsdatum der Bestellung" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <input type="date" x-model="currentOrder.received_date" aria-label="Eingangsdatum der Bestellung" class="input">
                     </div>
                 </div>
                 <div>
                     <div class="flex items-center justify-between">
                         <label class="text-sm font-semibold text-slate-700">Positionen</label>
-                        <button type="button" @click="addOrderItem" class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                        <button type="button" @click="addOrderItem" class="btn btn-secondary">
                             <i data-feather="plus" class="w-3 h-3"></i>
                             Position hinzufügen
                         </button>
@@ -439,11 +314,11 @@
                             <div class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center">
                                 <div class="flex-1">
                                     <label class="text-xs font-semibold text-slate-500">Bezeichnung</label>
-                                    <input type="text" x-model="item.item_name" aria-label="Bezeichnung der Bestellposition" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                    <input type="text" x-model="item.item_name" aria-label="Bezeichnung der Bestellposition" class="input">
                                 </div>
                                 <div class="w-32">
                                     <label class="text-xs font-semibold text-slate-500">Typ</label>
-                                    <select x-model="item.item_type" aria-label="Typ der Bestellposition" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-2 py-2 text-sm">
+                                    <select x-model="item.item_type" aria-label="Typ der Bestellposition" class="input">
                                         <option value="asset">Asset</option>
                                         <option value="device">Gerät</option>
                                         <option value="software">Software</option>
@@ -453,13 +328,13 @@
                                 </div>
                                 <div class="w-24">
                                     <label class="text-xs font-semibold text-slate-500">Menge</label>
-                                    <input type="number" min="1" x-model="item.quantity" aria-label="Menge der Bestellposition" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-2 py-2 text-sm">
+                                    <input type="number" min="1" x-model="item.quantity" aria-label="Menge der Bestellposition" class="input">
                                 </div>
                                 <div class="w-28">
                                     <label class="text-xs font-semibold text-slate-500">Stückpreis</label>
-                                    <input type="number" step="0.01" min="0" x-model="item.unit_cost" aria-label="Stückpreis der Bestellposition" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-2 py-2 text-sm">
+                                    <input type="number" step="0.01" min="0" x-model="item.unit_cost" aria-label="Stückpreis der Bestellposition" class="input">
                                 </div>
-                                <button type="button" @click="removeOrderItem(item.id)" class="self-start rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 sm:self-center">
+                                <button type="button" @click="removeOrderItem(item.id)" class="btn btn-secondary">
                                     Entfernen
                                 </button>
                             </div>
@@ -469,21 +344,14 @@
                 </div>
                 <div>
                     <label class="text-xs font-semibold text-slate-500">Notizen</label>
-                    <textarea rows="2" x-model="currentOrder.notes" aria-label="Notizen zur Bestellung" class="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"></textarea>
+                    <textarea rows="2" x-model="currentOrder.notes" aria-label="Notizen zur Bestellung" class="input"></textarea>
                 </div>
                 <div class="flex justify-end gap-3">
-                    <button type="button" @click="closeOrderModal()" class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Abbrechen</button>
-                    <button type="submit" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Speichern</button>
+                    <button type="button" @click="closeOrderModal()" class="btn btn-secondary">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
                 </div>
             </form>
         </div>
     </div>
 {% endblock %}
-{% block page_scripts %}
-<script src="/static/procurement.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            feather.replace();
-        });
-    </script>
-{% endblock %}
+{% block page_scripts %}<script src="/static/procurement.js?v=visual-2"></script>{% endblock %}

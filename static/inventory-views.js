@@ -6,7 +6,7 @@
   const list = root.querySelector('[data-view-list]');
   const status = root.querySelector('[data-view-status]');
   const key = `inventorypro.inventoryViews.${window.inventoryUsername}`;
-  const allowed = ['q', 'kind', 'filter', 'sort', 'direction', 'per_page'];
+  const allowed = ['q', 'kind', 'filter', 'sort', 'direction', 'per_page', 'category', 'location', 'assigned'];
   function query(value) {
     const input = new URLSearchParams(value);
     const output = new URLSearchParams();

@@ -12,19 +12,8 @@
     </script>
 {% endblock %}
 {% block content %}
-<div class="max-w-6xl space-y-6">
+<div class="settings-workspace space-y-4">
                     <section x-show="activeSection === 'server'" x-transition>
-                        <div class="mb-6 rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4 text-sm text-indigo-700">
-                            <div class="flex items-start gap-3">
-                                <span class="icon-button inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm">
-                                    <i data-feather="info" class="h-4 w-4"></i>
-                                </span>
-                                <div>
-                                    <p class="font-semibold">Hinweis</p>
-                                    <p class="text-sm text-indigo-700/90">Änderungen an Host, Port oder Debug-Modus werden erst nach einem Neustart des Servers aktiv.</p>
-                                </div>
-                            </div>
-                        </div>
                         <div class="mb-6 flex flex-wrap items-center gap-3" x-show="meta.pendingRestart || (meta.warnings && meta.warnings.length)">
                             <span x-show="meta.pendingRestart" class="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
                                 <i data-feather="alert-triangle" class="h-3 w-3"></i>
@@ -38,15 +27,20 @@
                             </template>
                         </div>
 
-                        <form @submit.prevent="saveSettings" class="space-y-6">
-                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                        <nav class="workspace-tabs settings-task-tabs" role="tablist" aria-label="Servereinstellungen">
+                            <template x-for="panel in serverPanels" :key="panel.id">
+                                <button type="button" role="tab" :id="'settings-tab-'+panel.id" :aria-controls="'settings-panel-'+panel.id" :aria-selected="serverPanel === panel.id" :tabindex="serverPanel === panel.id ? 0 : -1" @click="selectServerPanel(panel.id)" x-text="panel.label"></button>
+                            </template>
+                        </nav>
+                        <form @submit.prevent="saveSettings" class="settings-server-form" novalidate>
+                            <div id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" x-show="serverPanel === 'general'" x-cloak class="workspace-panel settings-task-panel">
                                 <div class="flex items-center gap-3">
                                     <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                         <i data-feather="server" class="h-5 w-5"></i>
                                     </span>
                                     <div>
                                         <h2 class="text-xl font-semibold text-slate-900">Serverkonfiguration</h2>
-                                        <p class="text-sm text-slate-500">Passe die grundlegenden Runtime-Einstellungen der Anwendung an.</p>
+                                        <p class="text-sm text-slate-500">Host, Port und Debug-Modus werden nach einem Serverneustart wirksam.</p>
                                     </div>
                                 </div>
 
@@ -81,7 +75,7 @@
                                 </div>
                             </div>
 
-                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                            <div id="settings-panel-updates" role="tabpanel" aria-labelledby="settings-tab-updates" x-show="serverPanel === 'updates'" x-cloak class="workspace-panel settings-task-panel">
                                 <div class="flex items-center gap-3">
                                     <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                         <i data-feather="refresh-cw" class="h-5 w-5"></i>
@@ -121,7 +115,7 @@
                                 </div>
                             </div>
 
-                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                            <div id="settings-panel-backup" role="tabpanel" aria-labelledby="settings-tab-backup" x-show="serverPanel === 'backup'" x-cloak class="workspace-panel settings-task-panel">
                                 <div class="flex items-center gap-3">
                                     <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                         <i data-feather="database" class="h-5 w-5"></i>
@@ -192,7 +186,7 @@
                                 </label>
                             </div>
 
-                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                            <div id="settings-panel-data" role="tabpanel" aria-labelledby="settings-tab-data" x-show="serverPanel === 'data'" x-cloak class="workspace-panel settings-task-panel">
                                 <div class="flex items-center gap-3">
                                     <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                         <i data-feather="download" class="h-5 w-5"></i>
@@ -249,7 +243,7 @@
                                 </div>
                             </div>
 
-                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                            <div id="settings-panel-security" role="tabpanel" aria-labelledby="settings-tab-security" x-show="serverPanel === 'security'" x-cloak class="workspace-panel settings-task-panel">
                                 <div class="flex items-center gap-3">
                                     <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                         <i data-feather="shield" class="h-5 w-5"></i>
@@ -315,7 +309,7 @@
                                 </div>
                             </div>
 
-                            <div id="inventory-links" class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                            <div id="settings-panel-connections" role="tabpanel" aria-labelledby="settings-tab-connections" x-show="serverPanel === 'connections'" x-cloak class="workspace-panel settings-task-panel">
                                 <div class="flex items-center gap-3">
                                     <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                         <i data-feather="link-2" class="h-5 w-5"></i>
@@ -445,7 +439,7 @@
                                 </div>
                             </div>
 
-                            <div class="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+                            <div id="settings-panel-terminal" role="tabpanel" aria-labelledby="settings-tab-terminal" x-show="serverPanel === 'terminal'" x-cloak class="workspace-panel settings-task-panel">
                                 <div class="flex items-center gap-3">
                                     <span class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                                         <i data-feather="terminal" class="h-5 w-5"></i>
@@ -503,17 +497,17 @@
                                 </div>
                             </div>
 
-                            <div class="flex flex-wrap items-center gap-3">
-                                <button type="submit" :disabled="saving || !hasChanges()" class="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70">
+                            <div class="settings-savebar ui-actions">
+                                <button type="submit" :disabled="saving || !hasChanges()" class="btn btn-primary">
                                     <span x-show="!saving">Einstellungen speichern</span>
                                     <span x-show="saving">Speichert...</span>
                                 </button>
-                                <button type="button" @click="fetchSettings" class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50">
+                                <button type="button" @click="reloadSettings" class="btn btn-secondary">
                                     <i data-feather="refresh-cw" class="h-4 w-4"></i>
                                     Neu laden
                                 </button>
-                                <span x-show="errorMessage" class="text-sm text-rose-600" x-text="errorMessage"></span>
-                                <span x-show="successMessage" class="text-sm text-emerald-600" x-text="successMessage"></span>
+                                <span x-show="errorMessage" role="alert" class="text-sm text-rose-600" x-text="errorMessage"></span>
+                                <span x-show="successMessage" role="status" class="text-sm text-emerald-600" x-text="successMessage"></span>
                             </div>
                         </form>
                     </section>
@@ -1229,6 +1223,14 @@
         document.addEventListener('alpine:init', () => {
             Alpine.data('serverSettingsApp', () => ({
                 activeSection: window.inventoryInitialSection || 'server',
+                serverPanel: 'general',
+                serverPanels: [
+                    {id:'general',label:'Allgemein'}, {id:'updates',label:'Updates'},
+                    {id:'backup',label:'Sicherung'}, {id:'data',label:'Daten'},
+                    {id:'security',label:'Sicherheit'}, {id:'connections',label:'Verbindungen'},
+                    {id:'terminal',label:'Terminalregeln'},
+                ],
+                originalCustomization: null,
                 canViewTerminal: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.view'),
                 canUseTerminal: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.use'),
                 canWriteDb: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.db_write'),
@@ -1382,12 +1384,19 @@
                 suppressHistory: false,
 
                 async init() {
+                    this.readServerPanel();
+                    window.addEventListener('popstate', () => this.readServerPanel());
+                    window.addEventListener('beforeunload', event => {
+                        if (!this.hasChanges() && !this.hasCustomizationChanges()) return;
+                        event.preventDefault(); event.returnValue = '';
+                    });
                     await this.fetchSettings();
                     await this.fetchInventoryLinks();
                     if (this.activeSection === 'terminal' && !this.canViewTerminal) {
                         this.activeSection = 'server';
                     }
                     await this.loadCustomization();
+                    this.originalCustomization = JSON.stringify(this.customization);
                     await this.fetchCustomizationHistory();
                     this.applyCustomization();
                     this.updateContrastWarnings();
@@ -1400,6 +1409,35 @@
                     this.$nextTick(() => feather.replace());
                 },
 
+                readServerPanel() {
+                    const panel = location.hash === '#inventory-links' ? 'connections' : new URL(location.href).searchParams.get('panel');
+                    this.serverPanel = this.serverPanels.some(item => item.id === panel) ? panel : 'general';
+                },
+                selectServerPanel(panel, updateUrl = true) {
+                    if (!this.serverPanels.some(item => item.id === panel)) return;
+                    this.serverPanel = panel;
+                    if (updateUrl) {
+                        const url = new URL(location.href); url.searchParams.set('panel', panel); url.hash = '';
+                        history.pushState({}, '', url);
+                    }
+                    this.$nextTick(() => feather.replace());
+                },
+                hasCustomizationChanges() {
+                    return this.originalCustomization !== null && JSON.stringify(this.customization) !== this.originalCustomization;
+                },
+                reloadSettings() {
+                    if (this.hasChanges() && !confirm('Ungespeicherte Einstellungen verwerfen?')) return;
+                    return this.fetchSettings();
+                },
+                invalidSetting(panel, message, field) {
+                    this.selectServerPanel(panel, false);
+                    this.$nextTick(() => {
+                        const inputs = [...document.getElementById('settings-panel-' + panel).querySelectorAll('input,select,textarea')];
+                        const input = inputs.find(element => (element.getAttribute('x-model') || element.getAttribute('x-model.number')) === field);
+                        requestAnimationFrame(() => input?.focus());
+                    });
+                    return message;
+                },
                 async fetchSettings() {
                     this.loading = true;
                     this.errorMessage = '';
@@ -1593,42 +1631,44 @@
 
                 hasChanges() {
                     if (!this.originalSettings) return false;
-                    return JSON.stringify(this.settings) !== JSON.stringify(this.originalSettings);
+                    return JSON.stringify(this.settings) !== JSON.stringify(this.originalSettings)
+                        || this.ipWhitelistInput !== (this.originalSettings.security.ipWhitelist || []).join(', ')
+                        || this.terminalAllowlistInput !== (this.originalSettings.terminal.ipAllowlist || []).join(', ');
                 },
 
                 validateSettings() {
                     if (!this.settings.server.host) {
-                        return 'Host darf nicht leer sein.';
+                        return this.invalidSetting('general', 'Host darf nicht leer sein.', 'settings.server.host');
                     }
                     if (!Number.isInteger(this.settings.server.port) || this.settings.server.port < 1 || this.settings.server.port > 65535) {
-                        return 'Port muss zwischen 1 und 65535 liegen.';
+                        return this.invalidSetting('general', 'Port muss zwischen 1 und 65535 liegen.', 'settings.server.port');
                     }
                     if (this.settings.backup.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(this.settings.backup.time)) {
-                        return 'Backup-Zeit muss im Format HH:MM sein.';
+                        return this.invalidSetting('backup', 'Backup-Zeit muss im Format HH:MM sein.', 'settings.backup.time');
                     }
                     if (!Number.isInteger(this.settings.backup.retentionDays) || this.settings.backup.retentionDays < 1) {
-                        return 'Retention muss mindestens 1 Tag betragen.';
+                        return this.invalidSetting('backup', 'Retention muss mindestens 1 Tag betragen.', 'settings.backup.retentionDays');
                     }
                     if (this.settings.backup.notifyEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(this.settings.backup.notifyEmail)) {
-                        return 'E-Mail-Adresse ist ungültig.';
+                        return this.invalidSetting('backup', 'E-Mail-Adresse ist ungültig.', 'settings.backup.notifyEmail');
                     }
                     if (!Number.isInteger(this.settings.updates.checkIntervalMinutes) || this.settings.updates.checkIntervalMinutes < 15 || this.settings.updates.checkIntervalMinutes > 1440) {
-                        return 'Update-Prüfintervall muss zwischen 15 und 1440 Minuten liegen.';
+                        return this.invalidSetting('updates', 'Update-Prüfintervall muss zwischen 15 und 1440 Minuten liegen.', 'settings.updates.checkIntervalMinutes');
                     }
                     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(this.settings.updates.maintenanceWindow || '')) {
-                        return 'Update-Wartungsfenster muss im Format HH:MM sein.';
+                        return this.invalidSetting('updates', 'Update-Wartungsfenster muss im Format HH:MM sein.', 'settings.updates.maintenanceWindow');
                     }
                     if (!Number.isInteger(this.settings.security.sessionTimeoutMinutes)) {
-                        return 'Session-Timeout muss eine Zahl sein.';
+                        return this.invalidSetting('security', 'Session-Timeout muss eine Zahl sein.', 'settings.security.sessionTimeoutMinutes');
                     }
                     if (!Number.isInteger(this.settings.security.maxFailedAttempts)) {
-                        return 'Maximale Fehlversuche müssen eine Zahl sein.';
+                        return this.invalidSetting('security', 'Maximale Fehlversuche müssen eine Zahl sein.', 'settings.security.maxFailedAttempts');
                     }
                     if (!Number.isInteger(this.settings.security.lockoutMinutes)) {
-                        return 'Sperrdauer muss eine Zahl sein.';
+                        return this.invalidSetting('security', 'Sperrdauer muss eine Zahl sein.', 'settings.security.lockoutMinutes');
                     }
                     if (!Number.isInteger(this.settings.security.minPasswordLength)) {
-                        return 'Mindest-Passwortlänge muss eine Zahl sein.';
+                        return this.invalidSetting('security', 'Mindest-Passwortlänge muss eine Zahl sein.', 'settings.security.minPasswordLength');
                     }
                     return '';
                 },
@@ -1934,6 +1974,7 @@
                 },
 
                 async saveSettings() {
+                    if (this.saving) return;
                     this.saving = true;
                     this.errorMessage = '';
                     this.successMessage = '';
@@ -1959,6 +2000,7 @@
                         this.meta = data.meta;
                         this.originalSettings = JSON.parse(JSON.stringify(this.settings));
                         this.ipWhitelistInput = (this.settings.security.ipWhitelist || []).join(', ');
+                        this.terminalAllowlistInput = (this.settings.terminal.ipAllowlist || []).join(', ');
                         this.successMessage = 'Einstellungen gespeichert.';
                     } catch (error) {
                         this.errorMessage = error.message;
@@ -2111,6 +2153,7 @@
                         if (window.InventoryCustomization) {
                             window.InventoryCustomization.setLocalOverride(this.customization);
                         }
+                        this.originalCustomization = JSON.stringify(this.customization);
                         this.customizeMessage = 'Lokal gespeichert. Server-Konfiguration bleibt unverändert.';
                         setTimeout(() => {
                             this.customizeMessage = '';
@@ -2138,7 +2181,8 @@
                                 cachedAt: new Date().toISOString(),
                             });
                         }
-                        this.customizeMessage = 'Customize-Einstellungen gespeichert.';
+                        this.originalCustomization = JSON.stringify(this.customization);
+                        this.customizeMessage = 'Darstellung gespeichert.';
                         await this.fetchCustomizationHistory();
                     } catch (error) {
                         this.customizeError = error.message || 'Speichern fehlgeschlagen.';

@@ -9,6 +9,7 @@ spec.loader.exec_module(module)
 
 def test_explicit_stable_release_request():
     assert module.validate_request({'version': '0.2.0'}) == '0.2.0'
+    assert module.validate_request({'version': '0.3.0'}) == '0.3.0'
 
 
 @pytest.mark.parametrize('payload', [None, [], {}, {'version': '0.2.0', 'deploy': True},

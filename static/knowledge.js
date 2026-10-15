@@ -10,6 +10,7 @@ document.addEventListener('alpine:init', () => {
         entryModalOpen: false,
         categoryModalOpen: false,
         entryError: '',
+        saving:false,entrySnapshot:'',categorySnapshot:'',
         categoryError: '',
         entryForm: {
             id: null,
@@ -37,10 +38,14 @@ document.addEventListener('alpine:init', () => {
                 this.entryForm.related_ticket_id = ticketId;
             }
             if (entryId) {
-                await this.selectEntry({ id: entryId });
+                await this.selectEntry({ id: entryId },false);
             }
+            window.addEventListener('beforeunload',event=>{if(this.saving || this.entryModalOpen && JSON.stringify(this.entryForm)!==this.entrySnapshot || this.categoryModalOpen && JSON.stringify(this.categoryForm)!==this.categorySnapshot){event.preventDefault();event.returnValue='';}});
+            window.addEventListener('popstate',()=>{const id=new URLSearchParams(location.search).get('entry_id');if(id)this.selectEntry({id},false);else this.selectedEntry=null;});
             this.$nextTick(() => feather.replace());
         },
+
+        formatDate(value) { const date=new Date(String(value || '').replace(' ','T'));return Number.isNaN(date.valueOf()) ? '—' : date.toLocaleDateString('de-DE'); },
 
         can(permissionKey) {
             return this.isSuperuser || this.userPermissions.includes(permissionKey);
@@ -76,16 +81,21 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        async selectEntry(entry) {
-            const response = await fetch(`/api/knowledge/entries/${entry.id}`);
-            if (response.ok) {
-                this.selectedEntry = await response.json();
-            }
-            this.$nextTick(() => feather.replace());
+        async selectEntry(entry,push=true) {
+            if (!/^[1-9]\d*$/.test(String(entry.id))) return;
+            try {
+                const response=await fetch(`/api/knowledge/entries/${entry.id}`);
+                if (!response.ok || response.redirected) throw new Error('Der Artikel konnte nicht geöffnet werden. Bitte erneut versuchen.');
+                this.selectedEntry=await response.json();
+                if (push) {const url=new URL(location.href);url.searchParams.set('entry_id',entry.id);history.pushState({},'',url);}
+                this.$nextTick(()=>feather.replace());
+            } catch(error) {this.listError=error.message || 'Verbindung fehlgeschlagen.';}
         },
 
         clearSelectedEntry() {
-            this.selectedEntry = null;
+            if (!this.selectedEntry) return;
+            this.selectedEntry=null;
+            const url=new URL(location.href);url.searchParams.delete('entry_id');history.pushState({},'',url);
         },
 
         setCategoryFilter(categoryId) {
@@ -114,39 +124,40 @@ document.addEventListener('alpine:init', () => {
                     related_ticket_id: this.entryForm.related_ticket_id || ''
                 };
             }
+            this.entrySnapshot=JSON.stringify(this.entryForm);
             this.entryModalOpen = true;
         },
 
         closeEntryModal() {
+            if(this.saving || JSON.stringify(this.entryForm)!==this.entrySnapshot && !confirm('Ungespeicherte Eingaben verwerfen?'))return;
             this.entryModalOpen = false;
         },
 
+        async write(url,method,payload) {
+            const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+            try {
+                const response=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:controller.signal});
+                if (response.redirected) throw new Error('Die Sitzung ist abgelaufen. Bitte erneut anmelden.');
+                const data=await response.json();
+                if (!response.ok) throw new Error(data.error || 'Speichern fehlgeschlagen. Ihre Eingaben bleiben erhalten.');
+                return data;
+            } finally {clearTimeout(timer);}
+        },
+
         async saveEntry() {
-            this.entryError = '';
-            const payload = {
-                title: this.entryForm.title,
-                summary: this.entryForm.summary,
-                content: this.entryForm.content,
-                category_id: this.entryForm.category_id || null,
-                related_ticket_id: this.entryForm.related_ticket_id || null
-            };
-            const url = this.entryForm.id ? `/api/knowledge/entries/${this.entryForm.id}` : '/api/knowledge/entries';
-            const method = this.entryForm.id ? 'PUT' : 'POST';
-            const response = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (response.ok) {
+            if(this.saving)return;
+            this.entryError='';
+            if(!this.entryForm.title.trim()){this.entryError='Bitte einen Titel eingeben.';return;}
+            this.saving=true;
+            try {
+                await this.write(this.entryForm.id ? `/api/knowledge/entries/${this.entryForm.id}` : '/api/knowledge/entries',this.entryForm.id ? 'PUT':'POST',{
+                    title:this.entryForm.title,summary:this.entryForm.summary,content:this.entryForm.content,
+                    category_id:this.entryForm.category_id || null,related_ticket_id:this.entryForm.related_ticket_id || null});
                 await this.loadEntries();
-                if (this.entryForm.id) {
-                    await this.selectEntry({ id: this.entryForm.id });
-                }
-                this.entryModalOpen = false;
-            } else {
-                const data = await response.json();
-                this.entryError = data.error || 'Ein Fehler ist aufgetreten.';
-            }
+                if(this.entryForm.id)await this.selectEntry({id:this.entryForm.id},false);
+                this.entryModalOpen=false;
+            } catch(error) {this.entryError=error.name==='AbortError' ? 'Zeitüberschreitung. Prüfen Sie vor erneutem Speichern, ob der Artikel bereits gespeichert wurde.' : error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';}
+            finally {this.saving=false;}
         },
 
         async deleteEntry(entry) {
@@ -154,7 +165,7 @@ document.addEventListener('alpine:init', () => {
             const response = await fetch(`/api/knowledge/entries/${entry.id}`, { method: 'DELETE' });
             if (response.ok) {
                 if (this.selectedEntry && this.selectedEntry.id === entry.id) {
-                    this.selectedEntry = null;
+                    this.clearSelectedEntry();
                 }
                 await this.loadEntries();
             }
@@ -175,34 +186,28 @@ document.addEventListener('alpine:init', () => {
                     description: ''
                 };
             }
+            this.categorySnapshot=JSON.stringify(this.categoryForm);
             this.categoryModalOpen = true;
         },
 
         closeCategoryModal() {
+            if(this.saving || JSON.stringify(this.categoryForm)!==this.categorySnapshot && !confirm('Ungespeicherte Eingaben verwerfen?'))return;
             this.categoryModalOpen = false;
         },
 
         async saveCategory() {
-            this.categoryError = '';
-            const payload = {
-                name: this.categoryForm.name,
-                description: this.categoryForm.description
-            };
-            const url = this.categoryForm.id ? `/api/knowledge/categories/${this.categoryForm.id}` : '/api/knowledge/categories';
-            const method = this.categoryForm.id ? 'PUT' : 'POST';
-            const response = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (response.ok) {
-                await this.loadCategories();
-                await this.loadEntries();
-                this.categoryModalOpen = false;
-            } else {
-                const data = await response.json();
-                this.categoryError = data.error || 'Ein Fehler ist aufgetreten.';
-            }
+            if(this.saving)return;
+            this.categoryError='';
+            if(!this.categoryForm.name.trim()){this.categoryError='Bitte einen Namen eingeben.';return;}
+            this.saving=true;
+            try {
+                await this.write(this.categoryForm.id ? `/api/knowledge/categories/${this.categoryForm.id}` : '/api/knowledge/categories',this.categoryForm.id ? 'PUT':'POST',{
+                    name:this.categoryForm.name,description:this.categoryForm.description});
+                await this.loadCategories();await this.loadEntries();
+                if(this.selectedEntry)await this.selectEntry({id:this.selectedEntry.id},false);
+                this.categoryModalOpen=false;
+            } catch(error) {this.categoryError=error.name==='AbortError' ? 'Zeitüberschreitung. Bitte prüfen Sie, ob die Kategorie bereits gespeichert wurde.' : error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';}
+            finally {this.saving=false;}
         }
     }));
 });

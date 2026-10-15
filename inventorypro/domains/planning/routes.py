@@ -1,15 +1,36 @@
 import json
 from flask import Blueprint, abort, jsonify, render_template, request, session
 from inventorypro.domains.inventory.service import list_inventory
+from inventorypro.domains.inventory import assets as canonical_assets
 from .service import PlanningError, compute_plan, dimension_suggestions
 
 
 def build_planning_blueprint(*, get_db, user_can, get_access, login_required, pack, build_layers, enrich_layers, log_activity):
     blueprint=Blueprint('storage_planning',__name__)
+    @blueprint.errorhandler(403)
+    def forbidden(error):
+        if request.path.startswith('/api/'):
+            return jsonify(error='Keine Berechtigung für die ausgewählten Assets oder diesen Plan.'),403
+        return error
     def require_read():
-        if not (user_can('assets.view') or user_can('assets.manage')):
+        if not (user_can('assets.view') or user_can('assets.manage') or (canonical_assets.unified(get_db()) and (user_can('devices.view') or user_can('devices.manage')))):
             abort(403)
+    def visible_payload(payload):
+        if not canonical_assets.unified(get_db()) or not isinstance(payload,dict):return True
+        ids=[payload.get('container_id')]+[item.get('id') for item in payload.get('items',[]) if isinstance(item,dict)] if isinstance(payload.get('items',[]),list) else []
+        for identifier in ids:
+            if isinstance(identifier,int) and not isinstance(identifier,bool):
+                try:
+                    if not canonical_assets.can_access(get_db(),user_can,identifier):return False
+                except canonical_assets.AssetError:return False
+        return True
+    def visible_plan(raw):
+        try:return visible_payload(json.loads(raw))
+        except (ValueError,TypeError):return False
+    def require_manage():
+        if not (user_can('assets.manage') or (canonical_assets.unified(get_db()) and user_can('devices.manage'))):abort(403)
     def preview(payload):
+        if not visible_payload(payload):abort(403)
         return compute_plan(get_db(),payload,pack=pack,build_layers=build_layers,enrich_layers=enrich_layers)
 
     @blueprint.get('/inventory/planning')
@@ -24,7 +45,7 @@ def build_planning_blueprint(*, get_db, user_can, get_access, login_required, pa
     def assets():
         require_read()
         db=get_db()
-        result=list_inventory(db,{**request.args.to_dict(),'kind':'asset','per_page':20},devices_allowed=False,assets_allowed=True)
+        result=list_inventory(db,{**request.args.to_dict(),'kind':'asset','per_page':20},devices_allowed=canonical_assets.unified(db) and (user_can('devices.view') or user_can('devices.manage')),assets_allowed=user_can('assets.view') or user_can('assets.manage'))
         ids=[row['id'] for row in result['rows']]
         options={}
         if ids:
@@ -46,15 +67,14 @@ def build_planning_blueprint(*, get_db, user_can, get_access, login_required, pa
     @login_required
     def plans():
         require_read()
-        rows=get_db().execute('SELECT id,name,created_at FROM storage_plans ORDER BY id DESC LIMIT 50').fetchall()
-        return jsonify(items=[dict(row) for row in rows])
+        rows=get_db().execute('SELECT id,name,created_at,payload_json FROM storage_plans ORDER BY id DESC LIMIT 50').fetchall()
+        return jsonify(items=[{key:row[key] for key in ['id','name','created_at']} for row in rows if visible_plan(row['payload_json'])])
 
     @blueprint.post('/api/planning/plans')
     @login_required
     def save():
         require_read()
-        if not user_can('assets.manage'):
-            abort(403)
+        require_manage()
         payload=request.get_json(silent=True)
         try:
             result=preview(payload)
@@ -78,9 +98,9 @@ def build_planning_blueprint(*, get_db, user_can, get_access, login_required, pa
         row=get_db().execute('SELECT * FROM storage_plans WHERE id=?',(plan_id,)).fetchone()
         if not row:
             abort(404)
+        if not visible_plan(row['payload_json']):abort(403)
         if request.method=='DELETE':
-            if not user_can('assets.manage'):
-                abort(403)
+            require_manage()
             db=get_db()
             db.execute('DELETE FROM storage_plans WHERE id=?',(plan_id,))
             log_activity(db,'delete','storage_plan',plan_id,{'name':row['name']})

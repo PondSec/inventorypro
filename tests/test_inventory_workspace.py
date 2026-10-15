@@ -85,6 +85,7 @@ def test_real_device_only_role_cannot_read_asset_list_or_detail(client):
     assert b'Link hinzuf' not in response.data
     assert client.get(f'/inventory/assets/{asset_id}').status_code == 403
     assert client.get('/inventory/new').status_code == 403
+    assert client.get('/inventory/export').status_code == 403
 
 
 def test_missing_identity_filter_is_exact(client):
@@ -133,3 +134,54 @@ def test_task_counts_do_not_leak_other_users_tickets(client):
     tasks=client.get('/api/workspace/tasks').json['tasks']
     assert {t['key'] for t in tasks}=={'tickets','overdue_tickets'}
     assert next(t['count'] for t in tasks if t['key']=='tickets')==1
+
+
+def test_inventory_summary_and_combinable_filters_use_exact_object_counts(client):
+    with inventory_app.app.app_context():
+        db = inventory_app.get_db()
+        site = db.execute("INSERT INTO locations(name) VALUES ('QA Office')").lastrowid
+        category = db.execute("SELECT category_id FROM devices WHERE id=1").fetchone()[0]
+        db.execute('UPDATE devices SET location_id=? WHERE id=1',(site,))
+        asset = db.execute("INSERT INTO assets(name,specs) VALUES ('QA Assigned Set','{}')").lastrowid
+        db.execute('INSERT INTO asset_devices(asset_id,device_id,quantity) VALUES (?,1,1)',(asset,))
+        user = db.execute("SELECT id FROM users WHERE username='admin'").fetchone()[0]
+        db.execute("INSERT INTO asset_assignment_history(asset_id,assigned_to_user_id,status) VALUES (?,?,'assigned')",(asset,user))
+        for title in ('One overdue task','Another overdue task'):
+            db.execute("INSERT INTO maintenance_tasks(device_id,title,status,due_date) VALUES (1,?,'open','2026-01-01')",(title,))
+        db.commit()
+        result = list_inventory(db,{},devices_allowed=True,assets_allowed=True,maintenance_allowed=True)
+        assert result['summary'] == {'total':41,'assigned':2,'maintenance':1,'incomplete':40}
+        result = list_inventory(db,{'kind':'device','category':f'device:{category}','location':str(site),'assigned':'yes','q':'admin'},devices_allowed=True,assets_allowed=True)
+        assert result['total'] == 1 and result['rows'][0]['id'] == 1
+        assert result['rows'][0]['assigned_to'] == 'admin'
+        assert list_inventory(db,{'location':site,'kind':'asset'},devices_allowed=True,assets_allowed=True)['total'] == 1
+        assert list_inventory(db,{'filter':'due_maintenance'},devices_allowed=True,assets_allowed=True,maintenance_allowed=True)['total'] == 1
+        restricted = list_inventory(db,{},devices_allowed=True,assets_allowed=False)
+        assert restricted['summary']['assigned'] == 0 and restricted['summary']['maintenance'] == 0
+        assert all(row['assigned_to'] == '' for row in restricted['rows'])
+        assert list_inventory(db,{'category':'device:1 OR 1=1','location':'-1'},devices_allowed=True,assets_allowed=True)['total'] == 41
+
+
+def test_scoped_csv_export_preserves_filters_selection_and_formula_protection(client):
+    response = client.get('/inventory/export?q=QA-039')
+    assert response.status_code == 200
+    assert 'attachment' in response.headers['Content-Disposition']
+    assert b'Notebook 039' in response.data and b'Notebook 038' not in response.data
+    with inventory_app.app.app_context():
+        db = inventory_app.get_db()
+        db.execute("UPDATE devices SET name='=HYPERLINK(\"https://example.invalid\")' WHERE id=1")
+        db.commit()
+    selected = client.get('/inventory/export?selection=device-1,device-2')
+    assert b"'=HYPERLINK" in selected.data and b'Notebook 001' in selected.data and b'Notebook 002' not in selected.data
+    assert client.get('/inventory/export?selection=device-1;DROP').status_code == 400
+    assert client.get('/inventory/export?selection='+','.join(['device-1']*101)).status_code == 400
+
+
+def test_csv_export_respects_existing_export_disable_policy(client):
+    with inventory_app.app.app_context():
+        settings,_ = inventory_app.serialize_server_settings(inventory_app.get_server_settings(inventory_app.get_db()))
+        settings['importExport']['exportAllowed'] = False
+        inventory_app.persist_server_settings(inventory_app.get_db(),settings,'admin')
+        inventory_app.get_db().commit()
+    assert client.get('/inventory/export').status_code == 403
+    assert b'inventory/export' not in client.get('/inventory').data

@@ -2,6 +2,7 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('roadmapApp', () => ({
         roadmaps: [],
         selectedRoadmap: null,
+        workspaceError:'',workspaceBusy:false,requestSequence:0,
         userPermissions: window.inventoryPermissions || [],
         isSuperuser: window.inventoryIsSuperuser || false,
         filters: {
@@ -46,9 +47,25 @@ document.addEventListener('alpine:init', () => {
         preselectedTicketId: null,
 
         async init() {
+            // Every existing operation retains its API contract; failures become
+            // visible and never silently discard the current form values.
+            for (const name of ['loadRoadmaps','selectRoadmap','saveRoadmap','addStep','updateStep','deleteStep','createRoadmap']) {
+                const operation=this[name].bind(this);
+                this[name]=async (...args)=>{
+                    const writing=!['loadRoadmaps','selectRoadmap'].includes(name);
+                    if(writing && this.workspaceBusy)return;
+                    if(writing)this.workspaceBusy=true;
+                    this.workspaceError='';
+                    try {return await operation(...args);}
+                    catch(error){this.workspaceError=error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';if(this.roadmapModalOpen)this.roadmapError=this.workspaceError;}
+                    finally {if(writing)this.workspaceBusy=false;}
+                };
+            }
             const params = new URLSearchParams(window.location.search);
             this.preselectedTicketId = params.get('ticket_id');
             await this.loadRoadmaps();
+            const roadmapId=params.get('roadmap_id');
+            if (roadmapId && /^[1-9]\d*$/.test(roadmapId)) await this.selectRoadmap({id:roadmapId});
             if (this.preselectedTicketId) {
                 const match = this.roadmaps.find((roadmap) => String(roadmap.ticket_id) === String(this.preselectedTicketId));
                 if (match) {
@@ -56,6 +73,13 @@ document.addEventListener('alpine:init', () => {
                 }
             }
             this.refreshIcons();
+        },
+
+        async request(url,options={}) {
+            const response=await fetch(url,options);
+            if(response.redirected)throw new Error('Die Sitzung ist abgelaufen. Bitte erneut anmelden.');
+            if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error || 'Die Änderung konnte nicht gespeichert werden. Ihre Eingaben bleiben erhalten.');}
+            return response;
         },
 
         can(permissionKey) {
@@ -72,6 +96,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async loadRoadmaps() {
+            const sequence=++this.requestSequence;
             const params = new URLSearchParams();
             if (this.filters.status) params.append('status', this.filters.status);
             if (this.filters.search) params.append('search', this.filters.search);
@@ -80,9 +105,11 @@ document.addEventListener('alpine:init', () => {
             if (this.filters.month) params.append('month', this.filters.month);
             if (this.preselectedTicketId) params.append('ticket_id', this.preselectedTicketId);
 
-            const response = await fetch(`/api/roadmaps?${params.toString()}`);
+            const response = await this.request(`/api/roadmaps?${params.toString()}`);
             if (response.ok) {
-                this.roadmaps = await response.json();
+                const result=await response.json();
+                if(sequence!==this.requestSequence)return;
+                this.roadmaps = result;
                 this.updateOverview();
             }
             this.refreshIcons();
@@ -103,7 +130,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async selectRoadmap(roadmap) {
-            const response = await fetch(`/api/roadmaps/${roadmap.id}`);
+            const response = await this.request(`/api/roadmaps/${roadmap.id}`);
             if (response.ok) {
                 const roadmapData = await response.json();
                 if (Array.isArray(roadmapData.steps)) {
@@ -137,7 +164,7 @@ document.addEventListener('alpine:init', () => {
                 start_date: this.selectedRoadmap.start_date,
                 target_date: this.selectedRoadmap.target_date
             };
-            const response = await fetch(`/api/roadmaps/${this.selectedRoadmap.id}`, {
+            const response = await this.request(`/api/roadmaps/${this.selectedRoadmap.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -151,7 +178,7 @@ document.addEventListener('alpine:init', () => {
         async addStep() {
             if (!this.selectedRoadmap || !this.newStep.title) return;
             const payload = { ...this.newStep };
-            const response = await fetch(`/api/roadmaps/${this.selectedRoadmap.id}/steps`, {
+            const response = await this.request(`/api/roadmaps/${this.selectedRoadmap.id}/steps`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -180,7 +207,7 @@ document.addEventListener('alpine:init', () => {
                 due_date: step.due_date,
                 position: step.position
             };
-            const response = await fetch(`/api/roadmaps/${this.selectedRoadmap.id}/steps/${step.id}`, {
+            const response = await this.request(`/api/roadmaps/${this.selectedRoadmap.id}/steps/${step.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -193,7 +220,7 @@ document.addEventListener('alpine:init', () => {
 
         async deleteStep(step) {
             if (!this.selectedRoadmap) return;
-            const response = await fetch(`/api/roadmaps/${this.selectedRoadmap.id}/steps/${step.id}`, {
+            const response = await this.request(`/api/roadmaps/${this.selectedRoadmap.id}/steps/${step.id}`, {
                 method: 'DELETE'
             });
             if (response.ok) {
@@ -208,7 +235,7 @@ document.addEventListener('alpine:init', () => {
             if (!payload.ticket_id) {
                 delete payload.ticket_id;
             }
-            const response = await fetch('/api/roadmaps', {
+            const response = await this.request('/api/roadmaps', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

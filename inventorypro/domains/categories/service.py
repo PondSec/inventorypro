@@ -39,6 +39,14 @@ def remove_category(db, kind, category_id, target_id=None):
             raise CategoryRemovalError(
                 "Die Kategorie wird in der Lager- und Platzplanung verwendet. Bitte zuerst die Planung anpassen.",
                 "category_used_in_planning", references=references, planningCategories=planners)
+    legacy_categories=[]
+    if kind=='asset' and db.execute("SELECT unified_assets FROM inventory_model_state WHERE id=1").fetchone()[0]:
+        legacy_categories=[row[0] for row in db.execute('SELECT category_id FROM asset_legacy_categories WHERE asset_category_id=?',(category_id,))]
+        if legacy_categories:
+            legacy_count=db.execute('SELECT count(*) FROM devices WHERE category_id IN ('+','.join('?' for _ in legacy_categories)+')',legacy_categories).fetchone()[0]
+            references['legacyDevices']=legacy_count
+            if legacy_count and target_id is None:
+                raise CategoryRemovalError('Die Kategorie hat noch historische Inventarverweise. Bitte eine Zielkategorie wählen.','category_in_use',references=references)
     if target_id is not None:
         if isinstance(target_id, bool) or not isinstance(target_id, int) or target_id <= 0 or target_id == category_id:
             raise CategoryRemovalError("Bitte eine andere gültige Zielkategorie wählen.", "invalid_target_category", 400)
@@ -50,5 +58,11 @@ def remove_category(db, kind, category_id, target_id=None):
             "category_in_use", references=references)
     if count:
         db.execute(f"UPDATE {objects} SET category_id = ? WHERE category_id = ?", (target_id, category_id))
+    if legacy_categories:
+        if target_id is not None:
+            db.execute('UPDATE asset_legacy_categories SET asset_category_id=? WHERE asset_category_id=?',(target_id,category_id))
+        else:
+            db.execute('DELETE FROM asset_legacy_categories WHERE asset_category_id=?',(category_id,))
+            for legacy_id in legacy_categories:db.execute('DELETE FROM categories WHERE id=?',(legacy_id,))
     db.execute(f"DELETE FROM {table} WHERE id = ?", (category_id,))
     return {"status": "deleted", "reassigned": count, "target_category_id": target_id}

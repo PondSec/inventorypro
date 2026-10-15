@@ -98,7 +98,7 @@ def build_locations_blueprint(
                 {
                     "error": (
                         f"Standort „{error.location_name}“ wird noch verwendet. "
-                        "Ordne Geräte und Asset-Zuweisungen vor dem Löschen einem "
+                        "Ordne Inventareinträge und Asset-Zuweisungen vor dem Löschen einem "
                         "anderen Standort zu."
                     ),
                     "code": "location_in_use",

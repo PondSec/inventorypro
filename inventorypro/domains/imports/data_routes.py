@@ -8,6 +8,7 @@ import json
 from io import StringIO
 from pathlib import Path
 import shutil
+import sqlite3
 from typing import Any, Mapping
 import zipfile
 
@@ -17,6 +18,7 @@ from inventorypro.data_migration import TabularImportError
 from inventorypro.web.blueprints import stable_route
 
 from .service import ImportProfileValidationError
+from .storage import stage_archive_uploads,install_staged_uploads
 
 
 def build_data_import_blueprint(
@@ -83,6 +85,7 @@ def build_data_import_blueprint(
             return jsonify({"error": antivirus_error}), 400
         summary = None
         tabular_mode = None
+        created_uploads=[]
         try:
             if import_mode == "replace":
                 run_backup_job(database, settings, force=True)
@@ -120,35 +123,35 @@ def build_data_import_blueprint(
                     except ValueError as error:
                         return jsonify({"error": str(error)}), 400
                     members = archive.namelist()
-                    data_files = [name for name in members if name.endswith(".csv")]
-                    if data_files:
-                        with database:
-                            if import_mode == "replace":
+                    data_files = [name for name in members if name.endswith('.csv') and Path(name).stem in table_names and Path(name).name==name]
+                    root=uploads_dir() if callable(uploads_dir) else uploads_dir
+                    staged=stage_archive_uploads(archive,upload_members,root,file_path.parent) if settings['importExport']['includeUploads'] else []
+                    with database:
+                        if 'inventory_export.json' in members:
+                            import_data_payload(database,json.loads(archive.read('inventory_export.json')),import_mode,table_names)
+                        elif 'inventory.db' in members:
+                            extracted=file_path.parent/'inventory.db'
+                            extracted.write_bytes(archive.read('inventory.db'))
+                            import_from_sqlite(database,extracted,import_mode,table_names)
+                        elif 'inventory_export.xlsx' in members:
+                            from openpyxl import load_workbook
+                            from io import BytesIO
+                            workbook=load_workbook(BytesIO(archive.read('inventory_export.xlsx')),read_only=True,data_only=False)
+                            try:
+                                payload={}
                                 for table in table_names:
-                                    database.execute(f"DELETE FROM {table}")
-                            for data_file in data_files:
-                                table_name = Path(data_file).stem
-                                if table_name not in table_names:
-                                    continue
-                                with archive.open(data_file) as handle:
-                                    content = handle.read().decode("utf-8")
-                                    reader = csv.DictReader(StringIO(content))
-                                    import_table_rows(
-                                        database,
-                                        table_name,
-                                        list(reader),
-                                        import_mode if import_mode != "replace" else "append",
-                                    )
-                    database.commit()
-                    if settings["importExport"]["includeUploads"] and upload_members:
-                        uploads_root = uploads_dir.resolve()
-                        for member_info, relative_path in upload_members:
-                            target_path = (uploads_root / relative_path).resolve()
-                            if not target_path.is_relative_to(uploads_root):
-                                return jsonify({"error": "ZIP-Archiv enthält einen unsicheren Upload-Pfad."}), 400
-                            target_path.parent.mkdir(parents=True, exist_ok=True)
-                            with archive.open(member_info) as source, open(target_path, "wb") as target:
-                                shutil.copyfileobj(source, target)
+                                    if table not in workbook.sheetnames:continue
+                                    rows=workbook[table].iter_rows(values_only=True);headers=next(rows,())
+                                    payload[table]=[dict(zip(headers,row)) for row in rows]
+                                import_data_payload(database,payload,import_mode,table_names)
+                            finally:workbook.close()
+                        elif data_files:
+                            payload={}
+                            for name in data_files:
+                                payload[Path(name).stem]=list(csv.DictReader(StringIO(archive.read(name).decode('utf-8'))))
+                            import_data_payload(database,payload,import_mode,table_names)
+                        else:raise ValueError('Das Archiv enthält keine unterstützten Inventardaten.')
+                        created_uploads=install_staged_uploads(staged)
             elif suffix in {".csv", ".tsv", ".xlsx"}:
                 tabular_mode = (request.form.get("mode") or import_mode).strip().lower()
                 content = file_path.read_bytes()
@@ -183,7 +186,9 @@ def build_data_import_blueprint(
             if suffix in {".csv", ".tsv", ".xlsx"} or (suffix == ".json" and entity):
                 response["summary"] = summary
             return jsonify(response)
-        except (TabularImportError, ImportProfileValidationError) as error:
+        except (TabularImportError, ImportProfileValidationError,ValueError,sqlite3.IntegrityError,zipfile.BadZipFile,OSError) as error:
+            database.rollback()
+            for path in created_uploads:path.unlink(missing_ok=True)
             log_activity(
                 database,
                 "import_rejected",
@@ -191,7 +196,8 @@ def build_data_import_blueprint(
                 details={"entity": (request.form.get("entity") or "").strip().lower() or None, "reason": str(error)},
             )
             database.commit()
-            return jsonify({"error": str(error)}), 400
+            message='Der Import enthält ungültige oder weiterhin verwendete Verweise. Vorhandene Daten wurden beibehalten.' if isinstance(error,sqlite3.IntegrityError) else 'Die Importdateien konnten nicht sicher gespeichert werden. Vorhandene Dateien wurden beibehalten.' if isinstance(error,OSError) else str(error)
+            return jsonify({"error": message}), 400
         finally:
             shutil.rmtree(file_path.parent, ignore_errors=True)
 

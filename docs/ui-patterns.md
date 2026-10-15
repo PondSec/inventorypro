@@ -9,9 +9,12 @@ ohne deren Datenmodelle zusammenzulegen. Suche, Filter und Sortierung bleiben
 im Link erhalten. Persönliche Ansichten speichern diese Parameter pro Konto
 im aktuellen Browser; das wird in der Oberfläche ausdrücklich erklärt.
 
-Der Objektname öffnet eine vollständige Detailseite. „Vorschau“ öffnet nur die
-wichtigsten vorhandenen Listendaten im Drawer. Zurück schließt ihn, Vorwärts
-öffnet ihn wieder. Vollständige Details haben normale URLs und eigene Reiter.
+Zeile oder Objektname öffnen das rechte Objektpanel. Es trägt den tatsächlichen
+Objektnamen statt einer generischen Überschrift und zeigt Reiter, Eigenschaften,
+Verknüpfungen, Wartungen und sichtbare Tickets. Auf breiten Displays bleibt die
+Liste bedienbar. Der native Namenslink führt ohne JavaScript oder in einem neuen
+Tab weiterhin zur Detailseite. Zurück schließt ihn, Vorwärts
+öffnet es wieder. Vollständige Details haben normale URLs und eigene Reiter.
 Erfassen beginnt mit Name und Vorlage, weitere Eigenschaften sind optional.
 
 ## Tickets und Arbeitsaufgaben

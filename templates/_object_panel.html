@@ -1,0 +1,38 @@
+{% from '_ui.html' import icon, object_header, property, accordion, status with context %}
+{{ object_header(object) }}
+<div class="object-tabs" role="tablist" aria-label="Objektbereiche">
+{% for key,label in object.tabs %}<button type="button" role="tab" id="object-tab-{{ key }}" aria-selected="{{ 'true' if loop.first else 'false' }}" aria-controls="object-panel-{{ key }}" data-object-tab="{{ key }}">{{ label }}</button>{% endfor %}
+</div>
+<section role="tabpanel" id="object-panel-overview" aria-labelledby="object-tab-overview">
+    <div class="object-card"><dl class="object-properties">
+        {{ property('Kategorie',object.category,'monitor') }}
+        {{ property('Hersteller',object.manufacturer,'tool') }}
+        {{ property('Modell',object.model,'cpu') }}
+        {{ property('Standort',object.location,'map-pin') }}
+        <div class="object-property"><dt>{{ icon('users') }}<span>Zugewiesen an</span></dt><dd>{% for assignment in object.assignments %}<span class="assignment-person"><span class="user-avatar">{{ (assignment.assigned_user or assignment.assigned_team or '?')[:2] | upper }}</span>{{ assignment.assigned_user or assignment.assigned_team }}{% if object.kind == 'device' or assignment.asset_id != object.id %}<small>über {{ assignment.asset_name }}</small>{% endif %}</span>{% else %}<span class="muted">Nicht zugewiesen</span>{% endfor %}</dd></div>
+        {{ property('Erstellt am',object.created_at | inventory_date,'calendar') }}
+        {{ property('Inventar-/Seriennr.',object.serial_number | default(''),'copy',copy=True) }}
+        {% if object.asset_tag %}{{ property('Asset-Tag',object.asset_tag,'tag',copy=True) }}{% endif %}
+    </dl></div>
+    {% call accordion('Hardware & Spezifikationen' if object.kind == 'device' or object.icon in ['laptop','smartphone','printer','network','drive','monitor','server'] else 'Eigenschaften','cpu',open=True) %}
+        <dl class="compact-properties">{% for key,value in object.specs.items() if key | lower not in ['hersteller','manufacturer','modell','model','mpn','assettag','asset-tag'] %}{{ property(key,value) }}{% else %}<p class="muted">Keine weiteren Eigenschaften erfasst.</p>{% endfor %}</dl>
+    {% endcall %}
+    {% if object.can_links %}{% call accordion('Enthaltene Assets' if object.unified else 'Zubehör & Komponenten' if object.kind == 'device' else 'Verknüpfte Geräte','package',object.links | length) %}{% include '_object_panel_links.html' %}{% endcall %}{% endif %}
+    {% if object.unified and object.used_in %}{% call accordion('Verwendet in','layers',object.used_in | length) %}{% for parent in object.used_in %}<a class="object-list-item" href="/inventory/assets/{{ parent.id }}"><strong>{{ parent.name }}</strong><small>Menge: {{ parent.quantity }}</small></a>{% endfor %}{% endcall %}{% endif %}
+    {% if object.can_maintenance or object.kind == 'asset' %}{% call accordion('Wartung & Garantie','tool') %}
+        {% if object.can_maintenance %}{% for task in object.tasks %}<article class="object-list-item"><strong>{{ task.title }}</strong><small>{{ task.due_date or 'Ohne Termin' }} · {{ 'Offen' if task.status == 'open' else 'Erledigt' if task.status in ['completed','done'] else task.status }}</small></article>{% else %}<p class="muted">Keine Wartungsaufgaben erfasst.</p>{% endfor %}{% endif %}
+        {% if object.kind == 'asset' %}<dl class="compact-properties">{{ property('Beschafft am',object.acquisition_date) }}{{ property('In Betrieb seit',object.commissioning_date) }}{{ property('Garantie bis',object.warranty_end) }}</dl>{% endif %}
+    {% endcall %}{% endif %}
+    {% if object.kind == 'asset' and object.can_relations %}{% call accordion('Beziehungen','link-2',object.relations | length) %}{% for related in object.relations %}<a class="object-list-item" href="/inventory/assets/{{ related.id }}"><strong>{{ related.name }}</strong><small>{{ related.relation or 'Verknüpfung' }}</small></a>{% else %}<p class="muted">Keine Beziehungen erfasst.</p>{% endfor %}{% endcall %}{% endif %}
+    {% if object.can_tickets %}{% call accordion('Verknüpfte Tickets','message-square',object.tickets | length) %}{% include '_object_panel_tickets.html' %}{% endcall %}{% endif %}
+</section>
+<section role="tabpanel" id="object-panel-details" aria-labelledby="object-tab-details" hidden>
+    {% set photo=object.photo %}{% include '_image_credit.html' %}
+    <div class="object-card"><h3>Alle Eigenschaften</h3><dl class="compact-properties">{% for key,value in object.specs.items() %}{{ property(key,value) }}{% else %}<p class="muted">Keine zusätzlichen Eigenschaften erfasst.</p>{% endfor %}</dl></div>
+    {% if object.notes %}<div class="object-card"><h3>Beschreibung</h3><p class="preserve-lines">{{ object.notes }}</p></div>{% endif %}
+    {% if object.kind == 'asset' %}<div class="object-card"><h3>Beschaffung und Lebenszyklus</h3><dl class="compact-properties">{% for key,label in [('acquisition_date','Beschafft am'),('commissioning_date','In Betrieb seit'),('warranty_end','Garantie bis'),('purchase_cost','Anschaffungskosten'),('currency','Währung'),('cost_center','Kostenstelle'),('retirement_date','Ausgemustert am'),('retirement_reason','Ausmusterungsgrund')] %}{{ property(label,object.get(key)) }}{% endfor %}</dl></div>{% endif %}
+</section>
+{% if object.can_links %}<section role="tabpanel" id="object-panel-accessories" aria-labelledby="object-tab-accessories" hidden><div class="object-card"><h3>{{ 'Enthaltene Assets' if object.unified else 'Zubehör & Komponenten' if object.kind == 'device' else 'Verknüpfte Geräte' }}</h3>{% include '_object_panel_links.html' %}</div></section>{% endif %}
+{% if object.can_tickets %}<section role="tabpanel" id="object-panel-tickets" aria-labelledby="object-tab-tickets" hidden><div class="object-card"><h3>Verknüpfte Tickets</h3>{% include '_object_panel_tickets.html' %}</div></section>{% endif %}
+{% if object.can_history %}<section role="tabpanel" id="object-panel-history" aria-labelledby="object-tab-history" hidden><div class="object-card"><h3>Letzte Änderungen</h3>{% for entry in object.history %}<article class="object-list-item"><strong>{{ entry.action }}</strong><small>{{ entry.created_at }} · {{ entry.username }}</small></article>{% else %}<p class="muted">Noch keine Änderungen protokolliert.</p>{% endfor %}</div></section>{% endif %}
+<footer class="object-panel-actions">{% if object.can_edit %}<a class="btn btn-secondary" href="/inventory/{{ object.kind }}/{{ object.id }}/photo">{{ icon('image') }}Bild verwalten</a><a class="btn btn-primary" href="{{ object.edit_url }}">{{ icon('edit-2') }}Bearbeiten</a>{% endif %}<a class="btn btn-secondary" href="{{ object.detail_url }}" data-preview-detail>Detailseite</a></footer>

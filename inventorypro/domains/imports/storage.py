@@ -8,6 +8,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+from hashlib import sha256
 from typing import Any
 
 from werkzeug.utils import secure_filename
@@ -76,3 +77,37 @@ def validate_import_archive(archive: Any, *, max_expanded_bytes: int = DEFAULT_M
         if relative_parts:
             upload_members.append((info, Path(*relative_parts)))
     return upload_members
+
+
+def stage_archive_uploads(archive,members,uploads_root,staging_root):
+    """Validate every destination before changing the database or shared files."""
+    root=uploads_root.resolve();result=[]
+    for index,(member,relative) in enumerate(members):
+        target=(root/relative).resolve()
+        if not target.is_relative_to(root):raise ValueError('ZIP-Archiv enthält einen unsicheren Upload-Pfad.')
+        staged=staging_root/('upload-'+str(index))
+        with archive.open(member) as source,open(staged,'xb') as destination:shutil.copyfileobj(source,destination)
+        staged.chmod(0o600)
+        if target.exists():
+            if not target.is_file() or sha256(target.read_bytes()).digest()!=sha256(staged.read_bytes()).digest():
+                raise ValueError('Eine vorhandene Datei unterscheidet sich vom Import. Sie wurde nicht überschrieben.')
+        else:result.append((staged,target))
+    return result
+
+
+def install_staged_uploads(staged):
+    """Atomic creation without replacing any existing file, with failure cleanup."""
+    created=[]
+    try:
+        for source,target in staged:
+            target.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+            descriptor,temporary=tempfile.mkstemp(prefix='.inventory-import-',dir=target.parent)
+            temporary=Path(temporary)
+            try:
+                with os.fdopen(descriptor,'wb') as output,open(source,'rb') as input_file:shutil.copyfileobj(input_file,output)
+                os.link(temporary,target);created.append(target)
+            finally:temporary.unlink(missing_ok=True)
+        return created
+    except BaseException:
+        for target in created:target.unlink(missing_ok=True)
+        raise

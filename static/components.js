@@ -37,3 +37,77 @@
   setup();
   new MutationObserver(setup).observe(document.body, {childList: true, subtree: true, attributes: true, attributeFilter: ['aria-selected']});
 })();
+
+/* Shared shell controls use native semantics and never depend on a framework. */
+(() => {
+  const search = document.querySelector('.global-search input');
+  document.addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && search) {
+      event.preventDefault(); search.focus(); search.select();
+    }
+    if (event.key === 'Escape') {
+      const menus = document.querySelectorAll('[data-account-menu][open],[data-create-menu][open],[data-filter-menu][open],[data-row-menu][open]');
+      if (menus.length) {event.preventDefault(); event.stopImmediatePropagation();}
+      menus.forEach(menu => {
+        menu.open = false; menu.querySelector('summary').focus();
+      });
+    }
+  }, true);
+  document.addEventListener('click', event => {
+    if (event.target.closest('.nav-group > summary') && document.body.classList.contains('sidebar-collapsed')) {
+      document.querySelector('.app-header [data-sidebar-toggle]')?.click();
+    }
+    document.querySelectorAll('[data-account-menu][open],[data-create-menu][open],[data-filter-menu][open],[data-row-menu][open]').forEach(menu => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+  });
+})();
+
+/* Keep table overflow menus inside the viewport, outside scroll clipping. */
+document.querySelectorAll('[data-row-menu] .row-menu-panel').forEach(menu => {
+  if (typeof menu.showPopover === 'function') menu.setAttribute('popover','manual');
+});
+function positionRowMenu(host,menu) {
+  const rect=host.querySelector('summary').getBoundingClientRect();
+  if(rect.bottom<0 || rect.top>innerHeight || rect.right<0 || rect.left>innerWidth){host.open=false;return;}
+  menu.style.left=Math.max(8,Math.min(innerWidth-menu.offsetWidth-8,rect.right-menu.offsetWidth))+'px';
+  menu.style.top=(rect.bottom+menu.offsetHeight+8>innerHeight ? Math.max(8,rect.top-menu.offsetHeight) : rect.bottom+4)+'px';
+}
+document.addEventListener('toggle', event => {
+  const host = event.target;
+  if (!host.matches?.('[data-row-menu]')) return;
+  const menu = host.querySelector('.row-menu-panel');
+  if (!menu) return;
+  if (typeof menu.showPopover === 'function') menu.setAttribute('popover','manual');
+  if (!host.open) {if (menu.hasAttribute('popover')) menu.hidePopover();return;}
+  document.querySelectorAll('[data-row-menu][open]').forEach(other => {if (other !== host) other.open = false;});
+  if (menu.hasAttribute('popover')) menu.showPopover();
+  positionRowMenu(host,menu);
+}, true);
+document.addEventListener('scroll', event => {
+  if (!event.target.closest?.('.row-menu-panel')) document.querySelectorAll('[data-row-menu][open]').forEach(host => {
+    const menu=host.querySelector('.row-menu-panel');if(menu)positionRowMenu(host,menu);
+  });
+}, true);
+window.addEventListener('resize',()=>document.querySelectorAll('[data-row-menu][open]').forEach(host=>{const menu=host.querySelector('.row-menu-panel');if(menu)positionRowMenu(host,menu);}));
+
+/* Copyable identifiers retain a useful selection even without Clipboard API. */
+document.addEventListener('click', async event => {
+  const button = event.target.closest('[data-copy-value]');
+  if (!button) return;
+  const feedback = document.querySelector('[data-copy-status]');
+  try {
+    await navigator.clipboard.writeText(button.dataset.copyValue);
+    if (feedback) feedback.textContent = 'Kopiert.';
+  } catch (_) {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(button.parentElement); selection.removeAllRanges(); selection.addRange(range);
+    if (feedback) feedback.textContent = 'Bitte mit Strg/Cmd+C kopieren.';
+  }
+});
+
+// A missing cached image retains the same-sized, accessible category fallback.
+document.addEventListener('error', event => {
+  if (event.target instanceof HTMLImageElement && event.target.closest('.product-thumbnail')) event.target.remove();
+}, true);

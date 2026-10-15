@@ -1,0 +1,17 @@
+[
+  {
+    "key": "macbook-air-13-m4-2025-v1",
+    "filename": "macbook-air-m4-front.png",
+    "manufacturer": "Apple",
+    "name": "MacBook Air 13″ M4",
+    "category": "Laptop",
+    "modelIdentifier": "Mac16,12",
+    "aliases": ["MacBook Air (13-inch, M4, 2025)", "MacBook Air 13 Zoll M4", "MacBook Air 13 M4 2025"],
+    "source_url": "https://commons.wikimedia.org/wiki/File:MacBook_Air_M4.svg",
+    "model_source_url": "https://support.apple.com/en-my/102869",
+    "license_code": "CC-BY-SA-4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "attribution": "Всемилостивѣйшій · Wikimedia Commons · CC BY-SA 4.0",
+    "changes": "Frontansicht aus Commons-PNG-Rendering ausgeschnitten; neu skaliert/WebP, Metadaten entfernt. Repräsentatives Modellbild der M4-Familie; Farbe und Ausstattung können abweichen."
+  }
+]

@@ -42,7 +42,18 @@ from email.message import EmailMessage
 import smtplib
 
 from inventorypro.domains.planning.routes import build_planning_blueprint
+from inventorypro.domains.tickets.deletion import delete_ticket as delete_ticket_record, TicketDeletionError
+from inventorypro.domains.catalog.routes import build_catalog_blueprint
+from inventorypro.domains.catalog.seed import initialize_catalog
+from inventorypro.domains.catalog.matching import sync_object as sync_product_object
 from inventorypro.domains.inventory.routes import build_inventory_blueprint
+from inventorypro.domains.inventory.asset_routes import build_assets_blueprint
+from inventorypro.domains.inventory.category_routes import build_category_blueprint,can_manage as can_manage_asset_category,scopes as asset_category_scopes
+from inventorypro.domains.inventory import assets as canonical_assets
+from inventorypro.domains.inventory.ticket_assets import normalize_links as normalize_ticket_asset_links
+from inventorypro.domains.exports.tables import INVENTORY_TABLES,available_tables,dependency_order
+from inventorypro.domains.inventory.graph import CanonicalGraph
+from urllib.parse import urlencode
 from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
@@ -190,6 +201,14 @@ MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_B
 MAX_RESTORE_BYTES = int(os.environ.get("INVENTORY_MAX_RESTORE_BYTES", 5 * 1024 * 1024 * 1024))
 MAX_CUSTOMIZATION_IMAGE_BYTES = int(os.environ.get("INVENTORY_MAX_CUSTOMIZATION_IMAGE_BYTES", 2 * 1024 * 1024))
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
+
+@app.before_request
+def bound_product_image_uploads():
+    # Runs before CSRF accesses multipart form data, bounding parser memory too.
+    if request.method == 'POST' and (request.path.startswith('/api/catalog/models/') and request.path.endswith('/images') or request.path.startswith('/api/inventory/') and request.path.endswith('/photo/upload')):
+        request.max_content_length = 8 * 1024 * 1024 + 64 * 1024
+
+
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
 BLOCKED_ATTACHMENT_EXTENSIONS = {".exe", ".js", ".html", ".htm", ".bat", ".sh", ".ps1"}
 BINPACKING_DIMENSIONS = ("width", "height", "depth")
@@ -2359,38 +2378,56 @@ def export_tables(db, tables):
 def import_table_rows(db, table, rows, mode):
     if not rows:
         return
-    columns = [column["name"] for column in db.execute(f"PRAGMA table_info({table})").fetchall()]
-    if not columns:
-        return
-    placeholders = ", ".join(["?"] * len(columns))
-    column_list = ", ".join(columns)
-    if mode == "merge":
-        statement = f"INSERT OR REPLACE INTO {table} ({column_list}) VALUES ({placeholders})"
-    elif mode == "append":
-        statement = f"INSERT OR IGNORE INTO {table} ({column_list}) VALUES ({placeholders})"
-    else:
-        statement = f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})"
+    schema=db.execute(f"PRAGMA table_info({table})").fetchall()
+    known=[column['name'] for column in schema]
+    foreign={column['from'] for column in db.execute(f'PRAGMA foreign_key_list({table})')}
+    definitions={column['name']:column for column in schema}
     for row in rows:
+        if not isinstance(row,dict):raise ValueError('Importzeilen müssen Objekte sein.')
+        row=dict(row)
+        for key,value in list(row.items()):
+            if key not in definitions:continue
+            column=definitions[key]
+            if value=='' and (key in foreign or column['type'].upper() in {'INTEGER','REAL','NUMERIC'}):row[key]=None
+            if row[key] is None and column['notnull'] and column['dflt_value'] is not None:row.pop(key)
+        columns=[column for column in known if column in row]
+        if not columns:raise ValueError('Importzeile enthält keine gültigen Spalten.')
+        placeholders=','.join('?' for _ in columns);column_list=','.join(columns)
+        statement=f"INSERT {'OR IGNORE ' if mode=='append' else ''}INTO {table} ({column_list}) VALUES ({placeholders})"
+        if mode=='merge':
+            primary=[column['name'] for column in schema if column['pk']]
+            updates=[column for column in columns if column not in primary]
+            if primary:statement+=' ON CONFLICT ('+','.join(primary)+') DO '+('UPDATE SET '+','.join(column+'=excluded.'+column for column in updates) if updates else 'NOTHING')
         values = [row.get(column) for column in columns]
         db.execute(statement, values)
 
 def import_data_payload(db, payload, mode, tables):
-    if mode == "replace":
-        for table in tables:
-            db.execute(f"DELETE FROM {table}")
-    for table in tables:
-        rows = payload.get(table, [])
-        import_table_rows(db, table, rows, mode if mode != "replace" else "append")
+    if not isinstance(payload,dict):raise ValueError('Importdatei muss ein JSON-Objekt enthalten.')
+    ordered=dependency_order(db,available_tables(db,tables))
+    is_unified=canonical_assets.unified(db)
+    canonical_payload=is_unified and any(key in payload for key in ['asset_legacy_devices','asset_components'])
+    if not db.in_transaction:db.execute('BEGIN IMMEDIATE')
+    db.execute('SAVEPOINT portable_inventory_import')
+    try:
+        if canonical_payload:db.execute('UPDATE inventory_compat_sync SET busy=1 WHERE id=1')
+        if mode=='replace':
+            for table in reversed(ordered):
+                if table in payload:db.execute(f'DELETE FROM {table}')
+        for table in ordered:import_table_rows(db,table,payload.get(table,[]),mode if mode!='replace' else 'append')
+        if canonical_payload:db.execute('UPDATE inventory_compat_sync SET busy=0 WHERE id=1')
+        if is_unified:
+            from inventorypro.domains.inventory.unification import convert_inventory
+            convert_inventory(db)
+        if db.execute('PRAGMA foreign_key_check').fetchall():raise ValueError('Import enthält ungültige Verweise.')
+        db.execute('RELEASE SAVEPOINT portable_inventory_import')
+    except BaseException:
+        db.execute('ROLLBACK TO SAVEPOINT portable_inventory_import');db.execute('RELEASE SAVEPOINT portable_inventory_import');raise
 
 def import_from_sqlite(db, source_path, mode, tables):
     with sqlite3.connect(source_path) as source:
         source.row_factory = sqlite3.Row
-        if mode == "replace":
-            for table in tables:
-                db.execute(f"DELETE FROM {table}")
-        for table in tables:
-            rows = source.execute(f"SELECT * FROM {table}").fetchall()
-            import_table_rows(db, table, [dict(row) for row in rows], mode if mode != "replace" else "append")
+        payload={table:[dict(row) for row in source.execute(f'SELECT * FROM {table}')] for table in available_tables(source,tables)}
+        import_data_payload(db,payload,mode,tables)
 
 def migrate_customization(data):
     return migrate_customization_payload(data, default_customization=DEFAULT_CUSTOMIZATION)
@@ -2817,6 +2854,9 @@ def require_permission(permission_key):
 def get_post_login_redirect(access):
     if access.get("user") and access["user"].get("must_change_password"):
         return url_for('force_password_change')
+    if canonical_assets.unified(get_db()):
+        if access['is_superuser'] or any(key in access['permissions'] for key in ['assets.view','assets.manage','devices.view','devices.manage']):return '/inventory'
+        if any(key in access['permissions'] for key in ['categories.view','categories.manage','asset_categories.view','asset_categories.manage']):return '/inventory/categories'
     if access["is_superuser"]:
         return url_for('index')
     landing_targets = [
@@ -2897,8 +2937,14 @@ def enforce_password_change():
 
 def init_db():
     ensure_runtime_directories()
+    conversion_enabled=app.config.get('INVENTORY_UNIFIED_ASSETS_ENABLED',True)
+    if conversion_enabled:
+        from inventorypro.domains.inventory.upgrade import backup_before_conversion
+        backup=backup_before_conversion(DATABASE)
+        if backup:app.logger.info('Sicherung vor Asset-Übernahme erstellt: %s',backup)
     with app.app_context():
         db = get_db()
+        if not db.in_transaction:db.execute('BEGIN IMMEDIATE')
         c = db.cursor()
 
         # Tabellen erstellen (wie zuvor)
@@ -3143,7 +3189,10 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
-        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_category_name ON assets(category_id, name)')
+        model_state_exists=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inventory_model_state'").fetchone()
+        unified_assets=model_state_exists and c.execute('SELECT unified_assets FROM inventory_model_state WHERE id=1').fetchone()[0]
+        if not unified_assets and not conversion_enabled:
+            c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_category_name ON assets(category_id, name)')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS asset_relation_types (
@@ -3180,42 +3229,43 @@ def init_db():
             )
         ''')
 
-        c.execute('INSERT OR IGNORE INTO asset_categories (name) VALUES (?)', ("Assets",))
+        if not unified_assets:c.execute('INSERT OR IGNORE INTO asset_categories (name) VALUES (?)', ("Assets",))
         default_category_row = db.execute(
             'SELECT id FROM asset_categories WHERE name = ?',
             ("Assets",),
         ).fetchone()
-        if default_category_row:
+        if default_category_row and not unified_assets and not conversion_enabled:
             db.execute(
                 'UPDATE assets SET category_id = ? WHERE category_id IS NULL',
                 (default_category_row["id"],),
             )
 
-        db.execute('UPDATE asset_devices SET quantity = 1 WHERE quantity IS NULL')
-        duplicate_rows = db.execute('''
-            SELECT asset_id, device_id,
-                   GROUP_CONCAT(id) AS ids,
-                   SUM(COALESCE(quantity, 1)) AS total_quantity
-            FROM asset_devices
-            GROUP BY asset_id, device_id
-            HAVING COUNT(*) > 1
-        ''').fetchall()
-        for row in duplicate_rows:
-            ids = [int(item) for item in row["ids"].split(",") if item]
-            if not ids:
-                continue
-            primary_id = ids[0]
-            db.execute(
-                'UPDATE asset_devices SET quantity = ? WHERE id = ?',
-                (row["total_quantity"], primary_id),
-            )
-            if len(ids) > 1:
-                placeholders = ",".join("?" for _ in ids[1:])
+        if not unified_assets and not conversion_enabled:
+            db.execute('UPDATE asset_devices SET quantity = 1 WHERE quantity IS NULL')
+            duplicate_rows = db.execute('''
+                SELECT asset_id, device_id,
+                       GROUP_CONCAT(id) AS ids,
+                       SUM(COALESCE(quantity, 1)) AS total_quantity
+                FROM asset_devices
+                GROUP BY asset_id, device_id
+                HAVING COUNT(*) > 1
+            ''').fetchall()
+            for row in duplicate_rows:
+                ids = [int(item) for item in row["ids"].split(",") if item]
+                if not ids:
+                    continue
+                primary_id = ids[0]
                 db.execute(
-                    f'DELETE FROM asset_devices WHERE id IN ({placeholders})',
-                    ids[1:],
+                    'UPDATE asset_devices SET quantity = ? WHERE id = ?',
+                    (row["total_quantity"], primary_id),
                 )
-        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_devices_unique ON asset_devices(asset_id, device_id)')
+                if len(ids) > 1:
+                    placeholders = ",".join("?" for _ in ids[1:])
+                    db.execute(
+                        f'DELETE FROM asset_devices WHERE id IN ({placeholders})',
+                        ids[1:],
+                    )
+            c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_devices_unique ON asset_devices(asset_id, device_id)')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS activity_log (
@@ -4603,7 +4653,7 @@ def init_db():
                 "Formfaktor": "text"
             }))
         ]
-        c.executemany('''
+        if not unified_assets:c.executemany('''
             INSERT OR IGNORE INTO categories (name, icon, description, fields)
             VALUES (?, ?, ?, ?)
         ''', default_categories)
@@ -4715,7 +4765,7 @@ def init_db():
                 "SLA": "text"
             }))
         ]
-        c.executemany('''
+        if not unified_assets:c.executemany('''
             INSERT OR IGNORE INTO asset_categories (name, icon, description, fields)
             VALUES (?, ?, ?, ?)
         ''', default_asset_categories)
@@ -4724,7 +4774,7 @@ def init_db():
             ("Lager", "Zentrales Lager"),
             ("Büro", "Arbeitsplätze und Office-Equipment")
         ]
-        c.executemany('''
+        if not unified_assets:c.executemany('''
             INSERT OR IGNORE INTO locations (name, description)
             VALUES (?, ?)
         ''', default_locations)
@@ -4771,6 +4821,11 @@ def init_db():
             apply_migrations(db, Path(__file__).with_name("migrations"))
         except MigrationError as error:
             raise RuntimeError("Datenbankmigration konnte nicht sicher angewendet werden.") from error
+        if conversion_enabled:
+            from inventorypro.domains.inventory.unification import convert_inventory
+            converted=convert_inventory(db)
+            if any(converted.values()):app.logger.info('Asset-Übernahme abgeschlossen: %s',converted)
+        initialize_catalog(db, UPLOADS_DIR)
         db.commit()
 
 # Setup-Funktion zum Benutzer erstellen
@@ -6049,12 +6104,19 @@ def prune_dependency_links(db):
 
 def fetch_entity_options(db):
     options = {}
+    canonical=canonical_dependency_graph(db)
     for entity_type, meta in DEPENDENCY_ENTITY_TYPES.items():
+        if canonical and entity_type=='device':continue
         rows = db.execute(
             f"SELECT id, {meta['name_col']} AS name FROM {meta['table']} ORDER BY {meta['name_col']}"
         ).fetchall()
-        options[entity_type] = [dict(row) for row in rows]
+        options[entity_type] = [dict(row) for row in rows if not canonical or canonical.node(entity_type,row['id'])]
     return options
+
+def canonical_dependency_graph(db):
+    if not canonical_assets.unified(db):return None
+    if not hasattr(g,'_canonical_graph'):g._canonical_graph=CanonicalGraph(db,user_can,get_user_access(db),ensure_ticket_access)
+    return g._canonical_graph
 
 def build_dependency_edges(db):
     edges = []
@@ -6245,6 +6307,15 @@ def build_dependency_edges(db):
                 "implicit": True
             })
 
+    canonical=canonical_dependency_graph(db)
+    if canonical:
+        normalized=[canonical.edge(edge) for edge in edges if not (edge.get('implicit') and edge['relation']=='uses_device')]
+        edges=[edge for edge in normalized if edge]+canonical.implicit_edges()
+        distinct={}
+        for edge in edges:
+            key=(edge['source_type'],edge['source_id'],edge['target_type'],edge['target_id'],edge['relation'],edge.get('id'))
+            distinct[key]=edge
+        edges=list(distinct.values())
     return edges
 
 def dependency_node_key(entity_type, entity_id):
@@ -6252,6 +6323,8 @@ def dependency_node_key(entity_type, entity_id):
 
 def build_dependency_nodes(db):
     nodes = []
+    if canonical_assets.unified(db):
+        return [dict(key=dependency_node_key(kind,row['id']),id=row['id'],type=kind,label=row['name']) for kind,rows in fetch_entity_options(db).items() for row in rows]
     for entity_type, meta in DEPENDENCY_ENTITY_TYPES.items():
         rows = db.execute(
             f"SELECT id, {meta['name_col']} AS name FROM {meta['table']} ORDER BY {meta['name_col']}"
@@ -6399,12 +6472,13 @@ def analyze_dependency_impact(db, source_type, source_id, max_depth=None):
     if impacted_ticket_ids:
         placeholders = ",".join("?" for _ in impacted_ticket_ids)
         ticket_rows = db.execute(f'''
-            SELECT id, title, status, priority, escalation_level, due_date
+            SELECT *
             FROM tickets
             WHERE id IN ({placeholders})
             ORDER BY created_at DESC
         ''', tuple(impacted_ticket_ids)).fetchall()
-        tickets = [dict(row) for row in ticket_rows]
+        canonical=canonical_dependency_graph(db)
+        tickets = [{key:row[key] for key in ['id','title','status','priority','escalation_level','due_date']} for row in ticket_rows if not canonical or row['id'] in canonical.tickets]
 
     critical_tickets = [
         ticket for ticket in tickets
@@ -8239,6 +8313,20 @@ def build_asset_summary(db, asset_row, device_rows=None):
 
 def build_asset_summaries(db, asset_rows):
     rows = list(asset_rows)
+    if canonical_assets.unified(db):
+        from inventorypro.domains.inventory.unified_list import source
+        sql=source(devices_allowed=user_can('devices.view') or user_can('devices.manage'),assets_allowed=user_can('assets.view') or user_can('assets.manage'))
+        visible={row['id']:dict(row) for row in db.execute(sql+'SELECT id,location FROM inventory')}
+        summaries=[]
+        for row in rows:
+            if row['id'] not in visible:continue
+            asset=canonical_assets.get_asset(db,user_can,row['id'])
+            serials=sorted({item['serial_number'] for item in [asset,*asset['components']] if item.get('serial_number')})
+            summaries.append({**dict(row),'specs':asset['specs'],'serial_numbers':serials,
+                'locations':[visible[row['id']]['location']] if visible[row['id']]['location'] else [],
+                'manufacturer':extract_manufacturer(asset['specs']),'category_name':asset.get('category'),
+                'warranty_status':warranty_status(asset.get('warranty_end'))})
+        return summaries
     device_rows_by_asset = get_assets_devices_info(
         db,
         [row["id"] for row in rows],
@@ -8389,6 +8477,13 @@ def validate_assignment_transition(current_status, action):
 
 def ensure_attachment_entity_access(db, entity_type, entity_id, access):
     if entity_type == "asset":
+        from inventorypro.domains.inventory import assets as canonical_assets
+        if canonical_assets.unified(db):
+            can=lambda key:access['is_superuser'] or key in access['permissions']
+            try:
+                if not canonical_assets.can_access(db,can,entity_id):return None,('Keine Berechtigung',403)
+            except canonical_assets.AssetError:return None,('Asset nicht gefunden',404)
+            return {'id':entity_id},None
         asset = db.execute('SELECT id FROM assets WHERE id = ?', (entity_id,)).fetchone()
         if not asset:
             return None, ("Asset nicht gefunden", 404)
@@ -8867,9 +8962,16 @@ def logout():
 
 @app.route('/')
 @login_required
-@require_permissions('categories.view', 'categories.manage')
 def index():
     access = get_user_access(get_db())
+    if canonical_assets.unified(get_db()):
+        if request.args.get('view') in {'taxonomy','asset-taxonomy'}:return redirect('/inventory/categories')
+        if request.args.get('create') in {'device','asset'}:return redirect('/inventory/assets/new')
+        location=request.args.get('location','')
+        if location.isdigit() and int(location)>0:return redirect('/inventory?'+urlencode({'location':location}))
+        destination=get_post_login_redirect(access)
+        return redirect(destination if destination!='/' else '/account/security')
+    if not (user_can('categories.view') or user_can('categories.manage')):abort(403)
     return render_template('index.html', username=session.get('username'), permissions=sorted(access["permissions"]), is_superuser=access["is_superuser"])
 
 @app.route('/users')
@@ -8965,6 +9067,9 @@ def handle_category(category_id):
     db = get_db()
     if not user_can('categories.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    if canonical_assets.unified(db):
+        mapped=db.execute('SELECT asset_category_id FROM asset_legacy_categories WHERE category_id=?',(category_id,)).fetchone()
+        if mapped and not can_manage_asset_category(db,user_can,mapped[0]):return jsonify(error='Keine Berechtigung'),403
 
     if request.method == 'PUT':
         try:
@@ -8989,6 +9094,8 @@ def handle_category(category_id):
             db.commit()
             return jsonify({"status": "updated"}), 200
 
+        except sqlite3.IntegrityError:
+            db.rollback();return jsonify(error='Eine Kategorie mit diesem Namen existiert bereits.'),409
         except (KeyError, TypeError, ValueError) as e:
             return jsonify({"error": f"Ungültige Daten: {str(e)}"}), 400
 
@@ -9001,7 +9108,21 @@ def delete_inventory_category(db, kind, category_id):
     if payload is not None and not isinstance(payload, dict):
         return jsonify({"error": "JSON-Objekt erwartet."}), 400
     target_id = (payload or {}).get("target_category_id")
-    if target_id is not None and not user_can("devices.manage" if kind == "device" else "assets.manage"):
+    if canonical_assets.unified(db):
+        if kind=='device':
+            mapped=db.execute('SELECT asset_category_id FROM asset_legacy_categories WHERE category_id=?',(category_id,)).fetchone()
+            if not mapped:return jsonify(error='Kategorie nicht gefunden'),404
+            category_id=mapped[0];kind='asset'
+            if target_id is not None:
+                if isinstance(target_id,bool) or not isinstance(target_id,int):return jsonify(error='Ungültige Zielkategorie'),400
+                target=db.execute('SELECT asset_category_id FROM asset_legacy_categories WHERE category_id=?',(target_id,)).fetchone()
+                if not target:return jsonify(error='Zielkategorie nicht gefunden'),400
+                target_id=target[0]
+        if not can_manage_asset_category(db,user_can,category_id):return jsonify(error='Keine Berechtigung'),403
+        if target_id is not None:
+            if not can_manage_asset_category(db,user_can,target_id):return jsonify(error='Keine Berechtigung für die Zielkategorie'),403
+            if not all(user_can(scope+'.manage') for scope in asset_category_scopes(db,category_id)):return jsonify(error='Keine Berechtigung zur Umzuordnung'),403
+    if not canonical_assets.unified(db) and target_id is not None and not user_can("devices.manage" if kind == "device" else "assets.manage"):
         return jsonify({"error": "Keine Berechtigung zur Umzuordnung."}), 403
     try:
         result = remove_category(db, kind, category_id, target_id)
@@ -9051,6 +9172,7 @@ def handle_asset_category(category_id):
     db = get_db()
     if not user_can('asset_categories.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    if canonical_assets.unified(db) and not can_manage_asset_category(db,user_can,category_id):return jsonify(error='Keine Berechtigung'),403
 
     if request.method == 'PUT':
         try:
@@ -9157,6 +9279,7 @@ def handle_device(device_id):
             if result.rowcount == 0:
                 return jsonify({"error": "Gerät nicht gefunden"}), 404
 
+            sync_product_object(db, "device", device_id)
             log_activity(db, "update", "device", device_id, {"name": device_data["name"]})
             db.commit()
             return jsonify({"status": "updated"}), 200
@@ -9203,6 +9326,7 @@ def handle_devices():
             json.dumps(device_data["specs"])
         ))
         device_id = cursor.lastrowid
+        sync_product_object(db, "device", device_id)
         log_activity(db, "create", "device", device_id, {"name": device_data["name"]})
         db.commit()
         return jsonify({"status": "created", "id": device_id}), 201
@@ -9392,6 +9516,7 @@ def manage_assets():
                     INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id)
                     VALUES (?, ?, ?)
                 ''', (asset_id, related_asset_id, relation_type_id))
+            sync_product_object(db, "asset", asset_id)
             log_activity(db, "create", "asset_entry", asset_id, {"name": name})
             db.commit()
             return jsonify({"status": "created", "id": asset_id}), 201
@@ -9632,6 +9757,7 @@ def asset_entry_detail(asset_id):
                 INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id)
                 VALUES (?, ?, ?)
             ''', (asset_id, related_asset_id, relation_type_id))
+        sync_product_object(db, "asset", asset_id)
         log_activity(db, "update", "asset_entry", asset_id, {"name": name})
         db.commit()
         return jsonify({"status": "updated"}), 200
@@ -10412,6 +10538,16 @@ def roadmap_steps_detail(roadmap_id, step_id):
     db.commit()
     return jsonify({"status": "deleted"}), 200
 
+def validated_reference_id(db,value,table,label):
+    if value in (None,''):return None
+    if isinstance(value,bool) or not isinstance(value,(int,str)) or not str(value).isdigit() or len(str(value))>19 or not 0<int(value)<=9223372036854775807:
+        raise ValueError(f'{label}: Bitte einen gültigen Eintrag auswählen.')
+    identifier=int(value)
+    if not db.execute(f'SELECT 1 FROM {table} WHERE id=?',(identifier,)).fetchone():
+        raise ValueError(f'{label} existiert nicht mehr. Bitte neu auswählen.')
+    return identifier
+
+
 @app.route('/api/departments', methods=['GET', 'POST'])
 @login_required
 def departments():
@@ -10465,7 +10601,11 @@ def department_detail(department_id):
         db.commit()
         return jsonify({"status": "updated"}), 200
 
-    db.execute('DELETE FROM departments WHERE id = ?', (department_id,))
+    try:
+        db.execute('DELETE FROM departments WHERE id = ?', (department_id,))
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify(error='Abteilung wird noch verwendet. Bitte zuerst die zugehörigen Verknüpfungen lösen.'),409
     log_activity(db, "delete", "department", department_id, {"name": department["name"]})
     db.commit()
     return jsonify({"status": "deleted"}), 200
@@ -10479,7 +10619,8 @@ def teams():
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         name = (data.get('name') or '').strip()
-        department_id = data.get('department_id')
+        try:department_id = validated_reference_id(db,data.get('department_id'),'departments','Abteilung')
+        except ValueError as error:return jsonify(error=str(error)),400
         lead_user = (data.get('lead_user') or '').strip()
         notes = (data.get('notes') or '').strip()
         if not name:
@@ -10518,7 +10659,8 @@ def team_detail(team_id):
     if request.method == 'PUT':
         data = request.get_json() or {}
         name = (data.get('name') or team["name"] or '').strip()
-        department_id = data.get('department_id')
+        try:department_id = validated_reference_id(db,data.get('department_id',team['department_id']),'departments','Abteilung')
+        except ValueError as error:return jsonify(error=str(error)),400
         lead_user = (data.get('lead_user') or team["lead_user"] or '').strip()
         notes = (data.get('notes') or team["notes"] or '').strip()
         if not name:
@@ -10532,7 +10674,11 @@ def team_detail(team_id):
         db.commit()
         return jsonify({"status": "updated"}), 200
 
-    db.execute('DELETE FROM teams WHERE id = ?', (team_id,))
+    try:
+        db.execute('DELETE FROM teams WHERE id = ?', (team_id,))
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify(error='Team wird noch verwendet. Bitte zuerst die zugehörigen Verknüpfungen lösen.'),409
     log_activity(db, "delete", "team", team_id, {"name": team["name"]})
     db.commit()
     return jsonify({"status": "deleted"}), 200
@@ -10551,7 +10697,8 @@ def software_inventory():
         license_type = (data.get('license_type') or '').strip()
         criticality = (data.get('criticality') or 'medium').strip()
         description = (data.get('description') or '').strip()
-        owner_team_id = data.get('owner_team_id')
+        try:owner_team_id = validated_reference_id(db,data.get('owner_team_id'),'teams','Team')
+        except ValueError as error:return jsonify(error=str(error)),400
         support_contact = (data.get('support_contact') or '').strip()
         if not name:
             return jsonify({"error": "Name ist erforderlich"}), 400
@@ -10594,7 +10741,8 @@ def software_detail(software_id):
         license_type = (data.get('license_type') or software_row["license_type"] or '').strip()
         criticality = (data.get('criticality') or software_row["criticality"] or 'medium').strip()
         description = (data.get('description') or software_row["description"] or '').strip()
-        owner_team_id = data.get('owner_team_id')
+        try:owner_team_id = validated_reference_id(db,data.get('owner_team_id',software_row['owner_team_id']),'teams','Team')
+        except ValueError as error:return jsonify(error=str(error)),400
         support_contact = (data.get('support_contact') or software_row["support_contact"] or '').strip()
         if not name:
             return jsonify({"error": "Name ist erforderlich"}), 400
@@ -10607,7 +10755,11 @@ def software_detail(software_id):
         db.commit()
         return jsonify({"status": "updated"}), 200
 
-    db.execute('DELETE FROM software WHERE id = ?', (software_id,))
+    try:
+        db.execute('DELETE FROM software WHERE id = ?', (software_id,))
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify(error='Software wird noch verwendet. Bitte zuerst die zugehörigen Verknüpfungen lösen.'),409
     log_activity(db, "delete", "software", software_id, {"name": software_row["name"]})
     db.commit()
     return jsonify({"status": "deleted"}), 200
@@ -10620,11 +10772,14 @@ def software_installations():
         if not user_can('software.manage'):
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
-        software_id = data.get('software_id')
-        device_id = data.get('device_id')
-        asset_id = data.get('asset_id')
+        if canonical_assets.unified(db) and not canonical_assets.installation_visible(db,user_can,data):return jsonify(error='Keine Berechtigung für das zugeordnete Asset'),403
+        try:
+            software_id = validated_reference_id(db,data.get('software_id'),'software','Software')
+            device_id = validated_reference_id(db,data.get('device_id'),'devices','Gerät')
+            asset_id = validated_reference_id(db,data.get('asset_id'),'assets','Asset')
+        except ValueError as error:return jsonify(error=str(error)),400
         if not software_id or not (device_id or asset_id):
-            return jsonify({"error": "Software sowie Gerät oder Asset sind erforderlich"}), 400
+            return jsonify({"error": "Software und ein zugeordnetes Asset sind erforderlich"}), 400
         installed_version = (data.get('installed_version') or '').strip()
         environment = (data.get('environment') or 'production').strip()
         status = (data.get('status') or 'active').strip()
@@ -10670,7 +10825,14 @@ def software_installations():
         query += ' WHERE ' + ' AND '.join(conditions)
     query += ' ORDER BY si.created_at DESC'
     rows = db.execute(query, params).fetchall()
-    return jsonify([dict(row) for row in rows])
+    result=[dict(row) for row in rows]
+    if canonical_assets.unified(db):
+        result=[row for row in result if canonical_assets.installation_visible(db,user_can,row)]
+        for row in result:
+            if row['device_id']:
+                row['asset_id']=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=?',(row['device_id'],)).fetchone()[0]
+                row['asset_name']=row['device_name'];row['device_id']=None;row['device_name']=None
+    return jsonify(result)
 
 @app.route('/api/software-installations/<int:installation_id>', methods=['PUT', 'DELETE'])
 @login_required
@@ -10681,6 +10843,7 @@ def software_installation_detail(installation_id):
     installation = db.execute('SELECT * FROM software_installations WHERE id = ?', (installation_id,)).fetchone()
     if not installation:
         return jsonify({"error": "Installation nicht gefunden"}), 404
+    if canonical_assets.unified(db) and not canonical_assets.installation_visible(db,user_can,dict(installation)):return jsonify(error='Keine Berechtigung für das zugeordnete Asset'),403
 
     if request.method == 'PUT':
         data = request.get_json() or {}
@@ -11155,12 +11318,13 @@ def procurement_renewals():
         entry["days_left"] = (end_date - today).days
         contracts_due.append(entry)
 
-    asset_rows = db.execute('''
+    asset_filter,asset_arguments=canonical_assets.scope_predicate(user_can) if canonical_assets.unified(db) else ('1',[])
+    asset_rows = db.execute(f'''
         SELECT a.id, a.name, a.warranty_end, a.retirement_date, v.name as vendor_name
         FROM assets a
         LEFT JOIN vendors v ON a.vendor_id = v.id
-        WHERE a.warranty_end IS NOT NULL
-    ''').fetchall()
+        WHERE a.warranty_end IS NOT NULL AND {asset_filter}
+    ''',asset_arguments).fetchall()
     warranties_due = []
     for row in asset_rows:
         warranty_end = parse_date(row["warranty_end"])
@@ -11206,6 +11370,11 @@ def dependency_links():
             target_id = int(target_id)
         except (TypeError, ValueError):
             return jsonify({"error": "Ungültige IDs"}), 400
+        canonical=canonical_dependency_graph(db)
+        if canonical:
+            source=canonical.node(source_type,source_id);target=canonical.node(target_type,target_id)
+            if not source or not target:return jsonify(error='Keine Berechtigung für Quelle oder Ziel'),403
+            source_type,source_id=source;target_type,target_id=target
         if not fetch_entity_label(db, source_type, source_id) or not fetch_entity_label(db, target_type, target_id):
             return jsonify({"error": "Quelle oder Ziel existiert nicht"}), 400
         try:
@@ -11230,7 +11399,11 @@ def dependency_links():
         return jsonify({"error": "Keine Berechtigung"}), 403
     rows = prune_dependency_links(db)
     links = []
+    canonical=canonical_dependency_graph(db)
     for row in rows:
+        if canonical:
+            row=canonical.edge(row)
+            if not row:continue
         source_label = fetch_entity_label(db, row["source_type"], row["source_id"]) or f"{row['source_type']} #{row['source_id']}"
         target_label = fetch_entity_label(db, row["target_type"], row["target_id"]) or f"{row['target_type']} #{row['target_id']}"
         links.append({
@@ -11249,6 +11422,8 @@ def dependency_link_detail(link_id):
     link_row = db.execute('SELECT * FROM dependency_links WHERE id = ?', (link_id,)).fetchone()
     if not link_row:
         return jsonify({"error": "Abhängigkeit nicht gefunden"}), 404
+    canonical=canonical_dependency_graph(db)
+    if canonical and not canonical.edge(link_row):return jsonify(error='Keine Berechtigung für diese Verknüpfung'),403
 
     if request.method == 'PUT':
         data = request.get_json() or {}
@@ -11318,6 +11493,13 @@ def impact_analysis():
     max_depth = request.args.get('depth')
     if source_type not in DEPENDENCY_ENTITY_TYPES or not source_id:
         return jsonify({"error": "Quelle ist erforderlich"}), 400
+    try:source_id=int(source_id)
+    except (ValueError,TypeError):return jsonify(error='Ungültige Quelle'),400
+    canonical=canonical_dependency_graph(db)
+    if canonical:
+        source=canonical.node(source_type,source_id)
+        if not source:return jsonify(error='Keine Berechtigung für diese Quelle'),403
+        source_type,source_id=source
     label = fetch_entity_label(db, source_type, int(source_id))
     if not label:
         return jsonify({"error": "Quelle nicht gefunden"}), 404
@@ -11742,7 +11924,10 @@ def tickets():
             resolution_notes = ''
         tags = json.dumps(data.get('tags') or [])
         custom_fields = json.dumps(data.get('custom_fields') or [])
-        asset_ids = data.get('asset_ids') or []
+        asset_ids = data.get('asset_ids',[])
+        if asset_ids is None:asset_ids=[]
+        try:asset_ids=normalize_ticket_asset_links(db,user_can,asset_ids)
+        except canonical_assets.AssetError as error:return jsonify(error=str(error)),error.status
         resolved_at = utc_now().strftime("%Y-%m-%d %H:%M:%S") if is_closed_status(status) else None
         field_errors = {}
         if not title:
@@ -12196,8 +12381,23 @@ def search_ticket_assets():
     page = max(1, request.args.get('page', 1, type=int))
     per_page = min(50, max(10, request.args.get('per_page', 20, type=int)))
     filters, params = [], []
+    if canonical_assets.unified(db):
+        predicate,scope_args=canonical_assets.scope_predicate(user_can)
+        filters.append(predicate);params.extend(scope_args)
     if search:
-        filters.append('''(
+        if canonical_assets.unified(db):
+            child_scope,child_args=canonical_assets.scope_predicate(user_can,alias='child')
+            filters.append(f'''(a.name LIKE ? OR a.specs LIKE ? OR a.serial_number LIKE ?
+                OR EXISTS (SELECT 1 FROM locations l WHERE l.id=a.location_id AND l.name LIKE ?)
+                OR EXISTS (WITH RECURSIVE contents(id) AS (
+                    SELECT child_asset_id FROM asset_components WHERE parent_asset_id=a.id
+                    UNION SELECT c.child_asset_id FROM asset_components c JOIN contents p ON c.parent_asset_id=p.id)
+                    SELECT 1 FROM contents JOIN assets child ON child.id=contents.id
+                    LEFT JOIN locations l ON l.id=child.location_id
+                    WHERE {child_scope} AND (child.name LIKE ? OR child.serial_number LIKE ? OR l.name LIKE ?)))''')
+            params.extend([f'%{search}%']*4+child_args+[f'%{search}%']*3)
+        else:
+            filters.append('''(
             a.name LIKE ? OR a.specs LIKE ? OR EXISTS (
                 SELECT 1
                 FROM asset_devices ad
@@ -12207,7 +12407,7 @@ def search_ticket_assets():
                   AND (d.name LIKE ? OR d.serial_number LIKE ? OR l.name LIKE ?)
             )
         )''')
-        params.extend([f'%{search}%'] * 5)
+            params.extend([f'%{search}%'] * 5)
     where_clause = (' WHERE ' + ' AND '.join(filters)) if filters else ''
     base = '''
         FROM assets a
@@ -12531,6 +12731,8 @@ def ticket_detail(ticket_id):
             ).fetchall()
         ]
         if asset_ids is not None:
+            try:asset_ids=normalize_ticket_asset_links(db,user_can,asset_ids,existing=previous_asset_ids)
+            except canonical_assets.AssetError as error:return jsonify(error=str(error)),error.status
             normalized_asset_ids = sorted({
                 asset_id
                 for asset_id in (normalize_optional_int(value) for value in asset_ids)
@@ -12640,13 +12842,17 @@ def ticket_detail(ticket_id):
             "change_ticket_id": review_relation["change_ticket_id"],
             "review_ticket_id": review_relation["review_ticket_id"],
         }), 409
-    db.execute('DELETE FROM ticket_comments WHERE ticket_id = ?', (ticket_id,))
-    db.execute('DELETE FROM ticket_watchers WHERE ticket_id = ?', (ticket_id,))
-    db.execute('DELETE FROM ticket_assets WHERE ticket_id = ?', (ticket_id,))
-    db.execute('DELETE FROM tickets WHERE id = ?', (ticket_id,))
-    log_activity(db, "delete", "ticket", ticket_id)
-    db.commit()
-    return jsonify({"status": "deleted"}), 200
+    try:
+        detached=delete_ticket_record(db,ticket_id,log_activity=log_activity)
+        db.commit()
+    except TicketDeletionError as error:
+        db.rollback()
+        return jsonify(error=str(error),code=error.code),error.status
+    except sqlite3.OperationalError as error:
+        db.rollback()
+        if 'locked' not in str(error).lower() and 'busy' not in str(error).lower():raise
+        return jsonify(error='Die Datenbank wird gerade geändert. Das Ticket wurde nicht gelöscht. Bitte erneut versuchen.',code='ticket_delete_busy'),409
+    return jsonify(status='deleted',detached=detached),200
 
 @app.route('/api/tickets/merge', methods=['POST'])
 @login_required
@@ -13207,6 +13413,9 @@ def feature_flags():
 @require_permission('timemachine.view')
 def time_machine_changes():
     db = get_db()
+    if canonical_assets.unified(db):
+        from inventorypro.domains.inventory.timeline import TimelineReader
+        db=TimelineReader(db,user_can,get_user_access(db),canonical_dependency_graph(db))
     activity_rows = db.execute('''
         SELECT id, action, entity_type, entity_id, details, created_at, username
         FROM activity_log
@@ -13224,14 +13433,14 @@ def time_machine_changes():
         "logout": "abgemeldet"
     }
     entity_labels = {
-        "asset": "Asset-Eintrag",
-        "asset_entry": "Asset-Eintrag",
+        "asset": "Asset",
+        "asset_entry": "Asset",
         "asset_category": "Asset-Kategorie",
-        "device": "Gerät",
+        "device": "Asset",
         "ticket": "Ticket",
         "roadmap": "Roadmap",
         "roadmap_step": "Roadmap-Schritt",
-        "dependency_link": "Dependency",
+        "dependency_link": "Abhängigkeit",
         "team": "Team",
         "department": "Abteilung",
         "software": "Software",
@@ -13242,7 +13451,7 @@ def time_machine_changes():
         "asset": "assets",
         "asset_entry": "assets",
         "asset_category": "assets",
-        "device": "devices",
+        "device": "assets",
         "ticket": "tickets",
         "roadmap": "roadmaps",
         "roadmap_step": "roadmaps",
@@ -13381,8 +13590,13 @@ def time_machine_changes():
 @require_permission('timemachine.view')
 def time_machine_state():
     db = get_db()
+    if canonical_assets.unified(db):
+        from inventorypro.domains.inventory.timeline import TimelineReader
+        db=TimelineReader(db,user_can,get_user_access(db),canonical_dependency_graph(db))
     timestamp_raw = request.args.get('timestamp')
     timestamp = parse_time_machine_timestamp(timestamp_raw) or utc_now()
+    if isinstance(timestamp_raw,str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}',timestamp_raw):
+        timestamp=timestamp.replace(hour=23,minute=59,second=59,microsecond=999999)
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
     assets = db.execute('''
@@ -13427,14 +13641,14 @@ def time_machine_state():
     last_change_label = "—"
     if last_change_row:
         entity_labels = {
-            "asset": "Asset-Eintrag",
-            "asset_entry": "Asset-Eintrag",
+            "asset": "Asset",
+            "asset_entry": "Asset",
             "asset_category": "Asset-Kategorie",
-            "device": "Gerät",
+            "device": "Asset",
             "ticket": "Ticket",
             "roadmap": "Roadmap",
             "roadmap_step": "Roadmap-Schritt",
-            "dependency_link": "Dependency",
+            "dependency_link": "Abhängigkeit",
             "team": "Team",
             "department": "Abteilung",
             "software": "Software",
@@ -14534,6 +14748,9 @@ def maintenance_summary():
 def stats():
     db = get_db()
     access = get_user_access(db)
+    if canonical_assets.unified(db):
+        from inventorypro.domains.inventory.reporting import ReportingReader
+        db=ReportingReader(db,user_can,access)
     
     # 1. Grundstatistiken mit Default-Werten
     total_devices = db.execute('SELECT COUNT(*) FROM devices').fetchone()[0] or 0
@@ -14572,6 +14789,9 @@ def stats():
         GROUP BY c.id
     ''').fetchall()
     categories_data = [dict(c) for c in categories] if categories else []
+    if canonical_assets.unified(get_db()):
+        uncategorized=db.execute('SELECT count(*) FROM devices WHERE category_id IS NULL').fetchone()[0]
+        if uncategorized:categories_data.append({'id':None,'name':'Ohne Kategorie','device_count':uncategorized})
     
     # 3. Verbesserte Statusverteilung mit Default-Werten
     status_data = {'Verwendet': 0, 'Lager': 0, 'Defekt': 0, 'Unbekannt': 0}
@@ -14581,7 +14801,7 @@ def stats():
             specs = json.loads(device['specs']) if device['specs'] else {}
             status = specs.get('Status') or specs.get('status') or 'Verwendet'
             # Normalisiere den Status (entferne Leerzeichen, mache erste Buchstabe groß)
-            status = status.strip().capitalize()
+            status = str(status).strip().capitalize()
             # Falls der Status nicht in unserer Liste ist, zählen wir als "Verwendet"
             if status in status_data:
                 status_data[status] += 1
@@ -14762,6 +14982,11 @@ def stats():
     asset_ticket_stats = []
     today = utc_now().date()
     ticket_counts = []
+    canonical_owners={}
+    if canonical_assets.unified(get_db()):
+        from inventorypro.domains.inventory.unified_list import source
+        sql=source(devices_allowed=user_can('devices.view') or user_can('devices.manage'),assets_allowed=user_can('assets.view') or user_can('assets.manage'))
+        canonical_owners={row['id']:row['assigned_to'] for row in get_db().execute(sql+'SELECT id,assigned_to FROM inventory')}
     for row in asset_ticket_rows:
         commissioning_date = parse_date(row['commissioning_date']) or parse_date(row['acquisition_date'])
         age_months = None
@@ -14772,7 +14997,7 @@ def stats():
             "id": row["id"],
             "name": row["name"],
             "ticket_count": row["ticket_count"] or 0,
-            "assigned_user": row["assigned_user"] or "—",
+            "assigned_user": canonical_owners.get(row['id'],row["assigned_user"]) or "—",
             "age_months": age_months,
             "warranty_status": warranty_status(row["warranty_end"])
         })
@@ -15542,9 +15767,23 @@ app.register_blueprint(build_planning_blueprint(
     pack=pack_assets_into_storage, build_layers=build_binpacking_layers, enrich_layers=enrich_binpacking_layers, log_activity=log_activity,
 ))
 
+app.register_blueprint(build_catalog_blueprint(
+    get_db=get_db, get_access=get_user_access, user_can=user_can, login_required=login_required,
+    get_uploads_dir=lambda: UPLOADS_DIR, rate_limiter=RATE_LIMIT_CACHE, log_activity=log_activity,
+))
+
+app.register_blueprint(build_category_blueprint(get_db=get_db,user_can=user_can,get_access=get_user_access,login_required=login_required,
+    parse_fields=parse_field_definitions,normalize_fields=normalize_field_definitions,log_activity=log_activity))
+
+app.register_blueprint(build_assets_blueprint(get_db=get_db,user_can=user_can,get_access=get_user_access,login_required=login_required,
+    parse_fields=parse_field_definitions,validate_specs=validate_dynamic_specs,log_activity=log_activity,get_uploads_dir=lambda: UPLOADS_DIR))
+
 app.register_blueprint(build_inventory_blueprint(
     get_db=get_db, user_can=user_can, get_access=get_user_access,
     login_required=login_required, load_asset=asset_entry_detail,
+    ticket_visible=ensure_ticket_access,
+    get_export_settings=lambda db: serialize_server_settings(get_server_settings(db))[0],
+    get_uploads_dir=lambda: UPLOADS_DIR,
 ))
 
 app.register_blueprint(
@@ -15594,21 +15833,8 @@ app.register_blueprint(
         current_actor=lambda: session.get("username", "system"),
         max_import_bytes=MAX_IMPORT_BYTES,
         max_import_expanded_bytes=MAX_IMPORT_EXPANDED_BYTES,
-        uploads_dir=UPLOADS_DIR,
-        import_tables=(
-            "categories",
-            "asset_categories",
-            "locations",
-            "devices",
-            "assets",
-            "maintenance_tasks",
-            "asset_assignment_history",
-            "vendors",
-            "contracts",
-            "purchase_orders",
-            "purchase_order_items",
-            "attachments",
-        ),
+        uploads_dir=lambda: UPLOADS_DIR,
+        import_tables=INVENTORY_TABLES,
         run_backup_job=run_backup_job,
         save_import_file=save_import_file,
         validate_import_file=validate_import_file,
@@ -15683,7 +15909,7 @@ app.register_blueprint(
     build_exports_blueprint(
         get_db=get_db,
         get_export_settings=lambda db: serialize_server_settings(get_server_settings(db))[0],
-        uploads_dir=UPLOADS_DIR,
+        uploads_dir=lambda: UPLOADS_DIR,
         export_tables=export_tables,
         run_sqlite_backup=run_sqlite_backup,
         log_activity=log_activity,

@@ -36,7 +36,7 @@ def sign_in(page, base_url):
     page.get_by_label('Benutzername').fill('admin')
     page.locator('input[name=password]').fill('Synthetic-Test-Only-42!')
     page.get_by_role('button', name='Anmelden', exact=True).click()
-    page.wait_for_url(base_url + '/')
+    page.wait_for_url(lambda url:url in {base_url+'/',base_url+'/inventory'})
     page.wait_for_load_state('networkidle')
 
 
@@ -66,8 +66,10 @@ def test_auto_updates_toggle_persists_with_csrf(live_inventory, browser):
     sign_in(page, live_inventory)
     page.goto(live_inventory + '/settings')
     toggle = page.get_by_role('checkbox', name='Automatische Updates aktivieren')
-    expect(toggle).to_be_visible()
+    page.get_by_role('tab', name='Sicherung', exact=True).click()
     page.get_by_label('E-Mail-Adresse für Backup-Benachrichtigungen').fill('qa@example.com')
+    page.get_by_role('tab', name='Updates', exact=True).click()
+    expect(toggle).to_be_visible()
     for enabled in (True, False):
         toggle.set_checked(enabled)
         save = page.locator('form').filter(has=toggle).locator('button[type=submit]')
@@ -87,11 +89,11 @@ def test_settings_tabs_select_real_sections_and_preserve_legacy_links(live_inven
     page.goto(live_inventory + '/settings?section=branding')
     expect(page.locator("section[x-show=\"activeSection === 'customize'\"]")).to_be_visible()
     page.get_by_role('link', name='Server', exact=True).click()
-    expect(page.get_by_role('checkbox', name='Automatische Updates aktivieren')).to_be_visible()
+    expect(page.get_by_label('Serveradresse', exact=True)).to_be_visible()
     page.go_back()
     expect(page.locator("section[x-show=\"activeSection === 'customize'\"]")).to_be_visible()
     page.goto(live_inventory + '/settings?section=notifications')
-    expect(page.get_by_role('checkbox', name='Automatische Updates aktivieren')).to_be_visible()
+    expect(page.get_by_label('Serveradresse', exact=True)).to_be_visible()
     context.close()
 
 
@@ -129,11 +131,12 @@ def test_inventory_search_detail_and_existing_editor(live_inventory, browser):
     page = context.new_page()
     sign_in(page, live_inventory)
     page.goto(live_inventory + '/inventory')
-    page.get_by_role('searchbox', name='Suche', exact=True).fill('QA-039')
-    page.get_by_role('button', name='Anwenden', exact=True).click()
+    page.get_by_role('searchbox', name='Bestand durchsuchen', exact=True).fill('QA-039')
+    page.get_by_role('searchbox', name='Bestand durchsuchen', exact=True).press('Enter')
     expect(page.locator('tbody tr')).to_have_count(1)
     page.get_by_role('link', name='Notebook 039', exact=True).click()
     expect(page.get_by_role('heading', name='Notebook 039', exact=True)).to_be_visible()
+    page.get_by_role('link', name='Detailseite', exact=True).click()
     page.get_by_role('link', name='Hardware', exact=True).click()
     expect(page.get_by_role('heading', name='Hardware', exact=True)).to_be_visible()
     page.go_back()
@@ -244,6 +247,7 @@ def test_saved_inventory_views_restore_filters_and_escape_names(live_inventory, 
     page = context.new_page()
     sign_in(page, live_inventory)
     page.goto(live_inventory + '/inventory?q=QA-039&kind=device&sort=name&direction=desc')
+    page.locator('[data-filter-menu] > summary').click()
     page.get_by_text('Gespeicherte Ansichten', exact=True).click()
     label = '<img src=x onerror=alert(1)>'
     page.get_by_label('Name der Ansicht', exact=True).fill(label)
@@ -251,14 +255,17 @@ def test_saved_inventory_views_restore_filters_and_escape_names(live_inventory, 
     expect(page.locator('[data-view-status]')).to_have_text('Ansicht gespeichert.')
     expect(page.locator('[data-view-list] img')).to_have_count(0)
     page.goto(live_inventory + '/inventory')
+    page.locator('[data-filter-menu] > summary').click()
     page.get_by_text('Gespeicherte Ansichten', exact=True).click()
     page.locator('[data-view-list]').get_by_role('link', name=label, exact=True).click()
     expect(page.get_by_role('link', name='Notebook 039', exact=True)).to_be_visible()
     expect(page.get_by_role('link', name='Notebook 038', exact=True)).to_have_count(0)
     assert 'q=QA-039' in page.url and 'direction=desc' in page.url
+    page.locator('[data-filter-menu] > summary').click()
     page.get_by_text('Gespeicherte Ansichten', exact=True).click()
     page.locator('[data-view-list]').get_by_role('button').click()
     page.reload()
+    page.locator('[data-filter-menu] > summary').click()
     page.get_by_text('Gespeicherte Ansichten', exact=True).click()
     expect(page.locator('[data-view-list] li')).to_have_count(0)
     context.close()
@@ -269,29 +276,66 @@ def test_inventory_preview_focus_escape_and_history(live_inventory, browser):
     page = context.new_page()
     sign_in(page, live_inventory)
     page.goto(live_inventory + '/inventory?q=QA-039')
-    trigger = page.get_by_role('button', name='Notebook 039 kurz ansehen', exact=True)
-    trigger.click()
-    dialog = page.get_by_role('dialog', name='Kurzansicht')
+    trigger = page.get_by_role('link', name='Notebook 039', exact=True)
+    expect(page.locator('.data-table button')).to_have_count(0)
+    expect(page.get_by_role('link', name='Öffnen', exact=True)).to_have_count(0)
+    page.locator('[data-preview-key] td').nth(4).click()
+    dialog = page.get_by_role('dialog', name='Notebook 039')
     expect(dialog).to_be_visible()
     expect(dialog).to_contain_text('QA-039')
-    expect(dialog.get_by_role('button', name='Schließen')).to_be_focused()
+    expect(dialog.get_by_role('button', name='Details schließen')).to_be_focused()
     for _ in range(5):
         page.keyboard.press('Tab')
         assert page.evaluate('document.querySelector("dialog").contains(document.activeElement)')
     page.keyboard.press('Escape')
     expect(dialog).not_to_be_visible()
     expect(trigger).to_be_focused()
-    trigger.click()
+    trigger.focus()
+    page.keyboard.press('Enter')
     page.go_back()
     expect(dialog).not_to_be_visible()
     page.go_forward()
     expect(dialog).to_be_visible()
     page.reload()
     expect(dialog).to_be_visible()
-    dialog.get_by_role('link', name='Vollständige Details öffnen').click()
-    expect(page.locator('.object-summary')).to_contain_text('QA-039')
+    dialog.get_by_role('link', name='Detailseite').click()
+    expect(page.locator('.object-header')).to_contain_text('QA-039')
     page.go_back()
     expect(dialog).to_be_visible()
+    context.close()
+
+
+def test_inventory_modified_click_multi_tab_and_no_script_navigation(live_inventory, browser):
+    context = browser.new_context(viewport={'width': 1440, 'height': 900})
+    page = context.new_page()
+    sign_in(page, live_inventory)
+    page.goto(live_inventory + '/inventory?q=QA-039')
+    requests = []
+    context.on('request', lambda request: requests.append(request.url) if request.url.endswith('/api/customize') else None)
+    link = page.get_by_role('link', name='Notebook 039', exact=True)
+    for modifier in ('ctrlKey', 'metaKey'):
+        assert link.evaluate('''(link, modifier) => {
+            let blocked;
+            document.addEventListener('click', event => {
+                blocked = event.defaultPrevented; event.preventDefault();
+            }, {once:true});
+            link.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, [modifier]:true}));
+            return blocked;
+        }''', modifier) is False
+    # Follow the native link target in a second real tab. Cmd/middle-click popup
+    # events are unreliable in the macOS headless Chromium protocol; the handlers'
+    # default-prevention contract above is verified independently in both engines.
+    detail = context.new_page()
+    detail.goto(link.evaluate('link => link.href'))
+    expect(detail.locator('.object-header')).to_contain_text('QA-039')
+    detail.wait_for_timeout(500)
+    assert len(requests) <= 3, 'Two tabs must not repeatedly refresh each other’s customization cache'
+    expect(page.locator('[data-inventory-preview]')).not_to_be_visible()
+    detail.close()
+    page.route('**/static/inventory-preview.js*', lambda route: route.abort())
+    page.reload()
+    page.get_by_role('link', name='Notebook 039', exact=True).click()
+    expect(page.locator('.object-header')).to_contain_text('QA-039')
     context.close()
 
 
@@ -361,7 +405,7 @@ def test_knowledge_search_uses_current_query_and_pages(live_inventory, browser, 
     page = context.new_page()
     sign_in(page, live_inventory)
     page.goto(live_inventory + '/knowledge')
-    search = page.get_by_label('Suche', exact=True)
+    search = page.get_by_label('Artikel durchsuchen', exact=True)
     search.fill('QA knowledge')
     navigation = page.get_by_role('navigation', name='Seiten in der Wissensbasis')
     expect(navigation).to_contain_text('60 Einträge')
@@ -369,7 +413,7 @@ def test_knowledge_search_uses_current_query_and_pages(live_inventory, browser, 
     expect(navigation).to_contain_text('Seite 2 von 3')
     search.fill('QA knowledge 059')
     expect(navigation).to_contain_text('Seite 1 von 1 · 1 Einträge')
-    page.get_by_role('button').filter(has=page.locator('p', has_text='QA knowledge 059')).first.click()
+    page.get_by_role('button').filter(has=page.locator('strong', has_text='QA knowledge 059')).first.click()
     expect(page.locator('h3').filter(has_text='QA knowledge 059')).to_be_visible()
     context.close()
 

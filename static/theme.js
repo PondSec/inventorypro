@@ -59,10 +59,10 @@
     root.style.setProperty('--input-text', '#e6edf3');
     root.style.setProperty('--input-border', '#263442');
     root.style.setProperty('--input-placeholder', '#718196');
-    root.style.setProperty('--button-bg', '#e6edf3');
-    root.style.setProperty('--button-bg-hover', '#f4f7fb');
-    root.style.setProperty('--button-bg-active', '#cbd5e1');
-    root.style.setProperty('--button-text', '#0b0f14');
+    root.style.setProperty('--button-bg', '#2563eb');
+    root.style.setProperty('--button-bg-hover', '#1d4ed8');
+    root.style.setProperty('--button-bg-active', '#1e40af');
+    root.style.setProperty('--button-text', '#ffffff');
     root.style.setProperty('--button-secondary-bg', '#111820');
     root.style.setProperty('--button-secondary-bg-hover', '#16202a');
     root.style.setProperty('--button-secondary-bg-active', '#1c2936');
@@ -336,9 +336,9 @@
     const tableDensity = customization.layoutPrefs.tableDensity;
     const rowHeight = customization.layoutPrefs.rowHeight;
     const densityMap = {
-      compact: 10,
-      normal: 14,
-      comfortable: 18,
+      compact: 6,
+      normal: 8,
+      comfortable: 12,
     };
     const rowPadding = densityMap[tableDensity] || densityMap.normal;
     root.style.setProperty('--table-row-padding', `${rowPadding}px`);
@@ -499,7 +499,12 @@
   document.addEventListener('DOMContentLoaded', updateButtons);
   window.addEventListener('storage', (event) => {
     if (event.key === customizationCacheKey || event.key === customizationLocalKey) {
-      loadCustomization();
+      // Another tab already fetched these values. Never fetch/write the cache in
+      // response to its notification: cachedAt would make both tabs echo forever.
+      const cached = getCachedCustomization();
+      const base = cached?.customization || defaultCustomization;
+      const override = getLocalOverride();
+      applyCustomization(override ? deepMerge(base, override) : base);
     }
   });
 })();

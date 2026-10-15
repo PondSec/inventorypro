@@ -1,518 +1,50 @@
 {% extends 'base_app.html' %}
+{% from '_ui.html' import icon,status,kpi_tile with context %}
 {% set page_title = 'Auswertungen' %}
 {% set page_module = 'stats' %}
-{% set hide_page_intro = true %}
+{% set page_description = 'Bestand, Wartung und Servicevorgänge auswerten.' %}
 {% block title %}Auswertungen | Inventory Pro{% endblock %}
-{% block extra_head %}
-<script src="/static/vendor/chart.umd.min.js?v=4.4.9"></script>
-<style>
-        .progress-bar {
-            height: 6px;
-            border-radius: 999px;
-        }
-        .glass-card {
-            background: var(--color-surface);
-        }
-    </style>
-{% endblock %}
+{% block html_attrs %}x-data="{reportTab:'inventory'}"{% endblock %}
+{% block extra_head %}<script src="/static/vendor/chart.umd.min.js?v=4.4.9"></script>{% endblock %}
+{% macro chart(identifier,title,rows,label_key,value_key) -%}
+<section class="workspace-panel report-chart"><header class="ui-panel-heading"><h2>{{ title }}</h2></header><div class="report-chart__plot"><canvas id="{{ identifier }}" role="img" aria-label="{{ title }}; tabellarische Werte unter Daten anzeigen">Diagrammdaten sind auch als Tabelle verfügbar.</canvas></div><details class="report-data"><summary>Daten anzeigen</summary><div class="data-table-scroll"><table class="data-table"><caption class="sr-only">{{ title }}</caption><thead><tr><th>Bereich</th><th>Anzahl</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row[label_key] }}</td><td>{{ row[value_key] }}</td></tr>{% else %}<tr><td colspan="2">Keine Daten vorhanden.</td></tr>{% endfor %}</tbody></table></div></details></section>
+{%- endmacro %}
 {% block content %}
-<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div class="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                        <p class="mt-1 text-sm text-slate-500">Bestand, Nutzung und Datenlücken auswerten.</p>
-                    </div>
-                    <div class="grid grid-cols-2 gap-3 text-sm">
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                            <p class="text-xs uppercase text-slate-400">Geräte</p>
-                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ total_devices }}</p>
-                            <p class="text-xs text-slate-500">Gesamtbestand</p>
-                        </div>
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                            <p class="text-xs uppercase text-slate-400">Kategorien</p>
-                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ total_categories }}</p>
-                            <p class="text-xs text-slate-500">Aktive Bereiche</p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- KPI Überblick -->
-			<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-				<div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h3 class="text-sm font-semibold text-slate-500">Gesamtgeräte</h3>
-                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ total_devices }}</p>
-                            <p class="text-xs text-slate-500">{{ devices_recent_30 }} neu in 30 Tagen</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-blue-50 p-3 text-blue-600">
-                            <i data-feather="box" class="h-5 w-5"></i>
-                        </span>
-                    </div>
-				</div>
-				
-				<div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h3 class="text-sm font-semibold text-slate-500">Kategorien</h3>
-                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ total_categories }}</p>
-                            <p class="text-xs text-slate-500">{{ total_locations }} Standorte aktiv</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-indigo-50 p-3 text-indigo-600">
-                            <i data-feather="layers" class="h-5 w-5"></i>
-                        </span>
-                    </div>
-				</div>
-				
-				<div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h3 class="text-sm font-semibold text-slate-500">Wartung offen</h3>
-                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ open_maintenance }}</p>
-                            <p class="text-xs text-slate-500">{{ overdue_maintenance }} überfällig</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-rose-50 p-3 text-rose-600">
-                            <i data-feather="tool" class="h-5 w-5"></i>
-                        </span>
-                    </div>
-				</div>
-				
-				<div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h3 class="text-sm font-semibold text-slate-500">Letzte 7 Tage</h3>
-                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ devices_recent_7 }}</p>
-                            <p class="text-xs text-slate-500">Neue Geräte</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-emerald-50 p-3 text-emerald-600">
-                            <i data-feather="trending-up" class="h-5 w-5"></i>
-                        </span>
-                    </div>
-				</div>
-
-                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h3 class="text-sm font-semibold text-slate-500">Gerätestatus</h3>
-                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ status_data['Verwendet'] }}</p>
-                            <p class="text-xs text-slate-500">{{ status_data['Lager'] }} im Lager</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-emerald-50 p-3 text-emerald-600">
-                            <i data-feather="check-circle" class="h-5 w-5"></i>
-                        </span>
-                    </div>
-				</div>
-
-                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h3 class="text-sm font-semibold text-slate-500">Dokumentation</h3>
-                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ tag_coverage }}%</p>
-                            <p class="text-xs text-slate-500">{{ note_coverage }}% mit Notizen</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-sky-50 p-3 text-sky-600">
-                            <i data-feather="file-text" class="h-5 w-5"></i>
-                        </span>
-                    </div>
-				</div>
-
-                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h3 class="text-sm font-semibold text-slate-500">Wartung gesamt</h3>
-                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ total_maintenance }}</p>
-                            <p class="text-xs text-slate-500">{{ done_maintenance }} erledigt</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-purple-50 p-3 text-purple-600">
-                            <i data-feather="clipboard" class="h-5 w-5"></i>
-                        </span>
-                    </div>
-				</div>
-
-                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h3 class="text-sm font-semibold text-slate-500">Fällige Wartung</h3>
-                            <p class="mt-2 text-3xl font-semibold text-slate-900">{{ due_soon_maintenance }}</p>
-                            <p class="text-xs text-slate-500">Nächste 7 Tage</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-amber-50 p-3 text-amber-600">
-                            <i data-feather="calendar" class="h-5 w-5"></i>
-                        </span>
-                    </div>
-				</div>
-			</div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="glass-card p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Gerätezugang (6 Monate)</h2>
-                            <p class="text-sm text-slate-500">Neu angelegte Geräte im Zeitverlauf.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                            <i data-feather="activity" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <canvas id="growthChart" height="280"></canvas>
-                </div>
-
-                <div class="glass-card p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Verteilung nach Kategorien</h2>
-                            <p class="text-sm text-slate-500">Welche Bereiche aktuell dominieren.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                            <i data-feather="pie-chart" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <canvas id="categoryChart" height="280"></canvas>
-                </div>
-
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Gerätestatus</h2>
-                            <p class="text-sm text-slate-500">Aktueller Status aller Geräte.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                            <i data-feather="check-square" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <canvas id="statusChart" height="280"></canvas>
-                </div>
-
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Standorte</h2>
-                            <p class="text-sm text-slate-500">Verteilung der Geräte nach Standort.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                            <i data-feather="map-pin" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <canvas id="locationChart" height="280"></canvas>
-                </div>
-
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Gerätealter</h2>
-                            <p class="text-sm text-slate-500">Wie lange Geräte schon im Bestand sind.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                            <i data-feather="clock" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <canvas id="ageChart" height="280"></canvas>
-                </div>
-
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Standortlücken</h2>
-                            <p class="text-sm text-slate-500">Geräte ohne Standortzuordnung.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                            <i data-feather="alert-circle" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <div class="flex items-center gap-4">
-                        <div class="rounded-2xl bg-rose-50 px-4 py-3">
-                            <p class="text-xs uppercase tracking-widest text-rose-400">Ohne Standort</p>
-                            <p class="mt-2 text-3xl font-semibold text-rose-600">{{ unknown_location_count }}</p>
-                        </div>
-                        <div class="flex-1">
-                            <div class="flex items-center justify-between text-xs text-slate-500">
-                                <span>Abdeckung</span>
-                                <span>{{ (100 - (unknown_location_count * 100 // (total_devices or 1))) }}%</span>
-                            </div>
-                            <div class="mt-2 h-2 rounded-full bg-slate-100">
-                                <div class="h-2 rounded-full bg-rose-400" style="width: {{ (unknown_location_count * 100 // (total_devices or 1)) }}%"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Top Kategorien</h2>
-                            <p class="text-sm text-slate-500">Kategorien mit dem größten Bestand.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                            <i data-feather="award" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <div class="space-y-3">
-                        {% for category in top_categories %}
-                        <div class="flex items-center rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                            <span class="text-sm font-semibold text-slate-700">{{ category['name'] }}</span>
-                            <span class="ml-auto text-sm font-semibold text-slate-900">{{ category['device_count'] }}</span>
-                        </div>
-                        {% endfor %}
-                        {% if top_categories|length == 0 %}
-                        <p class="text-sm text-slate-500">Noch keine Kategorien vorhanden.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Aktivität (7 Tage)</h2>
-                            <p class="text-sm text-slate-500">Meistgenutzte Aktionen im System.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                            <i data-feather="zap" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <div class="space-y-3">
-                        {% for item in activity_summary %}
-                        <div class="flex items-center rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                            <span class="text-sm font-semibold text-slate-700">{{ item['action'] }}</span>
-                            <span class="ml-auto text-sm font-semibold text-slate-900">{{ item['total'] }}</span>
-                        </div>
-                        {% endfor %}
-                        {% if activity_summary|length == 0 %}
-                        <p class="text-sm text-slate-500">Keine Aktivitäten in den letzten 7 Tagen.</p>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                <div class="xl:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Proaktive Hinweise</h2>
-                            <p class="text-sm text-slate-500">Erklärbare Empfehlungen auf Basis von Regeln & Historie.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-amber-50 p-2 text-amber-600">
-                            <i data-feather="alert-triangle" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <div class="space-y-4">
-                        {% for insight in proactive_insights %}
-                        <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                            <div class="flex flex-wrap items-center gap-3">
-                                <span class="text-sm font-semibold text-slate-900">{{ insight.title }}</span>
-                                <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold
-                                    {% if insight.severity == 'critical' %}bg-rose-100 text-rose-700
-                                    {% elif insight.severity == 'warning' %}bg-amber-100 text-amber-700
-                                    {% else %}bg-emerald-100 text-emerald-700{% endif %}">
-                                    {% if insight.severity == 'critical' %}Kritisch{% elif insight.severity == 'warning' %}Warnung{% else %}Info{% endif %}
-                                </span>
-                            </div>
-                            <p class="mt-2 text-sm text-slate-600">{{ insight.description }}</p>
-                            <p class="mt-2 text-xs text-slate-500">Begründung: {{ insight.evidence }}</p>
-                        </div>
-                        {% endfor %}
-                        {% if proactive_insights|length == 0 %}
-                        <p class="text-sm text-slate-500">Noch keine Hinweise – Datenbasis wird aufgebaut.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Asset- & Ticket-KPIs</h2>
-                            <p class="text-sm text-slate-500">Lebenszyklus- und Helpdesk-Status.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-indigo-50 p-2 text-indigo-600">
-                            <i data-feather="trending-up" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <div class="space-y-4">
-                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                            <p class="text-xs uppercase tracking-widest text-slate-400">Assets aktiv</p>
-                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ active_assets }}</p>
-                            <p class="text-xs text-slate-500">{{ retired_assets }} ausgemustert</p>
-                        </div>
-                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                            <p class="text-xs uppercase tracking-widest text-slate-400">Tickets offen</p>
-                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ ticket_open }}</p>
-                            <p class="text-xs text-slate-500">{{ ticket_total }} insgesamt</p>
-                        </div>
-                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                            <p class="text-xs uppercase tracking-widest text-slate-400">Ø Lösungszeit</p>
-                            <p class="mt-2 text-2xl font-semibold text-slate-900">{{ avg_resolution_hours }}h</p>
-                            <p class="text-xs text-slate-500">{{ ticket_closed }} abgeschlossen</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Ticket-Typen & Eskalationen</h2>
-                            <p class="text-sm text-slate-500">Verteilung nach Kategorie und Eskalationslevel.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                            <i data-feather="layers" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <div class="space-y-3">
-                        {% for item in ticket_type_breakdown %}
-                        <div class="flex items-center rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                            <span class="text-sm font-semibold text-slate-700">{{ item['name'] }}</span>
-                            <span class="ml-auto text-sm font-semibold text-slate-900">{{ item['total'] }}</span>
-                        </div>
-                        {% endfor %}
-                        {% if ticket_type_breakdown|length == 0 %}
-                        <p class="text-sm text-slate-500">Noch keine Ticketdaten vorhanden.</p>
-                        {% endif %}
-                    </div>
-                    <div class="mt-6 space-y-2">
-                        <p class="text-xs uppercase tracking-widest text-slate-400">Eskalation</p>
-                        <div class="flex flex-wrap gap-2">
-                            {% for item in escalation_breakdown %}
-                            <span class="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600">
-                                Level {{ item['level'] }} · {{ item['total'] }}
-                            </span>
-                            {% endfor %}
-                            {% if escalation_breakdown|length == 0 %}
-                            <span class="text-sm text-slate-500">Keine Eskalationsdaten.</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Erfolgsquote je Maßnahme</h2>
-                            <p class="text-sm text-slate-500">Welche Schritte aktuell am besten funktionieren.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-emerald-50 p-2 text-emerald-600">
-                            <i data-feather="check-circle" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <div class="space-y-3">
-                        {% for action in action_success_rates %}
-                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                            <div class="flex items-center justify-between">
-                                <span class="text-sm font-semibold text-slate-700">{{ action['action'] }}</span>
-                                <span class="text-sm font-semibold text-slate-900">{{ action['rate'] }}%</span>
-                            </div>
-                            <div class="mt-2 h-2 rounded-full bg-slate-200">
-                                <div class="h-2 rounded-full bg-emerald-400" style="width: {{ action['rate'] }}%"></div>
-                            </div>
-                            <p class="mt-1 text-xs text-slate-500">{{ action['success'] }} von {{ action['total'] }} erfolgreich</p>
-                        </div>
-                        {% endfor %}
-                        {% if action_success_rates|length == 0 %}
-                        <p class="text-sm text-slate-500">Noch keine Maßnahmen dokumentiert.</p>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Asset-Tickethistorie</h2>
-                            <p class="text-sm text-slate-500">Assets mit auffälliger Ticketlast und Lebenszyklusdaten.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                            <i data-feather="activity" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <div class="space-y-3">
-                        {% for asset in asset_ticket_stats %}
-                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                            <div class="flex items-center justify-between">
-                                <span class="text-sm font-semibold text-slate-700">{{ asset['name'] }}</span>
-                                <span class="text-sm font-semibold text-slate-900">{{ asset['ticket_count'] }} Tickets</span>
-                            </div>
-                            <p class="mt-1 text-xs text-slate-500">
-                                Zugewiesen an {{ asset['assigned_user'] }} · Alter {{ asset['age_months'] or 'n/a' }} Monate · Garantie {{ asset['warranty_status'] }}
-                            </p>
-                        </div>
-                        {% endfor %}
-                        {% if asset_ticket_stats|length == 0 %}
-                        <p class="text-sm text-slate-500">Noch keine Asset-Tickets verknüpft.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 class="text-xl font-semibold text-slate-900">Benutzerverhalten</h2>
-                            <p class="text-sm text-slate-500">Wer meldet was und mit welcher Komplexität.</p>
-                        </div>
-                        <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                            <i data-feather="users" class="h-4 w-4"></i>
-                        </span>
-                    </div>
-                    <div class="space-y-3">
-                        {% for user in user_behavior_stats %}
-                        <div class="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                            <div class="flex items-center justify-between">
-                                <span class="text-sm font-semibold text-slate-700">{{ user['reporter'] }}</span>
-                                <span class="text-sm font-semibold text-slate-900">{{ user['tickets'] }} Tickets</span>
-                            </div>
-                            <p class="mt-1 text-xs text-slate-500">
-                                Ø Kommentare {{ user['avg_comments'] }} · Ø Priorität {{ user['avg_priority'] }}
-                            </p>
-                        </div>
-                        {% endfor %}
-                        {% if user_behavior_stats|length == 0 %}
-                        <p class="text-sm text-slate-500">Noch keine Nutzerstatistiken verfügbar.</p>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-			<!-- Letzte Geräte -->
-			<div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-				<div class="flex items-center justify-between mb-4">
-                    <div>
-                        <h2 class="text-xl font-semibold text-slate-900">Zuletzt hinzugefügt</h2>
-                        <p class="text-sm text-slate-500">Neueste Geräte mit Owner-Status.</p>
-                    </div>
-                    <span class="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2 text-slate-500">
-                        <i data-feather="clock" class="h-4 w-4"></i>
-                    </span>
-                </div>
-				<div class="table-responsive scrollbar-hide">
-                    <table class="min-w-full text-sm responsive-table">
-                        <thead class="text-left text-slate-500">
-                            <tr class="border-b border-slate-200">
-                                <th class="py-3 font-semibold">Name</th>
-                                <th class="py-3 font-semibold">Kategorie</th>
-                                <th class="py-3 font-semibold">Besitzer</th>
-                                <th class="py-3 font-semibold">Datum</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            {% for device in recent_devices %}
-                            <tr class="hover:bg-slate-50">
-                                <td class="py-3 font-semibold text-slate-900">{{ device['name'] }}</td>
-                                <td class="py-3 text-slate-600">{{ device['category_name'] }}</td>
-                                <td class="py-3 text-slate-600">{{ device['serial_number'] or '-' }}</td>
-                                <td class="py-3 text-slate-600">{{ device['created_at'][:10] }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-			</div>
+<div class="kpi-grid" aria-label="Auswertungskennzahlen">
+{{ kpi_tile('Gesamtbestand',total_devices,'box',devices_recent_30|string ~ ' neu in 30 Tagen','/inventory') }}
+{{ kpi_tile('Aktive Assets',active_assets,'check-circle',retired_assets|string ~ ' ausgemustert','/inventory?filter=active') }}
+{% if is_superuser or 'maintenance.view' in permissions or 'maintenance.manage' in permissions %}{{ kpi_tile('Wartung offen',open_maintenance,'tool',overdue_maintenance|string ~ ' überfällig','/inventory?filter=maintenance','danger' if overdue_maintenance else 'neutral') }}{% endif %}
+{% if is_superuser or 'tickets.view_all' in permissions or 'tickets.view_own' in permissions %}{{ kpi_tile('Offene Tickets',ticket_open,'message-square',ticket_closed|string ~ ' abgeschlossen','/tickets?queue=all-open') }}{% endif %}
+</div>
+<div class="inventory-viewbar"><nav class="workspace-tabs" role="tablist" aria-label="Auswertungsbereiche">{% for key,label in [('inventory','Bestand'),('service','Service & Wartung'),('activity','Aktivität & Hinweise')] %}<button type="button" role="tab" id="report-tab-{{ key }}" aria-controls="report-panel-{{ key }}" :aria-selected="reportTab==='{{ key }}'" @click="reportTab='{{ key }}'">{{ label }}</button>{% endfor %}</nav></div>
+<div id="report-panel-inventory" role="tabpanel" aria-labelledby="report-tab-inventory" x-show="reportTab==='inventory'">
+<div class="report-summary"><span>{{ total_categories }} Kategorien</span><span>{{ total_locations }} Standorte</span><span>{{ devices_recent_7 }} Zugänge in sieben Tagen</span><span>{{ tag_coverage }} % mit Tags</span><span>{{ note_coverage }} % mit Notizen</span></div>
+<div class="report-grid">
+{{ chart('growthChart','Zugänge · letzte sechs Monate',devices_by_month,'month','count') }}
+{{ chart('categoryChart','Verteilung nach Kategorie',categories,'name','device_count') }}
+{{ chart('statusChart','Bestandsstatus',status_data.items()|list,0,1) }}
+{{ chart('locationChart','Standorte',locations,'name','device_count') }}
+{{ chart('ageChart','Alter im Bestand',age_buckets.items()|list,0,1) }}
+<section class="workspace-panel ui-section"><header><h2>Datenqualität</h2></header><dl class="detail-properties"><div class="object-property"><dt>Ohne Standort</dt><dd><a href="/inventory?filter=missing_location">{{ unknown_location_count }} Einträge</a></dd></div><div class="object-property"><dt>Tags</dt><dd>{{ total_tags }} · {{ devices_with_tags }} Einträge mit Tags</dd></div><div class="object-property"><dt>Notizen</dt><dd>{{ total_notes }} · {{ devices_with_notes }} Einträge mit Notizen</dd></div></dl><h3>Größte Kategorien</h3><ul class="report-list">{% for category in top_categories %}<li><span>{{ category.name }}</span><strong>{{ category.device_count }}</strong></li>{% else %}<li>Keine Kategorien vorhanden.</li>{% endfor %}</ul></section>
+</div>
+<section class="workspace-panel"><header class="ui-panel-heading"><h2>Zuletzt hinzugefügt</h2></header><div class="data-table-scroll"><table class="data-table"><thead><tr><th>Name</th><th>Kategorie</th><th>Inventar-/Seriennummer</th><th>Erfasst am</th></tr></thead><tbody>{% for item in recent_devices %}<tr><td>{{ item.name }}</td><td>{{ item.category_name or 'Ohne Kategorie' }}</td><td>{{ item.serial_number or 'Nicht erfasst' }}</td><td>{{ item.created_at }}</td></tr>{% else %}<tr><td colspan="4">Noch keine Einträge vorhanden.</td></tr>{% endfor %}</tbody></table></div></section>
+</div>
+<div id="report-panel-service" role="tabpanel" aria-labelledby="report-tab-service" x-show="reportTab==='service'" x-cloak>
+<div class="report-summary"><span>{{ total_maintenance }} Wartungen · {{ done_maintenance }} erledigt</span><span>{{ due_soon_maintenance }} in sieben Tagen fällig</span><span>{{ ticket_total }} Tickets insgesamt</span><span>Ø {{ avg_resolution_hours }} Stunden bis zur Lösung</span></div>
+<div class="report-grid">
+<section class="workspace-panel ui-section"><header><h2>Ticketkategorien und Eskalationen</h2></header><ul class="report-list">{% for item in ticket_type_breakdown %}<li><span>{{ item.name }}</span><strong>{{ item.total }}</strong></li>{% else %}<li>Keine sichtbaren Ticketdaten.</li>{% endfor %}</ul><div class="ui-actions">{% for item in escalation_breakdown %}{{ status('Stufe ' ~ item.level ~ ' · ' ~ item.total,'warning' if item.level else 'neutral') }}{% endfor %}</div></section>
+<section class="workspace-panel ui-section"><header><h2>Dokumentierte Maßnahmen</h2></header><ul class="report-list">{% for item in action_success_rates %}<li><span>{{ item.action }}<small>{{ item.success }} von {{ item.total }} erfolgreich</small></span><strong>{{ item.rate }} %</strong></li>{% else %}<li>Noch keine Maßnahmen dokumentiert.</li>{% endfor %}</ul></section>
+</div>
+<section class="workspace-panel"><header class="ui-panel-heading"><h2>Tickets nach Asset</h2></header><div class="data-table-scroll"><table class="data-table"><thead><tr><th>Asset</th><th>Tickets</th><th>Zugewiesen an</th><th>Alter · Monate</th><th>Garantie</th></tr></thead><tbody>{% for item in asset_ticket_stats %}<tr><td><a href="/inventory/assets/{{ item.id }}">{{ item.name }}</a></td><td>{{ item.ticket_count }}</td><td>{{ item.assigned_user }}</td><td>{{ item.age_months if item.age_months is not none else 'Nicht erfasst' }}</td><td>{{ item.warranty_status }}</td></tr>{% else %}<tr><td colspan="5">Keine sichtbaren Assets vorhanden.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="workspace-panel"><header class="ui-panel-heading"><h2>Meldungen nach Person</h2></header><div class="data-table-scroll"><table class="data-table"><thead><tr><th>Person</th><th>Tickets</th><th>Ø Kommentare</th><th>Ø Priorität</th></tr></thead><tbody>{% for item in user_behavior_stats %}<tr><td>{{ item.reporter }}</td><td>{{ item.tickets }}</td><td>{{ item.avg_comments }}</td><td>{{ item.avg_priority }}</td></tr>{% else %}<tr><td colspan="4">Keine sichtbaren Meldungen.</td></tr>{% endfor %}</tbody></table></div></section>
+</div>
+<div id="report-panel-activity" role="tabpanel" aria-labelledby="report-tab-activity" x-show="reportTab==='activity'" x-cloak><div class="report-grid"><section class="workspace-panel ui-section"><header><h2>Aktivität · letzte sieben Tage</h2></header><ul class="report-list">{% for item in activity_summary %}<li><span>{{ item.action }}</span><strong>{{ item.total }}</strong></li>{% else %}<li>Keine sichtbaren Aktivitäten.</li>{% endfor %}</ul></section><section class="workspace-panel ui-section"><header><h2>Hinweise aus den vorhandenen Daten</h2></header><ul class="report-insights">{% for item in proactive_insights %}<li><strong>{{ item.title }}</strong>{{ status('Prüfen' if item.severity in ['critical','warning'] else 'Hinweis','warning' if item.severity in ['critical','warning'] else 'neutral') }}<p>{{ item.description }}</p><small>{{ item.evidence }}</small></li>{% else %}<li>Aktuell keine Hinweise.</li>{% endfor %}</ul></section></div></div>
 {% endblock %}
 {% block page_scripts %}
 <script>
         document.addEventListener('DOMContentLoaded', function() {
             const statsData = {
-                categories: {{ categories|tojson|default([]) }},
+                categories: {{ categories|tojson|default([]) }}.filter(item=>item.device_count>0),
                 statusData: {{ status_data|tojson|default({}) }},
                 locations: {{ locations|tojson|default([]) }},
                 unknownLocationCount: {{ unknown_location_count|default(0) }},
@@ -520,6 +52,9 @@
                 ageBuckets: {{ age_buckets|tojson|default({}) }}
             };
 
+            Chart.defaults.color=getComputedStyle(document.documentElement).getPropertyValue('--color-text-muted').trim() || '#596b86';
+            Chart.defaults.font.family=getComputedStyle(document.body).fontFamily;
+            Chart.defaults.maintainAspectRatio=false;
             const palette = [
                 '#3B82F6', '#10B981', '#6366F1', '#F59E0B',
                 '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6',
@@ -531,7 +66,7 @@
                 data: {
                     labels: statsData.devicesByMonth.map(item => item.month),
                     datasets: [{
-                        label: 'Neue Geräte',
+                        label: 'Neue Assets',
                         data: statsData.devicesByMonth.map(item => item.count),
                         borderColor: '#6366F1',
                         backgroundColor: 'rgba(99, 102, 241, 0.2)',
@@ -569,7 +104,7 @@
                 data: {
                     labels: Object.keys(statsData.statusData),
                     datasets: [{
-                        label: 'Geräte',
+                        label: 'Assets',
                         data: Object.values(statsData.statusData),
                         backgroundColor: ['#10B981', '#F59E0B', '#EF4444', '#94A3B8']
                     }]
@@ -591,7 +126,7 @@
                 data: {
                     labels: locationLabels,
                     datasets: [{
-                        label: 'Geräte',
+                        label: 'Assets',
                         data: locationCounts,
                         backgroundColor: '#38BDF8'
                     }]
@@ -615,6 +150,16 @@
                     plugins: { legend: { position: 'bottom' } }
                 }
             });
+            let repaint;
+            new MutationObserver(()=>{cancelAnimationFrame(repaint);repaint=requestAnimationFrame(()=>{
+                const color=getComputedStyle(document.documentElement).getPropertyValue('--color-text-muted').trim();
+                for(const chart of Object.values(Chart.instances)){
+                    chart.options.color=color;
+                    if(chart.options.plugins.legend)chart.options.plugins.legend.labels.color=color;
+                    for(const axis of Object.values(chart.options.scales || {})){axis.ticks.color=color;axis.grid.color=getComputedStyle(document.documentElement).getPropertyValue('--color-border').trim();}
+                    chart.update('none');
+                }
+            });}).observe(document.documentElement,{attributes:true,attributeFilter:['class','style']});
         });
     </script>
 		<script>

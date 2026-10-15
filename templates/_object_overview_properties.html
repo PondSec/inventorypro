@@ -1,0 +1,7 @@
+{% from '_ui.html' import property, icon with context %}
+<dl class="object-properties">
+{{ property('Kategorie',object.category,'monitor') }}{{ property('Hersteller',object.manufacturer,'tool') }}{{ property('Modell',object.model,'cpu') }}{{ property('Standort',object.location,'map-pin') }}
+{{ property('Inventar-/Seriennr.',object.serial_number | default(''),'copy',copy=True) }}{% if object.asset_tag %}{{ property('Asset-Tag',object.asset_tag,'tag',copy=True) }}{% endif %}
+{{ property('Erstellt am',object.created_at | inventory_date,'calendar') }}
+{% for assignment in object.assignments %}{{ property('Zugewiesen an',(assignment.assigned_user or assignment.assigned_team) ~ (' · über ' ~ assignment.asset_name if object.unified and assignment.asset_id != object.id else ''),'users') }}{% endfor %}
+</dl>

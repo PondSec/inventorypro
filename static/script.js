@@ -278,6 +278,7 @@ document.addEventListener('alpine:init', () => {
                 }
             }
             if (intent.get('create') === 'device' && this.can('devices.manage')) this.openAddDeviceModal();
+            if (intent.get('create') === 'asset' && this.can('assets.manage')) this.openAddAssetModal();
             if (Number.isSafeInteger(deviceId) && deviceId > 0) {
                 const device = this.devices.find(item => item.id === deviceId);
                 if (device && intent.has('edit_device') && this.can('devices.manage')) this.openEditDeviceModal(device);

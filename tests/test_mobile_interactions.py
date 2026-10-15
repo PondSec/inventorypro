@@ -186,10 +186,10 @@ class MobileInteractionTestCase(unittest.TestCase):
                     "[data-testid='entry-modal']",
                     "[data-testid='entry-modal-close']",
                 )
-                page.locator(".space-y-3.max-h-\\[520px\\] button").first.click()
+                page.locator(".module-table .list-row-trigger").first.click()
                 page.click("[data-testid='knowledge-action-menu-toggle']")
                 page.wait_for_selector("[data-testid='knowledge-action-menu']", state="visible")
-                page.click("text=Löschen")
+                page.get_by_role("button",name="Löschen",exact=True).click()
 
                 page.goto(f"{self.base_url}/roadmap")
                 self.open_modal_and_close(
@@ -230,7 +230,7 @@ class MobileInteractionTestCase(unittest.TestCase):
         page = context.new_page()
         self.login(page)
 
-        page.click("[data-sidebar-toggle]")
+        page.get_by_role("button",name="Navigation umschalten",exact=True).click()
         page.wait_for_timeout(100)
         self.assertTrue(page.evaluate("document.body.classList.contains('sidebar-open')"))
         focus_in_sidebar = page.evaluate(
@@ -245,8 +245,9 @@ class MobileInteractionTestCase(unittest.TestCase):
         page.keyboard.press("Escape")
         self.assertTrue(page.evaluate("document.body.classList.contains('sidebar-collapsed')"))
 
-        page.click("[data-sidebar-toggle]")
-        page.click("text=Ticketsystem")
+        page.get_by_role("button",name="Navigation umschalten",exact=True).click()
+        page.locator(".app-sidebar").get_by_text("Service Desk",exact=True).click()
+        page.locator(".app-sidebar").get_by_role("link",name="Tickets",exact=True).click()
         page.wait_for_url(f"{self.base_url}/tickets")
 
         queue_trigger = page.get_by_role("button", name="Ticket-Queue auswählen")
@@ -271,10 +272,11 @@ class MobileInteractionTestCase(unittest.TestCase):
         page.wait_for_selector(".sd-detail", state="hidden")
         self.assertFalse(page.evaluate("document.documentElement.classList.contains('sd-detail-open')"))
 
-        page.click("[data-sidebar-toggle]")
+        page.get_by_role("button",name="Navigation umschalten",exact=True).click()
         page.get_by_role("link", name="Wissensbasis", exact=True).click()
         page.wait_for_url(f"{self.base_url}/knowledge")
-        page.click("[data-sidebar-toggle]")
+        page.get_by_role("button",name="Navigation umschalten",exact=True).click()
+        page.locator(".app-sidebar").get_by_text("Einstellungen",exact=True).click()
         page.get_by_role("link", name="Benutzer & Rollen").click()
         page.wait_for_url(f"{self.base_url}/users")
 

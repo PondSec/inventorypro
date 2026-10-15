@@ -1,169 +1,49 @@
 {% extends 'base_app.html' %}
-
-{% block title %}Inventory Pro - Wissensbasis{% endblock %}
+{% from '_ui.html' import icon with context %}
+{% set page_title='Wissensbasis' %}{% set page_section_label='Wissen' %}
+{% set page_description='Anleitungen und Lösungen finden und mit Tickets verknüpfen.' %}
+{% block title %}Wissensbasis | Inventory Pro{% endblock %}
 {% block html_attrs %}x-data="knowledgeApp()"{% endblock %}
-{% block app_content_class %} flex-1 overflow-auto p-8 pt-24 space-y-8 scrollbar-hide{% endblock %}
-
+{% block page_actions %}<button x-show="can('knowledge.manage')" data-testid="open-entry-modal" @click="openEntryModal()" class="btn btn-primary">{{ icon('plus') }}Neuer Artikel</button>{% endblock %}
 {% block content %}
-                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div class="flex flex-wrap items-center gap-4">
-                        <div class="relative flex-1 min-w-[220px]">
-                            <label for="knowledge-search" class="text-xs uppercase text-slate-400">Suche</label>
-                            <input id="knowledge-search" type="text" x-model="searchQuery" @input.debounce.300ms="loadEntries()" placeholder="Artikel durchsuchen..." class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:ring-emerald-500">
-                            <span class="absolute right-4 top-9 text-slate-400">
-                                <i data-feather="search" class="h-4 w-4"></i>
-                            </span>
-                        </div>
-                        <button x-show="can('knowledge.manage')" data-testid="open-entry-modal" @click="openEntryModal()" class="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700">
-                            Neuer Artikel
-                        </button>
-                    </div>
-                </section>
+<section class="workspace-panel ui-toolbar"><label class="filter-search ui-toolbar-search">{{ icon('search') }}<input id="knowledge-search" type="search" aria-label="Artikel durchsuchen" x-model="searchQuery" @input.debounce.300ms="loadEntries()" placeholder="Artikel durchsuchen …"></label><button type="button" class="btn btn-secondary" x-show="searchQuery" @click="searchQuery='';loadEntries()">Zurücksetzen</button><span class="muted" x-text="`${listTotal} Artikel`"></span></section>
+<div class="module-layout">
+<nav class="workspace-panel context-nav" aria-label="Wissensbereiche"><header><h2>Kategorien</h2><button type="button" class="icon-button" x-show="can('knowledge.manage')" @click="openCategoryModal()" aria-label="Neue Kategorie">{{ icon('plus') }}</button></header>
+<button type="button" class="context-nav-item" :aria-current="!selectedCategoryId ? 'page' : null" @click="clearSelectedEntry();setCategoryFilter('')">{{ icon('grid') }}<span>Alle Kategorien</span></button>
+<template x-for="category in categories" :key="category.id"><div class="context-nav-row"><button type="button" class="context-nav-item" :aria-current="selectedCategoryId===category.id ? 'page' : null" @click="clearSelectedEntry();setCategoryFilter(category.id)">{{ icon('folder') }}<span x-text="category.name"></span></button><button type="button" class="icon-button" x-show="can('knowledge.manage')" @click="openCategoryModal(category)" :aria-label="`Kategorie ${category.name} bearbeiten`">{{ icon('edit-2') }}</button></div></template></nav>
+<section class="workspace-panel module-primary"><p role="alert" class="form-error ui-inline-error" x-show="listError" x-text="listError"></p>
+<div x-show="!selectedEntry"><header class="ui-panel-heading"><h2>Artikel</h2><span x-text="listLoading ? 'Wird geladen …' : `${listTotal} Einträge`" role="status" class="muted"></span></header>
 
-                <section class="grid gap-6" :class="selectedEntry ? 'grid-cols-1' : 'xl:grid-cols-[0.8fr_1fr_1.2fr]'">
-                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4" x-show="!selectedEntry" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 -translate-x-3" x-transition:enter-end="opacity-100 translate-x-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 translate-x-0" x-transition:leave-end="opacity-0 -translate-x-3">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-xs uppercase text-slate-400">Kategorien</p>
-                                <h3 class="text-lg font-semibold text-slate-900">Wissensbereiche</h3>
-                            </div>
-                            <button x-show="can('knowledge.manage')" @click="openCategoryModal()" class="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                                Neue Kategorie
-                            </button>
-                        </div>
-                        <div class="space-y-2">
-                            <button @click="setCategoryFilter('')" :class="selectedCategoryId === '' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-white text-slate-600 border-slate-200'" class="flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-sm font-medium">
-                                <span class="flex items-center gap-2">
-                                    <i data-feather="grid" class="h-4 w-4"></i>
-                                    Alle Kategorien
-                                </span>
-                                <span class="text-xs text-slate-400" x-text="listTotal"></span>
-                            </button>
-                            <template x-for="category in categories" :key="category.id">
-                                <button @click="setCategoryFilter(category.id)" :class="selectedCategoryId === category.id ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-white text-slate-600 border-slate-200'" class="flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-sm font-medium">
-                                    <span class="flex items-center gap-2">
-                                        <i data-feather="folder" class="h-4 w-4"></i>
-                                        <span x-text="category.name"></span>
-                                    </span>
-                                    <span class="text-xs text-slate-400" x-text="category.description ? 'Info' : ''"></span>
-                                </button>
-                            </template>
-                        </div>
-                    </div>
-
-                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4" x-show="!selectedEntry" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 -translate-x-3" x-transition:enter-end="opacity-100 translate-x-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 translate-x-0" x-transition:leave-end="opacity-0 -translate-x-3">
-                        <div class="flex items-center justify-between gap-3">
-                            <div>
-                                <p class="text-xs uppercase text-slate-400">Einträge</p>
-                                <h3 class="text-lg font-semibold text-slate-900">Wissensartikel</h3>
-                            </div>
-                            <button x-show="can('knowledge.manage')" @click="openEntryModal()" class="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                                Neuer Artikel
-                            </button>
-                        </div>
-                        <p role="status" x-show="listLoading">Wird geladen …</p>
-                        <p role="alert" class="form-error" x-show="listError" x-text="listError"></p>
-                        <div class="space-y-3 max-h-[520px] overflow-auto pr-2" :aria-busy="listLoading">
-                            <template x-for="entry in entries" :key="entry.id">
-                                <button @click="selectEntry(entry)" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:bg-white transition-colors">
-                                    <div class="flex items-center justify-between">
-                                        <p class="text-sm font-semibold text-slate-800" x-text="entry.title"></p>
-                                        <span class="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] text-slate-600" x-text="entry.category_name || 'Ohne Kategorie'"></span>
-                                    </div>
-                                    <p class="mt-1 text-xs text-slate-500 line-clamp-2" x-text="entry.summary || entry.content || 'Keine Beschreibung hinterlegt.'"></p>
-                                    <p class="mt-2 text-[11px] text-slate-400" x-text="entry.updated_at || entry.created_at"></p>
-                                </button>
-                            </template>
-                            <p x-show="entries.length === 0 && !listLoading && !listError" class="text-xs text-slate-400">Keine passenden Wissenseinträge. Ändern Sie die Suche oder Kategorie.</p>
-                        </div>
-                    <nav class="list-pagination" aria-label="Seiten in der Wissensbasis" x-show="!selectedEntry">
-                        <button type="button" class="btn btn-secondary" :disabled="listPage <= 1 || listLoading" @click="loadEntries(listPage - 1)">Zurück</button>
-                        <span x-text="`Seite ${listPage} von ${listPages} · ${listTotal} Einträge`"></span>
-                        <button type="button" class="btn btn-secondary" :disabled="listPage >= listPages || listLoading" @click="loadEntries(listPage + 1)">Weiter</button>
-                    </nav>
-                    </div>
-
-                    <div class="space-y-6">
-                        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" x-show="selectedEntry" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 translate-y-0" x-transition:leave-end="opacity-0 translate-y-2">
-                            <template x-if="selectedEntry">
-                                <div class="space-y-4">
-                                    <div class="flex items-start justify-between gap-4">
-                                        <div>
-                                            <p class="text-xs uppercase text-slate-400">Detailansicht</p>
-                                            <h3 class="text-2xl font-semibold text-slate-900" x-text="selectedEntry.title"></h3>
-                                            <p class="text-sm text-slate-500" x-text="selectedEntry.summary || 'Keine Kurzbeschreibung.'"></p>
-                                        </div>
-                                        <div class="flex items-center gap-2" x-data="{ open: false }">
-                                            <button @click="clearSelectedEntry()" class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                                                Zurück
-                                            </button>
-                                            <button x-show="can('knowledge.manage')" @click="openEntryModal(selectedEntry)" class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                                                Bearbeiten
-                                            </button>
-                                            <button @click="open = !open" data-testid="knowledge-action-menu-toggle" class="icon-button inline-flex items-center justify-center rounded-full border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-100" aria-label="Weitere Aktionen">
-                                                <i data-feather="more-vertical" class="h-4 w-4"></i>
-                                            </button>
-                                            <div x-show="open" data-testid="knowledge-action-menu" @click.away="open = false" class="absolute right-4 z-20 mt-20 w-40 rounded-2xl border border-slate-200 bg-white shadow-xl" x-transition>
-                                                <button x-show="can('knowledge.manage')" @click="deleteEntry(selectedEntry); open=false" class="block w-full px-4 py-2 text-left text-sm text-rose-600 hover:bg-rose-50">Löschen</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="grid gap-3 text-xs text-slate-500 sm:grid-cols-2">
-                                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                            <p class="text-[11px] uppercase text-slate-400">Kategorie</p>
-                                            <p class="text-sm font-semibold text-slate-700" x-text="selectedEntry.category_name || 'Nicht zugeordnet'"></p>
-                                        </div>
-                                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                            <p class="text-[11px] uppercase text-slate-400">Verknüpftes Ticket</p>
-                                            <p class="text-sm font-semibold text-slate-700" x-text="selectedEntry.related_ticket_id ? `#${selectedEntry.related_ticket_id}` : 'Keins'"></p>
-                                        </div>
-                                    </div>
-                                    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700 whitespace-pre-line" x-text="selectedEntry.content || 'Noch kein ausführlicher Inhalt hinterlegt.'"></div>
-                                    <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-                                        <span x-text="`Erstellt von ${selectedEntry.created_by || 'Unbekannt'}`"></span>
-                                        <span x-text="`Erstellt: ${selectedEntry.created_at || '-'}`"></span>
-                                        <span x-text="`Aktualisiert: ${selectedEntry.updated_at || '-'}`"></span>
-                                    </div>
-                                    <div x-show="selectedEntry.related_ticket_id" class="flex items-center gap-2">
-                                        <a :href="`/tickets?ticket_id=${selectedEntry.related_ticket_id}`" class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                                            Ticket öffnen
-                                        </a>
-                                    </div>
-                                </div>
-                            </template>
-                        </div>
-                        <div class="rounded-3xl border border-dashed border-slate-200 bg-white/60 p-10 text-center text-slate-400" x-show="!selectedEntry" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-1" x-transition:enter-end="opacity-100 translate-y-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 translate-y-0" x-transition:leave-end="opacity-0 translate-y-1">
-                            <p class="text-sm font-semibold text-slate-600">Wähle einen Artikel aus.</p>
-                            <p class="mt-2 text-xs">Hier erscheint die Detailansicht mit Lösungsschritten, Workflows oder Themenwissen.</p>
-                        </div>
-                    </div>
-                </section>
+<div class="module-list-scroll data-table-scroll" :aria-busy="listLoading"><table class="data-table module-table"><thead><tr><th>Artikel</th><th>Kategorie</th><th>Aktualisiert</th></tr></thead><tbody><template x-for="entry in entries" :key="entry.id"><tr @click="selectEntry(entry)" class="preview-row"><td><button type="button" @click.stop="selectEntry(entry)" class="list-row-trigger"><strong x-text="entry.title"></strong><small x-text="entry.summary || entry.content || 'Keine Beschreibung hinterlegt.'"></small></button></td><td><span class="status-badge" x-text="entry.category_name || 'Ohne Kategorie'"></span></td><td class="table-date" x-text="formatDate(entry.updated_at || entry.created_at)"></td></tr></template></tbody></table><p x-show="entries.length===0 && !listLoading && !listError" class="ui-empty">Keine passenden Artikel. Ändern Sie Suche oder Kategorie.</p></div>
+<nav class="table-pagination" aria-label="Seiten in der Wissensbasis"><button type="button" class="btn btn-secondary" :disabled="listPage<=1 || listLoading" @click="loadEntries(listPage-1)">Zurück</button><span class="muted" x-text="`Seite ${listPage} von ${listPages} · ${listTotal} Einträge`"></span><button type="button" class="btn btn-secondary" :disabled="listPage>=listPages || listLoading" @click="loadEntries(listPage+1)">Weiter</button></nav></div>
+<div x-show="selectedEntry"><template x-if="selectedEntry"><article class="article-detail"><header class="ui-panel-heading"><div><h3 class="article-title" x-text="selectedEntry.title"></h3><p class="muted" x-text="selectedEntry.summary"></p></div><div class="ui-actions" x-data="{open:false}"><button type="button" class="btn btn-secondary" @click="clearSelectedEntry()">Zurück</button><button type="button" class="btn btn-primary" x-show="can('knowledge.manage')" @click="openEntryModal(selectedEntry)">Bearbeiten</button><div class="relative"><button type="button" class="icon-button" @click="open=!open" data-testid="knowledge-action-menu-toggle" aria-label="Weitere Aktionen">{{ icon('more-horizontal') }}</button><div class="ui-menu" x-show="open" @click.away="open=false" data-testid="knowledge-action-menu"><button type="button" x-show="can('knowledge.manage')" @click="deleteEntry(selectedEntry);open=false">Löschen</button></div></div></div></header>
+<div class="article-content-grid"><div class="article-body preserve-lines" x-text="selectedEntry.content || 'Noch kein Inhalt hinterlegt.'"></div><aside><dl class="compact-properties"><div class="object-property"><dt>Kategorie</dt><dd x-text="selectedEntry.category_name || 'Ohne Kategorie'"></dd></div><div class="object-property"><dt>Erstellt von</dt><dd x-text="selectedEntry.created_by || 'Unbekannt'"></dd></div><div class="object-property"><dt>Erstellt am</dt><dd x-text="formatDate(selectedEntry.created_at)"></dd></div><div class="object-property"><dt>Aktualisiert</dt><dd x-text="formatDate(selectedEntry.updated_at)"></dd></div></dl><a class="btn btn-secondary" x-show="selectedEntry.related_ticket_id" :href="`/tickets/${selectedEntry.related_ticket_id}`">{{ icon('message-square') }}Ticket öffnen</a></aside></div></article></template></div>
+</section></div>
 {% endblock %}
-
 {% block overlays %}
-    <div x-show="entryModalOpen" x-transition data-testid="entry-modal-container" class="modal fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div @click.away="closeEntryModal" class="modal-panel w-full max-w-2xl rounded-3xl bg-white p-6 shadow-xl" data-testid="entry-modal">
+    <div x-show="entryModalOpen" x-cloak x-transition data-testid="entry-modal-container" class="modal fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div @click.away="closeEntryModal" class="modal-panel ui-modal ui-modal--wide" data-testid="entry-modal">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-xs uppercase text-slate-400" x-text="entryForm.id ? 'Eintrag bearbeiten' : 'Neuer Eintrag'"></p>
+                    <p class="ui-label" x-text="entryForm.id ? 'Eintrag bearbeiten' : 'Neuer Eintrag'"></p>
                     <h3 class="text-lg font-semibold text-slate-900">Wissensartikel</h3>
                 </div>
                 <button @click="closeEntryModal" data-modal-close data-testid="entry-modal-close" class="icon-button text-slate-400 hover:text-slate-700" aria-label="Eintrag-Modal schließen">
                     <i data-feather="x" class="w-4 h-4"></i>
                 </button>
             </div>
-            <div class="mt-4 grid gap-4">
+            <div class="ui-form-fields">
                 <div>
-                    <label for="knowledge-entry-title" class="text-xs uppercase text-slate-400">Titel</label>
-                    <input id="knowledge-entry-title" type="text" x-model="entryForm.title" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <label for="knowledge-entry-title" class="ui-label">Titel</label>
+                    <input id="knowledge-entry-title" type="text" :disabled="saving" x-model="entryForm.title" class="input">
                 </div>
                 <div>
-                    <label for="knowledge-entry-summary" class="text-xs uppercase text-slate-400">Kurzbeschreibung</label>
-                    <textarea id="knowledge-entry-summary" rows="2" x-model="entryForm.summary" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
+                    <label for="knowledge-entry-summary" class="ui-label">Kurzbeschreibung</label>
+                    <textarea id="knowledge-entry-summary" rows="2" :disabled="saving" x-model="entryForm.summary" class="input"></textarea>
                 </div>
                 <div>
-                    <label for="knowledge-entry-category" class="text-xs uppercase text-slate-400">Kategorie</label>
-                    <select id="knowledge-entry-category" x-model="entryForm.category_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <label for="knowledge-entry-category" class="ui-label">Kategorie</label>
+                    <select id="knowledge-entry-category" :disabled="saving" x-model="entryForm.category_id" class="input">
                         <option value="">Ohne Kategorie</option>
                         <template x-for="category in categories" :key="category.id">
                             <option :value="category.id" x-text="category.name"></option>
@@ -171,53 +51,51 @@
                     </select>
                 </div>
                 <div>
-                    <label for="knowledge-entry-ticket" class="text-xs uppercase text-slate-400">Verknüpftes Ticket (optional)</label>
-                    <input id="knowledge-entry-ticket" type="number" min="1" x-model="entryForm.related_ticket_id" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <label for="knowledge-entry-ticket" class="ui-label">Verknüpftes Ticket (optional)</label>
+                    <input id="knowledge-entry-ticket" type="number" min="1" :disabled="saving" x-model="entryForm.related_ticket_id" class="input">
                 </div>
                 <div>
-                    <label for="knowledge-entry-content" class="text-xs uppercase text-slate-400">Inhalt / Lösung</label>
-                    <textarea id="knowledge-entry-content" rows="6" x-model="entryForm.content" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
+                    <label for="knowledge-entry-content" class="ui-label">Inhalt / Lösung</label>
+                    <textarea id="knowledge-entry-content" rows="6" :disabled="saving" x-model="entryForm.content" class="input"></textarea>
                 </div>
-                <p x-show="entryError" class="text-sm text-rose-500" x-text="entryError"></p>
+                <p role="alert" x-show="entryError" class="text-sm text-rose-500" x-text="entryError"></p>
             </div>
-            <div class="mt-6 flex flex-wrap justify-end gap-3">
-                <button @click="closeEntryModal" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600">Abbrechen</button>
-                <button @click="saveEntry" class="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white">Speichern</button>
+            <div class="ui-form-actions">
+                <button @click="closeEntryModal" class="btn btn-secondary">Abbrechen</button>
+                <button @click="saveEntry" :disabled="saving" class="btn btn-primary">Speichern</button>
             </div>
         </div>
     </div>
 
-    <div x-show="categoryModalOpen" x-transition class="modal fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div @click.away="closeCategoryModal" class="modal-panel w-full max-w-lg rounded-3xl bg-white p-6 shadow-xl">
+    <div x-show="categoryModalOpen" x-cloak x-transition class="modal fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div @click.away="closeCategoryModal" class="modal-panel ui-modal">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-xs uppercase text-slate-400" x-text="categoryForm.id ? 'Kategorie bearbeiten' : 'Neue Kategorie'"></p>
+                    <p class="ui-label" x-text="categoryForm.id ? 'Kategorie bearbeiten' : 'Neue Kategorie'"></p>
                     <h3 class="text-lg font-semibold text-slate-900">Kategorie</h3>
                 </div>
                 <button @click="closeCategoryModal" data-modal-close class="icon-button text-slate-400 hover:text-slate-700" aria-label="Kategorie-Modal schließen">
                     <i data-feather="x" class="w-4 h-4"></i>
                 </button>
             </div>
-            <div class="mt-4 grid gap-4">
+            <div class="ui-form-fields">
                 <div>
-                    <label for="knowledge-category-name" class="text-xs uppercase text-slate-400">Name</label>
-                    <input id="knowledge-category-name" type="text" x-model="categoryForm.name" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <label for="knowledge-category-name" class="ui-label">Name</label>
+                    <input id="knowledge-category-name" type="text" :disabled="saving" x-model="categoryForm.name" class="input">
                 </div>
                 <div>
-                    <label for="knowledge-category-description" class="text-xs uppercase text-slate-400">Beschreibung</label>
-                    <textarea id="knowledge-category-description" rows="3" x-model="categoryForm.description" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"></textarea>
+                    <label for="knowledge-category-description" class="ui-label">Beschreibung</label>
+                    <textarea id="knowledge-category-description" rows="3" :disabled="saving" x-model="categoryForm.description" class="input"></textarea>
                 </div>
-                <p x-show="categoryError" class="text-sm text-rose-500" x-text="categoryError"></p>
+                <p role="alert" x-show="categoryError" class="text-sm text-rose-500" x-text="categoryError"></p>
             </div>
-            <div class="mt-6 flex flex-wrap justify-end gap-3">
-                <button @click="closeCategoryModal" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600">Abbrechen</button>
-                <button @click="saveCategory" class="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white">Speichern</button>
+            <div class="ui-form-actions">
+                <button @click="closeCategoryModal" class="btn btn-secondary">Abbrechen</button>
+                <button @click="saveCategory" :disabled="saving" class="btn btn-primary">Speichern</button>
             </div>
         </div>
     </div>
 
 {% endblock %}
 
-{% block page_scripts %}
-    <script src="/static/knowledge.js"></script>
-{% endblock %}
+{% block page_scripts %}<script src="/static/knowledge.js?v=visual-2"></script>{% endblock %}

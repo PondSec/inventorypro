@@ -819,18 +819,20 @@ document.addEventListener('alpine:init', () => {
             if (!window.confirm(`${message}\n\nKommentare und Verknüpfungen werden ebenfalls entfernt.`)) return;
 
             this.deletingTickets = true;
+            const deleted=[],failed=[];
             try {
-                await Promise.all(ticketIds.map(ticketId => this.api(`/api/tickets/${ticketId}`, { method: 'DELETE' })));
-                if (this.selectedTicket && ticketIds.includes(this.selectedTicket.id)) this.closeTicket();
-                this.selectedIds = [];
-                await Promise.all([this.loadTickets(), this.loadQueueCounts()]);
-                this.showToast(ticketIds.length === 1 ? 'Ticket gelöscht.' : `${ticketIds.length} Tickets gelöscht.`);
-            } catch (error) {
-                await Promise.all([this.loadTickets(), this.loadQueueCounts()]);
-                this.showToast(error.message, 'error');
-            } finally {
-                this.deletingTickets = false;
-            }
+                // Serialize SQLite writes; a partial failure must name the
+                // remaining selection rather than imply an atomic bulk delete.
+                for (const ticketId of ticketIds) {
+                    try {await this.api(`/api/tickets/${ticketId}`,{method:'DELETE'});deleted.push(ticketId);}
+                    catch(error) {failed.push({id:ticketId,message:error.message});}
+                }
+                if (this.selectedTicket && deleted.includes(this.selectedTicket.id)) this.closeTicket();
+                this.selectedIds=failed.map(item=>item.id);
+                await Promise.all([this.loadTickets(),this.loadQueueCounts()]);
+                if (failed.length) this.showToast(`${deleted.length} gelöscht, ${failed.length} nicht gelöscht. #${failed[0].id}: ${failed[0].message}`,'error');
+                else this.showToast(deleted.length===1 ? 'Ticket gelöscht.' : `${deleted.length} Tickets gelöscht.`);
+            } finally {this.deletingTickets=false;}
         },
 
         exportSelected() {
