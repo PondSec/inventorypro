@@ -71,6 +71,8 @@ document.addEventListener('toggle', event => {
   const host = event.target;
   if (!host.matches?.('[data-row-menu]')) return;
   const menu = host.querySelector('.row-menu-panel');
+  if (!menu) return;
+  if (typeof menu.showPopover === 'function') menu.setAttribute('popover','manual');
   if (!host.open) {if (menu.hasAttribute('popover')) menu.hidePopover();return;}
   document.querySelectorAll('[data-row-menu][open]').forEach(other => {if (other !== host) other.open = false;});
   if (menu.hasAttribute('popover')) menu.showPopover();
