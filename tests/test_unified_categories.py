@@ -64,3 +64,39 @@ def test_empty_legacy_category_can_be_removed_without_leaving_a_recreated_alias(
     with inventory_app.app.app_context():
         db=inventory_app.get_db();assert not db.execute('SELECT 1 FROM categories WHERE id=?',(legacy,)).fetchone()
         assert not db.execute('SELECT 1 FROM asset_legacy_categories WHERE category_id=?',(legacy,)).fetchone()
+
+
+def test_legacy_and_canonical_category_edits_share_fields_and_safe_deletion(unified_client):
+    client=unified_client
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();legacy=db.execute('SELECT category_id FROM devices WHERE id=1').fetchone()[0]
+        canonical=db.execute('SELECT asset_category_id FROM asset_legacy_categories WHERE category_id=?',(legacy,)).fetchone()[0]
+    fields={'QA number':{'type':'number','unit':'GB'}}
+    edited=client.put(f'/api/categories/{legacy}',json={'name':'QA compatible category','fields':fields})
+    assert edited.status_code==200
+    category=next(item for item in client.get('/api/inventory/categories').json['categories'] if item['id']==canonical)
+    assert category['name']=='QA compatible category' and category['fields']['QA number']['unit']=='GB'
+    edited=client.put(f'/api/inventory/categories/{canonical}',json={'name':'QA canonical rename','fields':{},'expectedRevision':category['revision']})
+    assert edited.status_code==200
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();assert db.execute('SELECT name,fields FROM categories WHERE id=?',(legacy,)).fetchone()[:]==('QA canonical rename','{}')
+        target=db.execute("INSERT INTO categories(name) VALUES ('QA legacy target')").lastrowid;db.commit()
+    assert client.delete(f'/api/categories/{legacy}').status_code==409
+    moved=client.delete(f'/api/categories/{legacy}',json={'target_category_id':target})
+    assert moved.status_code==200,moved.json
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db()
+        assert db.execute('SELECT count(*) FROM assets').fetchone()[0]==40
+        assert db.execute('SELECT count(*) FROM devices').fetchone()[0]==40
+        assert not db.execute('PRAGMA foreign_key_check').fetchall()
+
+
+def test_reassignment_requires_inventory_write_and_target_category_rights(unified_client):
+    from test_product_catalog_routes import role
+    client=unified_client;target=create(client,'QA target with asset scope')
+    with inventory_app.app.app_context():source=inventory_app.get_db().execute('SELECT asset_category_id FROM asset_legacy_categories WHERE category_id=(SELECT category_id FROM devices WHERE id=1)').fetchone()[0]
+    role(client,'category-read-only-move',['categories.manage','devices.view'])
+    category=next(item for item in client.get('/api/inventory/categories').json['categories'] if item['id']==source)
+    response=client.delete(f'/api/inventory/categories/{source}',json={'expectedRevision':category['revision'],'target_category_id':target['id']})
+    assert response.status_code==403
+    with inventory_app.app.app_context():assert inventory_app.get_db().execute('SELECT count(*) FROM assets WHERE category_id=?',(source,)).fetchone()[0]==40

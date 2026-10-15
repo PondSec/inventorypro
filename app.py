@@ -48,7 +48,7 @@ from inventorypro.domains.catalog.seed import initialize_catalog
 from inventorypro.domains.catalog.matching import sync_object as sync_product_object
 from inventorypro.domains.inventory.routes import build_inventory_blueprint
 from inventorypro.domains.inventory.asset_routes import build_assets_blueprint
-from inventorypro.domains.inventory.category_routes import build_category_blueprint
+from inventorypro.domains.inventory.category_routes import build_category_blueprint,can_manage as can_manage_asset_category,scopes as asset_category_scopes
 from inventorypro.domains.inventory import assets as canonical_assets
 from inventorypro.domains.inventory.ticket_assets import normalize_links as normalize_ticket_asset_links
 from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
@@ -9007,6 +9007,9 @@ def handle_category(category_id):
     db = get_db()
     if not user_can('categories.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    if canonical_assets.unified(db):
+        mapped=db.execute('SELECT asset_category_id FROM asset_legacy_categories WHERE category_id=?',(category_id,)).fetchone()
+        if mapped and not can_manage_asset_category(db,user_can,mapped[0]):return jsonify(error='Keine Berechtigung'),403
 
     if request.method == 'PUT':
         try:
@@ -9031,6 +9034,8 @@ def handle_category(category_id):
             db.commit()
             return jsonify({"status": "updated"}), 200
 
+        except sqlite3.IntegrityError:
+            db.rollback();return jsonify(error='Eine Kategorie mit diesem Namen existiert bereits.'),409
         except (KeyError, TypeError, ValueError) as e:
             return jsonify({"error": f"Ungültige Daten: {str(e)}"}), 400
 
@@ -9043,7 +9048,21 @@ def delete_inventory_category(db, kind, category_id):
     if payload is not None and not isinstance(payload, dict):
         return jsonify({"error": "JSON-Objekt erwartet."}), 400
     target_id = (payload or {}).get("target_category_id")
-    if target_id is not None and not user_can("devices.manage" if kind == "device" else "assets.manage"):
+    if canonical_assets.unified(db):
+        if kind=='device':
+            mapped=db.execute('SELECT asset_category_id FROM asset_legacy_categories WHERE category_id=?',(category_id,)).fetchone()
+            if not mapped:return jsonify(error='Kategorie nicht gefunden'),404
+            category_id=mapped[0];kind='asset'
+            if target_id is not None:
+                if isinstance(target_id,bool) or not isinstance(target_id,int):return jsonify(error='Ungültige Zielkategorie'),400
+                target=db.execute('SELECT asset_category_id FROM asset_legacy_categories WHERE category_id=?',(target_id,)).fetchone()
+                if not target:return jsonify(error='Zielkategorie nicht gefunden'),400
+                target_id=target[0]
+        if not can_manage_asset_category(db,user_can,category_id):return jsonify(error='Keine Berechtigung'),403
+        if target_id is not None:
+            if not can_manage_asset_category(db,user_can,target_id):return jsonify(error='Keine Berechtigung für die Zielkategorie'),403
+            if not all(user_can(scope+'.manage') for scope in asset_category_scopes(db,category_id)):return jsonify(error='Keine Berechtigung zur Umzuordnung'),403
+    if not canonical_assets.unified(db) and target_id is not None and not user_can("devices.manage" if kind == "device" else "assets.manage"):
         return jsonify({"error": "Keine Berechtigung zur Umzuordnung."}), 403
     try:
         result = remove_category(db, kind, category_id, target_id)
@@ -9093,6 +9112,7 @@ def handle_asset_category(category_id):
     db = get_db()
     if not user_can('asset_categories.manage'):
         return jsonify({"error": "Keine Berechtigung"}), 403
+    if canonical_assets.unified(db) and not can_manage_asset_category(db,user_can,category_id):return jsonify(error='Keine Berechtigung'),403
 
     if request.method == 'PUT':
         try:

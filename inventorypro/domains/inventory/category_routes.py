@@ -65,6 +65,10 @@ def build_category_blueprint(*,get_db,user_can,get_access,login_required,parse_f
                 if not can_manage(db,user_can,identifier):abort(403)
                 revision(identifier,data.get('expectedRevision'))
             if request.method=='DELETE':
+                target=data.get('target_category_id')
+                if isinstance(target,int) and not isinstance(target,bool):
+                    if not can_manage(db,user_can,target):abort(403)
+                    if db.execute('SELECT 1 FROM assets WHERE category_id=?',(identifier,)).fetchone() and not all(user_can(scope+'.manage') for scope in scopes(db,identifier)):abort(403)
                 result=remove_category(db,'asset',identifier,data.get('target_category_id'));log_activity(db,'delete','asset_category',identifier,result)
             else:
                 name=assets._text(data.get('name'),'Kategoriename',120)
