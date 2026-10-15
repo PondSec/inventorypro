@@ -126,9 +126,9 @@ def sync_object(db,kind,object_id,*,force=False,catalog_revision=None,row=None):
     if previous and previous['fingerprint']==fingerprint and not force:
         return {'product_id':previous['product_id'],'method':previous['match_method'],'reason':'cached','changed':False}
     match = exact_match(db,identity,source['name'])
-    db.execute(f'''INSERT INTO {links}({key},product_id,match_method,fingerprint) VALUES (?,?,?,?)
+    db.execute(f'''INSERT INTO {links}({key},product_id,match_method,fingerprint,updated_at) VALUES (?,?,?,?,?)
         ON CONFLICT({key}) DO UPDATE SET product_id=excluded.product_id,match_method=excluded.match_method,
-        fingerprint=excluded.fingerprint,updated_at=CURRENT_TIMESTAMP''',(object_id,match['product_id'],match['method'],fingerprint))
+        fingerprint=excluded.fingerprint,updated_at=excluded.updated_at''',(object_id,match['product_id'],match['method'],fingerprint,datetime.now(timezone.utc).isoformat(timespec='microseconds')))
     return {**match,'changed':True}
 
 

@@ -42,6 +42,7 @@ from email.message import EmailMessage
 import smtplib
 
 from inventorypro.domains.planning.routes import build_planning_blueprint
+from inventorypro.domains.catalog.routes import build_catalog_blueprint
 from inventorypro.domains.inventory.routes import build_inventory_blueprint
 from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
 from inventorypro.config import resolve_application_secret
@@ -190,6 +191,14 @@ MAX_UPLOAD_BYTES = int(os.environ.get("INVENTORY_MAX_UPLOAD_BYTES", MAX_IMPORT_B
 MAX_RESTORE_BYTES = int(os.environ.get("INVENTORY_MAX_RESTORE_BYTES", 5 * 1024 * 1024 * 1024))
 MAX_CUSTOMIZATION_IMAGE_BYTES = int(os.environ.get("INVENTORY_MAX_CUSTOMIZATION_IMAGE_BYTES", 2 * 1024 * 1024))
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
+
+@app.before_request
+def bound_product_image_uploads():
+    # Runs before CSRF accesses multipart form data, bounding parser memory too.
+    if request.method == 'POST' and (request.path.startswith('/api/catalog/models/') and request.path.endswith('/images') or request.path.startswith('/api/inventory/') and request.path.endswith('/photo/upload')):
+        request.max_content_length = 8 * 1024 * 1024 + 64 * 1024
+
+
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".csv"}
 BLOCKED_ATTACHMENT_EXTENSIONS = {".exe", ".js", ".html", ".htm", ".bat", ".sh", ".ps1"}
 BINPACKING_DIMENSIONS = ("width", "height", "depth")
@@ -15540,6 +15549,11 @@ InventoryLinkNoRedirect = InventoryLinkServiceNoRedirect
 app.register_blueprint(build_planning_blueprint(
     get_db=get_db, user_can=user_can, get_access=get_user_access, login_required=login_required,
     pack=pack_assets_into_storage, build_layers=build_binpacking_layers, enrich_layers=enrich_binpacking_layers, log_activity=log_activity,
+))
+
+app.register_blueprint(build_catalog_blueprint(
+    get_db=get_db, get_access=get_user_access, user_can=user_can, login_required=login_required,
+    get_uploads_dir=lambda: UPLOADS_DIR, rate_limiter=RATE_LIMIT_CACHE, log_activity=log_activity,
 ))
 
 app.register_blueprint(build_inventory_blueprint(
