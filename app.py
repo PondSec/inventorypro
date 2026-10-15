@@ -13803,6 +13803,11 @@ def build_enterprise_workflow_hub(db):
 
     if user_can('tickets.view_all') or user_can('tickets.view_own'):
         open_ticket_filter = "LOWER(COALESCE(status, '')) NOT IN ('resolved', 'closed')"
+        ticket_scope_params = ()
+        if not user_can('tickets.view_all'):
+            user = get_user_access(db)["user"]
+            open_ticket_filter += " AND (t.created_by_user_id=? OR (t.created_by_user_id IS NULL AND t.created_by=?))"
+            ticket_scope_params = (user["id"], user["username"])
         open_tickets_without_assets = scalar_int(db, f'''
             SELECT COUNT(*)
             FROM tickets t
@@ -13810,21 +13815,21 @@ def build_enterprise_workflow_hub(db):
               AND NOT EXISTS (
                   SELECT 1 FROM ticket_assets ta WHERE ta.ticket_id = t.id
               )
-        ''')
+        ''', ticket_scope_params)
         overdue_tickets = scalar_int(db, f'''
             SELECT COUNT(*)
-            FROM tickets
+            FROM tickets t
             WHERE {open_ticket_filter}
               AND due_date IS NOT NULL
               AND TRIM(due_date) != ''
               AND date(due_date) < date('now')
-        ''')
+        ''', ticket_scope_params)
         stale_tickets = scalar_int(db, f'''
             SELECT COUNT(*)
-            FROM tickets
+            FROM tickets t
             WHERE {open_ticket_filter}
               AND datetime(updated_at) < datetime('now', '-14 days')
-        ''')
+        ''', ticket_scope_params)
         signals.append({
             "key": "service_context",
             "label": "Service-Kontext",
@@ -13936,6 +13941,11 @@ def build_enterprise_workflow_hub(db):
 @login_required
 @require_permissions('categories.view', 'categories.manage')
 def enterprise_workflow_hub():
+    # This legacy aggregate combines both inventories. Category permissions alone
+    # must never reveal counts from domains the caller cannot read.
+    if not ((user_can('devices.view') or user_can('devices.manage')) and
+            (user_can('assets.view') or user_can('assets.manage'))):
+        return jsonify({"error": "Keine Berechtigung für die Bestandsübersicht."}), 403
     return jsonify(build_enterprise_workflow_hub(get_db()))
 
 @app.route('/api/users', methods=['GET', 'POST'])

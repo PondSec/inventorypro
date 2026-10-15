@@ -105,6 +105,36 @@ class EnterpriseWorkflowHubTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
 
+    def set_restricted_role(self, permissions):
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            user_id = db.execute("INSERT INTO users (username,password_hash) VALUES ('restricted','unused')").lastrowid
+            role_id = db.execute("INSERT INTO roles (name) VALUES ('Restricted workflow')").lastrowid
+            db.execute("INSERT INTO user_roles (user_id,role_id) VALUES (?,?)", (user_id,role_id))
+            for permission in permissions:
+                permission_id = db.execute("SELECT id FROM permissions WHERE key=?", (permission,)).fetchone()[0]
+                db.execute("INSERT INTO role_permissions (role_id,permission_id) VALUES (?,?)", (role_id,permission_id))
+            db.commit()
+        with self.client.session_transaction() as session:
+            session['username'] = 'restricted'
+        return user_id
+
+    def test_category_permission_does_not_disclose_inventory_counts(self):
+        self.set_restricted_role(['categories.view'])
+        self.assertEqual(self.client.get('/api/enterprise/workflow-hub').status_code, 403)
+
+    def test_own_ticket_signals_exclude_other_users(self):
+        user_id = self.set_restricted_role(['categories.view', 'devices.view', 'assets.view', 'tickets.view_own'])
+        with inventory_app.app.app_context():
+            db = inventory_app.get_db()
+            db.execute("INSERT INTO tickets (title,description,status,created_by,created_by_user_id,due_date) VALUES ('Own','Synthetic test','open','restricted',?,'2000-01-01')", (user_id,))
+            db.commit()
+        response = self.client.get('/api/enterprise/workflow-hub')
+        self.assertEqual(response.status_code, 200)
+        signals = {item['key']: item['value'] for item in response.json['signals']}
+        self.assertEqual(signals['service_context'], 1)
+        self.assertEqual(signals['service_risk'], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
