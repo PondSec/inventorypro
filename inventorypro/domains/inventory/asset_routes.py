@@ -89,6 +89,24 @@ def build_assets_blueprint(*,get_db,user_can,get_access,login_required,parse_fie
     def asset_component_remove(identifier,child):
         active();result=assets.remove_component(get_db(),user_can,identifier,child,data().get('expectedRevision'))
         write('contents_remove',identifier);return jsonify(result)
+    @bp.get('/api/inventory/relation-types')
+    @login_required
+    def relation_types():
+        active()
+        if not any(user_can(key) for key in ['assets.view','assets.manage','devices.view','devices.manage']):abort(403)
+        return jsonify([dict(row) for row in get_db().execute('SELECT id,name,description FROM asset_relation_types ORDER BY name')])
+    @bp.post('/api/inventory/assets/<int:identifier>/relations')
+    @login_required
+    def asset_relations_add(identifier):
+        from .relations import add_relations
+        active();add_relations(get_db(),user_can,identifier,data());write('relations_add',identifier)
+        return jsonify(saved=True),201
+    @bp.delete('/api/inventory/assets/<int:identifier>/relations/<int:relation_id>')
+    @login_required
+    def asset_relation_remove(identifier,relation_id):
+        from .relations import remove_relation
+        active();remove_relation(get_db(),user_can,identifier,relation_id,data().get('expectedRevision'));write('relation_remove',identifier)
+        return jsonify(deleted=True)
     @bp.post('/api/inventory/assets/<int:identifier>/notes')
     @login_required
     def asset_note(identifier):

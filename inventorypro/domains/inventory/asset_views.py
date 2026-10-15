@@ -34,10 +34,11 @@ def load_asset_panel(db,identifier,*,can,access,ticket_visible):
         sql=source(devices_allowed=can('devices.view') or can('devices.manage'),assets_allowed=can('assets.view') or can('assets.manage'))
         location=db.execute(sql+'SELECT location FROM inventory WHERE id=?',(identifier,)).fetchone()
         if location:obj['location']=location[0]
-    obj['relations']=[dict(row) for row in db.execute(f'''SELECT a.id,a.name,rt.name AS relation FROM asset_relations ar
+    obj['relations']=[dict(row) for row in db.execute(f'''SELECT a.id,a.name,ar.id AS relation_id,ar.asset_id AS source_asset_id,rt.name AS relation FROM asset_relations ar
         JOIN assets a ON a.id=CASE WHEN ar.asset_id=? THEN ar.related_asset_id ELSE ar.asset_id END
         LEFT JOIN asset_relation_types rt ON rt.id=ar.relation_type_id WHERE (ar.asset_id=? OR ar.related_asset_id=?) AND {predicate}
         ORDER BY ar.id DESC LIMIT 100''',[identifier,identifier,identifier,*args])]
+    for relation in obj['relations']:relation['can_remove']=obj['can_edit'] and assets.can_access(db,can,relation['source_asset_id'],write=True)
     legacy=db.execute('SELECT device_id FROM asset_legacy_devices WHERE asset_id=?',(identifier,)).fetchone()
     device_id=legacy[0] if legacy else None
     obj['tasks']=[];obj['note_entries']=[];obj['tags']=[];obj['software']=[]
