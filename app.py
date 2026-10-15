@@ -40,6 +40,7 @@ from ldap3.utils.conv import escape_filter_chars
 from email.message import EmailMessage
 import smtplib
 
+from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
 from inventorypro.data_migration import (
@@ -9175,24 +9176,28 @@ def handle_category(category_id):
             return jsonify({"error": f"Ungültige Daten: {str(e)}"}), 400
 
     elif request.method == 'DELETE':
-        device_rows = db.execute('SELECT id FROM devices WHERE category_id = ?', (category_id,)).fetchall()
-        device_ids = [row['id'] for row in device_rows]
+        return delete_inventory_category(db, "device", category_id)
 
-        for device_id in device_ids:
-            db.execute('DELETE FROM device_tags WHERE device_id = ?', (device_id,))
-            db.execute('DELETE FROM device_notes WHERE device_id = ?', (device_id,))
-            db.execute('DELETE FROM maintenance_tasks WHERE device_id = ?', (device_id,))
 
-        if device_ids:
-            db.execute('DELETE FROM devices WHERE category_id = ?', (category_id,))
-
-        result = db.execute('DELETE FROM categories WHERE id = ?', (category_id,))
-        if result.rowcount == 0:
-            return jsonify({"error": "Kategorie nicht gefunden"}), 404
-
-        log_activity(db, "delete", "category", category_id, {"deleted_devices": len(device_ids)})
+def delete_inventory_category(db, kind, category_id):
+    payload = request.get_json(silent=True)
+    if payload is not None and not isinstance(payload, dict):
+        return jsonify({"error": "JSON-Objekt erwartet."}), 400
+    target_id = (payload or {}).get("target_category_id")
+    if target_id is not None and not user_can("devices.manage" if kind == "device" else "assets.manage"):
+        return jsonify({"error": "Keine Berechtigung zur Umzuordnung."}), 403
+    try:
+        result = remove_category(db, kind, category_id, target_id)
+        log_activity(db, "delete", "category" if kind == "device" else "asset_category", category_id,
+                     {"reassigned": result["reassigned"], "target_category_id": target_id, "deleted_devices": 0})
         db.commit()
-        return jsonify({"status": "deleted"}), 200
+    except CategoryRemovalError as error:
+        db.rollback()
+        return jsonify(error.payload), error.status
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify({"error": "Die Kategorie wird noch verwendet.", "code": "category_in_use"}), 409
+    return jsonify(result), 200
 
 @app.route('/api/categories', methods=['GET', 'POST'])
 @login_required
@@ -9259,14 +9264,7 @@ def handle_asset_category(category_id):
         except (KeyError, TypeError, ValueError) as e:
             return jsonify({"error": f"Ungültige Daten: {str(e)}"}), 400
 
-    db.execute('UPDATE assets SET category_id = NULL WHERE category_id = ?', (category_id,))
-    result = db.execute('DELETE FROM asset_categories WHERE id = ?', (category_id,))
-    if result.rowcount == 0:
-        return jsonify({"error": "Asset-Kategorie nicht gefunden"}), 404
-
-    log_activity(db, "delete", "asset_category", category_id)
-    db.commit()
-    return jsonify({"status": "deleted"}), 200
+    return delete_inventory_category(db, "asset", category_id)
 
 @app.route('/api/asset-categories', methods=['GET', 'POST'])
 @login_required

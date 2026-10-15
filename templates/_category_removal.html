@@ -1,0 +1,20 @@
+<div x-cloak x-show="categoryRemoval.open" class="modal" role="dialog" aria-modal="true" aria-labelledby="category-removal-title" data-testid="category-removal">
+    <form class="modal-panel max-w-lg" @submit.prevent="submitCategoryRemoval()">
+        <div class="modal-header">
+            <h2 id="category-removal-title" class="modal-title">Kategorie sicher entfernen</h2>
+            <button type="button" class="icon-button" data-modal-close @click="if (!categoryRemoval.busy) categoryRemoval.open = false" aria-label="Schließen">×</button>
+        </div>
+        <p class="text-sm mb-4">Inventarisierte Einträge bleiben erhalten. Eine belegte Kategorie kann nur mit Umzuordnung entfernt werden. Individuelle Felder und Verknüpfungen bleiben gespeichert.</p>
+        <label class="form-label" for="category-removal-target">Einträge umordnen nach (bei belegten Kategorien erforderlich)</label>
+        <select id="category-removal-target" class="form-select w-full" x-model="categoryRemoval.target" :disabled="categoryRemoval.busy">
+            <option value="">Nur leere Kategorie entfernen</option>
+            <template x-for="category in categoryRemovalTargets()" :key="category.id"><option :value="category.id" x-text="category.name"></option></template>
+        </select>
+        <p class="mt-3 text-sm" x-show="categoryRemoval.target">Bitte prüfen Sie anschließend die Feldvorlage der Zielkategorie. Vorhandene Werte werden nicht überschrieben.</p>
+        <p x-show="categoryRemoval.error" x-text="categoryRemoval.error" class="mt-4 text-red-600" role="alert"></p>
+        <div class="modal-footer mt-6 flex justify-end gap-3">
+            <button type="button" class="btn btn-secondary" :disabled="categoryRemoval.busy" @click="categoryRemoval.open = false">Abbrechen</button>
+            <button type="submit" class="btn btn-danger" :disabled="categoryRemoval.busy" x-text="categoryRemoval.busy ? 'Wird geprüft …' : 'Kategorie entfernen'"></button>
+        </div>
+    </form>
+</div>

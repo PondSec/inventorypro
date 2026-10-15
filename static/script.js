@@ -1,6 +1,37 @@
 document.addEventListener('alpine:init', () => {
     Alpine.data('app', () => ({
         // State
+        categoryRemoval: { open: false, kind: 'device', id: null, target: '', error: '', busy: false },
+        openCategoryRemoval(kind, id) {
+            this.categoryRemoval = { open: true, kind, id, target: '', error: '', busy: false };
+        },
+        categoryRemovalTargets() {
+            const list = this.categoryRemoval.kind === 'device' ? this.categories : this.assetCategories;
+            return list.filter(item => item.id !== this.categoryRemoval.id);
+        },
+        async submitCategoryRemoval() {
+            const removal = this.categoryRemoval;
+            if (removal.busy) return;
+            removal.busy = true;
+            removal.error = '';
+            try {
+                const path = removal.kind === 'device' ? 'categories' : 'asset-categories';
+                const response = await fetch(`/api/${path}/${removal.id}`, {
+                    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(removal.target ? { target_category_id: Number(removal.target) } : {})
+                });
+                const data = await response.json();
+                if (!response.ok) { removal.error = data.error || 'Löschen fehlgeschlagen.'; return; }
+                removal.open = false;
+                this.categoryModalOpen = false;
+                this.assetCategoryModalOpen = false;
+                this.activeCategory = null;
+                this.selectedAssetCategory = null;
+                await Promise.all([this.loadCategories(), this.loadAssetCategories(), this.loadDevices(), this.loadAssets()]);
+                await this.loadActivityFeed();
+            } catch (error) { removal.error = 'Verbindung fehlgeschlagen. Bitte erneut versuchen.'; }
+            finally { removal.busy = false; }
+        },
         categories: [],
         assetCategories: [],
         locations: [],
@@ -888,23 +919,8 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteCategory(categoryId) {
-            if (!confirm('Are you sure you want to delete this category and all its devices?')) {
-                return false;
-            }
-            const response = await fetch(`/api/categories/${categoryId}`, {
-                method: 'DELETE'
-            });
-            if (response.ok) {
-                await this.loadCategories();
-                if (this.activeCategory === categoryId) {
-                    await this.loadDevices();
-                }
-                this.categoryMenuOpen = null; // Menü schließen nach Löschen
-                await this.loadActivityFeed();
-                return true;
-            }
-            const error = await response.json();
-            alert('Error deleting category: ' + (error.error || 'Unknown error'));
+            this.categoryModalOpen = false;
+            this.openCategoryRemoval('device', categoryId);
             return false;
         },
 
@@ -1147,21 +1163,8 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteAssetCategory(categoryId) {
-            if (!confirm('Möchten Sie diese Asset-Kategorie wirklich löschen? Zugeordnete Assets bleiben erhalten.')) {
-                return false;
-            }
-            const response = await fetch(`/api/asset-categories/${categoryId}`, {
-                method: 'DELETE'
-            });
-            if (response.ok) {
-                await this.loadAssetCategories();
-                await this.loadAssets();
-                this.assetCategoryMenuOpen = null;
-                await this.loadActivityFeed();
-                return true;
-            }
-            const error = await response.json();
-            alert('Error deleting asset category: ' + (error.error || 'Unknown error'));
+            this.assetCategoryModalOpen = false;
+            this.openCategoryRemoval('asset', categoryId);
             return false;
         },
 
