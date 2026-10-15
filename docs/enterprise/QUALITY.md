@@ -68,3 +68,20 @@ Keine Safari-/Windows-Installationsabnahme oder pixelbasierte visuelle Baseline-
 Regression behauptet. Gezielt geprüfte Screenshots ersetzen keinen Pixelvergleich.
 Ein nie gestarteter/nicht eingerichteter Updater kann keinen Release automatisch
 installieren; deaktivierte Auto-Updates und Wartungsfenster werden respektiert.
+
+## Zusätzliche Updater-Abnahme und Nutzerinstanz
+
+Nach der Appfreigabe: GitLab-Pipeline 30, Quellstand d34a202, vollständige Regression
+mit **322 Tests und 46 Untertests bestanden** (368 JUnit-Fälle, keine Fehler).
+Neue Fälle decken Compose-Projektzuordnung, lokale unveränderliche Rückfallimages
+und vorübergehend unterbrochene Health-Verbindungen ab.
+
+Isolierter Linux-Docker-Test mit lokal gebauter Legacy-Fixture: erzwungener Rollback
+auf exakte lokale Image-ID, erfolgreiches GitLab-Upgrade sowie weiterer Datenbank-/
+Image-Rollback bestanden. Neuer App-Digest unverändert, Korrektur betrifft Sidecar.
+
+Die vom Nutzer ausdrücklich beauftragte reale Instanz wurde anschließend durch
+ihren Updater auf 0.2.0 aktualisiert. App gesund, Fehlerstatus leer, Datenbank und
+ruhendes Backup integer; bestehende Objektanzahlen erhalten. Ursprüngliche
+Updatepolicy wiederhergestellt. Dies ist eine autorisierte Installation nach
+Abnahme, keine Verwendung produktiver Daten als synthetische Testfixtures.
