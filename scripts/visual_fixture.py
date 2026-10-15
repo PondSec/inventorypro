@@ -36,11 +36,16 @@ def visual_instance(count=1000):
                       ('Raspberry Pi 5','Raspberry Pi'),('Access Point U6','Ubiquiti'),
                       ('UltraSharp 27″','Dell'),('DiskStation DS923+','Synology'),('MX Master 3S','Logitech')]
             for i in range(count):
-                model, brand = models[i % len(models)]
+                model, brand = models[0 if i % 10 < 4 else i % len(models)]
                 db.execute('INSERT INTO devices(name,category_id,serial_number,location_id,specs) VALUES (?,?,?,?,?)',
                     (f'{model} · {i+1:04}',category,f'QA-{i+1:06}',site if i%9 else None,
-                     json.dumps({'Hersteller':brand,'Modell':model,'MPN':f'QA-MODEL-{i%10}',
+                     json.dumps({'Hersteller':brand,'Modell':model,'MPN':'Mac16,12' if brand=='Apple' else f'QA-MODEL-{i%10}',
                                  'RAM':'16 GB','Speicher':'512 GB SSD','Betriebssystem':'QA Linux'})))
+            # The licensed offline starter model supplies genuine photos for
+            # 40% of device records; the remainder exercises typed fallbacks.
+            qa_users=[db.execute('INSERT INTO users(username,password_hash) VALUES (?,?)',(name,application.generate_password_hash(PASSWORD))).lastrowid for name in ['qa-joshua','qa-lisa','qa-marc']]
+            for i,row in enumerate(db.execute('SELECT asset_id FROM asset_legacy_devices ORDER BY device_id').fetchall()):
+                if i % 5 < 3:db.execute("INSERT INTO asset_assignment_history(asset_id,assigned_to_user_id,status) VALUES (?,?,'assigned')",(row[0],qa_users[i%3]))
             for i in range(20):
                 asset=db.execute('INSERT INTO assets(name,category_id,notes,specs) VALUES (?,?,?,?)',
                     (f'Arbeitsplatz-Set {i+1:02}',asset_category,'Synthetische Zusammenstellung',
