@@ -10601,7 +10601,11 @@ def department_detail(department_id):
         db.commit()
         return jsonify({"status": "updated"}), 200
 
-    db.execute('DELETE FROM departments WHERE id = ?', (department_id,))
+    try:
+        db.execute('DELETE FROM departments WHERE id = ?', (department_id,))
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify(error='Abteilung wird noch verwendet. Bitte zuerst die zugehörigen Verknüpfungen lösen.'),409
     log_activity(db, "delete", "department", department_id, {"name": department["name"]})
     db.commit()
     return jsonify({"status": "deleted"}), 200
@@ -10670,7 +10674,11 @@ def team_detail(team_id):
         db.commit()
         return jsonify({"status": "updated"}), 200
 
-    db.execute('DELETE FROM teams WHERE id = ?', (team_id,))
+    try:
+        db.execute('DELETE FROM teams WHERE id = ?', (team_id,))
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify(error='Team wird noch verwendet. Bitte zuerst die zugehörigen Verknüpfungen lösen.'),409
     log_activity(db, "delete", "team", team_id, {"name": team["name"]})
     db.commit()
     return jsonify({"status": "deleted"}), 200
@@ -10747,7 +10755,11 @@ def software_detail(software_id):
         db.commit()
         return jsonify({"status": "updated"}), 200
 
-    db.execute('DELETE FROM software WHERE id = ?', (software_id,))
+    try:
+        db.execute('DELETE FROM software WHERE id = ?', (software_id,))
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify(error='Software wird noch verwendet. Bitte zuerst die zugehörigen Verknüpfungen lösen.'),409
     log_activity(db, "delete", "software", software_id, {"name": software_row["name"]})
     db.commit()
     return jsonify({"status": "deleted"}), 200
