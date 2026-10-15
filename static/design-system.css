@@ -1,0 +1,120 @@
+/* Visual contract shared by every page. Layout values are structural; colors inherit the central theme tokens. */
+:root {
+  --header-height: 56px;
+  --shell-sidebar-width: clamp(224px, var(--sidebar-width), 248px);
+  --sidebar-collapsed-width: 64px;
+  --control-height: 34px;
+  --thumbnail-size: 40px;
+  --detail-width: 400px;
+  --row-height: 52px;
+}
+.ui-icon { width: 18px; height: 18px; flex-shrink: 0; stroke-width: 1.7; }
+.app-body, .auth-body { font-family: var(--font-sans); font-size: var(--font-size-base); line-height: 1.5; }
+.app-body .app-sidebar { width: var(--shell-sidebar-width); padding: 0 12px; gap: 12px; }
+.app-body .app-main--fixed { margin-left: var(--shell-sidebar-width); }
+.app-body .app-header { left: var(--shell-sidebar-width); width: calc(100% - var(--shell-sidebar-width)); height: var(--header-height); min-height: var(--header-height); padding: 0 20px; gap: 20px; backdrop-filter: none; }
+.app-body .app-content { padding: calc(var(--header-height) + 20px) 24px 24px; }
+.app-body .enterprise-page { max-width: none; width: 100%; margin: 0; gap: 16px; }
+.app-body .service-content { padding: var(--header-height) 0 0; }
+.app-body .service-page { gap: 0; }
+.app-body .sidebar-header { min-height: var(--header-height); gap: 10px; }
+.app-body .sidebar-logo { width: 32px; height: 32px; border-radius: 8px; background: var(--color-accent); color: #fff; }
+.app-body .sidebar-title { font-size: 17px; font-weight: 650; }
+.app-body .sidebar-subtitle { display: none; }
+.app-body .sidebar-content { gap: 12px; padding: 4px 0 12px; flex: 1; }
+.app-body .sidebar-panel { padding: 0; }
+.app-body .sidebar-panel-title { font-size: 10px; line-height: 18px; margin: 4px 10px; }
+.app-body .sidebar-link { min-height: 34px; padding: 7px 12px; font-size: 13px; border-radius: 7px; }
+.app-body .sidebar-link-icon { width: 18px; height: 18px; }
+.app-body .sidebar-panel .mt-3 { margin-top: 4px; }
+.app-body .sidebar-link > span { gap: 12px; }
+.app-body .sidebar-link.active { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 600; }
+.header-group { flex: 0 0 auto; }
+.topbar-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.app-body :is(.btn,.sd-button,.icon-button) { min-height: var(--control-height); border-radius: 6px; box-shadow: none; font-size: 13px; line-height: 20px; }
+.app-body :is(.btn,.sd-button) { padding: 6px 12px; font-weight: 600; width: auto; }
+.app-body .icon-button { padding: 6px 8px; }
+.app-body .btn-secondary { background: var(--color-surface); }
+.app-body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select,textarea) { border-radius: 6px; box-shadow: none; color: var(--color-text); background-color: var(--color-surface); font-family: inherit; font-size: 13px; line-height: 20px; }
+.app-body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select) { min-height: var(--control-height); padding: 6px 10px; }
+.app-body :is(input[type=checkbox],input[type=radio]) { width: 15px; height: 15px; accent-color: var(--color-accent); flex-shrink: 0; }
+.app-body textarea { padding: 8px 10px; }
+.app-body label { font-size: 13px; }
+.app-body :is(.workspace-panel,.modal-panel,.sd-modal) { border-radius: 8px; background: var(--color-surface); color: var(--color-text); box-shadow: none; }
+.app-body .workspace-panel { padding: 16px; }
+.app-body :is(.rounded-3xl,.rounded-2xl) { border-radius: 8px; }
+.app-body :is(.shadow-xl,.shadow-2xl) { box-shadow: var(--shadow-lg); }
+.app-body .list-toolbar { gap: 8px; }
+.app-body .list-toolbar label { gap: 4px; }
+.app-body .list-toolbar .input { min-height: var(--control-height); }
+.app-body .list-summary { padding-block: 10px; font-size: 12px; }
+.app-body :is(.data-table,table.responsive-table) { font-size: 13px; }
+.app-body .data-table th { height: 38px; padding: 8px 12px; font-size: 12px; text-transform: none; background: var(--table-header-bg); }
+.app-body .data-table td { height: var(--row-height); padding: 8px 12px; vertical-align: middle; }
+.app-body .data-table td:first-child a { color: var(--color-text); font-weight: 600; }
+.app-body .data-table tbody tr:hover td { background: var(--color-accent-soft); }
+.app-body .status-badge { border-radius: 999px; padding: 3px 10px; font-size: 11px; line-height: 16px; font-weight: 600; color: var(--color-text-muted); background: var(--color-surface-muted); }
+.status-badge[data-tone=success] { color: var(--color-success); background: color-mix(in srgb,var(--color-success) 10%,var(--color-surface)); }
+.status-badge[data-tone=warning] { color: var(--color-warning); background: color-mix(in srgb,var(--color-warning) 10%,var(--color-surface)); }
+.status-badge[data-tone=danger] { color: var(--color-danger); background: color-mix(in srgb,var(--color-danger) 10%,var(--color-surface)); }
+.status-badge[data-tone=info] { color: var(--color-info); background: color-mix(in srgb,var(--color-info) 10%,var(--color-surface)); }
+.page-heading { display: flex; align-items: center; gap: 16px; justify-content: space-between; min-width: 0; }
+.page-heading__copy { min-width: 0; }
+.page-crumbs { display: flex; flex-wrap: wrap; gap: 10px; color: var(--color-text-muted); font-size: 12px; margin-bottom: 5px; }
+.page-heading h1 { font-size: 26px; line-height: 1.25; font-weight: 650; letter-spacing: -.02em; margin: 0; overflow-wrap: anywhere; }
+.page-heading p { margin: 4px 0 0; color: var(--color-text-muted); font-size: 13px; }
+.page-heading__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.page-heading__actions:empty { display: none; }
+.global-search { display: flex; align-items: center; gap: 8px; width: min(44vw,554px); margin-inline: auto; border: 1px solid var(--color-border); border-radius: 6px; padding: 0 10px; color: var(--color-text-muted); background: var(--color-bg); }
+.app-body .global-search input { min-width: 0; width: 100%; background: transparent; border: 0; padding: 6px 0; }
+.global-search kbd { font: inherit; font-size: 10px; border: 1px solid var(--color-border); border-radius: 3px; padding: 1px 4px; white-space: nowrap; }
+.theme-control { border: 0; background: transparent; width: 34px; }
+.account-menu { position: relative; }
+.account-menu summary { display: flex; align-items: center; gap: 9px; cursor: pointer; list-style: none; min-height: 36px; }
+.account-menu summary::-webkit-details-marker { display: none; }
+.user-avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; background: var(--color-accent); font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.account-menu__name { font-size: 12px; font-weight: 600; }
+.account-menu__name small { display: block; font-size: 10px; color: var(--color-text-muted); font-weight: 400; }
+.ui-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 50; min-width: 190px; border: 1px solid var(--color-border); border-radius: 8px; padding: 4px; background: var(--color-surface); box-shadow: var(--shadow-md); }
+.ui-menu :is(a,button) { display: flex; align-items: center; gap: 8px; padding: 8px 10px; width: 100%; border: 0; border-radius: 4px; background: transparent; color: var(--color-text); text-align: left; font-size: 13px; }
+.ui-menu :is(a,button):hover { background: var(--color-surface-muted); }
+.app-body .property-list > div { grid-template-columns: minmax(110px,35%) minmax(0,1fr); gap: 12px; padding: 7px 0; font-size: 13px; }
+.app-body .detail-panel h2 { font-size: 16px; margin-bottom: 12px; font-weight: 600; }
+.app-body .object-summary { padding-block: 12px; }
+.app-body .detail-tabs a { padding: 10px 14px; font-size: 13px; border-bottom-width: 2px; }
+.app-body .list-pagination { padding-top: 12px; font-size: 12px; gap: 8px; }
+.app-body.sidebar-collapsed { --shell-sidebar-width: 64px; }
+.app-body.sidebar-collapsed .app-sidebar { width: var(--shell-sidebar-width); }
+.app-body.sidebar-collapsed .app-main--fixed { margin-left: var(--shell-sidebar-width); }
+.app-body.sidebar-collapsed .app-header { left: var(--shell-sidebar-width); width: calc(100% - var(--shell-sidebar-width)); }
+.auth-body { background: var(--color-bg); }
+.auth-body .auth-card { border: 1px solid var(--color-border); border-radius: 10px; box-shadow: var(--shadow-sm); }
+.auth-body .auth-title { font-size: 26px; line-height: 1.25; }
+.auth-body :is(input,button) { border-radius: 6px; }
+@media (max-width: 1024px) {
+  .app-body .app-header,.app-body.sidebar-collapsed .app-header { left: 0; width: 100%; padding-inline: 14px; gap: 10px; }
+  .app-body .app-main--fixed,.app-body.sidebar-collapsed .app-main--fixed { margin-left: 0; }
+  .app-body .app-sidebar { width: 240px; }
+  .app-body .app-content { padding-inline: 16px; }
+  .app-body .service-content { padding-inline: 0; }
+  .account-menu__name,.global-search kbd { display: none; }
+  .global-search { width: auto; flex: 1; min-width: 0; }
+}
+@media (max-width: 640px) {
+  .app-body .app-content { padding: calc(var(--header-height) + 16px) 12px 20px; }
+  .app-body .service-content { padding: var(--header-height) 0 0; }
+  .page-heading { align-items: start; flex-direction: column; gap: 8px; }
+  .page-heading h1 { font-size: 23px; }
+  .topbar-actions { gap: 5px; }
+  .topbar-actions .btn { padding-inline: 8px; font-size: 12px; }
+  .global-search { padding-inline: 7px; }
+  .global-search input { font-size: 12px; }
+  .global-search .ui-icon { display: none; }
+  .account-menu summary > .ui-icon { display: none; }
+}
+.app-body::before,.dark .app-body::before { display: none; }
+.app-body [class*="bg-gradient"] { background-image: none; background-color: var(--color-surface); }
+.page-tabbar { display: flex; align-items: center; gap: 20px; overflow-x: auto; border-bottom: 1px solid var(--color-border); }
+.page-tab { display: inline-flex; align-items: center; gap: 7px; padding: 10px 2px; white-space: nowrap; color: var(--color-text-muted); font-size: 13px; border-bottom: 2px solid transparent; }
+.page-tab.active { border-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
+.page-tab .ui-icon,.page-tab svg { width: 16px; height: 16px; }

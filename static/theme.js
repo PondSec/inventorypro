@@ -336,9 +336,9 @@
     const tableDensity = customization.layoutPrefs.tableDensity;
     const rowHeight = customization.layoutPrefs.rowHeight;
     const densityMap = {
-      compact: 10,
-      normal: 14,
-      comfortable: 18,
+      compact: 6,
+      normal: 8,
+      comfortable: 12,
     };
     const rowPadding = densityMap[tableDensity] || densityMap.normal;
     root.style.setProperty('--table-row-padding', `${rowPadding}px`);

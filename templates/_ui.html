@@ -1,0 +1,17 @@
+{# Shared visual primitives; keep semantic HTML and caller-owned real actions. #}
+{% macro icon(name, class='') -%}<i data-feather="{{ name }}" class="ui-icon {{ class }}" aria-hidden="true"></i>{%- endmacro %}
+{% macro page_header(title, section='', description='', breadcrumbs=[]) -%}
+<header class="page-heading">
+    <div class="page-heading__copy">
+        <nav class="page-crumbs" aria-label="Pfad">
+            {% if breadcrumbs %}{% for item in breadcrumbs %}{% if item.href %}<a href="{{ item.href }}">{{ item.label }}</a>{% else %}<span>{{ item.label }}</span>{% endif %}{% if not loop.last %}<span aria-hidden="true">›</span>{% endif %}{% endfor %}
+            {% else %}<span>{{ section or 'Inventory Pro' }}</span><span aria-hidden="true">›</span><span>{{ title }}</span>{% endif %}
+        </nav>
+        <h1>{{ title }}</h1>{% if description %}<p>{{ description }}</p>{% endif %}
+    </div>
+    <div class="page-heading__actions">{{ caller() if caller is defined else '' }}</div>
+</header>
+{%- endmacro %}
+{% macro status(label, tone='neutral') -%}<span class="status-badge" data-tone="{{ tone }}">{{ label }}</span>{%- endmacro %}
+{% macro section(title, description='') -%}<section class="workspace-panel ui-section"><header><h2>{{ title }}</h2>{% if description %}<p>{{ description }}</p>{% endif %}</header>{{ caller() }}</section>{%- endmacro %}
+{% macro empty_state(title, description='', icon_name='inbox') -%}<div class="empty-state">{{ icon(icon_name) }}<h2>{{ title }}</h2>{% if description %}<p>{{ description }}</p>{% endif %}{{ caller() if caller is defined else '' }}</div>{%- endmacro %}

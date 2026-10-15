@@ -37,3 +37,23 @@
   setup();
   new MutationObserver(setup).observe(document.body, {childList: true, subtree: true, attributes: true, attributeFilter: ['aria-selected']});
 })();
+
+/* Shared shell controls use native semantics and never depend on a framework. */
+(() => {
+  const search = document.querySelector('.global-search input');
+  document.addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && search) {
+      event.preventDefault(); search.focus(); search.select();
+    }
+    if (event.key === 'Escape') {
+      document.querySelectorAll('[data-account-menu][open]').forEach(menu => {
+        menu.open = false; menu.querySelector('summary').focus();
+      });
+    }
+  });
+  document.addEventListener('click', event => {
+    document.querySelectorAll('[data-account-menu][open]').forEach(menu => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+  });
+})();
