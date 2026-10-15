@@ -17,3 +17,5 @@ backups/
 instance/application-secret.key
 .qa-artifacts/
 release-artifacts/
+
+.cache/
