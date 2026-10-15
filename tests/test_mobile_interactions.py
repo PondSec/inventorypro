@@ -323,6 +323,7 @@ class MobileInteractionTestCase(unittest.TestCase):
         page.get_by_role("button", name="Assets verknüpfen").click()
 
         asset_search = page.get_by_role("searchbox", name="Assets durchsuchen")
+        asset_search.wait_for(state="visible")
         self.assertTrue(asset_search.is_visible())
         search_box = asset_search.bounding_box()
         self.assertIsNotNone(search_box)
