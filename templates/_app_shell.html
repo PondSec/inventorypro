@@ -47,6 +47,7 @@
                 {% if can_assets %}{{ render_nav_link('/inventory?kind=asset', 'Sets & Zubehör', 'package', current_path.startswith('/inventory/assets/') or current_path == '/inventory' and request.args.get('kind') == 'asset') }}{% endif %}
                 {% if is_superuser or 'locations.view' in permissions or 'locations.manage' in permissions %}{{ render_nav_link('/locations', 'Standorte', 'map-pin', current_path == '/locations') }}{% endif %}
                 {% if is_superuser or 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}{{ render_nav_link('/?view=taxonomy', 'Vorlagen', 'sliders', current_path == '/' and inventory_view == 'taxonomy') }}{% endif %}
+                {% if can_devices or can_assets or can_settings %}{{ render_nav_link('/inventory/catalog', 'Produktkatalog', 'image', current_path.startswith('/inventory/catalog')) }}{% endif %}
                 {% if can_assets %}{{ render_nav_link('/inventory/planning', 'Lager- und Platzplanung', 'archive', current_path == '/inventory/planning') }}{% endif %}
             {% endcall %}
             {% endif %}

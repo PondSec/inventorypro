@@ -60,6 +60,8 @@ def visual_instance(count=1000):
             db.execute("INSERT INTO vendors(name,contact_name,email) VALUES ('Example IT Partner','QA Kontakt','qa@example.invalid')")
             db.execute("INSERT INTO roadmaps(title,objective,status,owner) VALUES ('Arbeitsplätze erneuern','Synthetische Planung','in_progress','QA Team')")
             db.execute("INSERT INTO services(name,description,owner) VALUES ('Inventory API','Synthetischer Service','QA Team')")
+            from inventorypro.domains.catalog.matching import sync_inventory
+            sync_inventory(db)
             db.commit()
         server = make_server('127.0.0.1',0,application.app,threaded=True)
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()

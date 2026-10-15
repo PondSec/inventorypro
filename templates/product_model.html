@@ -1,0 +1,22 @@
+{% extends 'base_app.html' %}
+{% from '_ui.html' import icon, thumbnail with context %}
+{% set page_title=model.name %}{% set page_section_label='Produktkatalog' %}{% set hide_page_intro=true %}
+{% block page_actions %}<a class="btn btn-secondary" href="/inventory/catalog">Zum Katalog</a>{% endblock %}
+{% block content %}
+<div class="catalog-detail-grid">
+<section class="workspace-panel ui-section"><h2>Modell und Kennungen</h2>
+<form data-catalog-form action="/api/catalog/models/{{ model.id }}" data-method="PUT" method="post" class="catalog-form">
+<input type="hidden" name="expectedUpdatedAt" value="{{ model.updated_at }}">
+{% for key,label,value in [('manufacturer','Hersteller',model.manufacturer),('name','Modell',model.name),('category','Typ',model.category),('source_url','Modellquelle',model.source_url)] %}<label>{{ label }}<input class="input" name="{{ key }}" value="{{ value }}" {% if key in ['manufacturer','name'] %}required{% endif %} {% if not can_manage %}readonly{% endif %}></label>{% endfor %}
+{% for key,label,kind in [('mpn','Herstellerteilenummer (MPN)','mpn'),('modelIdentifier','Modellkennung','model'),('gtin','GTIN / EAN','gtin')] %}<label>{{ label }}<input class="input" name="{{ key }}" value="{{ (model.identifiers | selectattr('kind','equalto',kind) | map(attribute='value') | list | first) | default('') }}" {% if not can_manage %}readonly{% endif %}></label>{% endfor %}
+{% for alias in model.identifiers if alias.kind=='name' %}<input type="hidden" name="alias" value="{{ alias.value }}">{% endfor %}
+<p data-form-status role="status"></p>{% if can_manage %}<button class="btn btn-primary">Änderungen speichern</button>{% endif %}</form>
+</section>
+<section class="workspace-panel ui-section"><h2>Produktbilder</h2><p class="muted">Das erste Bild wird im Inventar verwendet. Eigene Objektfotos haben Vorrang.</p>
+<p role="status" data-image-status></p><div class="catalog-image-list">{% for image in model.images %}<article class="catalog-image-item">{{ thumbnail('component',image.large_url,large=True) }}<div>{% set photo=image %}{% include '_image_credit.html' %}{% if can_manage %}<div class="catalog-image-actions">{% if not loop.first %}<button class="btn btn-secondary" type="button" data-model-image="primary" data-image-id="{{ image.id }}">Als Hauptbild</button>{% else %}<span class="status-badge" data-tone="success">Hauptbild</span>{% endif %}<button class="btn btn-secondary" type="button" data-model-image="remove" data-image-id="{{ image.id }}">Bild entfernen</button></div>{% endif %}</div></article>{% else %}<p>Für dieses Modell ist noch kein Bild hinterlegt.</p>{% endfor %}</div>
+{% if can_manage %}<details class="object-accordion"><summary>Bild hinzufügen</summary><form data-catalog-upload action="/api/catalog/models/{{ model.id }}/images" method="post" enctype="multipart/form-data" class="catalog-form object-accordion__body"><input type="hidden" name="expectedUpdatedAt" value="{{ model.updated_at }}"><label>Bilddatei<input class="input" type="file" name="image" accept="image/jpeg,image/png,image/webp" required></label>{% include '_image_rights.html' %}<p data-form-status role="status"></p><button class="btn btn-primary">Bild speichern</button></form></details>{% endif %}
+</section></div>
+{% if can_manage %}<details class="workspace-panel ui-section"><summary>Modell entfernen</summary><p>Entfernt das Modell und seine Katalogbildzuordnungen. Inventarisierte Geräte, Sets und eigene Objektfotos bleiben erhalten.</p><button class="btn btn-secondary" type="button" data-delete-model>Modell löschen</button><p data-delete-status role="status"></p></details>{% endif %}
+<div data-model-state data-model-id="{{ model.id }}" data-model-version="{{ model.updated_at }}" hidden></div>
+{% endblock %}
+{% block page_scripts %}<script src="/static/product-catalog.js?v=1"></script>{% endblock %}

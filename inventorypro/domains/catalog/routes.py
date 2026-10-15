@@ -1,5 +1,5 @@
 """Authenticated catalog and object-photo APIs; files never expose arbitrary hashes."""
-from flask import Blueprint, abort, jsonify, request, send_file, session
+from flask import Blueprint, abort, jsonify, request, send_file, session, render_template
 from werkzeug.exceptions import RequestEntityTooLarge
 from . import service
 from .matching import sync_inventory
@@ -51,6 +51,24 @@ def build_catalog_blueprint(*,get_db,get_access,user_can,login_required,get_uplo
         response.headers['Cache-Control']='private, no-cache, must-revalidate'
         response.headers['X-Content-Type-Options']='nosniff'
         return response
+    def context():
+        access=get_access(get_db())
+        return dict(username=session.get('username'),permissions=sorted(access['permissions']),is_superuser=access['is_superuser'])
+    @bp.get('/inventory/catalog')
+    @login_required
+    def catalog_page():
+        require_catalog()
+        return render_template('product_catalog.html',catalog=service.list_models(get_db(),request.args.get('q',''),request.args.get('page',1,type=int)),can_manage=user_can('server_settings.manage'),**context())
+    @bp.get('/inventory/catalog/<int:identifier>')
+    @login_required
+    def catalog_detail(identifier):
+        require_catalog()
+        return render_template('product_model.html',model=service.get_model(get_db(),identifier),can_manage=user_can('server_settings.manage'),**context())
+    @bp.get('/inventory/<kind>/<int:identifier>/photo')
+    @login_required
+    def object_photo_page(kind,identifier):
+        require_object(kind,identifier,True)
+        return render_template('object_photo.html',photo=choices(get_db(),get_uploads_dir(),kind,identifier),**context())
     @bp.get('/api/catalog/models')
     @login_required
     def models():
