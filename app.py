@@ -8408,6 +8408,13 @@ def validate_assignment_transition(current_status, action):
 
 def ensure_attachment_entity_access(db, entity_type, entity_id, access):
     if entity_type == "asset":
+        from inventorypro.domains.inventory import assets as canonical_assets
+        if canonical_assets.unified(db):
+            can=lambda key:access['is_superuser'] or key in access['permissions']
+            try:
+                if not canonical_assets.can_access(db,can,entity_id):return None,('Keine Berechtigung',403)
+            except canonical_assets.AssetError:return None,('Asset nicht gefunden',404)
+            return {'id':entity_id},None
         asset = db.execute('SELECT id FROM assets WHERE id = ?', (entity_id,)).fetchone()
         if not asset:
             return None, ("Asset nicht gefunden", 404)

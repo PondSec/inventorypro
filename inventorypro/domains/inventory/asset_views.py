@@ -8,7 +8,7 @@ def load_asset_panel(db,identifier,*,can,access,ticket_visible):
     obj.update(kind='asset',unified=True,icon=fallback_icon(obj['name'],obj.get('category') or '','asset'))
     obj.update(product_identity(obj['specs']))
     obj['detail_url']=f'/inventory/assets/{identifier}';obj['edit_url']=obj['detail_url']+'/edit'
-    obj['can_history']=can('activity.view');obj['can_maintenance']=can('maintenance.view') or can('maintenance.manage')
+    obj['can_history']=can('activity.view') or can('asset.view_history');obj['can_maintenance']=can('maintenance.view') or can('maintenance.manage')
     obj['can_tickets']=can('tickets.view_all') or can('tickets.view_own')
     obj['can_links']=True;obj['can_relations']=True
     obj['links']=[{**item,'kind':'asset'} for item in obj['components']]
@@ -40,12 +40,17 @@ def load_asset_panel(db,identifier,*,can,access,ticket_visible):
         ORDER BY ar.id DESC LIMIT 100''',[identifier,identifier,identifier,*args])]
     legacy=db.execute('SELECT device_id FROM asset_legacy_devices WHERE asset_id=?',(identifier,)).fetchone()
     device_id=legacy[0] if legacy else None
-    obj['tasks']=[];obj['note_entries']=[]
+    obj['tasks']=[];obj['note_entries']=[];obj['tags']=[];obj['software']=[]
     if obj['can_maintenance']:
         obj['tasks']=[{**dict(row),'key':'asset-'+str(row['id'])} for row in db.execute('SELECT * FROM asset_maintenance_tasks WHERE asset_id=? ORDER BY due_date,id',(identifier,))]
         if device_id:obj['tasks'] += [{**dict(row),'key':'legacy-'+str(row['id'])} for row in db.execute('SELECT * FROM maintenance_tasks WHERE device_id=? ORDER BY due_date,id',(device_id,))]
-    obj['note_entries']=[dict(row) for row in db.execute('SELECT note,created_at FROM asset_notes WHERE asset_id=? ORDER BY id DESC LIMIT 100',(identifier,))]
-    if device_id:obj['note_entries'] += [dict(row) for row in db.execute('SELECT note,created_at FROM device_notes WHERE device_id=? ORDER BY id DESC LIMIT 100',(device_id,))]
+    obj['note_entries']=[{**dict(row),'key':'asset-'+str(row['id'])} for row in db.execute('SELECT id,note,created_at FROM asset_notes WHERE asset_id=? ORDER BY id DESC LIMIT 100',(identifier,))]
+    if device_id:obj['note_entries'] += [{**dict(row),'key':'legacy-'+str(row['id'])} for row in db.execute('SELECT id,note,created_at FROM device_notes WHERE device_id=? ORDER BY id DESC LIMIT 100',(device_id,))]
+    obj['tags']=[{**dict(row),'key':'asset-'+str(row['id'])} for row in db.execute('SELECT * FROM asset_tags WHERE asset_id=? ORDER BY id DESC',(identifier,))]
+    if device_id:obj['tags'] += [{**dict(row),'key':'legacy-'+str(row['id'])} for row in db.execute('SELECT * FROM device_tags WHERE device_id=? ORDER BY id DESC',(device_id,))]
+    if can('software.view') or can('software.manage'):
+        obj['software']=[dict(row) for row in db.execute('''SELECT si.*,s.name FROM software_installations si JOIN software s ON s.id=si.software_id
+            WHERE si.asset_id=? OR si.device_id=? ORDER BY s.name,si.id''',(identifier,device_id))]
     obj['tickets']=[]
     if obj['can_tickets']:
         for row in db.execute('SELECT DISTINCT t.* FROM tickets t JOIN ticket_assets ta ON ta.ticket_id=t.id WHERE ta.asset_id=? ORDER BY t.updated_at DESC,t.id DESC',(identifier,)):
@@ -53,7 +58,12 @@ def load_asset_panel(db,identifier,*,can,access,ticket_visible):
             if ticket_visible(ticket,access):obj['tickets'].append({key:ticket.get(key) for key in ['id','title','status','priority','due_date']})
             if len(obj['tickets'])>=100:break
     obj['history']=[]
-    if obj['can_history']:
+    obj['assignment_history']=[]
+    if can('asset.view_history'):
+        obj['assignment_history']=[dict(row) for row in db.execute('''SELECT ah.status,ah.note,ah.due_at,ah.created_at,u.username AS assigned_user,t.name AS assigned_team
+            FROM asset_assignment_history ah LEFT JOIN users u ON u.id=ah.assigned_to_user_id
+            LEFT JOIN teams t ON t.id=ah.assigned_to_team_id WHERE ah.asset_id=? ORDER BY ah.created_at DESC,ah.id DESC LIMIT 100''',(identifier,))]
+    if can('activity.view'):
         obj['history']=[dict(row) for row in db.execute('''SELECT action,username,created_at FROM activity_log
             WHERE (entity_type IN ('asset','asset_entry') AND entity_id=?) OR (entity_type='device' AND entity_id=?)
             ORDER BY id DESC LIMIT 100''',(identifier,device_id))]

@@ -5,10 +5,14 @@
   let revision=Number(detail.dataset.assetRevision),opener,selected=new Map(),queryVersion=0,searchTimer,saving=false;
   const error=detail.querySelector('[data-detail-error]');
   async function api(url,method='GET',payload){
-    const response=await fetch(url,{method,headers:payload ? {'Content-Type':'application/json'} : {},body:payload ? JSON.stringify(payload) : undefined});
+    const response=await fetch(url,{method,headers:payload && !(payload instanceof FormData) ? {'Content-Type':'application/json'} : {},body:payload instanceof FormData ? payload : payload ? JSON.stringify(payload) : undefined});
     if(response.redirected)throw new Error('Ihre Sitzung ist abgelaufen. Bitte erneut anmelden.');
-    const result=await response.json();if(!response.ok)throw new Error(result.error || 'Die Änderung konnte nicht gespeichert werden.');return result;
+    const result=await response.json().catch(()=>({error:'Die Serverantwort konnte nicht gelesen werden. Bitte erneut versuchen.'}));if(!response.ok)throw new Error(result.error || 'Die Änderung konnte nicht gespeichert werden.');return result;
   }
+  const dirtyForms=new Set();
+  detail.addEventListener('input',event=>{const form=event.target.closest('form');if(form)dirtyForms.add(form);});
+  window.addEventListener('beforeunload',event=>{if(dirtyForms.size){event.preventDefault();event.returnValue='';}});
+  function otherChanges(form){return ![...dirtyForms].some(item=>item!==form) || confirm('Weitere Formulare enthalten ungespeicherte Eingaben. Diese beim Speichern verwerfen?');}
   function showError(problem){error.textContent=problem.message;error.hidden=false;}
   function renderSelection(){
     const list=dialog.querySelector('[data-component-selection]');list.replaceChildren();
@@ -54,20 +58,37 @@
     if(!confirm('Zuordnung entfernen? Das enthaltene Asset bleibt im Bestand.'))return;button.disabled=true;
     try{await api(`/api/inventory/assets/${id}/components/${button.dataset.removeComponent}`,'DELETE',{expectedRevision:revision});location.reload();}catch(problem){showError(problem);button.disabled=false;}
   }));
-  detail.querySelectorAll('[data-asset-note],[data-asset-maintenance],[data-asset-assignment]').forEach(form=>{
+  detail.querySelectorAll('[data-asset-note],[data-asset-maintenance],[data-asset-assignment],[data-asset-tag],[data-asset-file],[data-asset-software]').forEach(form=>{
     if(form.matches('[data-asset-assignment]'))api('/api/asset-assignments/options').then(options=>{
       const select=form.querySelector('[data-assignment-target]');
       for(const [type,items] of [['user',options.users],['team',options.teams]])for(const item of items){const option=document.createElement('option');option.value=type+':'+item.id;option.textContent=(type==='team' ? 'Team: ' : '')+(item.username || item.name);select.append(option);}
     }).catch(showError);
     form.addEventListener('submit',async event=>{
-      event.preventDefault();const button=form.querySelector('button');if(button.disabled)return;button.disabled=true;
-      const values=Object.fromEntries(new FormData(form));let url;
+      event.preventDefault();if(!otherChanges(form))return;const button=form.querySelector('button');if(button.disabled)return;button.disabled=true;
+      let values=Object.fromEntries(new FormData(form));let url;
       if(form.matches('[data-asset-note]'))url=`/api/inventory/assets/${id}/notes`;
+      else if(form.matches('[data-asset-tag]'))url=`/api/inventory/assets/${id}/tags`;
+      else if(form.matches('[data-asset-file]')){url='/attachments/upload';values=new FormData(form);values.set('entity_type','asset');values.set('entity_id',String(id));}
+      else if(form.matches('[data-asset-software]')){url='/api/software-installations';values.software_id=Number(values.software_id);values.asset_id=id;}
       else if(form.matches('[data-asset-maintenance]'))url=`/api/inventory/assets/${id}/maintenance`;
       else{url=`/assets/${id}/${values.action}`;const [type,identifier]=(values.target || '').split(':');values.assigned_to_user_id=type==='user' ? Number(identifier) : null;values.assigned_to_team_id=type==='team' ? Number(identifier) : null;if(!values.due_at)delete values.due_at;}
-      try{await api(url,'POST',values);location.reload();}catch(problem){form.querySelector('[data-form-status]').textContent=problem.message;button.disabled=false;}
+      try{await api(url,'POST',values);dirtyForms.clear();location.reload();}catch(problem){form.querySelector('[data-form-status]').textContent=problem.message;button.disabled=false;}
     });
   });
+  detail.querySelectorAll('[data-extra-key]').forEach(button=>button.addEventListener('click',async()=>{
+    if(!otherChanges(null) || !confirm('Eintrag entfernen?'))return;button.disabled=true;
+    try{await api(`/api/inventory/assets/${id}/extras/${button.dataset.extraKind}/${button.dataset.extraKey}`,'DELETE');dirtyForms.clear();location.reload();}catch(problem){showError(problem);button.disabled=false;}
+  }));
+  const files=detail.querySelector('[data-asset-files]');
+  if(files)api(`/attachments?entity_type=asset&entity_id=${id}`).then(items=>{
+    files.replaceChildren();for(const item of items){if(!/^\/attachments\/[1-9][0-9]*\/download$/.test(item.download_url || ''))continue;const li=document.createElement('li'),link=document.createElement('a');link.textContent=item.original_filename;link.href=item.download_url;li.append(link);files.append(li);}if(!items.length)files.textContent='Keine Dateien hochgeladen.';
+  }).catch(showError);
+  const softwareSelect=detail.querySelector('[data-software-options]');
+  if(softwareSelect)api('/api/software').then(items=>{for(const item of items)softwareSelect.append(new Option(item.name+(item.version ? ' · '+item.version : ''),String(item.id)));}).catch(showError);
+  detail.querySelectorAll('[data-remove-software]').forEach(button=>button.addEventListener('click',async()=>{
+    if(!otherChanges(null) || !confirm('Softwarezuordnung entfernen?'))return;button.disabled=true;
+    try{await api('/api/software-installations/'+button.dataset.removeSoftware,'DELETE');dirtyForms.clear();location.reload();}catch(problem){showError(problem);button.disabled=false;}
+  }));
   detail.querySelectorAll('[data-maintenance-key]').forEach(button=>button.addEventListener('click',async()=>{
     button.disabled=true;try{await api(`/api/inventory/assets/${id}/maintenance/${button.dataset.maintenanceKey}`,'PUT',{status:button.dataset.maintenanceStatus});location.reload();}catch(problem){showError(problem);button.disabled=false;}
   }));

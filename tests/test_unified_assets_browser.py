@@ -79,3 +79,25 @@ def test_explicit_asset_delete_uses_shared_action_menu_and_keeps_other_assets(un
     expect(page.get_by_text('Keine passenden Einträge',exact=False)).to_be_visible()
     with inventory_app.app.app_context():assert inventory_app.get_db().execute('SELECT count(*) FROM devices').fetchone()[0]==40
     context.close()
+
+
+def test_asset_tags_shared_file_and_software_remain_operable(unified_live,browser):
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();software=db.execute("INSERT INTO software(name,vendor,version) VALUES ('QA App','QA','1.0')").lastrowid;db.commit()
+    context=browser.new_context();page=context.new_page();sign_in(page,unified_live)
+    identifier=new_asset(page,unified_live,'QA extras asset')
+    page.locator('summary').filter(has_text='Tags').click()
+    page.get_by_label('Neuer Tag',exact=True).fill('QA hardware')
+    page.get_by_role('button',name='Tag hinzufügen',exact=True).click()
+    page.locator('summary').filter(has_text='Tags').click();expect(page.get_by_text('QA hardware',exact=True)).to_be_visible()
+    page.locator('summary').filter(has_text='Dateien').click()
+    page.get_by_label('Datei',exact=True).set_input_files({'name':'qa.txt','mimeType':'text/plain','buffer':b'QA file across clients'})
+    page.get_by_role('button',name='Datei hochladen',exact=True).click()
+    page.locator('summary').filter(has_text='Dateien').click();expect(page.get_by_role('link',name='qa.txt',exact=True)).to_be_visible()
+    file_url=page.get_by_role('link',name='qa.txt',exact=True).get_attribute('href')
+    page.locator('summary').filter(has_text='Software').click()
+    page.get_by_label('Software',exact=True).select_option(str(software));page.get_by_label('Installierte Version',exact=True).fill('1.0')
+    page.get_by_role('button',name='Software zuordnen',exact=True).click()
+    page.locator('summary').filter(has_text='Software').click();expect(page.get_by_text('QA App',exact=True)).to_be_visible()
+    assert context.request.get(unified_live+file_url).status==200
+    context.close()

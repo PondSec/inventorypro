@@ -97,6 +97,25 @@ def build_assets_blueprint(*,get_db,user_can,get_access,login_required,parse_fie
         if not note:raise assets.AssetError('Bitte eine Notiz eingeben.')
         get_db().execute('INSERT INTO asset_notes(asset_id,note,created_by_user_id) VALUES (?,?,?)',(identifier,note,get_access(get_db())['user']['id']))
         write('note_add',identifier);return jsonify(saved=True),201
+    @bp.post('/api/inventory/assets/<int:identifier>/tags')
+    @login_required
+    def asset_tag(identifier):
+        active();assets.require(get_db(),user_can,identifier,write=True)
+        tag=assets._text(data().get('tag'),'Tag',120)
+        if not tag:raise assets.AssetError('Bitte einen Tag eingeben.')
+        get_db().execute('INSERT INTO asset_tags(asset_id,tag) VALUES (?,?)',(identifier,tag))
+        write('tag_add',identifier);return jsonify(saved=True),201
+    @bp.delete('/api/inventory/assets/<int:identifier>/extras/<kind>/<key>')
+    @login_required
+    def asset_extra_remove(identifier,kind,key):
+        active();assets.require(get_db(),user_can,identifier,write=True)
+        match=re.fullmatch(r'(legacy|asset)-([1-9]\d*)',key)
+        if not match or kind not in {'tag','note'}:raise assets.AssetError('Ungültiger Eintrag.')
+        table=('asset_tags' if kind=='tag' else 'asset_notes') if match[1]=='asset' else ('device_tags' if kind=='tag' else 'device_notes')
+        if match[1]=='asset':result=get_db().execute(f'DELETE FROM {table} WHERE id=? AND asset_id=?',(int(match[2]),identifier))
+        else:result=get_db().execute(f'DELETE FROM {table} WHERE id=? AND device_id IN (SELECT device_id FROM asset_legacy_devices WHERE asset_id=?)',(int(match[2]),identifier))
+        if not result.rowcount:raise assets.AssetError('Der Eintrag existiert nicht mehr.',404)
+        write(kind+'_remove',identifier);return jsonify(deleted=True)
     @bp.post('/api/inventory/assets/<int:identifier>/maintenance')
     @login_required
     def asset_maintenance(identifier):

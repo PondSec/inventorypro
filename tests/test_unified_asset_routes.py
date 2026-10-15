@@ -118,3 +118,31 @@ def test_unknown_legacy_reference_rolls_back_owned_cleanup_and_mapping(unified_c
         assert db.execute('SELECT 1 FROM device_notes WHERE note=?',('QA keep after blocked delete',)).fetchone()
         assert db.execute('SELECT count(*) FROM assets').fetchone()[0]==40
         assert not db.execute('PRAGMA foreign_key_check').fetchall()
+
+
+def test_tags_notes_and_files_keep_scoped_access_after_conversion(unified_client):
+    from io import BytesIO
+    from test_product_catalog_routes import role
+    client=unified_client
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();identifier=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=1').fetchone()[0]
+        old=db.execute("INSERT INTO device_tags(device_id,tag) VALUES (1,'QA legacy tag')").lastrowid;db.commit()
+    assert client.post(f'/api/inventory/assets/{identifier}/tags',json={'tag':'QA new tag'}).status_code==201
+    assert client.delete(f'/api/inventory/assets/{identifier}/extras/tag/legacy-{old}').status_code==200
+    uploaded=client.post('/attachments/upload',data={'entity_type':'asset','entity_id':str(identifier),'file':(BytesIO(b'QA shared file'),'qa.txt','text/plain')})
+    assert uploaded.status_code==201
+    url=uploaded.json['download_url']
+    assert client.get(url).data==b'QA shared file'
+    role(client,'file-converted-reader',['devices.view','attachment.download'])
+    assert client.get(url).status_code==200
+    role(client,'file-original-reader',['assets.view','attachment.download'])
+    assert client.get(url).status_code==403
+
+
+def test_legacy_mutation_guard_cannot_bypass_csrf_or_mfa(unified_client,monkeypatch):
+    client=unified_client;monkeypatch.setitem(inventory_app.app.config,'TESTING',False)
+    assert client.delete('/api/devices/1').status_code==403
+    token=client.get('/api/csrf-token').json['csrfToken']
+    with client.session_transaction() as session:session['mfa_required']=True;session['mfa_verified']=False
+    assert client.delete('/api/devices/1',headers={'X-CSRF-Token':token}).status_code==403
+    with inventory_app.app.app_context():assert inventory_app.get_db().execute('SELECT 1 FROM devices WHERE id=1').fetchone()
