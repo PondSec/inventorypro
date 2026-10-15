@@ -42,7 +42,7 @@ Danach ist die Anwendung standardmäßig unter `http://localhost:5000` verfügba
 
 ## Betrieb mit Docker
 
-Der [Compose-Schnellstart](DOCKER_SETUP.md) erzeugt sichere persistente Secrets und zufällige Erstzugangsdaten ohne Standardpasswort.
+Der [Compose-Schnellstart](docs/installation.md) erzeugt sichere persistente Secrets und zufällige Erstzugangsdaten ohne Standardpasswort.
 
 ```bash
 docker compose up -d --build app
@@ -93,3 +93,5 @@ Inventory Pro steht unter der [GNU Affero General Public License v3.0](https://w
 
 PondSec · [joshua@pondsec.com](mailto:joshua@pondsec.com)
 Stand: Juli 2026
+
+Die weitere Projekt- und Betriebsdokumentation steht im [Dokumentationsverzeichnis](docs/INDEX.md).

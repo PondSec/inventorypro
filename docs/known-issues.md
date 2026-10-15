@@ -1,15 +1,18 @@
 # Verifizierte Einschränkungen
 
-Stand 2026-10-15: Python- und Browserprüfungen sowie Docker-Build und isolierter
-Compose-Start wurden ausgeführt; aktuelle Zahlen stehen in
-[PROGRESS.md](docs/enterprise/PROGRESS.md).
+Stand 15.10.2026. Die tatsächlich ausgeführten Prüfungen und Umgebungen stehen im
 
-- Windows/PowerShell, Linux-Host und weitere Browserplattformen noch nicht geprüft.
-- Keine vollständige WCAG-2.2-AA-Abnahme und keine freigegebene Pixelbaseline.
-- Signierte Releaseveröffentlichung, tatsächliche GitLab-Registry und dauerhafter
-  GitHub/GHCR-Kompatibilitätsspiegel erfordern geschützte Infrastrukturvariablen.
-  Es wurde kein Release veröffentlicht und kein Produktionsdeployment ausgeführt.
-- Ausgelieferte alte Sidecars tauschen sich nicht selbst aus. Bestandskunden können
-  ohne Handarbeit weiter aktualisieren, sofern der kompatible Feed gepflegt wird.
-- Im ursprünglichen Workspace sind Dateien durch iCloud ausgelagert. Aktiver
-  Checkout: /Users/pond/.codex/workspaces/inventorypro-enterprise, Branch dev.
+- Release 0.2.0 ist auf GitLab und im kompatiblen GitHub-Feed veröffentlicht.
+  Anonyme Registry-/Paketdownloads und beide aktiven Signaturen sind geprüft.
+- Linux-/macOS-Dockerinstallation geprüft; keine Windows-/Safari-Abnahme,
+  vollständige WCAG-Zertifizierung oder freigegebene Pixelbaseline behauptet.
+- Gemischter Host-/Guest-SQLite-Zugriff auf Mac-Bindmounts ist nicht freigegeben.
+  Reguläre Compose-Datenvolumes und Rollback innerhalb Docker sind geprüft.
+- Alte Sidecars tauschen sich nicht selbst aus; der dauerhaft gepflegte Legacy-
+  Feed liefert ihnen weiterhin dieselben freigegebenen GitLab-Versionen.
+- Ein nie gestarteter/nicht eingerichteter Updater kann kein Update automatisch
+  abholen. Ausgeschaltete Auto-Updates und Wartungsfenster werden respektiert.
+- Neue Updater unterstützen auch lokale Docker-Image-IDs als sichere Rückfallziele.
+  Bereits ausgelieferte alte Sidecars besitzen diese zusätzliche Unterstützung nicht.
+- Einzelne umfangreiche Legacy-Verwaltungsdialoge bleiben für bestehende Funktionen
+  erreichbar; eine vollständige Ablösung sämtlicher Dialoge wird nicht behauptet.

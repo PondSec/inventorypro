@@ -1,6 +1,6 @@
 # Bedienmuster
 
-Die verbindlichen Komponenten und Quellen stehen in [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md).
+Die verbindlichen Komponenten und Quellen stehen in [DESIGN_SYSTEM.md](design-system.md).
 
 ## Bestand durchsuchen und bearbeiten
 
@@ -32,7 +32,7 @@ pro Seite. Sichtbare Auswahlchips und „Nur ausgewählte“ erlauben die Kontro
 Behälter/Lagerplatz → Maße/Einheit → Gegenstände/Mengen → Rotation/Abstände →
 Packliste und 2D-Vorschau. Erkanntes Feldmapping bleibt kontrollierbar. 3D ist
 optional. Heuristiken versprechen keine optimale oder physikalisch garantierte
-Lösung. Details: [STORAGE-PLANNING.md](docs/enterprise/STORAGE-PLANNING.md).
+Lösung. Details: [STORAGE-PLANNING.md](enterprise/STORAGE-PLANNING.md).
 
 ## Gefährliche Aktionen und Speichern
 

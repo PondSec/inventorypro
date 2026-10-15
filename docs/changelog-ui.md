@@ -22,7 +22,7 @@ Prüfungen und Grenzen: docs/enterprise/QUALITY.md und PROGRESS.md.
 2. Neues App-Shell Layout (Sidebar + Topbar + Content).
 3. Komponentenbibliothek (Buttons, Inputs, Cards, Panels, Tables, Modals).
 4. Alle Views auf neue Layout- und Komponenten-Styles umstellen.
-5. Dokumentation in DESIGN_SYSTEM.md + UI_PATTERNS.md.
+5. Dokumentation in design-system.md + ui-patterns.md.
 
 ### Betroffene Dateien
 - `static/style.css`
@@ -38,9 +38,9 @@ Prüfungen und Grenzen: docs/enterprise/QUALITY.md und PROGRESS.md.
 - `templates/login.html`
 - `templates/reset_password.html`
 - `templates/verify_otp.html`
-- `DESIGN_SYSTEM.md`
-- `UI_PATTERNS.md`
-- `CHANGELOG_UI.md`
+- `design-system.md`
+- `ui-patterns.md`
+- `changelog-ui.md`
 
 ## Phase 2 Umsetzung
 - **App Shell:** Einheitliche Sidebar, Topbar, Content-Abstände (alle App-Seiten).

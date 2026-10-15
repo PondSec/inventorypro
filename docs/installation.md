@@ -77,7 +77,7 @@ keine externe Sicherung. Restore zuerst isoliert prüfen.
 Keine Neuinstallation und keine Umstellung vorhandener Mounts vornehmen. Der alte
 Updater erhält freigegebene Versionen weiterhin über den kompatiblen Releasefeed.
 Neue Updater lesen das signierte Manifest bei GitLab. Einzelheiten und die
-betrieblichen Veröffentlichungsanforderungen: [Updatekompatibilität](docs/enterprise/UPDATE-COMPATIBILITY.md).
+betrieblichen Veröffentlichungsanforderungen: [Updatekompatibilität](enterprise/UPDATE-COMPATIBILITY.md).
 Automatische Updates lassen sich in Einstellungen → Server ein- und ausschalten.
 Der Sidecar muss bereits eingerichtet sein; ein Schalter allein installiert keinen
 privilegierten Docker-Dienst.
