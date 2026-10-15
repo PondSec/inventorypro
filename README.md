@@ -1,6 +1,6 @@
 # Inventory Pro
 
-Enterprise-Inventarisierung und Service-Management für Teams, die Geräte, Assets, Standorte, Beschaffung und Supportvorgänge in einem nachvollziehbaren System steuern wollen.
+Enterprise-Inventarisierung und Service-Management für Teams, die Assets, Standorte, Beschaffung und Supportvorgänge in einem nachvollziehbaren System steuern wollen.
 
 ![Inventory Pro Dashboard](docs/images/inventory-pro-dashboard.png)
 
@@ -8,13 +8,17 @@ Enterprise-Inventarisierung und Service-Management für Teams, die Geräte, Asse
 
 ## Was Inventory Pro verbindet
 
-- **Inventar und Lifecycle:** Geräte, Asset-Einträge, Kategorien, Standorte, Zuweisungen, Komponenten, Garantie- und Beschaffungsdaten.
+- **Inventar und Lebenszyklus:** Ein gemeinsamer Assetbestand mit Asset-Kategorien, Standorten, Zuweisungen, verschachtelten Assets und Mengen sowie Garantie- und Beschaffungsdaten. Bestehende Geräte werden beim Update mit privater Sicherung übernommen.
 - **Service Desk:** Tickets mit SLA, Prioritäten, Anhängen, Watchern, Kommentaren, Aktivitäten und nachvollziehbaren Statuswechseln.
 - **Wissensgestützte Bearbeitung:** Direkt im Ticket erscheinen passende Wissensartikel und vergleichbare, bereits gelöste Fälle – immer innerhalb der jeweiligen Berechtigung.
 - **Kontrollierte Änderungen:** Zu jedem Change wird ein Review geführt. Ein Change kann erst gelöst oder geschlossen werden, wenn das zugehörige Review abgenommen wurde.
-- **Operative Übersicht:** Das Workflow-Cockpit macht fehlende Beziehungen, Service-Risiken, Lifecycle-Lücken und nächste Arbeitszüge sichtbar.
-- **Standortbezogene Arbeit:** Ein Standort führt direkt zu der auf ihn gefilterten Geräteansicht.
+- **Operative Übersicht:** Der Bestand zeigt fehlende Angaben, Zuweisungen und anstehende Wartungen mit direkt gefilterten Arbeitslisten.
+- **Standortbezogene Arbeit:** Ein Standort führt direkt zu der auf ihn gefilterten Assetansicht.
 - **Sichere Instanzverknüpfung:** Verknüpfte Inventory-Pro-Instanzen bleiben getrennt. Die Zielinstanz liefert nur die Daten, für die der angemeldete Benutzer dort berechtigt ist.
+
+## Produktbilder
+
+Der [Produktkatalog](docs/product-images.md) ordnet geprüfte Modellbilder zu, enthält ein lizenziertes MacBook-Air-M4-Starterbild und kann nach Aktivierung passende Bilder aus Wikidata/Wikimedia Commons lokal zwischenspeichern. Eigene Fotos werden serverseitig gespeichert und sind auf allen berechtigten Clients sichtbar. Ohne passenden Treffer erscheinen einheitliche Typ-Symbole.
 
 ## Sicherheitsmodell
 
@@ -62,7 +66,7 @@ Wichtige Konfigurationen:
 
 ## Signierte automatische Updates
 
-Automatische Updates sind standardmäßig ausgeschaltet. Nach bewusstem Aktivieren in **Einstellungen → Server → Automatische Updates** prüft ein separater Updater nur den stabilen Release-Kanal. Neue Sidecars lesen signierte Release-Manifeste bei GitLab und prüfen unveränderliche Container-Digests. Vorhandene Sidecars bleiben über einen kompatiblen GitHub/GHCR-Spiegel versorgt; siehe [Updatekompatibilität](docs/enterprise/UPDATE-COMPATIBILITY.md).
+Automatische Updates sind standardmäßig ausgeschaltet. Nach bewusstem Aktivieren in **Einstellungen → Server → Updates → Automatische Updates** prüft ein separater Updater nur den stabilen Release-Kanal. Neue Sidecars lesen signierte Release-Manifeste bei GitLab und prüfen unveränderliche Container-Digests. Vorhandene Sidecars bleiben über einen kompatiblen GitHub/GHCR-Spiegel versorgt; siehe [Updatekompatibilität](docs/enterprise/UPDATE-COMPATIBILITY.md).
 
 Vor einem Update erstellt der Updater ein lokales SQLite-Backup und prüft dessen Integrität. Nach dem Rollout wartet er auf den Health-Check. Schlägt ein Schritt fehl, bleibt die laufende Version erhalten oder wird auf das vorherige Image zurückgesetzt. Die Instanzdaten verlassen dabei zu keinem Zeitpunkt den Server.
 
@@ -85,13 +89,13 @@ Die Tests decken unter anderem Rollen- und Sicherheitsgrenzen, Ticket- und Revie
 
 ## Releases
 
-Jeder Push nach `main` startet die Release-Pipeline. Sie baut ein unveränderliches GHCR-Image, erstellt ein Ed25519-signiertes Update-Manifest und veröffentlicht ein GitHub Release inklusive Deployment-Archiv. Der private Signaturschlüssel liegt ausschließlich als GitHub-Secret `INVENTORY_UPDATE_SIGNING_KEY` vor.
+Ein ausdrücklich versionierter Releaseauftrag auf `dev` startet die vorhandene Vorbereitungspipeline. Sie prüft den Quellstand gegen GitLab, führt die Regression aus, baut das Multiarch-Image und signiert beide Update-Manifeste mit dem bereits ausgelieferten Schlüssel. Zunächst entsteht ein Entwurf. Nach Image-, Upgrade- und Rollbackabnahme werden GitLab-Stable und der kompatible GitHub-Feed freigegeben. Gewöhnliche Commits und ein Merge nach `main` veröffentlichen kein ungeprüftes Update. Der private Signaturschlüssel bleibt ausschließlich im bestehenden Actions-Secret `INVENTORY_UPDATE_SIGNING_KEY`.
 
 ## Lizenz und Kontakt
 
 Inventory Pro steht unter der [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.de.html). Für eine kommerzielle Nutzung ohne Offenlegungspflicht kann eine separate Lizenz vereinbart werden.
 
 PondSec · [joshua@pondsec.com](mailto:joshua@pondsec.com)
-Stand: Juli 2026
+Stand: Oktober 2026
 
 Die weitere Projekt- und Betriebsdokumentation steht im [Dokumentationsverzeichnis](docs/INDEX.md).

@@ -28,6 +28,7 @@ Startbereich. Objektbezeichnungen bleiben Links zur eigenen Detailseite.
 Systemschrift mit Inter/Segoe-UI-Fallback, Grundschrift 14 px, Tabellen 13 px,
 Metadaten 11–13 px, Seitentitel 26 px. Abstandsskala 4/8/12/16/20/24/32/40/48/64 px.
 Standardradien: 4/6/8 px; Buttons und Eingaben 6 px, Panels und Dialoge 8 px.
+Tabellenzeilen 44 px, Produktminiaturen 40 px, Kontrollen 34 px.
 Akzent Blau kennzeichnet Auswahl/primäre Aktion; Status immer zusätzlich als Text.
 Flächen, Text, Rahmen und Fokus beziehen ihre Farben aus semantischen Tokens,
 keine neue lokale Palette in einzelnen Modulen.
@@ -66,7 +67,10 @@ benannten Containers horizontal scrollen, die gesamte Seite soll nicht überlauf
 Speicherfehler erhalten Eingaben, Meldungen erscheinen am Formular, doppelte
 Speicherung wird verhindert. Ungespeicherte Geräte-/Komponentenänderungen werden
 vor Verwerfen geschützt. Umfangreiche Bearbeitung gehört auf eine Detailseite;
-Legacy-Managementdialoge bleiben während der inkrementellen Migration erreichbar.
+Für Assets sind Erfassung und Bearbeitung eigene Seiten; kurze Inhalts- und
+Beziehungsauswahl verwendet denselben suchbaren Dialog. Standorte öffnen einen
+kompakten Dialog; Einstellungen teilen einen gemeinsamen Formularzustand und
+eine erreichbare Speicherleiste.
 
 Tatsächliche Prüfungen und Grenzen stehen in `docs/enterprise/QUALITY.md`;
 keine pauschale WCAG-Zertifizierung aus diesen Gestaltungsregeln ableiten.
