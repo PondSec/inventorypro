@@ -1,21 +1,7 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2FA Verifizierung | Inventory Pro</title>
-    <script src="/static/theme.js"></script>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body class="auth-body">
-    <div class="auth-topbar">
-        <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="theme-toggle">
-            <span data-theme-icon aria-hidden="true">🌙</span>
-            <span data-theme-label>Dark Mode</span>
-        </button>
-    </div>
-
-    <div class="auth-card">
+{% extends 'base_auth.html' %}
+{% block title %}2FA Verifizierung | Inventory Pro{% endblock %}
+{% block auth_content %}
+<div class="auth-card">
         <div class="auth-header">
             <div class="sidebar-logo" aria-hidden="true" data-brand-logo>
                 <svg xmlns="http://www.w3.org/2000/svg" class="icon-sm" data-brand-logo-icon fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -34,6 +20,7 @@
         {% endif %}
 
         <form method="POST" class="stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="field">
                 <label class="label" for="otp">6-stelliger Code</label>
                 <input type="text" id="otp" name="otp" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" required class="input" placeholder="123456">
@@ -46,5 +33,7 @@
             <a href="/login" class="btn btn-ghost">Zurück zum Login</a>
         </div>
     </div>
-</body>
-</html>
+{% endblock %}
+{% block page_scripts %}
+
+{% endblock %}

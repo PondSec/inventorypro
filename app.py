@@ -1243,7 +1243,7 @@ def validate_settings_payload(payload, partial=False):
         if retention < 1:
             errors["backup.retentionDays"] = "Retention muss mindestens 1 sein."
     notify_email = (backup.get("notifyEmail") or "").strip()
-    if notify_email and not re.match(r'^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$', notify_email):
+    if notify_email and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', notify_email):
         errors["backup.notifyEmail"] = "E-Mail-Adresse ist ungültig."
     if backup.get("encrypt") and not os.environ.get("BACKUP_ENCRYPTION_KEY"):
         errors["backup.encrypt"] = "BACKUP_ENCRYPTION_KEY fehlt. Verschlüsselung kann nicht aktiviert werden."

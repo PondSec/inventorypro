@@ -1,44 +1,24 @@
-<!DOCTYPE html>
-<html lang="de" x-data="serviceDesk()" :class="{ 'sd-detail-open': selectedTicket }">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventory Pro · Service Desk</title>
-    <script src="/static/theme.js?v=inventory-v3-20260724-1"></script>
-    <script src="/static/vendor/alpinejs.min.js" defer></script>
-    <script>
+{% extends 'base_app.html' %}
+{% set page_title = 'Tickets' %}
+{% set page_module = 'tickets' %}
+{% set hide_page_intro = true %}
+{% block title %}Tickets | Inventory Pro{% endblock %}
+{% block html_attrs %}x-data="serviceDesk()" :class="{ 'sd-detail-open': selectedTicket }"{% endblock %}
+{% block body_class %} sd-body{% endblock %}
+{% block app_content_class %} service-content{% endblock %}
+{% block page_class %} service-page{% endblock %}
+{% block body_attrs %}:class="{ 'modal-open': createOpen || assetPickerOpen || saveViewOpen || bulkDialog.open || showShortcuts || filterOpen || mobileQueuesOpen }" @keydown.window="handleShortcut($event)"{% endblock %}
+{% block extra_head %}
+<script>
         window.inventoryPermissions = {{ permissions | tojson }};
         window.inventoryIsSuperuser = {{ is_superuser | tojson }};
         window.inventoryUsername = {{ username | tojson }};
         window.initialTicketId = {{ initial_ticket_id | default(none) | tojson }};
     </script>
-    <link rel="stylesheet" href="/static/style.css?v=service-desk-20260725-4">
-</head>
-<body class="sd-body" :class="{ 'modal-open': createOpen || assetPickerOpen || saveViewOpen || bulkDialog.open || showShortcuts || filterOpen || mobileQueuesOpen }" @keydown.window="handleShortcut($event)">
-    <a class="skip-link" href="#ticket-table">Zur Ticketliste springen</a>
-
-    <div class="sd-shell">
-        <aside class="sd-global-nav" aria-label="Hauptnavigation">
-            <a href="/" class="sd-brand" aria-label="Inventory Pro Startseite">
-                <span class="sd-brand-mark"><i data-feather="box"></i></span>
-                <span class="sd-brand-copy"><strong data-brand-name>Inventory Pro</strong><small>Smart Asset Hub</small></span>
-            </a>
-            <nav class="sd-global-links">
-                <a href="/" aria-label="Übersicht"><i data-feather="grid"></i><span>Übersicht</span></a>
-                <a href="/locations" aria-label="Standorte"><i data-feather="map-pin"></i><span>Standorte</span></a>
-                <a href="/tickets" class="active" aria-current="page" aria-label="Service Desk"><i data-feather="life-buoy"></i><span>Service Desk</span></a>
-                <a href="/knowledge" aria-label="Wissen"><i data-feather="book-open"></i><span>Wissen</span></a>
-                <a href="/roadmap" aria-label="Roadmap"><i data-feather="git-merge"></i><span>Roadmap</span></a>
-                <a href="/dependencies" aria-label="Abhängigkeiten"><i data-feather="share-2"></i><span>Abhängigkeiten</span></a>
-            </nav>
-            <div class="sd-global-footer">
-                <a x-show="canManageTickets()" href="/admin/tickets/categories" aria-label="Ticket-Administration"><i data-feather="settings"></i><span>Ticket-Admin</span></a>
-                <button type="button" @click="openShortcuts()" aria-label="Tastaturkürzel"><i data-feather="command"></i><span>Kürzel</span></button>
-                <form action="/logout" method="post"><button type="submit" aria-label="Abmelden"><i data-feather="log-out"></i><span>Abmelden</span></button></form>
-            </div>
-        </aside>
-
-        <aside class="sd-queues" :class="{ 'is-collapsed': queuesCollapsed }" aria-label="Ticket-Queues">
+{% endblock %}
+{% block content %}
+<div class="ticket-workspace" :class="{ 'queues-collapsed': queuesCollapsed }">
+<aside class="sd-queues" :class="{ 'is-collapsed': queuesCollapsed }" aria-label="Ticket-Queues">
             <div class="sd-queue-heading">
                 <span x-show="!queuesCollapsed">Service Desk</span>
                 <button type="button" @click="queuesCollapsed = !queuesCollapsed" :aria-label="queuesCollapsed ? 'Queues ausklappen' : 'Queues einklappen'">
@@ -65,8 +45,9 @@
             </section>
         </aside>
 
-        <main class="sd-main">
-            <header class="sd-toolbar">
+
+<section class="sd-main" aria-label="Ticketliste">
+<header class="sd-toolbar">
                 <div class="sd-title">
                     <p>Service Desk <span>/</span> <span x-text="activeQueueLabel"></span></p>
                     <div><h1 x-text="activeQueueLabel"></h1><span x-text="loading ? 'Lädt …' : `${pagination.total} Tickets`"></span></div>
@@ -165,8 +146,11 @@
                     </div>
                 </footer>
             </section>
-        </main>
-    </div>
+</section>
+</div>
+{% endblock %}
+{% block overlays %}
+
 
     <div x-show="selectedTicket" x-cloak class="sd-detail-backdrop" @click="closeTicket()"></div>
     <aside x-show="selectedTicket" x-cloak class="sd-detail" aria-label="Ticketdetail">
@@ -451,8 +435,7 @@
     </div>
 
     <div class="sd-toast-region" aria-live="polite"><template x-for="toast in toasts" :key="toast.id"><div class="sd-toast" :class="toast.type"><span class="sd-icon-slot" x-html="iconSvg(toast.type === 'error' ? 'alert-triangle' : 'check-circle')"></span><span x-text="toast.message"></span></div></template></div>
-
-    <script src="/static/vendor/feather.min.js"></script>
-    <script src="/static/tickets.js?v=service-desk-20260725-6"></script>
-</body>
-</html>
+{% endblock %}
+{% block page_scripts %}
+<script src="/static/tickets.js?v=service-desk-20260725-6"></script>
+{% endblock %}

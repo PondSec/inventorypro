@@ -160,7 +160,7 @@ const getFocusableElements = (container) => {
     container.querySelectorAll(
       'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
     )
-  ).filter((el) => !el.hasAttribute('aria-hidden'));
+  ).filter((el) => el.getClientRects().length > 0 && !el.closest('[inert], [aria-hidden="true"]') && getComputedStyle(el).visibility !== 'hidden');
 };
 
 const trapFocus = (event, container) => {

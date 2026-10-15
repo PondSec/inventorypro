@@ -271,7 +271,8 @@ class MobileInteractionTestCase(unittest.TestCase):
         page.wait_for_selector(".sd-detail", state="hidden")
         self.assertFalse(page.evaluate("document.documentElement.classList.contains('sd-detail-open')"))
 
-        page.get_by_role("link", name="Wissen").click()
+        page.click("[data-sidebar-toggle]")
+        page.get_by_role("link", name="Wissensbasis", exact=True).click()
         page.wait_for_url(f"{self.base_url}/knowledge")
         page.click("[data-sidebar-toggle]")
         page.get_by_role("link", name="Benutzer & Rollen").click()

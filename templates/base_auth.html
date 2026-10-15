@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Anmelden | Inventory Pro{% endblock %}</title>
+    <script src="/static/theme.js?v=enterprise-20261015"></script>
+    <script src="/static/csrf.js?v=1"></script>
+    <link rel="stylesheet" href="/static/style.css?v=enterprise-20261015">
+    <link rel="stylesheet" href="/static/enterprise.css?v=20261015-1">
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="auth-body">
+    <a href="#auth-content" class="skip-link">Zum Formular</a>
+    <div class="auth-topbar">
+        <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="theme-toggle">
+            <span data-theme-icon aria-hidden="true">🌙</span><span data-theme-label>Dark Mode</span>
+        </button>
+    </div>
+    <main id="auth-content" tabindex="-1">{% block auth_content %}{% endblock %}</main>
+    {% block page_scripts %}{% endblock %}
+</body>
+</html>

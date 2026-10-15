@@ -1,21 +1,22 @@
-<!DOCTYPE html>
-<html lang="de" x-data="ticketAdmin()">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventory Pro · Ticket-Administration</title>
-    <script src="/static/theme.js"></script>
-    <script src="/static/vendor/alpinejs.min.js" defer></script>
-    <script>
+{% extends 'base_app.html' %}
+{% set page_title = 'Ticketverwaltung' %}
+{% set page_module = 'ticket-admin' %}
+{% set hide_page_intro = true %}
+{% block title %}Ticketverwaltung | Inventory Pro{% endblock %}
+{% block html_attrs %}x-data="ticketAdmin()"{% endblock %}
+{% block body_class %} sd-body ticket-admin-body{% endblock %}
+{% block app_content_class %} service-content{% endblock %}
+{% block page_class %} service-page{% endblock %}
+{% block extra_head %}
+<script>
         window.inventoryPermissions = {{ permissions | tojson }};
         window.inventoryIsSuperuser = {{ is_superuser | tojson }};
         window.ticketAdminSection = {{ section | tojson }};
     </script>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body class="sd-body ticket-admin-body">
-    <div class="ticket-admin-shell">
-        <aside class="ticket-admin-nav" aria-label="Ticket-Administration">
+{% endblock %}
+{% block content %}
+<div class="ticket-admin-shell">
+<aside class="ticket-admin-nav" aria-label="Ticket-Administration">
             <a class="ticket-admin-back" href="/tickets"><i data-feather="arrow-left"></i><span>Zurück zum Service Desk</span></a>
             <div class="ticket-admin-title"><span class="sd-brand-mark"><i data-feather="settings"></i></span><div><strong>Ticket-Administration</strong><small>Konfiguration & Workflows</small></div></div>
             <nav>
@@ -27,8 +28,9 @@
             </nav>
         </aside>
 
-        <main class="ticket-admin-main">
-            <header class="ticket-admin-header">
+
+<section class="ticket-admin-main" aria-label="Ticketkonfiguration">
+<header class="ticket-admin-header">
                 <div><p>Inventory Pro / Ticket-Administration</p><h1 x-text="currentSection.label"></h1><span x-text="currentSection.description"></span></div>
                 <a href="/tickets" class="sd-button"><i data-feather="external-link"></i>Service Desk öffnen</a>
             </header>
@@ -127,8 +129,11 @@
                     <article><i data-feather="settings"></i><div><h3>Administration</h3><p>Kategorien, Alerts und Benachrichtigungen erfordern explizite Verwaltungsrechte.</p></div></article>
                 </div>
             </section>
-        </main>
-    </div>
+</section>
+</div>
+{% endblock %}
+{% block overlays %}
+
 
     <div x-show="categoryModalOpen" x-cloak class="sd-modal-layer">
         <button class="sd-overlay-dismiss" type="button" @click="categoryModalOpen = false" aria-label="Dialog schließen"></button>
@@ -149,10 +154,8 @@
     </div>
 
     <div class="sd-toast-region" aria-live="polite"><template x-for="toast in toasts" :key="toast.id"><div class="sd-toast" :class="toast.type"><i :data-feather="toast.type === 'error' ? 'alert-triangle' : 'check-circle'"></i><span x-text="toast.message"></span></div></template></div>
-
-    <script src="/static/vendor/feather.min.js"></script>
-    <script src="/static/ui.js"></script>
-    <script src="/static/ticket-admin.js"></script>
+{% endblock %}
+{% block page_scripts %}
+<script src="/static/ticket-admin.js"></script>
     <script>document.addEventListener('DOMContentLoaded', () => window.InventoryRefreshIcons?.());</script>
-</body>
-</html>
+{% endblock %}
