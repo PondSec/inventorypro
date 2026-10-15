@@ -10538,6 +10538,16 @@ def roadmap_steps_detail(roadmap_id, step_id):
     db.commit()
     return jsonify({"status": "deleted"}), 200
 
+def validated_reference_id(db,value,table,label):
+    if value in (None,''):return None
+    if isinstance(value,bool) or not isinstance(value,(int,str)) or not str(value).isdigit() or len(str(value))>19 or not 0<int(value)<=9223372036854775807:
+        raise ValueError(f'{label}: Bitte einen gültigen Eintrag auswählen.')
+    identifier=int(value)
+    if not db.execute(f'SELECT 1 FROM {table} WHERE id=?',(identifier,)).fetchone():
+        raise ValueError(f'{label} existiert nicht mehr. Bitte neu auswählen.')
+    return identifier
+
+
 @app.route('/api/departments', methods=['GET', 'POST'])
 @login_required
 def departments():
@@ -10605,7 +10615,8 @@ def teams():
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         name = (data.get('name') or '').strip()
-        department_id = data.get('department_id')
+        try:department_id = validated_reference_id(db,data.get('department_id'),'departments','Abteilung')
+        except ValueError as error:return jsonify(error=str(error)),400
         lead_user = (data.get('lead_user') or '').strip()
         notes = (data.get('notes') or '').strip()
         if not name:
@@ -10644,7 +10655,8 @@ def team_detail(team_id):
     if request.method == 'PUT':
         data = request.get_json() or {}
         name = (data.get('name') or team["name"] or '').strip()
-        department_id = data.get('department_id')
+        try:department_id = validated_reference_id(db,data.get('department_id',team['department_id']),'departments','Abteilung')
+        except ValueError as error:return jsonify(error=str(error)),400
         lead_user = (data.get('lead_user') or team["lead_user"] or '').strip()
         notes = (data.get('notes') or team["notes"] or '').strip()
         if not name:
@@ -10677,7 +10689,8 @@ def software_inventory():
         license_type = (data.get('license_type') or '').strip()
         criticality = (data.get('criticality') or 'medium').strip()
         description = (data.get('description') or '').strip()
-        owner_team_id = data.get('owner_team_id')
+        try:owner_team_id = validated_reference_id(db,data.get('owner_team_id'),'teams','Team')
+        except ValueError as error:return jsonify(error=str(error)),400
         support_contact = (data.get('support_contact') or '').strip()
         if not name:
             return jsonify({"error": "Name ist erforderlich"}), 400
@@ -10720,7 +10733,8 @@ def software_detail(software_id):
         license_type = (data.get('license_type') or software_row["license_type"] or '').strip()
         criticality = (data.get('criticality') or software_row["criticality"] or 'medium').strip()
         description = (data.get('description') or software_row["description"] or '').strip()
-        owner_team_id = data.get('owner_team_id')
+        try:owner_team_id = validated_reference_id(db,data.get('owner_team_id',software_row['owner_team_id']),'teams','Team')
+        except ValueError as error:return jsonify(error=str(error)),400
         support_contact = (data.get('support_contact') or software_row["support_contact"] or '').strip()
         if not name:
             return jsonify({"error": "Name ist erforderlich"}), 400
@@ -10747,11 +10761,13 @@ def software_installations():
             return jsonify({"error": "Keine Berechtigung"}), 403
         data = request.get_json() or {}
         if canonical_assets.unified(db) and not canonical_assets.installation_visible(db,user_can,data):return jsonify(error='Keine Berechtigung für das zugeordnete Asset'),403
-        software_id = data.get('software_id')
-        device_id = data.get('device_id')
-        asset_id = data.get('asset_id')
+        try:
+            software_id = validated_reference_id(db,data.get('software_id'),'software','Software')
+            device_id = validated_reference_id(db,data.get('device_id'),'devices','Gerät')
+            asset_id = validated_reference_id(db,data.get('asset_id'),'assets','Asset')
+        except ValueError as error:return jsonify(error=str(error)),400
         if not software_id or not (device_id or asset_id):
-            return jsonify({"error": "Software sowie Gerät oder Asset sind erforderlich"}), 400
+            return jsonify({"error": "Software und ein zugeordnetes Asset sind erforderlich"}), 400
         installed_version = (data.get('installed_version') or '').strip()
         environment = (data.get('environment') or 'production').strip()
         status = (data.get('status') or 'active').strip()
