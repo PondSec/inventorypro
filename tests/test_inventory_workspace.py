@@ -102,3 +102,30 @@ def test_asset_detail_uses_existing_full_domain_payload(client):
     response=client.get(f'/inventory/assets/{asset_id}')
     assert response.status_code==200
     assert b'QA Component' in response.data
+
+
+def test_dashboard_counts_each_incomplete_device_once_and_links_exact_filter(client):
+    response=client.get('/api/workspace/tasks')
+    assert response.status_code==200
+    task=next(task for task in response.json['tasks'] if task['key']=='identity')
+    assert task['count']==40
+    assert task['url']=='/inventory?kind=device&filter=missing_identity'
+    assert client.get(task['url']).status_code==200
+
+
+def test_task_counts_do_not_leak_other_users_tickets(client):
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db()
+        user_id=db.execute("INSERT INTO users(username,password_hash) VALUES ('own-tickets','unused')").lastrowid
+        role_id=db.execute("INSERT INTO roles(name) VALUES ('Own tickets')").lastrowid
+        db.execute('INSERT INTO user_roles(user_id,role_id) VALUES (?,?)',(user_id,role_id))
+        db.execute("INSERT INTO role_permissions(role_id,permission_id) SELECT ?,id FROM permissions WHERE key='tickets.view_own'",(role_id,))
+        category=db.execute('SELECT id FROM ticket_categories LIMIT 1').fetchone()[0]
+        for owner in ['own-tickets','someone-else']:
+            db.execute("INSERT INTO tickets(title,description,category_id,status,priority,created_by) VALUES ('Synthetic','',?,'open','normal',?)",(category,owner))
+        db.commit()
+    with client.session_transaction() as session:
+        session['username']='own-tickets'
+    tasks=client.get('/api/workspace/tasks').json['tasks']
+    assert {t['key'] for t in tasks}=={'tickets','overdue_tickets'}
+    assert next(t['count'] for t in tasks if t['key']=='tickets')==1

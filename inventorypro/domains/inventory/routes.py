@@ -2,8 +2,8 @@
 import json
 from urllib.parse import urlencode
 
-from flask import Blueprint, abort, redirect, render_template, request, session
-from .service import list_inventory
+from flask import Blueprint, abort, jsonify, redirect, render_template, request, session
+from .service import list_inventory, workspace_tasks
 
 
 def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, load_asset):
@@ -16,6 +16,11 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
     def context():
         access = get_access(get_db())
         return dict(username=session.get('username'), permissions=sorted(access['permissions']), is_superuser=access['is_superuser'])
+
+    @blueprint.get('/api/workspace/tasks')
+    @login_required
+    def tasks():
+        return jsonify({'tasks': workspace_tasks(get_db(), user_can, get_access(get_db()))})
 
     @blueprint.get('/inventory')
     @login_required

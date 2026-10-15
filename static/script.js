@@ -32,6 +32,9 @@ document.addEventListener('alpine:init', () => {
             } catch (error) { removal.error = 'Verbindung fehlgeschlagen. Bitte erneut versuchen.'; }
             finally { removal.busy = false; }
         },
+        dashboardTasks: [],
+        dashboardTasksLoading: true,
+        dashboardTasksError: '',
         categories: [],
         assetCategories: [],
         locations: [],
@@ -231,7 +234,7 @@ document.addEventListener('alpine:init', () => {
             await this.loadPurchaseOrders();
             await this.loadFeatureFlags();
             await this.loadMaintenanceSummary();
-            await this.loadEnterpriseWorkflow();
+            await this.loadDashboardTasks();
             await this.loadActivityFeed();
             await this.checkOTPStatus();
             this.loadIconCatalog();
@@ -364,6 +367,16 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async loadDashboardTasks() {
+            this.dashboardTasksError = '';
+            try {
+                const response = await fetch('/api/workspace/tasks');
+                if (!response.ok) throw new Error('Aufgaben konnten nicht geladen werden.');
+                this.dashboardTasks = (await response.json()).tasks;
+            } catch (error) { this.dashboardTasksError = error.message; }
+            finally { this.dashboardTasksLoading = false; }
+        },
+
         async loadEnterpriseWorkflow() {
             try {
                 const response = await fetch('/api/enterprise/workflow-hub');
@@ -390,7 +403,7 @@ document.addEventListener('alpine:init', () => {
             setInterval(async () => {
                 await this.loadActivityFeed();
                 await this.loadMaintenanceSummary();
-                await this.loadEnterpriseWorkflow();
+                await this.loadDashboardTasks();
             }, 15000);
         },
 

@@ -1,4 +1,6 @@
 {% extends "base_app.html" %}
+{% set page_title = {'overview': 'Dashboard', 'devices': 'Geräte', 'assets': 'Komponenten und Sets', 'taxonomy': 'Vorlagen und Felder'}.get(request.args.get('view', 'overview'), 'Dashboard') %}
+{% set page_section_label = 'Inventar' %}
 
 {% block title %}Inventory Pro{% endblock %}
 {% block html_attrs %}x-data="app()"{% endblock %}
@@ -16,133 +18,23 @@
     </button>
     <div x-show="open" data-testid="dashboard-action-menu" @click.away="open = false" class="topbar-menu" x-transition>
         <button @click="openAddCategoryModal(); open=false" class="topbar-menu__item">Kategorie anlegen</button>
-        <button @click="openAddAssetModal(); open=false" class="topbar-menu__item">Neuer Asset-Eintrag</button>
+        <button @click="openAddAssetModal(); open=false" class="topbar-menu__item">Komponente oder Set erfassen</button>
         <a href="/api/export/devices" class="topbar-menu__item">CSV Export</a>
     </div>
 </div>
 {% endblock %}
 
 {% block content %}
-                    <section class="inventory-workspace-nav">
-                        <div class="inventory-workspace-nav__copy">
-                            <p class="inventory-kicker">Inventory Pro</p>
-                            <h2 x-text="workspaceTitle()"></h2>
-                            <p x-text="workspaceDescription()"></p>
-                        </div>
-                        <nav class="inventory-workspace-tabs" aria-label="Inventar-Arbeitsbereiche">
-                            <button type="button" @click="setWorkspaceView('overview')" :class="workspaceView === 'overview' ? 'active' : ''">
-                                <i data-feather="layout" class="w-4 h-4"></i>
-                                <span>Überblick</span>
-                                <small>Start</small>
-                            </button>
-                            <button type="button" @click="setWorkspaceView('devices')" :class="workspaceView === 'devices' ? 'active' : ''">
-                                <i data-feather="monitor" class="w-4 h-4"></i>
-                                <span>Geräte</span>
-                                <small x-text="`${filteredDevices.length} Treffer`"></small>
-                            </button>
-                            <button type="button" @click="setWorkspaceView('assets')" :class="workspaceView === 'assets' ? 'active' : ''">
-                                <i data-feather="package" class="w-4 h-4"></i>
-                                <span>Assets</span>
-                                <small x-text="`${filteredAssets().length} Einträge`"></small>
-                            </button>
-                            <button type="button" @click="setWorkspaceView('taxonomy')" :class="workspaceView === 'taxonomy' ? 'active' : ''">
-                                <i data-feather="layers" class="w-4 h-4"></i>
-                                <span>Struktur</span>
-                                <small x-text="`${categories.length + assetCategories.length} Profile`"></small>
-                            </button>
-                        </nav>
-                    </section>
-
-                    <section class="inventory-overview" x-show="workspaceView === 'overview'" x-transition>
-                        <div class="inventory-overview__main">
-                            <p class="inventory-kicker">Dashboard</p>
-                            <h3>Schnell weiterarbeiten.</h3>
-                            <p>Suche, Pflege und Struktur sind getrennt. Öffne genau den Bereich, den du gerade brauchst.</p>
-                            <div class="inventory-quick-actions">
-                                <button type="button" @click="setWorkspaceView('devices')" class="inventory-action">
-                                    <span><i data-feather="search" class="w-4 h-4"></i> Geräte finden</span>
-                                    <small>Suchen, filtern, öffnen</small>
-                                </button>
-                                <button type="button" @click="openAddDeviceModal()" class="inventory-action inventory-action--strong">
-                                    <span><i data-feather="plus" class="w-4 h-4"></i> Neues Gerät</span>
-                                    <small>Direkt erfassen</small>
-                                </button>
-                                <button type="button" @click="setWorkspaceView('assets')" class="inventory-action">
-                                    <span><i data-feather="package" class="w-4 h-4"></i> Assets verwalten</span>
-                                    <small>Zuweisung, Komponenten, Lifecycle</small>
-                                </button>
-                                <button type="button" @click="setWorkspaceView('taxonomy')" class="inventory-action">
-                                    <span><i data-feather="layers" class="w-4 h-4"></i> Struktur pflegen</span>
-                                    <small>Kategorien und Felder</small>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="inventory-overview__metrics">
-                            <div>
-                                <span x-text="devices.length"></span>
-                                <small>Geräte</small>
-                            </div>
-                            <div>
-                                <span x-text="assets.length"></span>
-                                <small>Assets</small>
-                            </div>
-                            <div>
-                                <span x-text="maintenanceSummary.open"></span>
-                                <small>Wartungen offen</small>
-                            </div>
-                            <div>
-                                <span x-text="maintenanceSummary.overdue"></span>
-                                <small>Überfällig</small>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="enterprise-workflow-hub" x-show="workspaceView === 'overview'" x-transition aria-label="Enterprise Workflow Cockpit">
-                        <div class="enterprise-workflow-hub__summary">
-                            <div>
-                                <p class="inventory-kicker">Enterprise Cockpit</p>
-                                <h3>Systemzustand und nächste Arbeitszüge</h3>
-                                <p>Bestand, Service, Wartung und Beschaffung in einer operativen Sicht – damit Lücken früh sichtbar und Abläufe einfach bleiben.</p>
-                            </div>
-                            <div class="enterprise-score" aria-label="Datenqualitätswert">
-                                <span x-text="enterpriseWorkflow.score"></span>
-                                <small x-text="enterpriseWorkflow.status_label"></small>
-                            </div>
-                        </div>
-
-                        <div class="enterprise-signal-grid">
-                            <template x-for="signal in enterpriseWorkflow.signals" :key="signal.key">
-                                <a :href="signal.target_url" class="enterprise-signal" :data-severity="signal.severity">
-                                    <span class="enterprise-signal__icon" x-html="renderIconSvg(signal.icon, 'h-4 w-4')"></span>
-                                    <span class="enterprise-signal__body">
-                                        <strong x-text="signal.label"></strong>
-                                        <small x-text="signal.description"></small>
-                                    </span>
-                                    <em x-text="`${signal.value}${signal.unit || ''}`"></em>
-                                </a>
-                            </template>
-                        </div>
-
-                        <div class="enterprise-next-actions">
-                            <div>
-                                <h4>Nächste Arbeitszüge</h4>
-                                <p>Die wichtigsten Lücken zuerst schließen – direkt im passenden Arbeitsbereich.</p>
-                            </div>
-                            <div class="enterprise-action-list">
-                                <template x-for="action in enterpriseWorkflow.next_actions" :key="action.key">
-                                    <a :href="action.target_url" class="enterprise-action-row">
-                                        <span x-html="renderIconSvg(action.icon, 'h-4 w-4')"></span>
-                                        <span>
-                                            <strong x-text="action.title"></strong>
-                                            <small x-text="action.description"></small>
-                                        </span>
-                                        <em x-text="action.count"></em>
-                                    </a>
-                                </template>
-                                <p x-show="enterpriseWorkflow.next_actions.length === 0" class="inventory-empty compact">Keine offenen Arbeitszüge erkannt.</p>
-                            </div>
-                        </div>
-                    </section>
+<section x-show="workspaceView === 'overview'" class="dashboard-workspace" aria-label="Tägliche Aufgaben">
+    <header class="workspace-heading"><h2>Heute zu erledigen</h2><p>Offene Aufgaben aus Inventar, Wartung und Service.</p></header>
+    <div class="workspace-panel">
+        <p x-show="dashboardTasksLoading" role="status">Aufgaben werden geladen …</p>
+        <div x-show="dashboardTasksError" role="alert"><p x-text="dashboardTasksError"></p><button class="btn btn-secondary" @click="loadDashboardTasks()">Erneut versuchen</button></div>
+        <ul class="task-list"><template x-for="task in dashboardTasks" :key="task.key"><li><a :href="task.url"><span class="task-count" :data-severity="task.count ? task.severity : 'good'" x-text="task.count"></span><span><strong x-text="task.label"></strong><small x-text="task.description"></small></span><span aria-hidden="true">→</span></a></li></template></ul>
+        <p x-show="!dashboardTasksLoading && !dashboardTasksError && !dashboardTasks.length">Für Ihre Rolle sind aktuell keine Aufgabenlisten verfügbar.</p>
+    </div>
+    <section class="workspace-panel" x-show="can('activity.view')" aria-label="Letzte Aktivitäten"><h2>Letzte Aktivitäten</h2><ol class="activity-list"><template x-for="(activity, index) in activityFeed" :key="index"><li><time x-text="activity.created_at"></time><strong x-text="activity.username"></strong><span x-text="`${activity.action} · ${activity.entity_type}`"></span></li></template></ol><p x-show="!activityFeed.length">Noch keine Aktivitäten vorhanden.</p></section>
+</section>
 
                     <section id="device-inventory" x-show="workspaceView === 'devices'" x-transition class="inventory-surface scroll-mt-24">
                         <div class="inventory-section-head">

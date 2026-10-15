@@ -130,3 +130,15 @@ def test_inventory_search_detail_and_existing_editor(live_inventory, browser):
     page.get_by_role('link', name='Bearbeiten', exact=True).click()
     expect(page.get_by_test_id('device-modal')).to_be_visible(timeout=15000)
     context.close()
+
+
+def test_dashboard_task_links_open_exact_work_list(live_inventory, browser):
+    context=browser.new_context(viewport={'width':1280,'height':900})
+    page=context.new_page()
+    sign_in(page,live_inventory)
+    task=page.locator('.task-list a').filter(has_text='Inventardaten vervollständigen')
+    expect(task.locator('.task-count')).to_have_text('40')
+    task.click()
+    assert 'filter=missing_identity' in page.url
+    expect(page.locator('.list-summary')).to_contain_text('40 Einträge')
+    context.close()

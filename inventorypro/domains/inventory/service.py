@@ -67,3 +67,33 @@ def list_inventory(db, arguments, *, devices_allowed, assets_allowed):
                       f' ORDER BY {SORTS[sort]} {direction}, kind, id LIMIT ? OFFSET ?',
                       [*parameters, per_page, (state['page'] - 1)*per_page]).fetchall()
     return {'rows': [dict(row) for row in rows], 'total': total, 'pages': pages, **state}
+
+
+def workspace_tasks(db, can, access):
+    """Return exact actionable counts, scoped like the corresponding work lists."""
+    tasks = []
+    def add(key, label, sql, url, description, params=(), severity='attention'):
+        count = db.execute(sql, params).fetchone()[0]
+        tasks.append(dict(key=key, label=label, count=count, url=url, description=description, severity=severity))
+    if can('devices.view') or can('devices.manage'):
+        add('identity', 'Inventardaten vervollständigen',
+            "SELECT count(*) FROM devices WHERE location_id IS NULL OR trim(coalesce(serial_number,''))=''",
+            '/inventory?kind=device&filter=missing_identity', 'Geräte ohne Standort oder Identifikationsnummer')
+    if can('assets.view') or can('assets.manage'):
+        add('lifecycle', 'Beschaffungsdaten ergänzen',
+            "SELECT count(*) FROM assets WHERE trim(coalesce(acquisition_date,''))='' AND trim(coalesce(commissioning_date,''))='' AND trim(coalesce(warranty_end,''))=''",
+            '/inventory?kind=asset&filter=missing_lifecycle', 'Komponenten und Sets ohne Lifecycle-Daten')
+    if can('maintenance.view') or can('maintenance.manage'):
+        add('maintenance', 'Überfällige Wartung',
+            "SELECT count(DISTINCT device_id) FROM maintenance_tasks WHERE status='open' AND date(due_date)<date('now')",
+            '/inventory?kind=device&filter=overdue_maintenance', 'Betroffene Geräte mit offenen, überfälligen Aufgaben', severity='critical')
+    if can('tickets.view_all') or can('tickets.view_own'):
+        scope, params = '', []
+        if not access['is_superuser'] and not can('tickets.view_all'):
+            scope = ' AND (created_by_user_id=? OR (created_by_user_id IS NULL AND created_by=?))'
+            params = [access['user']['id'], access['user']['username']]
+        add('tickets', 'Offene Tickets', "SELECT count(*) FROM tickets WHERE status NOT IN ('closed','resolved')" + scope,
+            '/tickets?queue=all-open', 'Offene Anfragen im eigenen Berechtigungsbereich', params)
+        add('overdue_tickets', 'Überfällige Tickets', "SELECT count(*) FROM tickets WHERE status NOT IN ('closed','resolved') AND date(due_date)<date('now')" + scope,
+            '/tickets?queue=overdue', 'Fällige Anfragen zuerst bearbeiten', params, 'critical')
+    return tasks
