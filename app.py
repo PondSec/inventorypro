@@ -3154,7 +3154,10 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
-        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_category_name ON assets(category_id, name)')
+        model_state_exists=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inventory_model_state'").fetchone()
+        unified_assets=model_state_exists and c.execute('SELECT unified_assets FROM inventory_model_state WHERE id=1').fetchone()[0]
+        if not unified_assets:
+            c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_category_name ON assets(category_id, name)')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS asset_relation_types (
@@ -3196,37 +3199,38 @@ def init_db():
             'SELECT id FROM asset_categories WHERE name = ?',
             ("Assets",),
         ).fetchone()
-        if default_category_row:
+        if default_category_row and not unified_assets:
             db.execute(
                 'UPDATE assets SET category_id = ? WHERE category_id IS NULL',
                 (default_category_row["id"],),
             )
 
-        db.execute('UPDATE asset_devices SET quantity = 1 WHERE quantity IS NULL')
-        duplicate_rows = db.execute('''
-            SELECT asset_id, device_id,
-                   GROUP_CONCAT(id) AS ids,
-                   SUM(COALESCE(quantity, 1)) AS total_quantity
-            FROM asset_devices
-            GROUP BY asset_id, device_id
-            HAVING COUNT(*) > 1
-        ''').fetchall()
-        for row in duplicate_rows:
-            ids = [int(item) for item in row["ids"].split(",") if item]
-            if not ids:
-                continue
-            primary_id = ids[0]
-            db.execute(
-                'UPDATE asset_devices SET quantity = ? WHERE id = ?',
-                (row["total_quantity"], primary_id),
-            )
-            if len(ids) > 1:
-                placeholders = ",".join("?" for _ in ids[1:])
+        if not unified_assets:
+            db.execute('UPDATE asset_devices SET quantity = 1 WHERE quantity IS NULL')
+            duplicate_rows = db.execute('''
+                SELECT asset_id, device_id,
+                       GROUP_CONCAT(id) AS ids,
+                       SUM(COALESCE(quantity, 1)) AS total_quantity
+                FROM asset_devices
+                GROUP BY asset_id, device_id
+                HAVING COUNT(*) > 1
+            ''').fetchall()
+            for row in duplicate_rows:
+                ids = [int(item) for item in row["ids"].split(",") if item]
+                if not ids:
+                    continue
+                primary_id = ids[0]
                 db.execute(
-                    f'DELETE FROM asset_devices WHERE id IN ({placeholders})',
-                    ids[1:],
+                    'UPDATE asset_devices SET quantity = ? WHERE id = ?',
+                    (row["total_quantity"], primary_id),
                 )
-        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_devices_unique ON asset_devices(asset_id, device_id)')
+                if len(ids) > 1:
+                    placeholders = ",".join("?" for _ in ids[1:])
+                    db.execute(
+                        f'DELETE FROM asset_devices WHERE id IN ({placeholders})',
+                        ids[1:],
+                    )
+            c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_devices_unique ON asset_devices(asset_id, device_id)')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS activity_log (
