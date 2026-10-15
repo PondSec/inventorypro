@@ -33,3 +33,25 @@ def test_relations_respect_hidden_targets_and_directional_write_scope(unified_cl
     assert c.delete(f'/api/inventory/assets/{legacy}/relations/{relation}',json={'expectedRevision':current['revision']}).status_code==403
     assert 'QA private' not in c.get(f'/inventory/assets/{legacy}').get_data(as_text=True)
     assert c.get('/api/inventory/relation-types').status_code==200
+
+
+def test_legacy_assignment_is_visible_until_new_history_supersedes_it(unified_client):
+    c=unified_client;a=create(c,'QA retained assignment')
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();db.execute("INSERT INTO asset_assignments(asset_id,user_identifier) VALUES (?,'QA original owner')",(a['id'],));db.commit()
+    result=c.get('/api/inventory/assets?q=QA%20retained%20assignment').json
+    assert result['rows'][0]['assigned_to']=='QA original owner'
+    assert 'QA original owner' in c.get(f"/inventory/assets/{a['id']}?tab=assignment").get_data(as_text=True)
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();db.execute("INSERT INTO asset_assignment_history(asset_id,status) VALUES (?,'unassigned')",(a['id'],));db.commit()
+    assert c.get('/api/inventory/assets?q=QA%20retained%20assignment').json['rows'][0]['assigned_to']==''
+    assert 'QA original owner' not in c.get(f"/inventory/assets/{a['id']}?tab=assignment").get_data(as_text=True)
+
+
+def test_procurement_warranty_worklist_does_not_expose_hidden_converted_assets(unified_client):
+    c=unified_client;a=create(c,'QA private warranty')
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();db.execute("UPDATE assets SET warranty_end=date('now','+10 days') WHERE id=?",(a['id'],));db.commit()
+    assert any(row['name']=='QA private warranty' for row in c.get('/api/procurement/renewals').json['warranties'])
+    role(c,'qa-procurement-device',['procurement.view','devices.view'])
+    assert c.get('/api/procurement/renewals').json['warranties']==[]

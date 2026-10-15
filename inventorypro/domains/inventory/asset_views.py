@@ -18,6 +18,11 @@ def load_asset_panel(db,identifier,*,can,access,ticket_visible):
         LEFT JOIN users u ON u.id=ah.assigned_to_user_id LEFT JOIN teams t ON t.id=ah.assigned_to_team_id
         WHERE ah.asset_id=? ORDER BY ah.created_at DESC,ah.id DESC LIMIT 1''',(identifier,)).fetchone()
     if row and row['status'] in {'assigned','checked_out','transferred'}:obj['assignments']=[dict(row)]
+    if not row:
+        obj['assignments']=[dict(item) for item in db.execute('''SELECT aa.user_identifier AS assigned_user,NULL AS assigned_team,
+            a.name AS asset_name,a.id AS asset_id,NULL AS due_at,'assigned' AS status
+            FROM asset_assignments aa JOIN assets a ON a.id=aa.asset_id
+            WHERE aa.asset_id=? AND coalesce(aa.released_at,'')='' ORDER BY aa.is_primary DESC,aa.assigned_at DESC,aa.id DESC''',(identifier,))]
     predicate,args=assets.scope_predicate(can)
     if not obj['assignments']:
         inherited=db.execute(f'''WITH RECURSIVE parents(id) AS (

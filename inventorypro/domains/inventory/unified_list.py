@@ -30,10 +30,13 @@ def source(*,devices_allowed,assets_allowed):
         descendants(id) AS (SELECT child_asset_id FROM asset_components WHERE parent_asset_id=a.id
         UNION SELECT c.child_asset_id FROM asset_components c JOIN descendants r ON c.parent_asset_id=r.id)
         SELECT id FROM ancestors UNION SELECT id FROM descendants"""
-    def owner(identifier):return f"""SELECT coalesce(u.username,t.name,'') FROM asset_assignment_history ah
+    def owner(identifier):return f"""SELECT CASE WHEN EXISTS(SELECT 1 FROM asset_assignment_history WHERE asset_id={identifier}) THEN
+        (SELECT coalesce(u.username,t.name,'') FROM asset_assignment_history ah
         LEFT JOIN users u ON u.id=ah.assigned_to_user_id LEFT JOIN teams t ON t.id=ah.assigned_to_team_id
         WHERE ah.asset_id={identifier} AND ah.id=(SELECT latest.id FROM asset_assignment_history latest WHERE latest.asset_id={identifier}
-        ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1) AND ah.status IN ('assigned','checked_out','transferred')"""
+        ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1) AND ah.status IN ('assigned','checked_out','transferred'))
+        ELSE (SELECT user_identifier FROM asset_assignments WHERE asset_id={identifier} AND coalesce(released_at,'')=''
+        ORDER BY is_primary DESC,assigned_at DESC,created_at DESC,id DESC LIMIT 1) END"""
     inherited_owner=f"SELECT group_concat(DISTINCT nullif(({owner('p.id')}),'')) FROM assets p WHERE p.id IN ({parents}) AND {parent_scope}"
     inherited_location=f"SELECT group_concat(DISTINCT pl.name) FROM assets p JOIN locations pl ON pl.id=p.location_id WHERE p.id IN ({relatives}) AND {parent_scope}"
     location_ids=f"SELECT group_concat(DISTINCT p.location_id) FROM assets p WHERE p.id IN ({relatives}) AND {parent_scope}"

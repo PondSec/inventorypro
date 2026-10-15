@@ -11306,12 +11306,13 @@ def procurement_renewals():
         entry["days_left"] = (end_date - today).days
         contracts_due.append(entry)
 
-    asset_rows = db.execute('''
+    asset_filter,asset_arguments=canonical_assets.scope_predicate(user_can) if canonical_assets.unified(db) else ('1',[])
+    asset_rows = db.execute(f'''
         SELECT a.id, a.name, a.warranty_end, a.retirement_date, v.name as vendor_name
         FROM assets a
         LEFT JOIN vendors v ON a.vendor_id = v.id
-        WHERE a.warranty_end IS NOT NULL
-    ''').fetchall()
+        WHERE a.warranty_end IS NOT NULL AND {asset_filter}
+    ''',asset_arguments).fetchall()
     warranties_due = []
     for row in asset_rows:
         warranty_end = parse_date(row["warranty_end"])
