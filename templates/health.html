@@ -8,23 +8,21 @@
 <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                     <div class="flex flex-wrap items-center justify-between gap-4">
                         <div>
-                            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Health Overview</p>
-                            <h2 class="text-2xl font-semibold text-slate-900">System- & Service-Health</h2>
                             <div class="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
                                 <span :class="statusBadgeClass(summary.overall_status)" class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold">
                                     <span x-text="summary.overall_status"></span>
                                 </span>
-                                <span x-text="summary.last_updated ? `Letztes Update: ${summary.last_updated}` : 'Noch keine Runs'" class="text-xs"></span>
+                                <span x-text="summary.last_updated ? `Letztes Update: ${summary.last_updated}` : 'Noch keine Prüfläufe'" class="text-xs"></span>
                             </div>
                         </div>
                         <div class="flex items-center gap-3">
                             <button @click="runNow" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-800">
                                 <i data-feather="play" class="h-4 w-4"></i>
-                                Run now
+                                Jetzt prüfen
                             </button>
                             <button @click="refreshAll" class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
                                 <i data-feather="refresh-cw" class="h-4 w-4"></i>
-                                Refresh
+                                Aktualisieren
                             </button>
                         </div>
                     </div>
@@ -118,9 +116,9 @@
                                 <tr>
                                     <th class="px-4 py-3 text-left">Service</th>
                                     <th class="px-4 py-3 text-left">Status</th>
-                                    <th class="px-4 py-3 text-left">Uptime</th>
-                                    <th class="px-4 py-3 text-left">Last Exit</th>
-                                    <th class="px-4 py-3 text-right">Actions</th>
+                                    <th class="px-4 py-3 text-left">Verfügbarkeit</th>
+                                    <th class="px-4 py-3 text-left">Letzter Exit-Code</th>
+                                    <th class="px-4 py-3 text-right">Aktionen</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -200,7 +198,7 @@
                                     <th class="px-4 py-3 text-left">Status</th>
                                     <th class="px-4 py-3 text-left">Opened</th>
                                     <th class="px-4 py-3 text-left">Ack/Mute</th>
-                                    <th class="px-4 py-3 text-right">Actions</th>
+                                    <th class="px-4 py-3 text-right">Aktionen</th>
                                 </tr>
                             </thead>
                             <tbody>
