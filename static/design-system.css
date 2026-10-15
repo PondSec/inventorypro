@@ -29,6 +29,26 @@
 .app-body .sidebar-panel .mt-3 { margin-top: 4px; }
 .app-body .sidebar-link > span { gap: 12px; }
 .app-body .sidebar-link.active { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 600; }
+.sidebar-brand { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.app-body .sidebar-content { gap: 8px; }
+.nav-group { min-width: 0; }
+.nav-group > summary { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 10px 12px; font-size: 14px; font-weight: 500; color: var(--color-text); list-style: none; cursor: pointer; border-radius: 6px; }
+.nav-group > summary::-webkit-details-marker { display: none; }
+.nav-group > summary .sidebar-link-icon { width: 18px; height: 18px; }
+.nav-group > summary .sidebar-link-icon svg { width: 18px; height: 18px; }
+.nav-group > summary:hover { background: var(--color-surface-muted); }
+.nav-group[open] > summary { color: var(--color-accent); }
+.nav-group__chevron { width: 14px; height: 14px; margin-left: auto; }
+.nav-group[open] > summary .nav-group__chevron { transform: rotate(180deg); }
+.app-body .nav-group__items { display: grid; gap: 0; padding: 2px 0 8px; }
+.app-body .nav-group__items .sidebar-link { padding-left: 32px; min-height: 33px; font-size: 12px; }
+.app-body .sidebar-content > .sidebar-link { min-height: 40px; color: var(--color-text); font-size: 14px; font-weight: 500; }
+.sidebar-footer { border-top: 1px solid var(--color-border); padding-block: 12px; margin-top: auto; }
+.sidebar-collapse { display: flex; align-items: center; gap: 12px; padding: 8px 12px; width: 100%; font-size: 12px; color: var(--color-text-muted); border-radius: 6px; }
+.sidebar-collapse:hover { background: var(--color-surface-muted); }
+.sidebar-collapsed :is(.nav-group__chevron,.nav-group__items) { display: none; }
+.app-body.sidebar-collapsed .nav-group > summary { justify-content: center; padding-inline: 0; }
+.app-body.sidebar-collapsed .sidebar-collapse { justify-content: center; padding-inline: 0; }
 .header-group { flex: 0 0 auto; }
 .topbar-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .app-body :is(.btn,.sd-button,.icon-button) { min-height: var(--control-height); border-radius: 6px; box-shadow: none; font-size: 13px; line-height: 20px; }

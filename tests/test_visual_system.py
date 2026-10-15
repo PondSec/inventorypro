@@ -23,3 +23,21 @@ def test_shell_geometry_and_keyboard_controls(live_inventory, browser):
     page.keyboard.press('Escape')
     expect(page.locator('[data-account-menu]')).not_to_have_attribute('open','')
     context.close()
+
+
+def test_module_groups_and_sidebar_footer_are_keyboard_operable(live_inventory, browser):
+    context = browser.new_context(viewport={'width':1440,'height':900})
+    page = context.new_page(); sign_in(page,live_inventory)
+    page.goto(live_inventory+'/inventory')
+    sidebar = page.get_by_label('Hauptnavigation',exact=True)
+    expect(sidebar.get_by_role('link',name='Bestand',exact=True)).to_be_visible()
+    settings = sidebar.locator('.nav-group > summary').filter(has_text='Einstellungen')
+    settings.focus(); page.keyboard.press('Enter')
+    expect(sidebar.get_by_role('link',name='Server & Updates',exact=True)).to_be_visible()
+    sidebar.get_by_role('link',name='Server & Updates',exact=True).click()
+    expect(page.get_by_role('checkbox',name='Automatische Updates aktivieren')).to_be_visible()
+    sidebar.get_by_role('button',name='Menü minimieren oder erweitern').click()
+    expect(page.locator('body')).to_have_class(__import__('re').compile('sidebar-collapsed'))
+    sidebar.locator('.nav-group > summary').filter(has_text='Inventar').click()
+    expect(sidebar.get_by_role('link',name='Bestand',exact=True)).to_be_visible()
+    context.close()

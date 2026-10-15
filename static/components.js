@@ -52,6 +52,9 @@
     }
   });
   document.addEventListener('click', event => {
+    if (event.target.closest('.nav-group > summary') && document.body.classList.contains('sidebar-collapsed')) {
+      document.querySelector('.app-header [data-sidebar-toggle]')?.click();
+    }
     document.querySelectorAll('[data-account-menu][open]').forEach(menu => {
       if (!menu.contains(event.target)) menu.open = false;
     });
