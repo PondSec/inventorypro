@@ -111,7 +111,7 @@ def touch_catalog(db,user_id=None):
                (datetime.now(timezone.utc).isoformat(timespec='microseconds'),user_id))
 
 
-def sync_object(db,kind,object_id,*,force=False,catalog_revision=None,row=None):
+def sync_object(db,kind,object_id,*,force=False,catalog_revision=None,row=None,external=True):
     if kind not in TABLES:raise ValueError('Ungültiger Inventartyp.')
     table,links,key = TABLES[kind]
     source = row if row is not None else db.execute(f'SELECT id,name,specs FROM {table} WHERE id=?',(object_id,)).fetchone()
@@ -124,8 +124,14 @@ def sync_object(db,kind,object_id,*,force=False,catalog_revision=None,row=None):
     identity = identity_from_specs(source['specs'])
     fingerprint = sha256(json.dumps([catalog_revision or revision(db),identity,source['name']],sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     if previous and previous['fingerprint']==fingerprint and not force:
+        if external and not previous['product_id'] and not previous['override_hash']:
+            from .jobs import enqueue
+            enqueue(db,kind,object_id,identity)
         return {'product_id':previous['product_id'],'method':previous['match_method'],'reason':'cached','changed':False}
     match = exact_match(db,identity,source['name'])
+    if external and not match['product_id'] and not (previous and previous['override_hash']):
+        from .jobs import enqueue
+        enqueue(db,kind,object_id,identity)
     db.execute(f'''INSERT INTO {links}({key},product_id,match_method,fingerprint,updated_at) VALUES (?,?,?,?,?)
         ON CONFLICT({key}) DO UPDATE SET product_id=excluded.product_id,match_method=excluded.match_method,
         fingerprint=excluded.fingerprint,updated_at=excluded.updated_at''',(object_id,match['product_id'],match['method'],fingerprint,datetime.now(timezone.utc).isoformat(timespec='microseconds')))
@@ -140,7 +146,7 @@ def sync_inventory(db,*,limit=None,after=None):
         arguments = [(after or {}).get(kind,0)]
         if limit is not None:sql+=' LIMIT ?';arguments.append(min(250,max(1,int(limit))))
         for row in db.execute(sql,arguments):
-            match = sync_object(db,kind,row['id'],catalog_revision=version,row=row)
+            match = sync_object(db,kind,row['id'],catalog_revision=version,row=row,external=False)
             result['processed']+=1;result['matched']+=bool(match['product_id']);result['changed']+=match['changed']
             result['last'][kind] = row['id']
     return result

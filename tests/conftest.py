@@ -26,6 +26,7 @@ def isolated_inventory(tmp_path, monkeypatch):
         'INITIAL_ADMIN_CREDENTIALS_PATH': None,
     }.items():
         monkeypatch.setattr(inventory_app, name, value)
+    monkeypatch.setitem(inventory_app.app.config,'CATALOG_BACKGROUND_ENABLED',False)
     inventory_app.init_db()
     inventory_app.RATE_LIMIT_CACHE.clear()
     with inventory_app.app.app_context():

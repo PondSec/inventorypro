@@ -1,7 +1,7 @@
 """Authenticated catalog and object-photo APIs; files never expose arbitrary hashes."""
-from flask import Blueprint, abort, jsonify, request, send_file, session, render_template
+from flask import Blueprint, abort, jsonify, request, send_file, session, render_template, current_app
 from werkzeug.exceptions import RequestEntityTooLarge
-from . import service
+from . import service, jobs
 from .matching import sync_inventory
 from .media import MediaError, open_media, store_image
 from .objects import choices, change, object_row, resolve
@@ -54,11 +54,33 @@ def build_catalog_blueprint(*,get_db,get_access,user_can,login_required,get_uplo
     def context():
         access=get_access(get_db())
         return dict(username=session.get('username'),permissions=sorted(access['permissions']),is_superuser=access['is_superuser'])
+    @bp.after_app_request
+    def resume_public_lookups(response):
+        if response.status_code<400 and (request.method in {'POST','PUT','PATCH'} or str(request.endpoint or '').startswith('product_catalog.')):
+            jobs.start_worker(current_app._get_current_object(),get_db,get_uploads_dir())
+        return response
+    @bp.get('/api/catalog/external')
+    @login_required
+    def external_status():
+        require_catalog(True);return jsonify(jobs.status(get_db()))
+    @bp.put('/api/catalog/external')
+    @login_required
+    def external_settings():
+        require_catalog(True);limited('write')
+        result=jobs.update_settings(get_db(),payload(),user_id=user_id());commit('source_settings','product_catalog',1)
+        return jsonify(result)
+    @bp.post('/api/catalog/external/queue')
+    @login_required
+    def external_queue():
+        require_catalog(True);limited('public_queue',30);data=payload();after=data.get('after',{})
+        if not isinstance(after,dict) or any(kind not in {'device','asset'} or not isinstance(value,int) or isinstance(value,bool) or value<0 for kind,value in after.items()):
+            raise service.CatalogError('Ungültiger Fortschrittsstand.')
+        result=jobs.enqueue_inventory(get_db(),after=after);get_db().commit();return jsonify(result),202
     @bp.get('/inventory/catalog')
     @login_required
     def catalog_page():
         require_catalog()
-        return render_template('product_catalog.html',catalog=service.list_models(get_db(),request.args.get('q',''),request.args.get('page',1,type=int)),can_manage=user_can('server_settings.manage'),**context())
+        return render_template('product_catalog.html',catalog=service.list_models(get_db(),request.args.get('q',''),request.args.get('page',1,type=int)),can_manage=user_can('server_settings.manage'),external=jobs.status(get_db()) if user_can('server_settings.manage') else None,**context())
     @bp.get('/inventory/catalog/<int:identifier>')
     @login_required
     def catalog_detail(identifier):
