@@ -42,6 +42,7 @@ from email.message import EmailMessage
 import smtplib
 
 from inventorypro.domains.planning.routes import build_planning_blueprint
+from inventorypro.domains.tickets.deletion import delete_ticket as delete_ticket_record, TicketDeletionError
 from inventorypro.domains.catalog.routes import build_catalog_blueprint
 from inventorypro.domains.catalog.seed import initialize_catalog
 from inventorypro.domains.catalog.matching import sync_object as sync_product_object
@@ -12660,13 +12661,17 @@ def ticket_detail(ticket_id):
             "change_ticket_id": review_relation["change_ticket_id"],
             "review_ticket_id": review_relation["review_ticket_id"],
         }), 409
-    db.execute('DELETE FROM ticket_comments WHERE ticket_id = ?', (ticket_id,))
-    db.execute('DELETE FROM ticket_watchers WHERE ticket_id = ?', (ticket_id,))
-    db.execute('DELETE FROM ticket_assets WHERE ticket_id = ?', (ticket_id,))
-    db.execute('DELETE FROM tickets WHERE id = ?', (ticket_id,))
-    log_activity(db, "delete", "ticket", ticket_id)
-    db.commit()
-    return jsonify({"status": "deleted"}), 200
+    try:
+        detached=delete_ticket_record(db,ticket_id,log_activity=log_activity)
+        db.commit()
+    except TicketDeletionError as error:
+        db.rollback()
+        return jsonify(error=str(error),code=error.code),error.status
+    except sqlite3.OperationalError as error:
+        db.rollback()
+        if 'locked' not in str(error).lower() and 'busy' not in str(error).lower():raise
+        return jsonify(error='Die Datenbank wird gerade geändert. Das Ticket wurde nicht gelöscht. Bitte erneut versuchen.',code='ticket_delete_busy'),409
+    return jsonify(status='deleted',detached=detached),200
 
 @app.route('/api/tickets/merge', methods=['POST'])
 @login_required
