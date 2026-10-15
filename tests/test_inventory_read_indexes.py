@@ -18,8 +18,10 @@ def test_inventory_indexes_support_actual_read_paths_and_rollback_preserves_rows
             assert index in plan, plan
         before = list_inventory(db,{},devices_allowed=True,assets_allowed=True,maintenance_allowed=True)
         directory = Path(inventory_app.__file__).parent/'migrations'
-        assert rollback_migrations(db,directory) == ['005_inventory_read_indexes']
-        assert list_inventory(db,{},devices_allowed=True,assets_allowed=True,maintenance_allowed=True) == before
-        assert apply_migrations(db,directory) == ['005_inventory_read_indexes']
+        later = [row[0] for row in db.execute("SELECT id FROM schema_migrations WHERE id>='005_inventory_read_indexes' ORDER BY id")]
+        business_rows = [tuple(row) for row in db.execute('SELECT * FROM devices ORDER BY id')]
+        assert rollback_migrations(db,directory,steps=len(later)) == list(reversed(later))
+        assert [tuple(row) for row in db.execute('SELECT * FROM devices ORDER BY id')] == business_rows
+        assert apply_migrations(db,directory) == later
         assert list_inventory(db,{},devices_allowed=True,assets_allowed=True,maintenance_allowed=True) == before
         assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
