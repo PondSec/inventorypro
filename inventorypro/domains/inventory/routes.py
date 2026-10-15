@@ -12,6 +12,7 @@ from inventorypro.domains.exports.service import protect_spreadsheet_row
 from .service import SORTS, inventory_query, list_inventory, workspace_tasks
 from .objects import load_panel
 from .search import search_workspace
+from . import assets as canonical_assets
 from inventorypro.domains.catalog.objects import resolve_many, resolve
 
 
@@ -69,7 +70,7 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
         if not user_can('server_settings.manage') or not get_export_settings(db)['importExport']['exportAllowed']:
             abort(403)
         source,predicate,params,state = inventory_query(request.args,devices_allowed=can_read('device'),
-            assets_allowed=can_read('asset'),maintenance_allowed=user_can('maintenance.view') or user_can('maintenance.manage'))
+            assets_allowed=can_read('asset'),maintenance_allowed=user_can('maintenance.view') or user_can('maintenance.manage'),db=db)
         if not source:
             abort(403)
         selected = request.args.get('selection','')
@@ -103,8 +104,9 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
     @blueprint.get('/inventory/new')
     @login_required
     def new_record():
-        if not user_can('devices.manage'):
+        if not (user_can('devices.manage') or (canonical_assets.unified(get_db()) and user_can('assets.manage'))):
             abort(403)
+        if canonical_assets.unified(get_db()):return redirect('/inventory/assets/new')
         return redirect('/?view=devices&create=device')
 
     @blueprint.get('/api/inventory/<kind>/<int:object_id>/panel')
@@ -112,9 +114,11 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
     def object_panel(kind, object_id):
         if kind not in {'device', 'asset'}:
             abort(404)
-        if not can_read(kind):
-            abort(403)
         db = get_db()
+        if kind=='asset' and canonical_assets.unified(db):
+            try:canonical_assets.require(db,user_can,object_id)
+            except canonical_assets.AssetError as error:abort(error.status)
+        elif not can_read(kind):abort(403)
         obj = load_panel(db, kind, object_id, can=user_can, access=get_access(db), ticket_visible=ticket_visible)
         if obj is None:
             abort(404)
@@ -130,6 +134,9 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
         if not can_read('device'):
             abort(403)
         db = get_db()
+        if canonical_assets.unified(db):
+            mapped=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=?',(object_id,)).fetchone()
+            if mapped:return redirect('/inventory/assets/'+str(mapped[0])+('?' + request.query_string.decode() if request.query_string else ''))
         row = db.execute('''SELECT d.*, c.name AS category_name, l.name AS location_name
             FROM devices d LEFT JOIN categories c ON c.id=d.category_id
             LEFT JOIN locations l ON l.id=d.location_id WHERE d.id=?''', (object_id,)).fetchone()
@@ -161,6 +168,18 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
     @blueprint.get('/inventory/assets/<int:object_id>')
     @login_required
     def asset_detail(object_id):
+        if canonical_assets.unified(get_db()):
+            try:
+                obj=load_panel(get_db(),'asset',object_id,can=user_can,access=get_access(get_db()),ticket_visible=ticket_visible)
+            except canonical_assets.AssetError as error:abort(error.status)
+            obj['photo']=resolve(get_db(),get_uploads_dir(),'asset',object_id);obj['image_url']=obj['photo']['large_url']
+            tabs=[('overview','Übersicht'),('details','Eigenschaften'),('accessories','Enthaltene Assets'),('assignment','Zuweisung'),('lifecycle','Lebenszyklus')]
+            if obj['can_maintenance']:tabs.append(('maintenance','Wartung'))
+            if obj['can_tickets']:tabs.append(('tickets','Tickets'))
+            if obj['can_history']:tabs.append(('history','Verlauf'))
+            tab=request.args.get('tab','overview')
+            if tab not in dict(tabs):abort(404)
+            return render_template('unified_asset_detail.html',asset=obj,object=obj,tabs=tabs,tab=tab,can_edit=obj['can_edit'],**context())
         if not can_read('asset'):
             abort(403)
         response = load_asset(object_id)

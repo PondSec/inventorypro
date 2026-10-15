@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 from .objects import fallback_icon
+from .assets import unified
+from . import unified_list
 
 SORTS = {'name': 'name COLLATE NOCASE', 'kind': 'kind', 'category': 'category COLLATE NOCASE',
          'serial_number': 'serial_number COLLATE NOCASE', 'created_at': 'created_at',
@@ -56,15 +58,24 @@ def inventory_source(*, devices_allowed, assets_allowed):
     return 'WITH inventory AS (' + ' UNION ALL '.join(branches) + ') ' if branches else ''
 
 
-def inventory_query(arguments, *, devices_allowed, assets_allowed, maintenance_allowed=False):
-    source = inventory_source(devices_allowed=devices_allowed, assets_allowed=assets_allowed)
+def inventory_query(arguments, *, devices_allowed, assets_allowed, maintenance_allowed=False,db=None):
+    is_unified=db is not None and unified(db)
+    source = unified_list.source(devices_allowed=devices_allowed,assets_allowed=assets_allowed) if is_unified and (devices_allowed or assets_allowed) else inventory_source(devices_allowed=devices_allowed, assets_allowed=assets_allowed)
+    available_filters=unified_list.filters(FILTERS) if is_unified else FILTERS
+    if is_unified:
+        arguments=dict(arguments)
+        arguments['kind']=''
+        if str(arguments.get('category','')).startswith('device:'):
+            old=str(arguments['category']).split(':',1)[1]
+            mapped=db.execute('SELECT asset_category_id FROM asset_legacy_categories WHERE category_id=?',(old,)).fetchone()
+            arguments['category']='asset:'+str(mapped[0]) if mapped else ''
     kind, status, sort = (arguments.get(key, '') for key in ('kind','filter','sort'))
     category = str(arguments.get('category', ''))
     match = re.fullmatch(r'(device|asset):([1-9]\d{0,8})', category)
     location = str(arguments.get('location', ''))
     state = {'q': str(arguments.get('q', '')).strip()[:256],
              'kind': kind if kind in {'device','asset'} else '',
-             'filter': status if status in FILTERS and (maintenance_allowed or 'maintenance' not in status) else '',
+             'filter': status if status in available_filters and (maintenance_allowed or 'maintenance' not in status) else '',
              'sort': sort if sort in SORTS else 'name',
              'direction': 'desc' if arguments.get('direction') == 'desc' else 'asc',
              'category': category if match else '',
@@ -80,12 +91,15 @@ def inventory_query(arguments, *, devices_allowed, assets_allowed, maintenance_a
     if state['kind']:
         where.append('kind=?'); params.append(state['kind'])
     if state['filter']:
-        where.append('(' + FILTERS[state['filter']] + ')')
+        where.append('(' + available_filters[state['filter']] + ')')
     if match:
         where.append('kind=? AND category_id=?'); params.extend([match[1],int(match[2])])
     if state['location']:
-        where.append("(location_id=? OR (kind='asset' AND id IN (SELECT ad.asset_id FROM asset_devices ad JOIN devices d ON d.id=ad.device_id WHERE d.location_id=?)))")
-        params.extend([state['location'],state['location']])
+        if is_unified:
+            where.append('location_id=?');params.append(state['location'])
+        else:
+            where.append("(location_id=? OR (kind='asset' AND id IN (SELECT ad.asset_id FROM asset_devices ad JOIN devices d ON d.id=ad.device_id WHERE d.location_id=?)))")
+            params.extend([state['location'],state['location']])
     if state['assigned']:
         where.append("trim(assigned_to)" + ("<>''" if state['assigned']=='yes' else "=''"))
     return source, ' WHERE ' + ' AND '.join(where), params, state
@@ -93,16 +107,18 @@ def inventory_query(arguments, *, devices_allowed, assets_allowed, maintenance_a
 
 def list_inventory(db, arguments, *, devices_allowed, assets_allowed, maintenance_allowed=False):
     source, predicate, parameters, state = inventory_query(arguments, devices_allowed=devices_allowed,
-        assets_allowed=assets_allowed, maintenance_allowed=maintenance_allowed)
+        assets_allowed=assets_allowed, maintenance_allowed=maintenance_allowed,db=db)
+    is_unified=unified(db)
+    available_filters=unified_list.filters(FILTERS) if is_unified else FILTERS
     summary = {'total':0,'assigned':0,'maintenance':0,'incomplete':0}
     if not source:
         return {'rows':[], 'total':0, 'pages':1, 'page_numbers':[1], 'summary':summary, 'categories':[], 'locations':[], **state}
     summary = dict(db.execute(source + f'''SELECT count(*) AS total,
         count(CASE WHEN trim(assigned_to)<>'' THEN 1 END) AS assigned,
-        count(CASE WHEN {FILTERS['due_maintenance'] if maintenance_allowed else '0'} THEN 1 END) AS maintenance,
-        count(CASE WHEN {FILTERS['incomplete']} THEN 1 END) AS incomplete FROM inventory''').fetchone())
+        count(CASE WHEN {available_filters['due_maintenance'] if maintenance_allowed else '0'} THEN 1 END) AS maintenance,
+        count(CASE WHEN {available_filters['incomplete']} THEN 1 END) AS incomplete FROM inventory''').fetchone())
     categories = [dict(r) for r in db.execute(source + 'SELECT DISTINCT kind,category_id AS id,category AS name FROM inventory WHERE category_id IS NOT NULL' + (' AND kind=?' if state['kind'] else '') + ' ORDER BY category COLLATE NOCASE,kind', [state['kind']] if state['kind'] else [])]
-    locations = [dict(r) for r in db.execute(source + '''SELECT DISTINCT l.id,l.name FROM locations l WHERE
+    locations = [dict(r) for r in db.execute(source+'SELECT DISTINCT l.id,l.name FROM locations l WHERE l.id IN (SELECT location_id FROM inventory) ORDER BY l.name COLLATE NOCASE')] if is_unified else [dict(r) for r in db.execute(source + '''SELECT DISTINCT l.id,l.name FROM locations l WHERE
         l.id IN (SELECT location_id FROM inventory WHERE kind='device') OR
         l.id IN (SELECT d.location_id FROM devices d JOIN asset_devices ad ON ad.device_id=d.id
                  WHERE ad.asset_id IN (SELECT id FROM inventory WHERE kind='asset')) ORDER BY l.name COLLATE NOCASE''')]
@@ -116,7 +132,7 @@ def list_inventory(db, arguments, *, devices_allowed, assets_allowed, maintenanc
     rows = [dict(row) for row in rows]
     for row in rows:
         row['icon'] = fallback_icon(row['name'],row['category'] or '',row['kind'])
-    return {'rows':rows,'total':total,'pages':pages,'page_numbers':page_numbers,'summary':summary,'categories':categories,'locations':locations,**state}
+    return {'rows':rows,'total':total,'pages':pages,'page_numbers':page_numbers,'summary':summary,'categories':categories,'locations':locations,'unified':is_unified,**state}
 
 def workspace_tasks(db, can, access):
     """Return exact actionable counts, scoped like the corresponding work lists."""

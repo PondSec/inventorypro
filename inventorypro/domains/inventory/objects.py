@@ -42,6 +42,11 @@ def fallback_icon(name, category='', kind='device'):
 def load_panel(db, kind, object_id, *, can, access, ticket_visible):
     if kind not in {'device', 'asset'}:
         return None
+    if kind=='asset':
+        from .assets import unified
+        if unified(db):
+            from .asset_views import load_asset_panel
+            return load_asset_panel(db,object_id,can=can,access=access,ticket_visible=ticket_visible)
     table, category_table = ('devices', 'categories') if kind == 'device' else ('assets', 'asset_categories')
     row = db.execute(f'''SELECT o.*, c.name AS category FROM {table} o
         LEFT JOIN {category_table} c ON c.id=o.category_id WHERE o.id=?''', (object_id,)).fetchone()

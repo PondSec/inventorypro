@@ -16,6 +16,12 @@ def build_catalog_blueprint(*,get_db,get_access,user_can,login_required,get_uplo
     def require_catalog(manage=False):
         if not user_can('server_settings.manage') and (manage or not (readable('device') or readable('asset'))):abort(403)
     def require_object(kind,identifier,manage=False):
+        if kind=='asset':
+            from inventorypro.domains.inventory import assets
+            if assets.unified(get_db()):
+                try:assets.require(get_db(),user_can,identifier,write=manage)
+                except assets.AssetError as error:raise service.CatalogError(str(error),error.status) from error
+                return object_row(get_db(),kind,identifier)
         if not readable(kind) or (manage and not user_can(('devices' if kind=='device' else 'assets')+'.manage')):abort(403)
         return object_row(get_db(),kind,identifier)
     def user_id():return get_access(get_db())['user']['id']

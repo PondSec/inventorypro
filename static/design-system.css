@@ -464,3 +464,19 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 .source-job-list li a { color: var(--color-accent); }
 .checkbox-label { display: flex; align-items: start; gap: 8px; }
 .checkbox-label input { margin-top: 3px; }
+.asset-editor-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; align-items: start; }
+.editor-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 16px; margin-top: 16px; }
+.editor-fields label,.editor-note { display: grid; gap: 4px; min-width: 0; }
+.editor-note { margin-top: 12px; }
+.asset-editor-advanced > summary { font-size: 16px; font-weight: 600; cursor: pointer; }
+.asset-editor-layout [aria-invalid=true] { border-color: var(--color-danger); }
+@media(max-width:1100px) { .asset-editor-layout { grid-template-columns: minmax(0,1fr); } }
+@media(max-width:640px) { .editor-fields { grid-template-columns: minmax(0,1fr); } }
+.component-picker { width: min(760px,calc(100vw - 32px)); }
+.component-results { max-height: 260px; overflow: auto; margin-block: 12px; }
+.component-result { display: flex; gap: 10px; padding: 10px 4px; border-bottom: 1px solid var(--color-border); align-items: center; }
+.component-result span { overflow-wrap: anywhere; }
+.component-selection { max-height: 220px; overflow: auto; margin-block: 12px; }
+.component-selection-row { display: flex; align-items: center; gap: 8px; padding-block: 8px; }
+.component-selection-row strong { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; }
+.component-selection-row input { max-width: 90px; }
