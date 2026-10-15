@@ -1,97 +1,110 @@
-# Inventory Pro mit Docker einrichten
+# Installation und Betrieb mit Docker Compose
 
-Diese Anleitung richtet die Anwendung ohne mitgelieferte Alt-Daten ein. Datenbank, Uploads und Laufzeitkonfiguration liegen in einem Docker-Volume und werden beim ersten Start frisch erzeugt.
+## Schnellstart ohne Standardpasswort
 
-## Voraussetzungen
+Voraussetzung: Docker Engine mit Compose oder gestartetes Docker Desktop.
 
-- Docker
-- Docker Compose Plugin (`docker compose`)
-
-## 1. Projekt holen
-
-```bash
-git clone https://github.com/PondSec/inventorypro.git
+```sh
+git clone --branch dev https://gitlab.pondsec.com/PondSec/inventorypro.git
 cd inventorypro
+docker compose up --detach --build --wait app
+docker compose exec app cat /data/instance/initial_admin_credentials.txt
 ```
 
-## 2. Umgebung vorbereiten
+Öffnen: [http://localhost:5000](http://localhost:5000). Die zufälligen Erstzugangsdaten
+sind nur für jemanden mit lokalem Dockerzugriff lesbar. Beim ersten Login muss das
+Passwort geändert werden. Es gibt keine öffentlich nutzbare Setupregistrierung.
+Die Zugangsdaten stehen nicht in den Containerlogs.
 
-```bash
-cp .env.example .env
+Der Port ist standardmäßig nur an 127.0.0.1 gebunden. Für Netzwerkbetrieb eine
+bewusste Bind-Adresse und einen HTTPS-Reverseproxy konfigurieren. Vorhandene
+Installationen behalten ihre bisherigen Ports und Mounts bei.
+
+## Optionaler Einrichtungshelfer
+
+Mit Python 3 (keine zusätzlichen Pythonpakete nötig):
+
+```sh
+python3 scripts/setup.py --start
+# Anderer freier Port:
+python3 scripts/setup.py --port 5050 --start
 ```
 
-Passe mindestens diese Werte in `.env` an:
+Windows PowerShell: `./scripts/setup.ps1 --start` (Python 3 über `py` oder `python`).
+Linux/macOS: `sh scripts/setup.sh --start`.
 
-- `APP_SECRET_KEY`: lange zufällige Zeichenfolge für Sessions
-- `INVENTORY_INITIAL_ADMIN_PASSWORD`: dein Startpasswort für den ersten Admin
+Der Helfer prüft Docker/Compose und Portverfügbarkeit, erzeugt eine private `.env`
+mit zufälligen persistenten Session-/Verschlüsselungsschlüsseln und startet den
+App-Service. Vorhandene `.env` wird niemals überschrieben. Eine bestehende
+Compose-Installation wird nicht durch den Einrichtungshelfer neu konfiguriert.
+Windows benötigt geeignete Benutzerrechte für den Projektordner; POSIX-Dateimodi
+ersetzen keine Windows-ACLs.
 
-Wenn `INVENTORY_INITIAL_ADMIN_USERNAME` oder `INVENTORY_INITIAL_ADMIN_PASSWORD` leer bleiben, erzeugt Inventory Pro beim ersten Start automatisch ein Admin-Konto und schreibt die Zugangsdaten in die Container-Logs.
+Auch ohne Helfer erzeugt die Produktionsanwendung ihren Session-Schlüssel sicher
+unter `/data/instance/application-secret.key`, sofern APP_SECRET_KEY fehlt. Der
+Schlüssel überlebt Containerneustarts. Ein bekannter alter Compose-Platzhalter
+wird beim Update automatisch durch diesen persistenten Zufallswert ersetzt;
+bestehende Sitzungen müssen sich dann einmal neu anmelden. Individuelle vorhandene
+APP_SECRET_KEY-Werte und Verschlüsselungsschlüssel werden nicht verändert.
 
-## 3. Container bauen und starten
+## Erste Schritte
 
-```bash
-docker compose up -d --build
+1. Eigenes Passwort setzen und unter Kontosicherheit TOTP aktivieren.
+2. Einen Standort anlegen und ein erstes Gerät erfassen.
+3. Benutzer/Rollen nach Aufgaben vergeben.
+4. In Einstellungen ein Backup ausführen und eine Wiederherstellung in einer
+   separaten Testinstanz prüfen.
+
+## Persistenz und Sicherung
+
+Der Compose-Projektname bestimmt den Namen des Datenvolumes. Denselben Projektnamen
+und dieselben Mounts bei jedem Update beibehalten. Das Datenvolume enthält:
+
+- `/data/inventory.db`: SQLite-Datenbank
+- `/data/uploads`: Anhänge
+- `/data/instance`: Session-Schlüssel, Laufzeitkonfiguration und Updatepolicy
+- `/data/backups`: konfigurierte Sicherungen
+
+Die komplette Datenhaltung und die private `.env` getrennt vom Repository sichern.
+SQLite während des Betriebs über die Backupfunktion sichern, nicht durch einfaches
+Kopieren einer geöffneten Datenbank. Für eine vollständige Volumesicherung die
+Anwendung anhalten und das gesamte Volume einschließlich Uploads und Instanzschlüsseln
+mit der vorhandenen Infrastruktur sichern. Ein Backup im selben Volume ersetzt
+keine externe Sicherung. Restore zuerst isoliert prüfen.
+
+## Updates vorhandener Installationen
+
+Keine Neuinstallation und keine Umstellung vorhandener Mounts vornehmen. Der alte
+Updater erhält freigegebene Versionen weiterhin über den kompatiblen Releasefeed.
+Neue Updater lesen das signierte Manifest bei GitLab. Einzelheiten und die
+betrieblichen Veröffentlichungsanforderungen: [Updatekompatibilität](docs/enterprise/UPDATE-COMPATIBILITY.md).
+Automatische Updates lassen sich in Einstellungen → Server ein- und ausschalten.
+Der Sidecar muss bereits eingerichtet sein; ein Schalter allein installiert keinen
+privilegierten Docker-Dienst.
+
+Bei bewusst manueller Aktualisierung erst Backup erstellen, dann im bestehenden
+Checkout `git pull --ff-only origin dev` und `docker compose up --detach --build --wait app`
+verwenden. Bei lokalen Änderungen oder abweichenden Branches abbrechen und die
+Historie klären. Kein Datenvolume löschen.
+
+## Diagnose
+
+```sh
+docker compose ps
+docker compose logs --tail 100 app
+docker compose exec app python -c "import sqlite3; print(sqlite3.connect('/data/inventory.db').execute('PRAGMA integrity_check').fetchone()[0])"
 ```
 
-Danach ist die Anwendung unter [http://localhost:5000](http://localhost:5000) erreichbar.
+Bei Portkonflikten die andere Anwendung nicht automatisch beenden. Einen anderen
+INVENTORY_PORT in `.env` konfigurieren. Secrets nicht in Fehlermeldungen, Tickets
+oder Screenshots weitergeben. Der Initialzugang liegt in der privaten Datei,
+nicht in einer vermeintlichen Standardpasswortliste.
 
-## 4. Beim ersten Login anmelden
+## Ausgeführte Entwicklungsprüfungen
 
-Wenn du Admin-Zugangsdaten in `.env` gesetzt hast, kannst du dich direkt damit anmelden.
-
-Wenn du keine Zugangsdaten gesetzt hast, lies die automatisch erzeugten Daten aus den Logs:
-
-```bash
-docker compose logs app | grep -A3 "ADMIN-KONTO ERSTELLT"
-```
-
-## 5. Datenhaltung
-
-Die persistenten Daten liegen im Docker-Volume `inventorypro-data`.
-
-- Datenbank: `/data/inventory.db`
-- Uploads: `/data/uploads`
-- Laufzeitkonfiguration: `/data/instance/runtime_config.json`
-
-Im Git-Repo und im Docker-Build ist keine bestehende `inventory.db` mehr enthalten.
-
-## Nützliche Befehle
-
-Neu bauen nach Updates:
-
-```bash
-git pull
-docker compose up -d --build
-```
-
-Logs ansehen:
-
-```bash
-docker compose logs -f app
-```
-
-Container stoppen:
-
-```bash
-docker compose down
-```
-
-Komplett neu starten und alle Daten verwerfen:
-
-```bash
-docker compose down -v
-```
-
-## Direktes Docker-Image ohne Compose
-
-```bash
-docker build -t inventorypro:latest .
-docker run -d \
-  --name inventorypro \
-  -p 5000:5000 \
-  -e APP_SECRET_KEY="change-this-long-random-secret" \
-  -e INVENTORY_INITIAL_ADMIN_USERNAME="admin" \
-  -e INVENTORY_INITIAL_ADMIN_PASSWORD="change-me-now" \
-  -v inventorypro-data:/data \
-  inventorypro:latest
-```
+2026-10-15: Docker 29.7.2/macOS ARM64, Image mit Python 3.12 gebaut; isolierte
+Compose-Produktionsinstanz ohne konfigurierten Anwendungsschlüssel gestartet,
+HTTP-Loginseite erfolgreich geladen, Neustart mit unverändertem persistenten
+Schlüssel sowie Datenbankintegrität und private Erstzugangsdatei geprüft.
+Testprojekt und dessen eigens erzeugtes Volume danach entfernt.
+Linux-/Windows-Hosts und PowerShell wurden nicht ausgeführt.

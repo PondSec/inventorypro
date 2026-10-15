@@ -11,3 +11,9 @@ instance/runtime_config.json
 instance/initial_admin_credentials*.txt
 uploads/
 backups/
+
+.env.*
+!.env.example
+instance/application-secret.key
+.qa-artifacts/
+release-artifacts/

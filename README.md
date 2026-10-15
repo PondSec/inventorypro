@@ -42,6 +42,8 @@ Danach ist die Anwendung standardmäßig unter `http://localhost:5000` verfügba
 
 ## Betrieb mit Docker
 
+Der [Compose-Schnellstart](DOCKER_SETUP.md) erzeugt sichere persistente Secrets und zufällige Erstzugangsdaten ohne Standardpasswort.
+
 ```bash
 docker compose up -d --build app
 ```
@@ -60,7 +62,7 @@ Wichtige Konfigurationen:
 
 ## Signierte automatische Updates
 
-Automatische Updates sind standardmäßig ausgeschaltet. Nach bewusstem Aktivieren in **Einstellungen → Server → Automatische Updates** prüft ein separater Updater nur den stabilen Release-Kanal. Er akzeptiert ausschließlich signierte Release-Manifeste und unveränderliche Container-Digests aus `ghcr.io/pondsec/inventorypro`.
+Automatische Updates sind standardmäßig ausgeschaltet. Nach bewusstem Aktivieren in **Einstellungen → Server → Automatische Updates** prüft ein separater Updater nur den stabilen Release-Kanal. Neue Sidecars lesen signierte Release-Manifeste bei GitLab und prüfen unveränderliche Container-Digests. Vorhandene Sidecars bleiben über einen kompatiblen GitHub/GHCR-Spiegel versorgt; siehe [Updatekompatibilität](docs/enterprise/UPDATE-COMPATIBILITY.md).
 
 Vor einem Update erstellt der Updater ein lokales SQLite-Backup und prüft dessen Integrität. Nach dem Rollout wartet er auf den Health-Check. Schlägt ein Schritt fehl, bleibt die laufende Version erhalten oder wird auf das vorherige Image zurückgesetzt. Die Instanzdaten verlassen dabei zu keinem Zeitpunkt den Server.
 
@@ -75,7 +77,8 @@ Der Sidecar benötigt Zugriff auf den lokalen Docker-Socket, damit er einen gepr
 ## Qualitätssicherung
 
 ```bash
-python3 -m unittest discover -s tests -p 'test_*.py'
+python3 -m pip install -r requirements-dev.lock
+INVENTORY_ENV=test INVENTORY_SCHEDULER_ENABLED=0 python3 -m pytest -q
 ```
 
 Die Tests decken unter anderem Rollen- und Sicherheitsgrenzen, Ticket- und Review-Workflows, Wissenskontext, Standortfilter, mobile Bedienung, sichere Instanzverknüpfungen und den Update-Mechanismus ab.

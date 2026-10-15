@@ -11,3 +11,9 @@ inventory.db
 playwright-report/
 uploads/
 venv/
+
+.env.*
+.qa-artifacts/
+release-artifacts/
+instance/
+tests/

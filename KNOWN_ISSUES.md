@@ -1,11 +1,15 @@
-# Known Issues
+# Verifizierte Einschränkungen
 
-## Environment-specific verification limitations
+Stand 2026-10-15: Python- und Browserprüfungen sowie Docker-Build und isolierter
+Compose-Start wurden ausgeführt; aktuelle Zahlen stehen in
+[PROGRESS.md](docs/enterprise/PROGRESS.md).
 
-- Docker is not available in the current execution environment (`docker: command not found`). The Dockerfile and Compose configuration were inspected and guarded with regression tests where possible, but Docker build, Compose start and container healthcheck must be re-run on a host with Docker installed.
-- Browser/mobile Playwright tests cannot currently be executed in this environment because the package index/proxy blocks fetching `playwright==1.61.0` with `Tunnel connection failed: 403 Forbidden`.
-
-## Production configuration reminders
-
-- `docker-compose.yml` now includes a stable fallback `APP_SECRET_KEY` so a local Compose deployment starts reliably. For production, set a unique persistent `APP_SECRET_KEY` in `.env` before first use and keep it unchanged across restarts; changing it invalidates existing sessions and CSRF tokens.
-- If Inventory Pro is served behind TLS or a reverse proxy, set `INVENTORY_PUBLIC_ORIGIN` to the browser-facing origin (for example `https://inventory.example.com`). Also configure `INVENTORY_TRUSTED_PROXY_NETWORKS` for trusted proxy CIDRs when relying on `X-Forwarded-*` headers.
+- Windows/PowerShell, Linux-Host und weitere Browserplattformen noch nicht geprüft.
+- Keine vollständige WCAG-2.2-AA-Abnahme und keine freigegebene Pixelbaseline.
+- Signierte Releaseveröffentlichung, tatsächliche GitLab-Registry und dauerhafter
+  GitHub/GHCR-Kompatibilitätsspiegel erfordern geschützte Infrastrukturvariablen.
+  Es wurde kein Release veröffentlicht und kein Produktionsdeployment ausgeführt.
+- Ausgelieferte alte Sidecars tauschen sich nicht selbst aus. Bestandskunden können
+  ohne Handarbeit weiter aktualisieren, sofern der kompatible Feed gepflegt wird.
+- Im ursprünglichen Workspace sind Dateien durch iCloud ausgelagert. Aktiver
+  Checkout: /Users/pond/.codex/workspaces/inventorypro-enterprise, Branch dev.
