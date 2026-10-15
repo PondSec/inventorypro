@@ -1,14 +1,20 @@
 # Ausgeführte Qualitätssicherung
 
-## Enterprise-Relaunch: Release-Kandidat 0.3.0
+## Enterprise-Relaunch: veröffentlichter Stable-Release 0.3.0
+
+Beide öffentlichen Updatefeeds und die finalen signierten Multiarch-Images sind
+abgenommen. Vollständige Nachweise, Pipelineverweise, Digest und tatsächliche
+Installations-/Upgrade-/Rollbackergebnisse: [Releaseabnahme 0.3.0](../release-0.3.0-qa.md).
 
 15.10.2026, isolierte synthetische Daten. Vollständiger macOS-Lauf mit Python
 3.14.7, Chromium 149 und Firefox 151: **573 Tests und 46 Unterfälle bestanden**,
 401 Sekunden, JUnit 619 Fälle ohne Fehler/Fehlschläge. Anschließend hinzugefügte
 Prüfungen separat: sichere Software-/Organisationslöschung (fünf Fälle), finale
 Tab-/Themeverträge (20 Fälle) und Pixelregression (zwei Browserfälle, acht Bilder)
-bestanden. Die finalen signierten Images werden separat durch die Release-Pipeline
-geprüft; dieser Bericht nimmt deren Ergebnis nicht vorweg.
+bestanden. Anschließend bestanden beide Linux-Pipelines mit 576 Tests und zwei
+dokumentierten Plattform-Skips; die Release-Pipeline weist zusätzlich 46 bestandene
+Unterfälle aus. Das endgültige Image wurde auf AMD64 und ARM64 installiert und
+mit tatsächlichem alten/neuen Updater sowie Datenbankrücksetzung geprüft.
 
 - 360 reale Ansichten in 1920/1672/1440/1280/390 Pixeln, jeweils Light/Dark, plus
   Anmeldung: null JS-Fehler, null Seitenüberläufe, null unerwartete HTTP-Fehler.
