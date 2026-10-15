@@ -3,6 +3,16 @@ import pytest
 import app as inventory_app
 
 
+@pytest.fixture(scope='session',autouse=True)
+def legacy_contract_startup_mode():
+    """Set the historical state before unittest setUpClass starts live servers."""
+    missing=object();previous=inventory_app.app.config.get('INVENTORY_UNIFIED_ASSETS_ENABLED',missing)
+    inventory_app.app.config['INVENTORY_UNIFIED_ASSETS_ENABLED']=False
+    yield
+    if previous is missing:inventory_app.app.config.pop('INVENTORY_UNIFIED_ASSETS_ENABLED',None)
+    else:inventory_app.app.config['INVENTORY_UNIFIED_ASSETS_ENABLED']=previous
+
+
 @pytest.fixture(autouse=True)
 def enable_flask_test_mode(monkeypatch):
     """Keep legacy workflow tests focused on their domain behaviour.

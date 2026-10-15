@@ -6,8 +6,9 @@ from inventorypro.domains.inventory.unification import convert_inventory
 
 
 @pytest.fixture
-def unified_live(live_inventory):
-    with inventory_app.app.app_context():db=inventory_app.get_db();convert_inventory(db);db.commit()
+def unified_live(live_inventory,monkeypatch):
+    monkeypatch.delitem(inventory_app.app.config,'INVENTORY_UNIFIED_ASSETS_ENABLED')
+    inventory_app.init_db()
     return live_inventory
 
 
