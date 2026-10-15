@@ -67,10 +67,11 @@ Automatischer Kompatibilitätstest lädt den echten alten Validator aus `900b489
 Er akzeptiert das Legacy-Manifest; der neue Validator akzeptiert das GitLab-Manifest.
 Manipulierte Signaturen und unpassende Signierschlüssel werden abgelehnt.
 SQLite-Rollbacktest prüft Wiederherstellung nach einer simulierten Schemamigration.
-Die tatsächlichen 0.2.0-Artefakte wurden mit dem bestehenden Actions-Schlüssel
+Die tatsächlichen 0.3.0-Artefakte wurden mit dem bestehenden Actions-Schlüssel
 signiert und mit dem ausgelieferten Public-Key geprüft. GitLab-Registry, öffentliche
 Paketdownloads und vollständiger Linux-Upgrade-/Rollbackablauf sind erfolgreich
-geprüft; Einzelheiten im [Qualitätsbericht](QUALITY.md).
+geprüft. Beide aktiven Latest-Endpunkte liefern dieselbe signierte Version und
+denselben Image-Digest: [Releaseabnahme 0.3.0](../release-0.3.0-qa.md).
 
 ## Veröffentlichungsablauf
 
@@ -85,7 +86,10 @@ Cloudflare Bot Fight blockiert GitHub-Registryuploads. Deshalb das vollständige
 GHCR-OCI-Image mit `skopeo copy --all --preserve-digests` über den geprüften internen
 Serverzugang nach GitLab kopieren. Danach anonymen externen Digestabruf prüfen,
 GitLab-Pakete über `scripts/upload_release_package.py` mit projektbezogener
-Berechtigung hochladen und ihre öffentlichen Downloads prüfen. Beide Entwurfs-
+Berechtigung hochladen und ihre öffentlichen Downloads prüfen. Übersteigt das
+Quellarchiv das Uploadlimit des vorgeschalteten Proxys, erfolgt der authentifizierte
+Paketupload über den internen GitLab-Zugang; der vollständige öffentliche Download
+wird anschließend erneut mit dem abgenommenen Archiv verglichen. Beide Entwurfs-
 Manifeste und Installations-/Upgrade-/Rollbacktests müssen vor Veröffentlichung
 bestanden sein. GitLab-Release mit permanenten Assetpfaden erstellen, dann den
 GitHub-Entwurf mit Legacy-Manifest als `update-manifest.json` freigeben. Beide

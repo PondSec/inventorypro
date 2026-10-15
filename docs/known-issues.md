@@ -1,9 +1,12 @@
 # Verifizierte Einschränkungen
 
 Stand 15.10.2026. Die tatsächlich ausgeführten Prüfungen und Umgebungen stehen im
+[Qualitätsbericht](enterprise/QUALITY.md); aktuelle Änderungen im
+[Changelog](changelog-ui.md).
 
-- Release 0.2.0 ist auf GitLab und im kompatiblen GitHub-Feed veröffentlicht.
-  Anonyme Registry-/Paketdownloads und beide aktiven Signaturen sind geprüft.
+- Stable 0.3.0 ist auf GitLab und im kompatiblen GitHub-Feed veröffentlicht.
+  Anonyme Registry-/Paketdownloads, beide aktiven Signaturen sowie tatsächliche
+  Installation und Übernahme sind geprüft: [Releaseabnahme](release-0.3.0-qa.md).
 - Linux-/macOS-Dockerinstallation geprüft; keine Windows-/Safari-Abnahme,
   vollständige WCAG-Zertifizierung behauptet. Geprüfte Pixelbaselines gelten
   für macOS/Chromium und Firefox; Linux prüft Geometrie, Themes und Interaktionen.
