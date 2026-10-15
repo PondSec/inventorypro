@@ -53,14 +53,14 @@ def main():
     with visual_instance(args.count) as (application,base),sync_playwright() as p:
         routes=inventory_routes(application)
         browser=p.chromium.launch()
-        sizes=[(1440,900)] if not args.full else [(1920,1080),(1440,900),(1280,800),(390,844)]
+        sizes=[(1440,900)] if not args.full else [(1920,1080),(1672,941),(1440,900),(1280,800),(390,844)]
         for width,height in sizes:
             context=browser.new_context(viewport={'width':width,'height':height},reduced_motion='reduce')
             page=context.new_page();errors=[]
             page.on('pageerror',lambda e:errors.append(str(e)))
             page.goto(base+'/login');page.screenshot(path=str(output/f'login-{width}-light.png'))
             page.get_by_label('Benutzername').fill('admin');page.locator('input[name=password]').fill(PASSWORD)
-            page.get_by_role('button',name='Anmelden',exact=True).click();page.wait_for_url(base+'/')
+            page.get_by_role('button',name='Anmelden',exact=True).click();page.wait_for_url(lambda url:url in {base+'/',base+'/inventory'})
             for theme in ['light','dark'] if args.full else ['light']:
                 for name,url in CASES.items():
                     errors.clear()
