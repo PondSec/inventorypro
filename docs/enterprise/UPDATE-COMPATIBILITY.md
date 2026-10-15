@@ -58,8 +58,8 @@ auch deren Schema und Daten wieder her, bevor das vorherige Image gestartet wird
 
 Der Schalter `updates.autoUpdateEnabled` liegt in der persistenten Updatepolicy.
 Bei `false` findet keine Release-Abfrage statt. Aktivierung ersetzt weder
-Signaturprüfung noch Wartungsfenster. Keine Releaseveröffentlichung oder
-Produktionsinstallation wurde während dieser Entwicklungsarbeit ausgelöst.
+Signaturprüfung noch Wartungsfenster. Ein Release wird erst nach Abnahme beider Images/Feeds freigegeben.
+Produktionsinstanzen werden nicht direkt durch Tests verändert.
 
 ## Tatsächlich geprüft
 
@@ -67,4 +67,39 @@ Automatischer Kompatibilitätstest lädt den echten alten Validator aus `900b489
 Er akzeptiert das Legacy-Manifest; der neue Validator akzeptiert das GitLab-Manifest.
 Manipulierte Signaturen und unpassende Signierschlüssel werden abgelehnt.
 SQLite-Rollbacktest prüft Wiederherstellung nach einer simulierten Schemamigration.
-Öffentliche Releaseendpunkte und produktive Signierschlüssel sind noch nicht geprüft.
+Die tatsächlichen 0.2.0-Artefakte wurden mit dem bestehenden Actions-Schlüssel
+signiert und mit dem ausgelieferten Public-Key geprüft. GitLab-Registry, öffentliche
+Paketdownloads und vollständiger Linux-Upgrade-/Rollbackablauf sind erfolgreich
+geprüft; Einzelheiten im [Qualitätsbericht](QUALITY.md).
+
+## Veröffentlichungsablauf
+
+Version in `.release/request.json` auf dev bewusst erhöhen, relevante Tests ausführen,
+committen und nach GitLab dev pushen. Danach denselben dev-Stand ohne Force-Push nach
+GitHub dev spiegeln. Der Actions-Workflow akzeptiert ausschließlich einen in GitLab
+dev enthaltenen Quellcommit, führt die Regression aus, baut beide Plattformen und
+erzeugt signierte Entwurfsartefakte mit dem bisherigen Schlüssel. Normale Pushes
+ohne geänderten Releaseauftrag veröffentlichen nichts; main bleibt unverändert.
+
+Cloudflare Bot Fight blockiert GitHub-Registryuploads. Deshalb das vollständige
+GHCR-OCI-Image mit `skopeo copy --all --preserve-digests` über den geprüften internen
+Serverzugang nach GitLab kopieren. Danach anonymen externen Digestabruf prüfen,
+GitLab-Pakete über `scripts/upload_release_package.py` mit projektbezogener
+Berechtigung hochladen und ihre öffentlichen Downloads prüfen. Beide Entwurfs-
+Manifeste und Installations-/Upgrade-/Rollbacktests müssen vor Veröffentlichung
+bestanden sein. GitLab-Release mit permanenten Assetpfaden erstellen, dann den
+GitHub-Entwurf mit Legacy-Manifest als `update-manifest.json` freigeben. Beide
+aktiven öffentlichen Feeds danach mit dem jeweiligen echten Validator prüfen.
+
+Eine alleinige dev-Quelländerung veröffentlicht bewusst noch kein Update. Jeder
+freigegebene Release muss diesen Kompatibilitätsspiegel erhalten. Projektbezogene
+Publish-Credentials sind kurzlebig und werden nach Veröffentlichung widerrufen.
+
+## Bereits nicht startende Installationen
+
+Das neue App-Image enthält inventorypro und alle gesperrten Runtimeabhängigkeiten.
+Ein laufender alter Updater kann damit auch eine ausgefallene App ersetzen. Wenn
+Compose wegen `depends_on: service_healthy` den Sidecar beim ersten Start nie
+gestartet hat, fehlt ein laufender Prozess, der das Update holen könnte. Dieser
+Fall benötigt einen einmaligen lokalen Eingriff, keine Neuinstallation oder
+Löschung vorhandener Daten. Dasselbe gilt für Installationen ohne Sidecar.

@@ -1,43 +1,70 @@
 # Ausgeführte Qualitätssicherung
 
-Stand 15.10.2026. Testdaten sind synthetisch; keine bestehende Installation wird
-für Tests verwendet. Entwicklungscheckout liegt außerhalb des iCloud-Verzeichnisses.
+Stand 15.10.2026. Ausschließlich synthetische Daten und isolierte Testprojekte.
+Entwicklungscheckout liegt außerhalb des iCloud-Verzeichnisses.
 
-## Lokale Ergebnisse
+## Automatisierte Regression
 
-- Vollständiges pytest auf macOS, Python 3.14.7: **288 Tests und 46 Subtests
-  bestanden**, 129 Sekunden. Enthält echte Chromium-/Firefox-Interaktionen,
-  gemeinsame Shells, 320/390/1440 px, Light/Dark, Fokusführung, Tickets,
-  Inventarsuche, Speichern mit CSRF, Auto-Updates an/aus, Planungsassistent und 3D.
-- Anschließende Sicherheitskorrektur an Legacy-Workflowaggregaten: weitere
-  gezielte Regression, **14 Tests bestanden**, darunter eingeschränkte Rollen
-  und Ausschluss fremder Tickets. Ein vollständiger erneuter Lauf ist bei
-  weiteren Produktänderungen nötig; der vorherige Lauf enthält diese zwei
-  neuen Sicherheitsfälle noch nicht.
-- Docker 29.7.2: aktuelles App-Image erfolgreich gebaut. Isolierter Container
-  mit Python 3.12 prüft Runtime-Imports, Migrationen 001–004, SQLite integrity_check
-  und enthaltene Planungsdateien. Frühere isolierte Compose-Prüfung verifiziert
-  Production-Start, HTTP-Login und persistentes Secret über Neustart hinweg.
+- macOS, Python 3.14.7: vollständige Regression nach Dialogkorrektur mit
+  **304 Tests und 46 Untertests bestanden**, 169 Sekunden. Anschließend zehn
+  zusätzliche Releaseauftragfälle und drei vorhandene Brückentests bestanden.
+- GitLab-Pipelines 27 (e1fe889) und 28 (2dc4faf): **314 Tests und 46 Untertests
+  bestanden**, Python 3.12, Chromium und Firefox. JUnit weist 360 Fälle, null
+  Fehler und null Fehlschläge aus. Ältere vollständige Pipelines 23–26 ebenfalls grün.
+- GitHub-Releasejob 38722344216: vollständige Regression und Multiarch-Build
+  erfolgreich. Vorgängerjob bestand ebenfalls 314 Tests/46 Untertests, scheiterte
+  danach an Cloudflares Botprüfung beim Registrylogin; kein Release dabei veröffentlicht.
+- Echte Browserinteraktionen: gemeinsame Shells, 320/390/1440 px, Light/Dark,
+  Fokusführung, Tickets, Inventarsuche, CSRF, Auto-Updates an/aus, Planung und 3D.
+  Statusfarben werden in beiden Themes gegen 4,5:1 geprüft; gesperrter Browserspeicher
+  verhindert die Initialisierung nicht. Kein pauschaler WCAG-Konformitätsnachweis.
 - Zwei Warnungen stammen aus ldap3/pyasn1 (veraltete tagMap/typeMap-Importe).
 
-## GitLab CI
+## Release-Images 0.2.0
 
-`.gitlab-ci.yml` führt auf dev und Merge Requests nach dev die vollständige
-pytest-Suite mit Chromium und Firefox aus. Historie wird vollständig geladen,
-weil der Kompatibilitätstest den tatsächlich ausgelieferten alten Updater lädt.
-JUnit und Screenshots werden 14 Tage als Artefakte erhalten. Keine Deployment-,
-Release- oder Image-Push-Jobs. YAML lokal mit Ruby/Psych erfolgreich geparst.
+Quellstand: `2dc4faf7e622c553c559cf72d17627c75fa19f90` auf dev.
+Multiarch-Digest (linux/amd64 und linux/arm64):
+`sha256:33e78db242be0a14d56de3486824dc7bac001055afd3999ad007d5a7eb1680a3`.
 
-Ein geeigneter GitLab-Runner und Netzwerkzugriff auf die Paket-/Browserquellen
-sind erforderlich. Ein erfolgreicher lokaler Lauf beweist keinen erfolgreichen
-GitLab-Lauf; Status der ersten Pipeline separat prüfen.
+- Originaler Signierschlüssel in Actions verwendet, beide tatsächlich erzeugten
+  Manifeste gegen den ausgelieferten öffentlichen Schlüssel geprüft. Echter alter
+  Validator akzeptiert Legacy-Manifest, neuer Validator GitLab-Manifest.
+- Unveränderte vollständige OCI-Kopie GHCR → GitLab einschließlich Plattformen
+  und Provenienzmanifesten. Anonymer GitLab-Abruf und Digestvergleich bestanden;
+  öffentliches signiertes Paketmanifest bytegleich mit dem signierten Artefakt.
+- Frische Compose-Installation des fertigen Images auf Linux und macOS/Docker
+  bestanden: HTTP-Login, Runtimeimports einschließlich backups/openpyxl, Migrationen,
+  SQLite-Integrität, private zufällige Erstzugangsdaten, erzwungener Passwortwechsel,
+  persistentes Secret nach Neustart. Testprojekte/-volumes anschließend entfernt.
+- Linux: tatsächlich ausgelieferter alter Updatercode ersetzt den App-Container
+  mit dem signierten Release. Gerät/Kategorie/Seriennummer/dynamische Felder und
+  Upload bleiben erhalten, Migration und Backup erfolgreich. Neuer Updater zieht
+  GitLab-Image; absichtlich negativer Healthcheck löst Datenbank- und Image-Rollback
+  aus. Originalschema/-daten wiederhergestellt, vorheriges GHCR-Image gesund.
+- macOS: Legacy-App-Upgrade ebenfalls bestanden. Zusätzliche Host-/Guest-SQLite-
+  Zugriffe auf einen Bindmount verursachten im Rollback-Test einen disk-I/O-Fehler.
+  Deshalb separat im tatsächlichen Docker-Named-Volume geprüft: unveränderte
+  Updaterfunktionen sichern/restaurieren Schema und Daten innerhalb Docker;
+  anschließender App-Neustart gesund. Nicht als bestandenen gemischten Host-/Guest-
+  SQLite-Betrieb ausgegeben; produktive Compose-Datenhaltung bleibt im Named-Volume.
 
-Referenz: [GitLab-Jobartefakte](https://docs.gitlab.com/ci/jobs/job_artifacts/).
+Das alte öffentliche Image 0.0.6 startet unverändert wegen fehlendem inventorypro
+und openpyxl nicht. Nur für die lauffähige Legacy-Testbasis wurden restauriertes
+Runtimepaket, Migrationen und fehlende Abhängigkeiten eingebunden; beim Upgrade
+wurden diese Test-Mounts entfernt. Das neue Image liefert alles selbst aus.
+Healthchecks liefen im tatsächlichen Docker-Service-Netz, entsprechend dem Sidecar;
+ein früher Host-Port-Testreset wurde nicht als bestandene Abnahme gewertet.
 
-## Grenzen
+Wiederholbar mit `scripts/check_release_install.py`, `check_release_upgrade.py` und
+`check_release_volume_rollback.py`; ausschließlich isolierte synthetische Umgebungen.
 
-Keine pauschale WCAG-Konformitätszertifizierung, Safari-/Windows-/macOS-
-Installationsabnahme oder pixelbasierte visuelle Baseline-Regression behauptet.
-Screenshots wurden gezielt visuell geprüft; deren Erzeugung ist kein automatischer
-Pixelvergleich. Release-Signierschlüssel, GitLab-Registry und Legacy-Publisher
-müssen vor einer Veröffentlichung operativ nachgewiesen werden.
+## CI und Grenzen
+
+GitLab CI validiert Registry-Rundlauf mit kurzlebigem Jobtoken und synthetischem
+OCI-Testimage, danach die vollständige pytest-Suite. JUnit/Screenshots bleiben
+14 Tage als Artefakte. Keine Produktionsdeployments aus Testpipelines.
+
+Keine Safari-/Windows-Installationsabnahme oder pixelbasierte visuelle Baseline-
+Regression behauptet. Gezielt geprüfte Screenshots ersetzen keinen Pixelvergleich.
+Ein nie gestarteter/nicht eingerichteter Updater kann keinen Release automatisch
+installieren; deaktivierte Auto-Updates und Wartungsfenster werden respektiert.
