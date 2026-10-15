@@ -4,9 +4,10 @@ from urllib.parse import urlencode
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, session
 from .service import list_inventory, workspace_tasks
+from .objects import load_panel
 
 
-def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, load_asset):
+def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, load_asset, ticket_visible):
     blueprint = Blueprint('inventory_workspace', __name__)
 
     def can_read(kind):
@@ -39,6 +40,19 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
         if not user_can('devices.manage'):
             abort(403)
         return redirect('/?view=devices&create=device')
+
+    @blueprint.get('/api/inventory/<kind>/<int:object_id>/panel')
+    @login_required
+    def object_panel(kind, object_id):
+        if kind not in {'device', 'asset'}:
+            abort(404)
+        if not can_read(kind):
+            abort(403)
+        db = get_db()
+        obj = load_panel(db, kind, object_id, can=user_can, access=get_access(db), ticket_visible=ticket_visible)
+        if obj is None:
+            abort(404)
+        return jsonify(obj)
 
     @blueprint.get('/inventory/devices/<int:object_id>')
     @login_required

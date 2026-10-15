@@ -15545,6 +15545,7 @@ app.register_blueprint(build_planning_blueprint(
 app.register_blueprint(build_inventory_blueprint(
     get_db=get_db, user_can=user_can, get_access=get_user_access,
     login_required=login_required, load_asset=asset_entry_detail,
+    ticket_visible=ensure_ticket_access,
 ))
 
 app.register_blueprint(
