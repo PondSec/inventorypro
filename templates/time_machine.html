@@ -1,41 +1,18 @@
 {% extends 'base_app.html' %}
 {% set page_title = 'Zeitmaschine' %}
 {% set page_module = 'timemachine' %}
+{% set page_section_label = 'Auswertung' %}
 {% set hide_page_intro = true %}
 {% block title %}Zeitmaschine | Inventory Pro{% endblock %}
 {% block html_attrs %}x-data="timeMachineApp()"{% endblock %}
 {% block content %}
-<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div class="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                            <p class="mt-1 text-sm text-slate-500">Bestand zu zwei Zeitpunkten vergleichen und geplante Änderungen simulieren.</p>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Änderungen</p>
-                                <p class="text-2xl font-semibold text-slate-900" x-text="changes.length"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Simulationszweige</p>
-                                <p class="text-2xl font-semibold text-slate-900" x-text="branchOptions.length"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Roadmaps</p>
-                                <p class="text-2xl font-semibold text-slate-900" x-text="roadmaps.length"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Zeitraum</p>
-                                <p class="text-2xl font-semibold text-slate-900" x-text="rangeLabel"></p>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
+<div class="module-summary" aria-label="Zeitmaschinenkennzahlen"><span><strong x-text="changes.length"></strong> Änderungen</span><span><strong x-text="roadmaps.length"></strong> Roadmaps</span><span x-text="rangeLabel"></span></div>
+<nav class="workspace-tabs" role="tablist" aria-label="Zeitmaschinenbereiche"><button type="button" role="tab" id="timeline-tab-state" aria-controls="timeline-panel-state" :aria-selected="activeView === 'state'" @click="activeView='state'">Bestand & Simulation</button><button type="button" role="tab" id="timeline-tab-history" aria-controls="timeline-panel-history" :aria-selected="activeView === 'history'" @click="activeView='history'">Verlauf</button><button type="button" role="tab" id="timeline-tab-comparison" aria-controls="timeline-panel-comparison" :aria-selected="activeView === 'comparison'" @click="activeView='comparison';compareEnabled=true;loadComparisonState()">Vergleich</button></nav>
                 <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div class="flex flex-wrap items-center justify-between gap-4">
                         <div>
-                            <p class="text-sm font-semibold text-slate-900">Timeline Toolbar</p>
-                            <p class="text-xs text-slate-500">Zeitpunkt, Layer und Vergleich steuern.</p>
+                            <p class="text-sm font-semibold text-slate-900">Zeitpunkt und Auswahl</p>
+                            <p class="text-xs text-slate-500">Bestandsdatum und sichtbare Vorgänge festlegen.</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-3">
                             <input type="date" x-model="timelineDate" @change="loadState()" aria-label="Zeitpunkt der Timeline" class="rounded-full border border-slate-200 px-3 py-2 text-sm">
@@ -53,11 +30,11 @@
                     </div>
                 </section>
 
-                <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+                <section role="tabpanel" id="timeline-panel-state" aria-labelledby="timeline-tab-state" x-show="activeView === 'state'" class="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
                     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
                         <div>
-                            <h3 class="text-lg font-semibold text-slate-900">Zustand zu Zeitpunkt T</h3>
-                            <p class="text-sm text-slate-500">Ändere die Zeit und erhalte den vollständigen Systemzustand.</p>
+                            <h3 class="text-lg font-semibold text-slate-900">Bestand zum gewählten Datum</h3>
+                            <p class="text-sm text-slate-500">Nach Erfassungs- und Ausmusterungsdatum. Gelöschte Assets bleiben nur im Verlauf sichtbar.</p>
                         </div>
 
                         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -66,11 +43,13 @@
                                 <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="state.assets"></p>
                                 <p class="text-xs text-slate-500">Aktive Assets</p>
                             </div>
+{% if not unified_inventory %}
                             <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                                 <p class="text-xs uppercase tracking-widest text-slate-400">Geräte</p>
                                 <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="state.devices"></p>
                                 <p class="text-xs text-slate-500">Inventarisierte Geräte</p>
                             </div>
+{% endif %}
                             <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                                 <p class="text-xs uppercase tracking-widest text-slate-400">Tickets</p>
                                 <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="state.tickets"></p>
@@ -82,25 +61,25 @@
                                 <p class="text-xs text-slate-500">Geplante Änderungen</p>
                             </div>
                             <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                                <p class="text-xs uppercase tracking-widest text-slate-400">Dependencies</p>
+                                <p class="text-xs uppercase tracking-widest text-slate-400">Abhängigkeiten</p>
                                 <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="state.dependencies"></p>
                                 <p class="text-xs text-slate-500">Graph-Verbindungen</p>
                             </div>
                             <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                                <p class="text-xs uppercase tracking-widest text-slate-400">Letztes Change</p>
+                                <p class="text-xs uppercase tracking-widest text-slate-400">Letzte Änderung</p>
                                 <p class="mt-2 text-sm font-semibold text-slate-900" x-text="state.last_change"></p>
-                                <p class="text-xs text-slate-500">Geschichte bis zu T</p>
+                                <p class="text-xs text-slate-500">Letztes sichtbares Ereignis</p>
                             </div>
                         </div>
                     </div>
 
                     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
                         <div>
-                            <h3 class="text-lg font-semibold text-slate-900">Varianten simulieren</h3>
-                            <p class="text-sm text-slate-500">Auswirkungen geplanter Änderungen auf den Bestand prüfen.</p>
+                            <h3 class="text-lg font-semibold text-slate-900">Vorgänge berücksichtigen</h3>
+                            <p class="text-sm text-slate-500">Tickets und geplante Roadmap-Ereignisse im Verlauf ein- oder ausblenden.</p>
                         </div>
                         <div class="space-y-4">
-                            <label class="block text-xs font-semibold text-slate-500">Simulationszweig auswählen</label>
+                            <label class="block text-xs font-semibold text-slate-500">Ansicht auswählen</label>
                             <select x-model="branch" @change="applyBranch()" aria-label="Simulationszweig" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                                 <template x-for="option in branchOptions" :key="option.value">
                                     <option :value="option.value" x-text="option.label"></option>
@@ -133,18 +112,18 @@
                             </div>
 
                             <div class="rounded-2xl border border-cyan-100 bg-cyan-50 px-4 py-4">
-                                <p class="text-xs font-semibold text-cyan-700">Branch-Effekt</p>
+                                <p class="text-xs font-semibold text-cyan-700">Auswahl</p>
                                 <p class="text-xs text-cyan-700/80 mt-2" x-text="branchSummary"></p>
                             </div>
                         </div>
                     </div>
                 </section>
 
-                <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+<section role="tabpanel" id="timeline-panel-history" aria-labelledby="timeline-tab-history" x-show="activeView === 'history'" x-cloak class="timeline-layout"><div class="workspace-panel">
                     <div class="flex flex-wrap items-center justify-between gap-4">
                         <div>
-                            <h3 class="text-lg font-semibold text-slate-900">Timeline-View</h3>
-                            <p class="text-sm text-slate-500">Vertikale Zeitachse mit Ebenen für Assets, Geräte, Tickets und Roadmaps.</p>
+                            <h3 class="text-lg font-semibold text-slate-900">Änderungsverlauf</h3>
+                            <p class="text-sm text-slate-500">Ereignisse und geplante Vorgänge nach Bereich.</p>
                         </div>
                         <div class="text-xs text-slate-400">Filter und Vergleich über die Toolbar oben.</div>
                     </div>
@@ -157,7 +136,7 @@
                                     <span class="text-xs text-slate-400" x-text="`${layerChanges(layer.key).length} Änderungen`"></span>
                                 </div>
                                 <div class="mt-4 space-y-4">
-                                    <template x-for="change in layerChanges(layer.key)" :key="change.key">
+                                    <template x-for="change in pagedLayerChanges(layer.key)" :key="change.key">
                                         <div class="flex flex-col gap-3 rounded-2xl border border-transparent bg-white px-4 py-3 shadow-sm transition hover:border-cyan-300 sm:flex-row sm:items-start">
                                             <div class="flex items-start gap-3 sm:w-40">
                                                 <span class="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-500"></span>
@@ -180,13 +159,11 @@
                             </div>
                         </template>
                     </div>
-                </section>
-
-                <section class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+                <div class="table-pagination"><span x-text="filteredChanges().length+' Ereignisse'"></span><div class="ui-actions"><button type="button" class="btn btn-secondary" :disabled="historyPage === 1" @click="historyPage--">Zurück</button><span x-text="'Seite '+historyPage+' von '+historyPages()"></span><button type="button" class="btn btn-secondary" :disabled="historyPage >= historyPages()" @click="historyPage++">Weiter</button></div></div></div><aside>
                     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
                         <div class="flex items-center justify-between">
-                            <h3 class="text-lg font-semibold text-slate-900">Change-Details</h3>
-                            <span class="text-xs text-slate-400">Klick auf ein Event in der Timeline</span>
+                            <h3 class="text-lg font-semibold text-slate-900">Ereignisdetails</h3>
+                            <span class="text-xs text-slate-400">Ein Ereignis im Verlauf auswählen</span>
                         </div>
                         <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 space-y-2" x-show="selectedChange">
                             <p class="text-xs uppercase tracking-widest text-slate-400" x-text="selectedChange?.layer_label"></p>
@@ -198,17 +175,14 @@
                                 <span class="rounded-full bg-white px-2 py-1" x-text="`Impact: ${selectedChange?.impact}`"></span>
                             </div>
                         </div>
-                        <p x-show="!selectedChange" class="text-sm text-slate-400">Noch kein Change ausgewählt.</p>
-                        <div class="rounded-2xl border border-cyan-100 bg-cyan-50 px-4 py-4">
-                            <h4 class="text-sm font-semibold text-cyan-800">Rückwärts verstehen</h4>
-                            <p class="mt-2 text-xs text-cyan-700/80">Springe von jedem Change zur Ursache (Ticket, Roadmap, Entscheidung) und sieh die Historie eines Assets in Sekunden.</p>
-                        </div>
+                        <p x-show="!selectedChange" class="text-sm text-slate-400">Noch kein Ereignis ausgewählt.</p>
+
                     </div>
 
-                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+</aside></section><section role="tabpanel" id="timeline-panel-comparison" aria-labelledby="timeline-tab-comparison" x-show="activeView === 'comparison'" x-cloak>                    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
                         <div class="flex items-center justify-between">
                             <h3 class="text-lg font-semibold text-slate-900">Vergleichsmodus</h3>
-                            <span class="text-xs text-slate-400">Realität vs. Simulation</span>
+                            <span class="text-xs text-slate-400">Bestand an zwei Daten</span>
                         </div>
                         <div class="space-y-3">
                             <label class="block text-xs font-semibold text-slate-500">Vergleichsdatum</label>
@@ -234,6 +208,8 @@
         function timeMachineApp() {
             return {
                 changes: [],
+                activeView: 'state',
+                historyPage: 1,
                 roadmaps: [],
                 tickets: [],
                 range: { start: null, end: null },
@@ -256,19 +232,21 @@
                 selectedRoadmaps: [],
                 selectedLayer: 'all',
                 layers: [
-                    { key: 'devices', label: 'Geräte', color: 'slate' },
+                    {% if not unified_inventory %}{ key: 'devices', label: 'Geräte', color: 'slate' },{% endif %}
                     { key: 'assets', label: 'Assets', color: 'indigo' },
                     { key: 'tickets', label: 'Tickets', color: 'amber' },
                     { key: 'roadmaps', label: 'Roadmaps', color: 'cyan' },
-                    { key: 'dependencies', label: 'Dependencies', color: 'purple' },
+                    { key: 'dependencies', label: 'Abhängigkeiten', color: 'purple' },
                     { key: 'organisation', label: 'Organisation', color: 'emerald' }
                 ],
                 branchOptions: [
-                    { value: 'main', label: 'Realität (Main)' },
-                    { value: 'no-ticket', label: 'Branch: Ticket ignorieren' },
-                    { value: 'roadmap-sim', label: 'Branch: Roadmap-Simulation' }
+                    { value: 'main', label: 'Gespeicherter Stand' },
+                    { value: 'no-ticket', label: 'Ticket ausblenden' },
+                    { value: 'roadmap-sim', label: 'Roadmaps berücksichtigen' }
                 ],
                 async init() {
+                    this.$watch('selectedLayer',()=>this.historyPage=1);
+                    this.$watch('branch',()=>this.historyPage=1);
                     await this.loadChanges();
                     this.setToday();
                     await this.loadState();
@@ -319,6 +297,7 @@
                 },
                 toggleCompare() {
                     this.compareEnabled = !this.compareEnabled;
+                    this.activeView=this.compareEnabled ? 'comparison' : 'state';
                     if (this.compareEnabled) {
                         this.loadComparisonState();
                     } else {
@@ -331,6 +310,8 @@
                     }
                     return this.layers.filter(layer => layer.key === this.selectedLayer);
                 },
+                historyPages() { return Math.max(1,Math.ceil(this.filteredChanges().length/20)); },
+                pagedLayerChanges(layerKey) { return this.filteredChanges().slice((this.historyPage-1)*20,this.historyPage*20).filter(change => change.layer === layerKey); },
                 layerChanges(layerKey) {
                     return this.filteredChanges().filter(change => change.layer === layerKey);
                 },
@@ -344,7 +325,8 @@
                             result = result.filter(change => !change.is_planned || this.selectedRoadmaps.includes(String(change.roadmap_id || '')));
                         }
                     }
-                    return result.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    if (this.selectedLayer !== 'all') result=result.filter(change=>change.layer === this.selectedLayer);
+                    return result.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                 },
                 selectChange(change) {
                     this.selectedChange = change;
@@ -375,10 +357,10 @@
                 get comparisonMetrics() {
                     const metrics = [
                         { key: 'assets', label: 'Assets' },
-                        { key: 'devices', label: 'Geräte' },
+                        {% if not unified_inventory %}{ key: 'devices', label: 'Geräte' },{% endif %}
                         { key: 'tickets', label: 'Tickets' },
                         { key: 'roadmaps', label: 'Roadmaps' },
-                        { key: 'dependencies', label: 'Dependencies' },
+                        { key: 'dependencies', label: 'Abhängigkeiten' },
                         { key: 'tickets_open', label: 'Tickets offen' }
                     ];
                     return metrics.map(metric => {

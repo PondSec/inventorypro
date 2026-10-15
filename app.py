@@ -13582,6 +13582,8 @@ def time_machine_state():
         db=TimelineReader(db,user_can,get_user_access(db),canonical_dependency_graph(db))
     timestamp_raw = request.args.get('timestamp')
     timestamp = parse_time_machine_timestamp(timestamp_raw) or utc_now()
+    if isinstance(timestamp_raw,str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}',timestamp_raw):
+        timestamp=timestamp.replace(hour=23,minute=59,second=59,microsecond=999999)
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
     assets = db.execute('''

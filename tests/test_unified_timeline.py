@@ -36,3 +36,11 @@ def test_timeline_scope_does_not_reveal_foreign_assets_tickets_or_roadmaps(unifi
     assert any(row['entity_type']=='device' for row in changes.json['changes'])
     assert not any(row['entity_type']=='asset' and row['entity_id']==secret['id'] for row in changes.json['changes'])
     assert 'QA secret' not in changes.get_data(as_text=True)
+
+
+def test_date_selection_includes_records_created_during_that_day(unified_client):
+    client=unified_client
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();db.execute("UPDATE assets SET created_at='2026-10-15 16:30:00'");db.commit()
+    assert client.get('/api/time-machine/state?timestamp=2026-10-15').json['assets']==40
+    assert client.get('/api/time-machine/state?timestamp=2026-10-15T12:00:00').json['assets']==0
