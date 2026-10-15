@@ -175,14 +175,14 @@
 
                 <nav class="sd-detail-tabs" role="tablist" aria-label="Ticketbereiche">
                     <template x-for="tab in detailTabs" :key="tab.key">
-                        <button type="button" role="tab" :aria-selected="detailTab === tab.key" @click="detailTab = tab.key" :class="{ active: detailTab === tab.key }"><span x-text="tab.label"></span><small x-show="tabCount(tab.key)" x-text="tabCount(tab.key)"></small></button>
+                        <button type="button" role="tab" :id="'ticket-tab-' + tab.key" :aria-controls="'ticket-panel-' + tab.key" :aria-selected="detailTab === tab.key" @click="detailTab = tab.key" :class="{ active: detailTab === tab.key }"><span x-text="tab.label"></span><small x-show="tabCount(tab.key)" x-text="tabCount(tab.key)"></small></button>
                     </template>
                 </nav>
 
                 <div class="sd-detail-layout">
                     <section class="sd-detail-content">
                         <div x-show="detailLoading" class="sd-detail-loading">Ticket wird geladen …</div>
-                        <div x-show="detailTab === 'conversation'">
+                        <div role="tabpanel" id="ticket-panel-conversation" aria-labelledby="ticket-tab-conversation" x-show="detailTab === 'conversation'">
                             <article class="sd-request-message">
                                 <header><span class="sd-avatar" x-text="initials(selectedTicket.requester_name || selectedTicket.created_by)"></span><div><strong x-text="selectedTicket.requester_name || selectedTicket.created_by"></strong><small>Ursprüngliche Anfrage · <time x-text="formatDateTime(selectedTicket.created_at)"></time></small></div></header>
                                 <p x-text="selectedTicket.description"></p>
@@ -206,7 +206,7 @@
                             </form>
                         </div>
 
-                        <div x-show="detailTab === 'attachments'" class="sd-tab-section">
+                        <div role="tabpanel" id="ticket-panel-attachments" aria-labelledby="ticket-tab-attachments" x-show="detailTab === 'attachments'" class="sd-tab-section">
                             <header><div><h3>Anhänge</h3><p>Dateien und Bilder zu diesem Ticket</p></div><button type="button" class="sd-button" @click="$refs.attachmentFile.click()"><i data-feather="upload"></i>Hochladen</button><input x-ref="attachmentFile" hidden type="file" @change="uploadAttachment($event)"></header>
                             <div class="sd-file-list">
                                 <template x-for="file in attachments" :key="file.id"><article><i data-feather="file-text"></i><div><strong x-text="file.original_filename"></strong><small x-text="formatFileSize(file.size_bytes)"></small></div><a :href="`/attachments/${file.id}/download`" aria-label="Anhang herunterladen"><i data-feather="download"></i></a></article></template>
@@ -214,7 +214,7 @@
                             </div>
                         </div>
 
-                        <div x-show="detailTab === 'knowledge'" class="sd-tab-section sd-work-context">
+                        <div role="tabpanel" id="ticket-panel-knowledge" aria-labelledby="ticket-tab-knowledge" x-show="detailTab === 'knowledge'" class="sd-tab-section sd-work-context">
                             <header>
                                 <div>
                                     <h3>Wissen und ähnliche gelöste Fälle</h3>
@@ -264,7 +264,7 @@
                             </section>
                         </div>
 
-                        <div x-show="detailTab === 'activity'" class="sd-tab-section">
+                        <div role="tabpanel" id="ticket-panel-activity" aria-labelledby="ticket-tab-activity" x-show="detailTab === 'activity'" class="sd-tab-section">
                             <header><div><h3>Aktivitäten</h3><p>Nachvollziehbare Änderungen am Ticket</p></div></header>
                             <ol class="sd-activity-timeline" aria-label="Ticketverlauf">
                                 <template x-for="activity in selectedTicket.activity || []" :key="activity.id">

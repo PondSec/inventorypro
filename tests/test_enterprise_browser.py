@@ -293,3 +293,36 @@ def test_inventory_preview_focus_escape_and_history(live_inventory, browser):
     page.go_back()
     expect(dialog).to_be_visible()
     context.close()
+
+
+def test_shared_tabs_keyboard_and_panel_semantics(live_inventory, browser, isolated_inventory):
+    import app as inventory_app
+    with inventory_app.app.app_context():
+        db = inventory_app.get_db()
+        db.execute("INSERT INTO tickets(title,description,created_by,status) VALUES ('QA keyboard ticket','Synthetic','admin','open')")
+        db.commit()
+    context = browser.new_context(viewport={'width': 1280, 'height': 900})
+    page = context.new_page()
+    sign_in(page, live_inventory)
+    for route in ('/procurement', '/users', '/health', '/tickets?queue=all-open'):
+        page.goto(live_inventory + route)
+        if route.startswith('/tickets'):
+            page.locator('[data-ticket-index]').first.click()
+        tabs = page.get_by_role('tablist').get_by_role('tab')
+        expect(tabs.first).to_be_visible()
+        tabs.first.focus()
+        page.keyboard.press('End')
+        expect(tabs.last).to_be_focused()
+        expect(tabs.last).to_have_attribute('aria-selected', 'true')
+        panel_id = tabs.last.get_attribute('aria-controls')
+        expect(page.locator('#' + panel_id)).to_be_visible()
+        assert page.locator('#' + panel_id).get_attribute('role') == 'tabpanel'
+        page.keyboard.press('Home')
+        expect(tabs.first).to_be_focused()
+        expect(tabs.first).to_have_attribute('aria-selected', 'true')
+        page.keyboard.press('ArrowLeft')
+        expect(tabs.last).to_be_focused()
+        page.keyboard.press('ArrowRight')
+        expect(tabs.first).to_be_focused()
+        assert tabs.evaluate_all('(nodes) => nodes.filter(node => node.tabIndex === 0).length') == 1
+    context.close()

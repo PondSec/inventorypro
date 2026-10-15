@@ -24,14 +24,14 @@
                             <i data-feather="search" class="h-4 w-4"></i>
                         </span>
                     </div>
-                    <div class="inline-flex rounded-full border border-slate-200 bg-white p-1 text-xs font-semibold">
-                        <button @click="activeAdminTab = 'users'" data-testid="admin-users-tab" class="rounded-full px-4 py-2" :class="activeAdminTab === 'users' ? 'bg-slate-900 text-white' : 'text-slate-600'">Benutzer</button>
-                        <button @click="activeAdminTab = 'roles'" data-testid="admin-roles-tab" class="rounded-full px-4 py-2" :class="activeAdminTab === 'roles' ? 'bg-slate-900 text-white' : 'text-slate-600'">Rollen & Verzeichnis</button>
+                    <div role="tablist" aria-label="Benutzerverwaltung" class="inline-flex rounded-full border border-slate-200 bg-white p-1 text-xs font-semibold">
+                        <button type="button" role="tab" id="users-tab-users" aria-controls="users-panel-users" :aria-selected="activeAdminTab === 'users'" @click="activeAdminTab = 'users'" data-testid="admin-users-tab" class="rounded-full px-4 py-2" :class="activeAdminTab === 'users' ? 'bg-slate-900 text-white' : 'text-slate-600'">Benutzer</button>
+                        <button type="button" role="tab" id="users-tab-roles" aria-controls="users-panel-roles" :aria-selected="activeAdminTab === 'roles'" @click="activeAdminTab = 'roles'" data-testid="admin-roles-tab" class="rounded-full px-4 py-2" :class="activeAdminTab === 'roles' ? 'bg-slate-900 text-white' : 'text-slate-600'">Rollen & Verzeichnis</button>
                     </div>
                 </div>
             </section>
 
-            <div x-show="activeAdminTab === 'users'" class="space-y-6">
+            <div role="tabpanel" id="users-panel-users" aria-labelledby="users-tab-users" x-show="activeAdminTab === 'users'" class="space-y-6">
             <section class="grid gap-6 lg:grid-cols-3">
                 <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-1">
                     <h3 class="text-lg font-semibold text-slate-900">Neuen Benutzer anlegen</h3>
@@ -133,7 +133,7 @@
             </section>
             </div>
 
-            <div x-show="activeAdminTab === 'roles'" class="space-y-6">
+            <div role="tabpanel" id="users-panel-roles" aria-labelledby="users-tab-roles" x-show="activeAdminTab === 'roles'" class="space-y-6">
             <section class="grid gap-6 lg:grid-cols-3" x-show="can('roles.manage')">
                 <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-1">
                     <h3 class="text-lg font-semibold text-slate-900">Neue Rolle</h3>

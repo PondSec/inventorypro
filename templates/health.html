@@ -45,16 +45,16 @@
                 </section>
 
                 <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div class="flex flex-wrap items-center gap-2">
+                    <div role="tablist" aria-label="Systemzustand" class="flex flex-wrap items-center gap-2">
                         <template x-for="tab in tabs" :key="tab.key">
-                            <button @click="activeTab = tab.key" :class="activeTab === tab.key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">
+                            <button type="button" role="tab" :id="'health-tab-' + tab.key" :aria-controls="'health-panel-' + tab.key" :aria-selected="activeTab === tab.key" @click="activeTab = tab.key" :class="activeTab === tab.key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">
                                 <span x-text="tab.label"></span>
                             </button>
                         </template>
                     </div>
                 </section>
 
-                <section x-show="activeTab === 'overview'" x-transition class="space-y-6">
+                <section role="tabpanel" id="health-panel-overview" aria-labelledby="health-tab-overview" x-show="activeTab === 'overview'" x-transition class="space-y-6">
                     <div class="grid gap-6 lg:grid-cols-2">
                         <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                             <div class="flex items-center justify-between">
@@ -107,9 +107,9 @@
                     </div>
                 </section>
 
-                <section x-show="activeTab === 'services'" x-transition class="space-y-4">
+                <section role="tabpanel" id="health-panel-services" aria-labelledby="health-tab-services" x-show="activeTab === 'services'" x-transition class="space-y-4">
                     <div class="filter-bar flex flex-wrap items-center justify-between gap-3">
-                        <input type="text" x-model="serviceFilter" placeholder="Service suchen" class="rounded-full border border-slate-200 px-4 py-2 text-sm">
+                        <input type="text" x-model="serviceFilter" aria-label="Services durchsuchen" placeholder="Service suchen" class="rounded-full border border-slate-200 px-4 py-2 text-sm">
                         <span class="text-xs text-slate-400" x-text="`${filteredServices.length} Services`"></span>
                     </div>
                     <div class="table-wrapper table-responsive rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -147,9 +147,9 @@
                     </div>
                 </section>
 
-                <section x-show="activeTab === 'checks'" x-transition class="space-y-4">
+                <section role="tabpanel" id="health-panel-checks" aria-labelledby="health-tab-checks" x-show="activeTab === 'checks'" x-transition class="space-y-4">
                     <div class="filter-bar flex flex-wrap items-center justify-between gap-3">
-                        <input type="text" x-model="checkFilter" placeholder="Check suchen" class="rounded-full border border-slate-200 px-4 py-2 text-sm">
+                        <input type="text" x-model="checkFilter" aria-label="Prüfungen durchsuchen" placeholder="Check suchen" class="rounded-full border border-slate-200 px-4 py-2 text-sm">
                         <span class="text-xs text-slate-400" x-text="`${filteredChecks.length} Checks`"></span>
                     </div>
                     <div class="table-wrapper table-responsive rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -191,7 +191,7 @@
                     </div>
                 </section>
 
-                <section x-show="activeTab === 'incidents'" x-transition class="space-y-4">
+                <section role="tabpanel" id="health-panel-incidents" aria-labelledby="health-tab-incidents" x-show="activeTab === 'incidents'" x-transition class="space-y-4">
                     <div class="table-wrapper table-responsive rounded-3xl border border-slate-200 bg-white shadow-sm">
                         <table class="table w-full text-sm responsive-table">
                             <thead class="bg-slate-50 text-xs uppercase text-slate-400">
@@ -233,7 +233,7 @@
                     </div>
                 </section>
 
-                <section x-show="activeTab === 'history'" x-transition class="space-y-4">
+                <section role="tabpanel" id="health-panel-history" aria-labelledby="health-tab-history" x-show="activeTab === 'history'" x-transition class="space-y-4">
                     <div class="flex flex-wrap items-center justify-between gap-3">
                         <div class="flex gap-2">
                             <button @click="loadHistory(1)" :class="historyWindow === 1 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'" class="rounded-full px-4 py-2 text-xs font-semibold">24h</button>

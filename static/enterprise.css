@@ -165,3 +165,6 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .quick-preview header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .quick-preview h2 { margin: 0; font-size: 20px; }
 .quick-preview > .btn { margin-top: 24px; }
+.app-body [role=tablist] { border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0; background: transparent; }
+.app-body [role=tablist] [role=tab] { border-radius: 0; border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--color-text-muted); min-height: 40px; }
+.app-body [role=tablist] [role=tab][aria-selected=true] { border-bottom-color: var(--color-accent); color: var(--color-accent); background: var(--color-accent-soft); }
