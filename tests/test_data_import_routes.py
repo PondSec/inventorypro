@@ -155,7 +155,8 @@ class DataImportRoutesTestCase(unittest.TestCase):
         zip_response = self.client.post("/api/import", data=self.upload(archive_content.getvalue(), "backup.zip"))
 
         self.assertEqual(zip_response.status_code, 200)
-        self.import_table_rows.assert_called_once()
+        self.import_data_payload.assert_called_once()
+        self.assertEqual(self.import_data_payload.call_args.args[1],{'devices':[{'name':'router'}]})
         self.assertEqual((self.root / "uploads" / "attachments" / "proof.txt").read_text(), "verified")
 
         sqlite_response = self.client.post("/api/import", data=self.upload(b"sqlite", "backup.sqlite"))

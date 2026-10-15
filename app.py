@@ -51,6 +51,7 @@ from inventorypro.domains.inventory.asset_routes import build_assets_blueprint
 from inventorypro.domains.inventory.category_routes import build_category_blueprint,can_manage as can_manage_asset_category,scopes as asset_category_scopes
 from inventorypro.domains.inventory import assets as canonical_assets
 from inventorypro.domains.inventory.ticket_assets import normalize_links as normalize_ticket_asset_links
+from inventorypro.domains.exports.tables import INVENTORY_TABLES,available_tables,dependency_order
 from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
 from inventorypro.config import resolve_application_secret
 from inventorypro.cache import BoundedTTLCache, SlidingWindowRateLimiter
@@ -2375,38 +2376,56 @@ def export_tables(db, tables):
 def import_table_rows(db, table, rows, mode):
     if not rows:
         return
-    columns = [column["name"] for column in db.execute(f"PRAGMA table_info({table})").fetchall()]
-    if not columns:
-        return
-    placeholders = ", ".join(["?"] * len(columns))
-    column_list = ", ".join(columns)
-    if mode == "merge":
-        statement = f"INSERT OR REPLACE INTO {table} ({column_list}) VALUES ({placeholders})"
-    elif mode == "append":
-        statement = f"INSERT OR IGNORE INTO {table} ({column_list}) VALUES ({placeholders})"
-    else:
-        statement = f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})"
+    schema=db.execute(f"PRAGMA table_info({table})").fetchall()
+    known=[column['name'] for column in schema]
+    foreign={column['from'] for column in db.execute(f'PRAGMA foreign_key_list({table})')}
+    definitions={column['name']:column for column in schema}
     for row in rows:
+        if not isinstance(row,dict):raise ValueError('Importzeilen müssen Objekte sein.')
+        row=dict(row)
+        for key,value in list(row.items()):
+            if key not in definitions:continue
+            column=definitions[key]
+            if value=='' and (key in foreign or column['type'].upper() in {'INTEGER','REAL','NUMERIC'}):row[key]=None
+            if row[key] is None and column['notnull'] and column['dflt_value'] is not None:row.pop(key)
+        columns=[column for column in known if column in row]
+        if not columns:raise ValueError('Importzeile enthält keine gültigen Spalten.')
+        placeholders=','.join('?' for _ in columns);column_list=','.join(columns)
+        statement=f"INSERT {'OR IGNORE ' if mode=='append' else ''}INTO {table} ({column_list}) VALUES ({placeholders})"
+        if mode=='merge':
+            primary=[column['name'] for column in schema if column['pk']]
+            updates=[column for column in columns if column not in primary]
+            if primary:statement+=' ON CONFLICT ('+','.join(primary)+') DO '+('UPDATE SET '+','.join(column+'=excluded.'+column for column in updates) if updates else 'NOTHING')
         values = [row.get(column) for column in columns]
         db.execute(statement, values)
 
 def import_data_payload(db, payload, mode, tables):
-    if mode == "replace":
-        for table in tables:
-            db.execute(f"DELETE FROM {table}")
-    for table in tables:
-        rows = payload.get(table, [])
-        import_table_rows(db, table, rows, mode if mode != "replace" else "append")
+    if not isinstance(payload,dict):raise ValueError('Importdatei muss ein JSON-Objekt enthalten.')
+    ordered=dependency_order(db,available_tables(db,tables))
+    is_unified=canonical_assets.unified(db)
+    canonical_payload=is_unified and any(key in payload for key in ['asset_legacy_devices','asset_components'])
+    if not db.in_transaction:db.execute('BEGIN IMMEDIATE')
+    db.execute('SAVEPOINT portable_inventory_import')
+    try:
+        if canonical_payload:db.execute('UPDATE inventory_compat_sync SET busy=1 WHERE id=1')
+        if mode=='replace':
+            for table in reversed(ordered):
+                if table in payload:db.execute(f'DELETE FROM {table}')
+        for table in ordered:import_table_rows(db,table,payload.get(table,[]),mode if mode!='replace' else 'append')
+        if canonical_payload:db.execute('UPDATE inventory_compat_sync SET busy=0 WHERE id=1')
+        if is_unified:
+            from inventorypro.domains.inventory.unification import convert_inventory
+            convert_inventory(db)
+        if db.execute('PRAGMA foreign_key_check').fetchall():raise ValueError('Import enthält ungültige Verweise.')
+        db.execute('RELEASE SAVEPOINT portable_inventory_import')
+    except BaseException:
+        db.execute('ROLLBACK TO SAVEPOINT portable_inventory_import');db.execute('RELEASE SAVEPOINT portable_inventory_import');raise
 
 def import_from_sqlite(db, source_path, mode, tables):
     with sqlite3.connect(source_path) as source:
         source.row_factory = sqlite3.Row
-        if mode == "replace":
-            for table in tables:
-                db.execute(f"DELETE FROM {table}")
-        for table in tables:
-            rows = source.execute(f"SELECT * FROM {table}").fetchall()
-            import_table_rows(db, table, [dict(row) for row in rows], mode if mode != "replace" else "append")
+        payload={table:[dict(row) for row in source.execute(f'SELECT * FROM {table}')] for table in available_tables(source,tables)}
+        import_data_payload(db,payload,mode,tables)
 
 def migrate_customization(data):
     return migrate_customization_payload(data, default_customization=DEFAULT_CUSTOMIZATION)
@@ -15698,21 +15717,8 @@ app.register_blueprint(
         current_actor=lambda: session.get("username", "system"),
         max_import_bytes=MAX_IMPORT_BYTES,
         max_import_expanded_bytes=MAX_IMPORT_EXPANDED_BYTES,
-        uploads_dir=UPLOADS_DIR,
-        import_tables=(
-            "categories",
-            "asset_categories",
-            "locations",
-            "devices",
-            "assets",
-            "maintenance_tasks",
-            "asset_assignment_history",
-            "vendors",
-            "contracts",
-            "purchase_orders",
-            "purchase_order_items",
-            "attachments",
-        ),
+        uploads_dir=lambda: UPLOADS_DIR,
+        import_tables=INVENTORY_TABLES,
         run_backup_job=run_backup_job,
         save_import_file=save_import_file,
         validate_import_file=validate_import_file,
@@ -15787,7 +15793,7 @@ app.register_blueprint(
     build_exports_blueprint(
         get_db=get_db,
         get_export_settings=lambda db: serialize_server_settings(get_server_settings(db))[0],
-        uploads_dir=UPLOADS_DIR,
+        uploads_dir=lambda: UPLOADS_DIR,
         export_tables=export_tables,
         run_sqlite_backup=run_sqlite_backup,
         log_activity=log_activity,

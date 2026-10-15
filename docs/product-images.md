@@ -36,3 +36,16 @@ für berechtigte Clients verfügbar. Ein Offlinebetrieb benötigt daher für vor
 Bilder keine Verbindung zu Wikidata oder Wikimedia Commons. Der öffentliche Dienst
 bietet keine vollständige Abdeckung aller inventarisierbaren Dinge; eigene Fotos
 und die einheitlichen Typ-Symbole sind weiterhin für jedes Objekt verfügbar.
+
+Portable JSON-, CSV- und Excel-Exporte enthalten auch Asset-Inhalte, Tags,
+Katalogmodelle, Bildkennungen, Bildlizenzen und individuelle Bildzuordnungen.
+Mit aktivierter Upload-Option lassen sich die erzeugten ZIP-Archive wieder
+importieren, einschließlich der JSON-, SQLite- oder Excel-Datei im Archiv.
+Vorhandene Dateien mit abweichendem Inhalt werden dabei nicht überschrieben.
+Zusammenführen aktualisiert Datensätze ohne deren abhängige Einträge zu löschen.
+
+Für eine vollständige Instanzwiederherstellung weiterhin Datenbank und Datenvolume
+sichern: Portable Inventarexporte enthalten keine Konten, Rollen, Tickets, Secrets
+oder Instanzeinstellungen. Verweise auf nicht vorhandene Benutzer oder unabhängige
+Vorgänge führen zu einem zurückgerollten Import. JSON/SQLite sind für typgetreue
+Archivierung vorzuziehen; Tabellenformate unterscheiden leere Zellen und NULL nicht.

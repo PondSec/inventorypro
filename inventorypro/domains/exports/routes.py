@@ -18,6 +18,7 @@ from openpyxl import Workbook
 from inventorypro.web.blueprints import stable_route
 
 from .service import build_export_metadata, protect_spreadsheet_record, protect_spreadsheet_row
+from .tables import INVENTORY_TABLES,available_tables
 
 
 def build_exports_blueprint(
@@ -51,27 +52,30 @@ def build_exports_blueprint(
     )
 
     def add_uploads(archive: zipfile.ZipFile) -> None:
-        for path in uploads_dir.rglob("*"):
+        root=uploads_dir() if callable(uploads_dir) else uploads_dir
+        for path in root.rglob("*"):
             if path.is_file():
-                archive.write(path, arcname=str(Path("uploads") / path.relative_to(uploads_dir)))
+                archive.write(path, arcname=str(Path("uploads") / path.relative_to(root)))
 
     @stable_route(blueprint, "/api/export", methods=["GET"])
     @login_required
     @require_permission("server_settings.manage")
     def export_data():
         database = get_db()
+        tables=available_tables(database,tuple(dict.fromkeys((*table_names,*INVENTORY_TABLES))))
         settings = get_export_settings(database)
         if not settings["importExport"]["exportAllowed"]:
             return jsonify({"error": "Export ist deaktiviert."}), 403
         export_format = settings["importExport"]["exportFormat"]
         include_uploads = settings["importExport"]["includeUploads"]
+        root=uploads_dir() if callable(uploads_dir) else uploads_dir
         temp_dir = Path(tempfile.mkdtemp(prefix="inventory_export_"))
         archive_path = None
         try:
             if export_format == "sqlite":
                 database_path = temp_dir / "inventory.db"
                 run_sqlite_backup(database_path)
-                if include_uploads and uploads_dir.exists():
+                if include_uploads and root.exists():
                     archive_path = temp_dir / "inventory_export.zip"
                     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
                         archive.write(database_path, arcname="inventory.db")
@@ -79,11 +83,11 @@ def build_exports_blueprint(
                 else:
                     archive_path = database_path
             elif export_format == "json":
-                payload = export_tables(database, table_names)
-                payload["_metadata"] = build_export_metadata(export_format, table_names)
+                payload = export_tables(database, tables)
+                payload["_metadata"] = build_export_metadata(export_format, tables)
                 data_path = temp_dir / "inventory_export.json"
                 data_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-                if include_uploads and uploads_dir.exists():
+                if include_uploads and root.exists():
                     archive_path = temp_dir / "inventory_export.zip"
                     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
                         archive.write(data_path, arcname="inventory_export.json")
@@ -95,16 +99,16 @@ def build_exports_blueprint(
                 workbook = Workbook(write_only=True)
                 metadata_sheet = workbook.create_sheet(title="metadata")
                 metadata_sheet.append(["key", "value"])
-                for key, value in build_export_metadata(export_format, table_names).items():
+                for key, value in build_export_metadata(export_format, tables).items():
                     metadata_sheet.append([key, json.dumps(value, ensure_ascii=False) if isinstance(value, list) else value])
-                for table_name in table_names:
+                for table_name in tables:
                     worksheet = workbook.create_sheet(title=table_name[:31])
                     columns = [column["name"] for column in database.execute(f"PRAGMA table_info({table_name})").fetchall()]
                     worksheet.append(columns)
                     for row in database.execute(f"SELECT * FROM {table_name}").fetchall():
                         worksheet.append(protect_spreadsheet_row(row[column] for column in columns))
                 workbook.save(data_path)
-                if include_uploads and uploads_dir.exists():
+                if include_uploads and root.exists():
                     archive_path = temp_dir / "inventory_export.zip"
                     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
                         archive.write(data_path, arcname="inventory_export.xlsx")
@@ -114,7 +118,7 @@ def build_exports_blueprint(
             else:
                 archive_path = temp_dir / "inventory_export.zip"
                 with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-                    for table_name in table_names:
+                    for table_name in tables:
                         rows = database.execute(f"SELECT * FROM {table_name}").fetchall()
                         csv_path = temp_dir / f"{table_name}.csv"
                         if rows:
@@ -127,7 +131,7 @@ def build_exports_blueprint(
                         else:
                             csv_path.write_text("", encoding="utf-8")
                         archive.write(csv_path, arcname=f"{table_name}.csv")
-                    if include_uploads and uploads_dir.exists():
+                    if include_uploads and root.exists():
                         add_uploads(archive)
             if (export_format in {"sqlite", "json", "xlsx"} and include_uploads) or export_format == "csv":
                 filename = "inventory_export.zip"
@@ -143,7 +147,7 @@ def build_exports_blueprint(
                 database,
                 "export_created",
                 "server_settings",
-                details={"format": export_format, "includeUploads": include_uploads, "tables": list(table_names)},
+                details={"format": export_format, "includeUploads": include_uploads, "tables": list(tables)},
             )
             database.commit()
             return Response(
