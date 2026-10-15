@@ -111,7 +111,11 @@ def _import(db,uploads_dir,job,result,data,mime):
     existing=db.execute('SELECT id FROM product_models WHERE manufacturer_key=? AND model_key=?',
         (manufacturer_key(identity['manufacturer']),compact(identity['model'] or result['entity']['name']))).fetchone()
     model=service.get_model(db,existing[0]) if existing else service.create_model(db,{'manufacturer':identity['manufacturer'],
-        'name':identity['model'] or result['entity']['name'],'source_url':result['entity']['source_url']},source_kind='wikidata',source_ref=result['entity']['source_ref'])
+        'name':identity['model'] or result['entity']['name'],'gtin':result['entity'].get('verified_gtin',''),
+        'source_url':result['entity']['source_url']},source_kind='wikidata',source_ref=result['entity']['source_ref'])
+    verified_gtin=result['entity'].get('verified_gtin')
+    if verified_gtin and verified_gtin==identity.get('gtin') and not any(item['kind']=='gtin' and item['value']==verified_gtin for item in model['identifiers']):
+        db.execute("INSERT OR IGNORE INTO product_identifiers(product_id,kind,manufacturer_key,value) VALUES (?,'gtin','',?)",(model['id'],verified_gtin))
     if not model['images']:
         media=store_image(db,uploads_dir,BytesIO(data),mime_type=mime)
         model=service.add_model_image(db,model['id'],media,result['image'],model['updated_at'])

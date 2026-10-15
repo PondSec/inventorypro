@@ -61,6 +61,18 @@ def test_cc0_explicit_license_and_no_artist_is_accepted(monkeypatch):
     assert commons.lookup(identity())['image']['license_code']=='CC0-1.0'
 
 
+def test_gtin_only_identity_requires_and_returns_the_actual_public_identifier(monkeypatch):
+    fixture_api(monkeypatch);original=commons.fetch_json
+    def api(url):
+        result=original(url)
+        if 'ids=Q123' in url:result['entities']['Q123']['claims']['P3962']=[claim('4006381333931')]
+        return result
+    monkeypatch.setattr(commons,'fetch_json',api)
+    result=commons.lookup(identity(model='',gtin='4006381333931'))
+    assert result['status']=='matched' and result['entity']['verified_gtin']=='4006381333931'
+    assert commons.lookup(identity(model='',gtin='5901234123457'))['status']=='no_match'
+
+
 def test_two_exact_entities_remain_ambiguous(monkeypatch):
     fixture_api(monkeypatch)
     original=commons.fetch_json

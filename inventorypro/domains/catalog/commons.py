@@ -121,6 +121,9 @@ def lookup(identity):
     exact=[candidate for candidate in candidates if candidate['exact']]
     if len(exact)!=1:return {'status':'ambiguous' if exact else 'no_match','candidates':candidates}
     candidate=exact[0];entity=entities[candidate['source_ref']]
+    gtin=valid_gtin(identity['gtin'])
+    if gtin and gtin in {valid_gtin(code) for code in values(entity,'P3962') if isinstance(code,str)}:
+        candidate['verified_gtin']=gtin
     pictures=values(entity,'P18')
     if not pictures:return {'status':'no_image','candidates':candidates}
     image=image_info(pictures[0])

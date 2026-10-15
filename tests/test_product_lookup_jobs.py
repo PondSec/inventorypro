@@ -39,6 +39,22 @@ def test_public_source_disabled_by_default_and_requires_explicit_review(client):
     assert client.post('/api/catalog/external/queue',json={}).status_code==409
 
 
+def test_verified_gtin_only_lookup_assigns_cached_image_without_inventing_identifiers(client,monkeypatch):
+    provider(monkeypatch);original=jobs.commons.lookup
+    def lookup(value):
+        result=original(value);result['entity']['verified_gtin']=value['gtin'];return result
+    monkeypatch.setattr(jobs.commons,'lookup',lookup)
+    value={**identity(),'model':'','gtin':'4006381333931'}
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();enable(db)
+        db.execute('UPDATE devices SET specs=? WHERE id=1',(json.dumps(value),))
+        jobs.enqueue(db,'device',1,value);db.commit()
+        assert jobs.process_next(db,inventory_app.UPLOADS_DIR)
+        assert db.execute("SELECT value FROM product_identifiers WHERE kind='gtin'").fetchone()[0]==value['gtin']
+    photo=client.get('/api/inventory/device/1/photo').json
+    assert photo['source']=='catalog' and client.get(photo['url']).status_code==200
+
+
 def test_deduplicated_lookup_downloads_once_and_survives_new_connection(client,monkeypatch):
     calls=provider(monkeypatch)
     with inventory_app.app.app_context():
