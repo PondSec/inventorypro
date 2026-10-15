@@ -103,9 +103,15 @@ class ActivityAuditTestCase(unittest.TestCase):
                 trigger_names,
                 {"activity_log_prevent_delete", "activity_log_prevent_update"},
             )
+            # Roll back through the audit migration even when newer modules add
+            # migrations. A single step always targets the newest migration.
+            audit_and_later = [row["id"] for row in db.execute(
+                "SELECT id FROM schema_migrations WHERE id >= ? ORDER BY id",
+                ("003_activity_log_integrity",),
+            )]
             self.assertEqual(
-                rollback_migrations(db, migration_directory),
-                ["003_activity_log_integrity"],
+                rollback_migrations(db, migration_directory, steps=len(audit_and_later)),
+                list(reversed(audit_and_later)),
             )
             rolled_back_columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(activity_log)").fetchall()
@@ -114,7 +120,7 @@ class ActivityAuditTestCase(unittest.TestCase):
             self.assertNotIn("outcome", rolled_back_columns)
             self.assertEqual(
                 apply_migrations(db, migration_directory),
-                ["003_activity_log_integrity"],
+                audit_and_later,
             )
 
     def test_activity_entries_are_immutable_inside_the_application_database(self):
