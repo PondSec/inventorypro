@@ -33,7 +33,7 @@
     {% set can_analysis = is_superuser or 'stats.view' in permissions or 'dependencies.view' in permissions or 'dependencies.manage' in permissions or 'timemachine.view' in permissions or 'health.view' in permissions or 'health.manage' in permissions or 'health.run' in permissions %}
     <aside class="app-sidebar sidebar enterprise-sidebar" aria-label="Hauptnavigation">
         <div class="sidebar-header enterprise-sidebar__header">
-            <a href="/" class="sidebar-brand" aria-label="Inventory Pro Startseite">
+            <a href="{{ '/inventory' if can_devices or can_assets else '/' }}" class="sidebar-brand" aria-label="Inventory Pro Startseite">
                 <span class="sidebar-logo" data-brand-logo><i data-feather="box" data-brand-logo-icon class="w-5 h-5" aria-hidden="true"></i></span>
                 <span class="sidebar-title sidebar-text" data-brand-name>Inventory Pro</span>
             </a>
@@ -41,7 +41,6 @@
         <nav class="sidebar-content sidebar-scroll scrollbar-hide" aria-label="Module">
             {% if can_devices or can_assets or 'locations.view' in permissions or 'locations.manage' in permissions or 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}
             {% call nav_group('Inventar', 'layers', current_path == '/' or current_path.startswith('/inventory') and not current_path.startswith('/inventory-links') or current_path == '/locations') %}
-                {{ render_nav_link('/?view=overview', 'Übersicht', 'box', current_path == '/' and inventory_view == 'overview') }}
                 {% if can_devices or can_assets %}{{ render_nav_link('/inventory', 'Bestand', 'grid', current_path == '/inventory' and not request.args.get('kind')) }}{% endif %}
                 {% if can_devices %}{{ render_nav_link('/inventory?kind=device', 'Geräte', 'monitor', current_path.startswith('/inventory/devices/') or current_path == '/inventory' and request.args.get('kind') == 'device') }}{% endif %}
                 {% if can_assets %}{{ render_nav_link('/inventory?kind=asset', 'Sets & Zubehör', 'package', current_path.startswith('/inventory/assets/') or current_path == '/inventory' and request.args.get('kind') == 'asset') }}{% endif %}
