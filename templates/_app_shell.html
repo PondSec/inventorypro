@@ -36,6 +36,7 @@
             <a href="{{ '/inventory' if can_devices or can_assets else '/' }}" class="sidebar-brand" aria-label="Inventory Pro Startseite">
                 <span class="sidebar-logo" data-brand-logo><i data-feather="box" data-brand-logo-icon class="w-5 h-5" aria-hidden="true"></i></span>
                 <span class="sidebar-title sidebar-text" data-brand-name>Inventory Pro</span>
+                <span class="sr-only" data-brand-tagline>{{ 'Verknüpfte Instanz' if current_path.startswith('/inventory-links/') else 'Inventarisierung' }}</span>
             </a>
         </div>
         <nav class="sidebar-content sidebar-scroll scrollbar-hide" aria-label="Module">
