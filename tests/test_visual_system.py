@@ -145,3 +145,23 @@ def test_inventory_filters_selection_export_and_create_menu(live_inventory, brow
     page.get_by_role('link',name='Gerät erfassen',exact=True).click()
     expect(page.get_by_test_id('device-modal')).to_be_visible()
     context.close()
+
+
+def test_composite_filter_borders_are_never_covered_by_inner_fields(live_inventory,browser):
+    context=browser.new_context(viewport={'width':1672,'height':941},reduced_motion='reduce')
+    page=context.new_page();sign_in(page,live_inventory);page.goto(live_inventory+'/inventory')
+    page.locator('[data-object-link]').first.click()
+    for width in [1920,1672,1440,1280,390]:
+        page.set_viewport_size({'width':width,'height':941})
+        if width<1280:page.keyboard.press('Escape')
+        for theme in ['light','dark']:
+            page.evaluate('(theme)=>InventoryTheme.set(theme)',theme)
+            bounds=page.evaluate('''()=>[...document.querySelectorAll('.filter-search,.filter-select')].map(parent=>{
+                const inner=parent.querySelector('input,select'),p=parent.getBoundingClientRect(),i=inner.getBoundingClientRect();
+                return {top:i.top-p.top,bottom:p.bottom-i.bottom,border:getComputedStyle(parent).borderTopWidth,
+                    innerBorder:getComputedStyle(inner).borderTopWidth};
+            })''')
+            assert bounds and all(item['top']>=.9 and item['bottom']>=.9 and item['border']=='1px' and item['innerBorder']=='0px' for item in bounds),(width,theme,bounds)
+    page.get_by_role('searchbox',name='Bestand durchsuchen',exact=True).focus()
+    assert page.locator('.filter-search').evaluate("el=>getComputedStyle(el).outlineStyle")=='solid'
+    context.close()

@@ -55,8 +55,8 @@
 .app-body :is(.btn,.sd-button) { padding: 6px 12px; font-weight: 600; width: auto; }
 .app-body .icon-button { padding: 6px 8px; }
 .app-body .btn-secondary { background: var(--color-surface); }
-.app-body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select,textarea) { border-radius: 6px; box-shadow: none; color: var(--color-text); background-color: var(--color-surface); font-family: inherit; font-size: 13px; line-height: 20px; }
-.app-body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select) { min-height: var(--control-height); padding: 6px 10px; }
+.app-body :where(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select,textarea) { border-radius: 6px; box-shadow: none; color: var(--color-text); background-color: var(--color-surface); font-family: inherit; font-size: 13px; line-height: 20px; }
+.app-body :where(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select) { min-height: var(--control-height); padding: 6px 10px; }
 .app-body :is(input[type=checkbox],input[type=radio]) { width: 15px; height: 15px; accent-color: var(--color-accent); flex-shrink: 0; }
 .app-body textarea { padding: 8px 10px; }
 .app-body label { font-size: 13px; }
@@ -228,7 +228,8 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 .app-body .filter-search input { border: 0; min-height: 32px; padding: 6px 0; width: 100%; min-width: 0; }
 .filter-select { display: inline-flex; align-items: center; gap: 6px; height: 34px; border: 1px solid var(--color-border); border-radius: 6px; padding-left: 8px; flex: 0 1 112px; min-width: 100px; }
 .filter-select .ui-icon { width: 15px; height: 15px; color: var(--color-text-muted); }
-.filter-select:has(select[name=assigned]) { flex-basis: 142px; min-width: 142px; }
+.filter-select:has(select[name=category]) { flex-basis: 128px; min-width: 120px; }
+.filter-select:has(select[name=assigned]) { flex-basis: 154px; min-width: 154px; }
 .app-body .filter-select select { border: 0; padding: 6px 18px 6px 0; min-height: 32px; width: 100%; min-width: 0; font-size: 12px; color: var(--color-text-muted); }
 .inventory-filters.is-enhanced .filter-apply { display: none; }
 .inventory-more { flex: 0 0 auto; }
@@ -384,3 +385,7 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 .detail-timeline { display: grid; gap: 16px; padding-left: 16px; border-left: 2px solid var(--color-border); }
 @media(max-width:1100px) { .object-detail-grid { grid-template-columns: minmax(0,1fr); } .object-detail-context { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media(max-width:640px) { .object-detail-heading { align-items: start; flex-direction: column; } .object-detail-heading h1 { font-size: 22px; } .object-detail-heading .page-heading__actions { width: 100%; } .detail-properties,.object-detail-context { grid-template-columns: minmax(0,1fr); } }
+
+/* Composite fields own their border; inner controls must stay inside it. */
+:is(.filter-search,.filter-select,.global-search):focus-within { border-color: var(--color-accent); outline: 2px solid var(--color-accent-soft); outline-offset: 1px; }
+.app-body :is(.filter-search,.filter-select,.global-search) > :is(input,select):focus-visible { outline: none; box-shadow: none; }
