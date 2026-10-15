@@ -71,3 +71,26 @@ def test_catalog_mobile_keyboard_and_model_names_are_safe(live_inventory,browser
         assert not page.evaluate('document.documentElement.scrollWidth>innerWidth+1')
         page.go_back()
     context.close()
+
+
+def test_uploaded_object_photo_is_shared_between_independent_clients(live_inventory,browser):
+    uploader=browser.new_context();page=uploader.new_page()
+    sign_in(page,live_inventory);page.goto(live_inventory+'/inventory/device/1/photo')
+    page.get_by_label('Bilddatei',exact=True).set_input_files(upload_file())
+    page.get_by_role('checkbox').check()
+    page.get_by_role('button',name='Foto speichern',exact=True).click()
+    expect(page.get_by_role('button',name='Eigenes Foto entfernen')).to_be_visible()
+    image_url=page.locator('.photo-preview img').get_attribute('src')
+    assert image_url.startswith('/media/inventory/device/1/')
+    uploader.close()
+    # A separate browser session has no uploader cookies, localStorage or blob URLs.
+    reader=browser.new_context();second=reader.new_page();sign_in(second,live_inventory)
+    second.goto(live_inventory+'/inventory/device/1/photo')
+    picture=second.locator('.photo-preview img')
+    expect(picture).to_have_attribute('src',image_url)
+    expect(picture).to_be_visible()
+    assert picture.evaluate('img=>img.complete && img.naturalWidth>0')
+    response=reader.request.get(live_inventory+image_url)
+    assert response.status==200 and response.headers['content-type']=='image/webp'
+    second.reload();expect(second.locator('.photo-preview img')).to_have_attribute('src',image_url)
+    reader.close()

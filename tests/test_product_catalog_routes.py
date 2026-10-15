@@ -101,3 +101,29 @@ def test_model_versions_rollback_errors_rate_limits_and_reconciliation(client):
     for _ in range(13):response=client.post('/api/inventory/device/1/photo/upload',data={})
     assert response.status_code==429 and response.headers['Retry-After']=='60'
     assert client.get('/api/catalog/models?page=bad').status_code==200
+
+
+@pytest.mark.parametrize('kind',['device','asset'])
+def test_uploaded_photo_persists_on_server_after_reinitialization(client,kind):
+    if kind=='asset':
+        with inventory_app.app.app_context():
+            db=inventory_app.get_db()
+            identifier=db.execute("INSERT INTO assets(name,specs) VALUES ('QA photo asset','{}')").lastrowid
+            db.commit()
+    else:identifier=1
+    endpoint=f'/api/inventory/{kind}/{identifier}/photo'
+    uploaded=client.post(endpoint+'/upload',data=image_data(expectedUpdatedAt=''))
+    assert uploaded.status_code==201
+    state=uploaded.json
+    from inventorypro.domains.catalog.media import media_path
+    paths=[media_path(inventory_app.UPLOADS_DIR,state['hash'],size) for size in ['full','large','thumb']]
+    contents=[path.read_bytes() for path in paths]
+    assert all(contents)
+    inventory_app.init_db()
+    other=inventory_app.app.test_client()
+    with other.session_transaction() as session:
+        session.update(logged_in=True,username='admin',mfa_verified=True)
+    restored=other.get(endpoint).json
+    assert restored['hash']==state['hash'] and restored['source']=='individual'
+    assert other.get(state['url']).data==contents[2]
+    assert [path.read_bytes() for path in paths]==contents
