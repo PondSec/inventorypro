@@ -11,6 +11,7 @@ from flask import Blueprint, abort, jsonify, redirect, render_template, request,
 from inventorypro.domains.exports.service import protect_spreadsheet_row
 from .service import SORTS, inventory_query, list_inventory, workspace_tasks
 from .objects import load_panel
+from .search import search_workspace
 from inventorypro.domains.catalog.objects import resolve_many, resolve
 
 
@@ -33,6 +34,13 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
     def context():
         access = get_access(get_db())
         return dict(username=session.get('username'), permissions=sorted(access['permissions']), is_superuser=access['is_superuser'])
+
+    @blueprint.get('/search')
+    @login_required
+    def global_search():
+        query=str(request.args.get('q','')).strip()[:240]
+        groups=search_workspace(get_db(),query,can=user_can,access=get_access(get_db()),ticket_visible=ticket_visible)
+        return render_template('workspace_search.html',query=query,groups=groups,**context())
 
     @blueprint.get('/api/workspace/tasks')
     @login_required

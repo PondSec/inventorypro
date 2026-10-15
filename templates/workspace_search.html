@@ -1,0 +1,8 @@
+{% extends 'base_app.html' %}
+{% from '_ui.html' import icon, empty_state with context %}
+{% set page_title='Suche' %}{% set page_section_label='Inventory Pro' %}{% set hide_page_intro=true %}
+{% block content %}
+<section class="workspace-panel"><form class="catalog-toolbar" action="/search" role="search"><label class="search-field">{{ icon('search') }}<input class="input" type="search" name="q" aria-label="Suchbegriff" value="{{ query }}" placeholder="Inventar, Tickets, Wissensbasis oder Roadmap" minlength="2" maxlength="240" required></label><button class="btn btn-primary">Suchen</button></form></section>
+{% if groups %}<p class="muted">Treffer für „{{ query }}“ · Höchstens zehn je Bereich</p><div class="search-result-groups">{% for group in groups %}<section class="workspace-panel ui-section"><header class="search-result-heading"><h2>{{ group.label }}</h2>{% if group.more %}<a href="{{ group.more }}">Im Bereich suchen</a>{% endif %}</header><ul class="search-result-list">{% for item in group['items'] %}<li><a href="{{ item.href }}">{{ icon(item.icon) }}<span><strong>{{ item.title }}</strong>{% if item.description %}<small>{{ item.description }}</small>{% endif %}</span>{{ icon('chevron-right') }}</a></li>{% endfor %}</ul></section>{% endfor %}</div>
+{% else %}{{ empty_state('Keine passenden Treffer' if query | length>=2 else 'Alle Arbeitsbereiche durchsuchen','Versuchen Sie einen anderen Suchbegriff.' if query | length>=2 else 'Geben Sie mindestens zwei Zeichen ein. Es werden nur Inhalte angezeigt, die Sie öffnen dürfen.','search') }}{% endif %}
+{% endblock %}

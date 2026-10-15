@@ -49,6 +49,8 @@ document.addEventListener('alpine:init', () => {
             const params = new URLSearchParams(window.location.search);
             this.preselectedTicketId = params.get('ticket_id');
             await this.loadRoadmaps();
+            const roadmapId=params.get('roadmap_id');
+            if (roadmapId && /^[1-9]\d*$/.test(roadmapId)) await this.selectRoadmap({id:roadmapId});
             if (this.preselectedTicketId) {
                 const match = this.roadmaps.find((roadmap) => String(roadmap.ticket_id) === String(this.preselectedTicketId));
                 if (match) {

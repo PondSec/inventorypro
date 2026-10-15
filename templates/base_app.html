@@ -33,11 +33,9 @@
                         <i data-feather="menu" class="w-4 h-4"></i>
                     </button>
                 </div>
-                {% if is_superuser or 'devices.view' in permissions or 'devices.manage' in permissions or 'assets.view' in permissions or 'assets.manage' in permissions %}
-                <form class="global-search" action="/inventory" method="get" role="search" aria-label="Inventar durchsuchen">
-                    {{ icon('search') }}<input type="search" name="q" aria-label="Inventar durchsuchen" placeholder="Inventar durchsuchen …" autocomplete="off"><kbd>Ctrl K</kbd>
+                <form class="global-search" action="/search" method="get" role="search" aria-label="Globale Suche">
+                    {{ icon('search') }}<input type="search" name="q" aria-label="Globale Suche" placeholder="Inventar, Tickets, Wissensbasis … suchen" autocomplete="off"><kbd>Ctrl K</kbd>
                 </form>
-                {% endif %}
                 <div class="topbar-actions">
                     {% block topbar_actions %}{% if is_superuser or 'devices.manage' in permissions or 'assets.manage' in permissions %}<details class="create-menu" data-create-menu><summary class="btn btn-primary">{{ icon('plus') }}Neu{{ icon('chevron-down') }}</summary><div class="ui-menu">{% if is_superuser or 'devices.manage' in permissions %}<a href="/inventory/new">{{ icon('monitor') }}Gerät erfassen</a>{% endif %}{% if is_superuser or 'assets.manage' in permissions %}<a href="/?view=assets&create=asset">{{ icon('package') }}Set oder Zubehör erfassen</a>{% endif %}</div></details>{% endif %}{% endblock %}
                     <button type="button" data-theme-toggle onclick="InventoryTheme.toggle()" class="icon-button theme-control" >
