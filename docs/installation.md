@@ -55,6 +55,30 @@ APP_SECRET_KEY-Werte und Verschlüsselungsschlüssel werden nicht verändert.
 4. In Einstellungen ein Backup ausführen und eine Wiederherstellung in einer
    separaten Testinstanz prüfen.
 
+## Optionaler automatischer Updater
+
+Für eine neue Installation im vorhandenen `.env` ergänzen:
+
+```ini
+INVENTORY_UPDATER_ENABLED=1
+```
+
+Dann den optionalen Sidecar mitbauen und starten:
+
+```sh
+docker compose --profile updater up --detach --build --wait
+```
+
+Nach dem Erstlogin unter Einstellungen → Server automatische Updates einschalten
+und das gewünschte Wartungsfenster wählen. Der Updater benötigt Zugriff auf den
+Docker-Socket und dieselbe persistente Datenhaltung wie die App. Neue Sidecars
+ermitteln den tatsächlichen Compose-Projektnamen aus ihrem Containerlabel und
+unterstützen auch lokal gebaute App-Images als unveränderliche Rückfallversion.
+Signierte neue Versionen kommen ausschließlich aus der freigegebenen GitLab-Registry.
+
+Bereits vorhandene alte Sidecars behalten ihre bisherigen Fähigkeiten und den
+kompatiblen Feed; der Quellcode allein tauscht keinen laufenden Sidecar aus.
+
 ## Persistenz und Sicherung
 
 Der Compose-Projektname bestimmt den Namen des Datenvolumes. Denselben Projektnamen

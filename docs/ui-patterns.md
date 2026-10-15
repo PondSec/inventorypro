@@ -1,6 +1,6 @@
 # Bedienmuster
 
-Die verbindlichen Komponenten und Quellen stehen in [DESIGN_SYSTEM.md](design-system.md).
+Die verbindlichen Komponenten und Quellen stehen in [Designsystem](design-system.md).
 
 ## Bestand durchsuchen und bearbeiten
 
