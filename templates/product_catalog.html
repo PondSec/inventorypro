@@ -10,6 +10,19 @@
 <nav class="catalog-pagination" aria-label="Katalogseiten"><span>Seite {{ catalog.page }} von {{ catalog.pages }}</span>{% if catalog.page>1 %}<a class="btn btn-secondary" href="?q={{ catalog.q | urlencode }}&page={{ catalog.page-1 }}">Zurück</a>{% endif %}{% if catalog.page<catalog.pages %}<a class="btn btn-secondary" href="?q={{ catalog.q | urlencode }}&page={{ catalog.page+1 }}">Weiter</a>{% endif %}</nav>
 </section>
 {% if can_manage %}<section class="workspace-panel ui-section"><h2>Vorhandene Einträge abgleichen</h2><p class="muted">Prüft lokale Modellkennungen. Manuell bestätigte Zuordnungen und eigene Fotos bleiben erhalten. Es werden keine Inventardaten extern übertragen.</p><button type="button" class="btn btn-secondary" data-reconcile>Katalog abgleichen</button><p data-reconcile-status role="status"></p></section>{% endif %}
+{% if can_manage %}
+<section class="workspace-panel ui-section" data-public-catalog>
+<h2>Öffentliche Produktbilder</h2>
+<p class="muted">Optionaler Abgleich mit Wikidata und Wikimedia Commons. Nur Hersteller, Modell und öffentliche Produktkennungen werden übertragen. Passende lizenzierte Bilder werden auf diesem Server gespeichert und sind anschließend ohne externe Verbindung verfügbar. Eigene Fotos bleiben erhalten.</p>
+<form data-public-source class="catalog-form" data-source-version="{{ external.settings.updated_at }}">
+<label class="checkbox-label"><input type="checkbox" name="enabled" {% if external.settings.external_enabled %}checked{% endif %}>Öffentliche Bildquelle aktivieren</label>
+<label class="checkbox-label"><input type="checkbox" name="reviewed" {% if external.settings.rights_reviewed %}checked{% endif %}>Ich habe die Übertragung öffentlicher Produktdaten und die Nutzung von CC0-, CC-BY- und CC-BY-SA-Bildern mit Herkunftsangabe geprüft.</label>
+<div class="ui-actions"><button class="btn btn-primary" type="submit">Bildquelle speichern</button><button class="btn btn-secondary" type="button" data-public-queue {% if not external.settings.external_enabled %}disabled{% endif %}>Fehlende Produktbilder suchen</button></div>
+<p data-public-status role="status"></p></form>
+<p class="muted" data-public-counts role="status"></p>
+<ul class="source-job-list" data-public-jobs aria-label="Letzte Produktbild-Abgleiche"></ul>
+</section>
+{% endif %}
 {% endblock %}
 {% block overlays %}{% if can_manage %}<dialog id="catalog-create" class="ui-dialog" aria-labelledby="catalog-create-title"><header><h2 id="catalog-create-title">Produktmodell hinzufügen</h2><button class="icon-button" type="button" data-close-dialog aria-label="Schließen">{{ icon('x') }}</button></header><form data-catalog-form action="/api/catalog/models" method="post" class="catalog-form"><label>Hersteller<input class="input" name="manufacturer" maxlength="120" required autofocus></label><label>Modell<input class="input" name="name" maxlength="240" required></label><label>Typ<input class="input" name="category" maxlength="120" placeholder="z. B. Laptop"></label><label>Modellkennung<input class="input" name="modelIdentifier" maxlength="240"></label><label>Herstellerteilenummer (MPN)<input class="input" name="mpn" maxlength="240"></label><label>GTIN / EAN<input class="input" name="gtin" maxlength="32" inputmode="numeric"></label><p data-form-status role="status"></p><footer><button class="btn btn-secondary" type="button" data-close-dialog>Abbrechen</button><button class="btn btn-primary">Modell anlegen</button></footer></form></dialog>{% endif %}{% endblock %}
 {% block page_scripts %}<script src="/static/product-catalog.js?v=1"></script>{% endblock %}

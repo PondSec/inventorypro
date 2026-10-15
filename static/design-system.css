@@ -456,3 +456,11 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 @media(max-width:700px) { .procurement-workspace .table-pagination { flex-wrap: wrap; gap: 8px; } .procurement-workspace .table-pagination .page-size { order: 4; width: 100%; justify-content: flex-end; } }
 
 .row-menu-panel button { width: 100%; text-align: left; font-size: 13px; }
+
+.source-job-list { display: grid; gap: 0; margin-top: 12px; }
+.source-job-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 0; font-size: 13px; border-top: 1px solid var(--color-border); }
+.source-job-list li strong { flex: 1 1 200px; font-weight: 600; overflow-wrap: anywhere; }
+.source-job-list li span { color: var(--color-text-muted); }
+.source-job-list li a { color: var(--color-accent); }
+.checkbox-label { display: flex; align-items: start; gap: 8px; }
+.checkbox-label input { margin-top: 3px; }

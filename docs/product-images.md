@@ -22,3 +22,17 @@ Update durch ein leeres Volume ersetzen.
 Automatisierte Prüfungen: Upload und erneuter Abruf in einer unabhängigen
 Browsersitzung; unveränderte Dateien und Zuordnungen nach Datenbankinitialisierung;
 Anmeldung, Rechte, ETag und verweigerter Zugriff nach Ausblenden eines Bildes.
+
+Die öffentliche Quelle wird im Produktkatalog durch einen Administrator aktiviert.
+„Fehlende Produktbilder suchen“ stellt geeignete öffentliche Modellinformationen
+in eine Hintergrundwarteschlange. Es werden keine persönlichen Zuordnungen,
+Standorte, Seriennummern oder internen Inventarbezeichnungen gesendet. Ergebnisse
+werden auf Hersteller und vollständiges Modell geprüft; mehrdeutige Modelle oder
+nicht freigegebene Bildlizenzen bleiben ohne automatische Bildzuordnung.
+
+Die Quellenverwaltung zeigt laufende Jobs, Fehltreffer und Fehler. Nach Abschalten
+werden keine neuen Bilder abgerufen; bereits lokal gespeicherte Dateien bleiben
+für berechtigte Clients verfügbar. Ein Offlinebetrieb benötigt daher für vorhandene
+Bilder keine Verbindung zu Wikidata oder Wikimedia Commons. Der öffentliche Dienst
+bietet keine vollständige Abdeckung aller inventarisierbaren Dinge; eigene Fotos
+und die einheitlichen Typ-Symbole sind weiterhin für jedes Objekt verfügbar.

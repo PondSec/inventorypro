@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   let dirty=false;
-  document.addEventListener('input',event=>{if(event.target.closest('[data-catalog-form],[data-catalog-upload]'))dirty=true;});
+  document.addEventListener('input',event=>{if(event.target.closest('[data-catalog-form],[data-catalog-upload],[data-public-source]'))dirty=true;});
   window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
   function discard(){return !dirty || window.confirm('Ungespeicherte Eingaben verwerfen?');}
   function reload(){dirty=false;location.reload();}
@@ -54,6 +54,50 @@
       }
     });
   });
+  const publicCatalog=document.querySelector('[data-public-catalog]');
+  const publicForm=publicCatalog?.querySelector('[data-public-source]');
+  let sourcePoll=null;
+  const sourceLabels={queued:'Wartet',running:'Wird geprüft',matched:'Bild verfügbar',no_match:'Kein eindeutiger Treffer',no_image:'Kein Bild verfügbar',ambiguous:'Mehrdeutig',unlicensed:'Keine freigegebene Lizenz',insufficient:'Produktdaten unvollständig',error:'Abruf fehlgeschlagen'};
+  async function refreshSource() {
+    if(!publicCatalog)return;
+    const result=await api('/api/catalog/external');
+    publicCatalog.querySelector('[data-public-counts]').textContent=Object.entries(result.counts).map(([key,value])=>`${sourceLabels[key] || key}: ${value}`).join(' · ') || 'Noch keine öffentlichen Bildabgleiche.';
+    const list=publicCatalog.querySelector('[data-public-jobs]');list.replaceChildren();
+    for(const job of result.recent){
+      const li=document.createElement('li'),name=document.createElement('strong'),state=document.createElement('span');
+      name.textContent=`${job.identity.manufacturer} ${job.identity.model || job.identity.gtin}`;
+      state.textContent=job.message || sourceLabels[job.status] || job.status;li.append(name,state);
+      if(job.result.product_id){const link=document.createElement('a');link.href='/inventory/catalog/'+job.result.product_id;link.textContent='Produktmodell';li.append(link);}
+      for(const candidate of (job.result.candidates || [])){
+        const link=document.createElement('a');
+        // Never accept provider-controlled schemes/hosts in browser links.
+        if(!/^https:\/\/www\.wikidata\.org\/wiki\/Q[1-9][0-9]*$/.test(candidate.source_url || ''))continue;
+        link.href=candidate.source_url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=`Vorschlag prüfen: ${candidate.name}`;li.append(link);
+      }
+      list.append(li);
+    }
+    clearTimeout(sourcePoll);
+    if(result.settings.external_enabled && ((result.counts.queued || 0)+(result.counts.running || 0)>0))sourcePoll=setTimeout(()=>refreshSource().catch(sourceError),3000);
+    return result;
+  }
+  function sourceError(error){const status=publicCatalog?.querySelector('[data-public-status]');if(status){status.classList.add('form-error');status.textContent=error.message;}}
+  if(publicCatalog){
+    refreshSource().catch(sourceError);
+    publicCatalog.querySelector('[data-public-queue]').addEventListener('click',event=>perform(event.currentTarget,publicCatalog.querySelector('[data-public-status]'),async()=>{
+      let after={},processed=0;
+      for(;;){const result=await api('/api/catalog/external/queue',json({after}));after=result.last;processed+=result.processed;
+        publicCatalog.querySelector('[data-public-status]').textContent=`${processed} Einträge geprüft. Geeignete Produktdaten werden im Hintergrund abgeglichen.`;
+        await refreshSource();if(!result.processed)break;await new Promise(resolve=>setTimeout(resolve,2100));
+      }
+    }));
+    publicForm.addEventListener('submit',event=>{event.preventDefault();perform(publicForm.querySelector('[type=submit]'),publicCatalog.querySelector('[data-public-status]'),async()=>{
+      const result=await api('/api/catalog/external',{...json({enabled:publicForm.elements.enabled.checked,rightsReviewed:publicForm.elements.reviewed.checked,expectedUpdatedAt:publicForm.dataset.sourceVersion}),method:'PUT'});
+      publicForm.dataset.sourceVersion=result.updated_at;dirty=false;
+      publicCatalog.querySelector('[data-public-queue]').disabled=!result.external_enabled;
+      publicCatalog.querySelector('[data-public-status]').textContent=result.external_enabled ? 'Öffentliche Bildquelle aktiviert.' : 'Öffentliche Bildquelle deaktiviert. Bereits gespeicherte Bilder bleiben verfügbar.';
+      await refreshSource();
+    });});
+  }
   document.addEventListener('submit', event => {
     const form=event.target;
     if (form.matches('[data-catalog-form],[data-catalog-upload]')) {

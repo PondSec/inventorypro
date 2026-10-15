@@ -94,3 +94,33 @@ def test_uploaded_object_photo_is_shared_between_independent_clients(live_invent
     assert response.status==200 and response.headers['content-type']=='image/webp'
     second.reload();expect(second.locator('.photo-preview img')).to_have_attribute('src',image_url)
     reader.close()
+
+
+def test_public_source_opt_in_background_download_and_local_cache(live_inventory,browser,monkeypatch):
+    from test_product_lookup_jobs import provider,identity
+    import json
+    calls=provider(monkeypatch)
+    monkeypatch.setitem(inventory_app.app.config,'CATALOG_BACKGROUND_ENABLED',True)
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();db.execute('UPDATE devices SET specs=? WHERE id IN (1,2)',(json.dumps(identity()),));db.commit()
+    context=browser.new_context();page=context.new_page();sign_in(page,live_inventory)
+    page.goto(live_inventory+'/inventory/catalog')
+    section=page.locator('[data-public-catalog]')
+    section.get_by_role('checkbox',name='Öffentliche Bildquelle aktivieren',exact=True).check()
+    section.get_by_role('button',name='Bildquelle speichern',exact=True).click()
+    expect(section.locator('[data-public-status]')).to_contain_text('bestätigen')
+    section.get_by_role('checkbox').nth(1).check()
+    section.get_by_role('button',name='Bildquelle speichern',exact=True).click()
+    expect(section.locator('[data-public-status]')).to_contain_text('aktiviert')
+    section.get_by_role('button',name='Fehlende Produktbilder suchen',exact=True).click()
+    expect(section.get_by_role('link',name='Produktmodell',exact=True)).to_be_visible(timeout=15000)
+    assert len(calls)==1
+    section.get_by_role('checkbox',name='Öffentliche Bildquelle aktivieren',exact=True).uncheck()
+    section.get_by_role('button',name='Bildquelle speichern',exact=True).click()
+    expect(section.locator('[data-public-status]')).to_contain_text('deaktiviert')
+    # Provider off: already downloaded file is still served from this instance.
+    page.goto(live_inventory+'/inventory/device/1/photo')
+    picture=page.locator('.photo-preview img');expect(picture).to_be_visible()
+    assert picture.evaluate('img=>img.complete && img.naturalWidth>0')
+    assert picture.get_attribute('src').startswith('/media/inventory/')
+    context.close()
