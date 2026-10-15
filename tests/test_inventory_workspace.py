@@ -78,7 +78,11 @@ def test_real_device_only_role_cannot_read_asset_list_or_detail(client):
         db.commit()
     with client.session_transaction() as session:
         session['username']='device-only'
-    assert b'RestrictedComponent' not in client.get('/inventory?kind=asset').data
+    response = client.get('/inventory?kind=asset')
+    assert b'RestrictedComponent' not in response.data
+    assert b'href="/inventory?kind=device"' in response.data
+    assert b'href="/inventory?kind=asset"' not in response.data
+    assert b'Link hinzuf' not in response.data
     assert client.get(f'/inventory/assets/{asset_id}').status_code == 403
     assert client.get('/inventory/new').status_code == 403
 

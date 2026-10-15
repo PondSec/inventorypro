@@ -20,6 +20,9 @@
 {% macro render_sidebar(current_module='dashboard') -%}
     {% set current_path = request.path %}
     {% set inventory_view = request.args.get('view', 'overview') %}
+    {% set can_devices = is_superuser or 'devices.view' in permissions or 'devices.manage' in permissions %}
+    {% set can_assets = is_superuser or 'assets.view' in permissions or 'assets.manage' in permissions %}
+    {% set can_settings = is_superuser or 'server_settings.manage' in permissions %}
     <aside class="app-sidebar sidebar enterprise-sidebar" aria-label="Hauptnavigation">
         <div class="sidebar-header enterprise-sidebar__header">
             <a href="/" class="flex items-center gap-3" aria-label="Inventory Pro Startseite">
@@ -38,9 +41,15 @@
                 <p class="sidebar-panel-title">Inventar</p>
                 <div class="mt-3 space-y-1">
                     {{ render_nav_link('/?view=overview', 'Dashboard', 'home', current_path == '/' and inventory_view == 'overview') }}
+                    {% if can_devices or can_assets %}
                     {{ render_nav_link('/inventory', 'Gesamter Bestand', 'layers', current_path == '/inventory' and not request.args.get('kind')) }}
+                    {% endif %}
+                    {% if can_devices %}
                     {{ render_nav_link('/inventory?kind=device', 'Geräte', 'monitor', current_path.startswith('/inventory/devices/') or (current_path == '/inventory' and request.args.get('kind') == 'device')) }}
+                    {% endif %}
+                    {% if can_assets %}
                     {{ render_nav_link('/inventory?kind=asset', 'Komponenten und Sets', 'package', current_path.startswith('/inventory/assets/') or (current_path == '/inventory' and request.args.get('kind') == 'asset')) }}
+                    {% endif %}
                     {% if 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}
                     {{ render_nav_link('/?view=taxonomy', 'Vorlagen und Felder', 'layers', current_path == '/' and inventory_view == 'taxonomy') }}
                     {% endif %}
@@ -91,21 +100,24 @@
             </div>
             {% endif %}
 
+            {% if inventory_links or can_settings %}
             <div class="sidebar-panel">
                 <div class="flex items-center justify-between gap-3">
                     <p class="sidebar-panel-title">Verknüpfte Instanzen</p>
-                    <a href="/settings?section=server#inventory-links" class="text-[11px] font-semibold text-slate-500 hover:text-slate-700">Verwalten</a>
+                    {% if can_settings %}<a href="/settings?section=server#inventory-links" class="text-[11px] font-semibold text-slate-500 hover:text-slate-700">Verwalten</a>{% endif %}
                 </div>
                 <div class="mt-3 space-y-1">
                     {% if inventory_links %}
                     {% for link in inventory_links %}
                     {{ render_nav_link('/inventory-links/' ~ link.id ~ '/portal', link.displayName, 'link-2', current_path == '/inventory-links/' ~ link.id ~ '/portal', badge=link.healthStatus, badge_tone='success' if link.healthStatus == 'ok' else 'warning' if link.healthStatus == 'unauthorized' else 'danger') }}
                     {% endfor %}
-                    {% else %}
+                    {% elif can_settings %}
                     {{ render_nav_link('/settings?section=server#inventory-links', 'Link hinzufügen', 'plus-circle', False) }}
                     {% endif %}
                 </div>
             </div>
+
+            {% endif %}
 
             {% if 'users.manage' in permissions or 'server_settings.manage' in permissions %}
             <div class="sidebar-panel">
