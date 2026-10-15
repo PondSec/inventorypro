@@ -1,14 +1,19 @@
 """Server-rendered, bookmarkable inventory lists and object detail pages."""
 import json
+import csv
+import re
+import tempfile
+from io import TextIOWrapper
 from datetime import datetime
 from urllib.parse import urlencode
 
-from flask import Blueprint, abort, jsonify, redirect, render_template, request, session
-from .service import list_inventory, workspace_tasks
+from flask import Blueprint, abort, jsonify, redirect, render_template, request, session, send_file
+from inventorypro.domains.exports.service import protect_spreadsheet_row
+from .service import SORTS, inventory_query, list_inventory, workspace_tasks
 from .objects import load_panel
 
 
-def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, load_asset, ticket_visible):
+def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, load_asset, ticket_visible, get_export_settings):
     blueprint = Blueprint('inventory_workspace', __name__)
 
     @blueprint.app_template_filter('inventory_date')
@@ -43,7 +48,46 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
         def link(**changes):
             return '/inventory?' + urlencode({**{key: result[key] for key in ('q','kind','filter','sort','direction','category','location','assigned','page','per_page')}, **changes})
         return render_template('inventory_workspace.html', inventory=result, inventory_link=link,
-                               can_devices=can_read('device'), can_assets=can_read('asset'), can_maintenance=maintenance_allowed, **context())
+                               can_devices=can_read('device'), can_assets=can_read('asset'), can_maintenance=maintenance_allowed,
+                               can_export=user_can('server_settings.manage') and get_export_settings(get_db())['importExport']['exportAllowed'], **context())
+
+    @blueprint.get('/inventory/export')
+    @login_required
+    def inventory_export():
+        db = get_db()
+        if not user_can('server_settings.manage') or not get_export_settings(db)['importExport']['exportAllowed']:
+            abort(403)
+        source,predicate,params,state = inventory_query(request.args,devices_allowed=can_read('device'),
+            assets_allowed=can_read('asset'),maintenance_allowed=user_can('maintenance.view') or user_can('maintenance.manage'))
+        if not source:
+            abort(403)
+        selected = request.args.get('selection','')
+        if selected:
+            entries = selected.split(',')
+            if len(entries)>100 or any(not re.fullmatch(r'(device|asset)-[1-9]\d{0,8}', entry) for entry in entries):
+                abort(400)
+            predicate += ' AND (' + ' OR '.join('(kind=? AND id=?)' for _ in entries) + ')'
+            for entry in entries:
+                kind,identifier = entry.split('-');params.extend([kind,int(identifier)])
+        cursor = db.execute(source + 'SELECT * FROM inventory' + predicate + f" ORDER BY {SORTS[state['sort']]} {state['direction']},kind,id",params)
+        # Materialize to a private temporary file while the request's DB is open.
+        # The file wrapper streams it afterwards without retaining all rows in RAM.
+        output = tempfile.TemporaryFile(mode='w+b')
+        try:
+            text = TextIOWrapper(output,encoding='utf-8-sig',newline='')
+            writer = csv.writer(text,delimiter=';')
+            writer.writerow(['Bezeichnung','Art','Vorlage','Identifikation','Standort','Zugewiesen an','Status','Letzte Änderung'])
+            for row in cursor:
+                writer.writerow(protect_spreadsheet_row([row['name'],'Gerät' if row['kind']=='device' else 'Set / Zubehör',row['category'],
+                    row['serial_number'],row['location'],row['assigned_to'],'Ausgemustert' if row['retired'] else 'Im Bestand',row['updated_at']]))
+            text.flush();text.detach();output.seek(0)
+            response = send_file(output,mimetype='text/csv',as_attachment=True,download_name='inventorypro-bestand.csv',max_age=0)
+            response.headers['Cache-Control'] = 'no-store'
+            response.call_on_close(output.close)
+            return response
+        except BaseException:
+            output.close()
+            raise
 
     @blueprint.get('/inventory/new')
     @login_required

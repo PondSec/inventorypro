@@ -85,6 +85,7 @@ def test_real_device_only_role_cannot_read_asset_list_or_detail(client):
     assert b'Link hinzuf' not in response.data
     assert client.get(f'/inventory/assets/{asset_id}').status_code == 403
     assert client.get('/inventory/new').status_code == 403
+    assert client.get('/inventory/export').status_code == 403
 
 
 def test_missing_identity_filter_is_exact(client):
@@ -159,3 +160,28 @@ def test_inventory_summary_and_combinable_filters_use_exact_object_counts(client
         assert restricted['summary']['assigned'] == 0 and restricted['summary']['maintenance'] == 0
         assert all(row['assigned_to'] == '' for row in restricted['rows'])
         assert list_inventory(db,{'category':'device:1 OR 1=1','location':'-1'},devices_allowed=True,assets_allowed=True)['total'] == 41
+
+
+def test_scoped_csv_export_preserves_filters_selection_and_formula_protection(client):
+    response = client.get('/inventory/export?q=QA-039')
+    assert response.status_code == 200
+    assert 'attachment' in response.headers['Content-Disposition']
+    assert b'Notebook 039' in response.data and b'Notebook 038' not in response.data
+    with inventory_app.app.app_context():
+        db = inventory_app.get_db()
+        db.execute("UPDATE devices SET name='=HYPERLINK(\"https://example.invalid\")' WHERE id=1")
+        db.commit()
+    selected = client.get('/inventory/export?selection=device-1,device-2')
+    assert b"'=HYPERLINK" in selected.data and b'Notebook 001' in selected.data and b'Notebook 002' not in selected.data
+    assert client.get('/inventory/export?selection=device-1;DROP').status_code == 400
+    assert client.get('/inventory/export?selection='+','.join(['device-1']*101)).status_code == 400
+
+
+def test_csv_export_respects_existing_export_disable_policy(client):
+    with inventory_app.app.app_context():
+        settings,_ = inventory_app.serialize_server_settings(inventory_app.get_server_settings(inventory_app.get_db()))
+        settings['importExport']['exportAllowed'] = False
+        inventory_app.persist_server_settings(inventory_app.get_db(),settings,'admin')
+        inventory_app.get_db().commit()
+    assert client.get('/inventory/export').status_code == 403
+    assert b'inventory/export' not in client.get('/inventory').data
