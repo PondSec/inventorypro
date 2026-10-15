@@ -97,3 +97,8 @@ document.addEventListener('click', async event => {
     if (feedback) feedback.textContent = 'Bitte mit Strg/Cmd+C kopieren.';
   }
 });
+
+// A missing cached image retains the same-sized, accessible category fallback.
+document.addEventListener('error', event => {
+  if (event.target instanceof HTMLImageElement && event.target.closest('.product-thumbnail')) event.target.remove();
+}, true);

@@ -49,7 +49,8 @@ def test_individual_image_provenance_survives_same_hash_for_different_objects(is
         db.commit()
         assert [row[0] for row in db.execute('SELECT override_attribution FROM device_product_media ORDER BY device_id')]==['QA Author A','QA Author B']
         directory=Path(inventory_app.__file__).parent/'migrations'
-        assert rollback_migrations(db,directory)==['007_individual_image_provenance']
+        later=[row[0] for row in db.execute("SELECT id FROM schema_migrations WHERE id>='007_individual_image_provenance' ORDER BY id")]
+        assert rollback_migrations(db,directory,steps=len(later))==list(reversed(later))
         assert [row[0] for row in db.execute('SELECT override_hash FROM device_product_media ORDER BY device_id')]==[digest,digest]
-        assert apply_migrations(db,directory)==['007_individual_image_provenance']
+        assert apply_migrations(db,directory)==later
         assert db.execute('PRAGMA foreign_key_check').fetchall()==[]

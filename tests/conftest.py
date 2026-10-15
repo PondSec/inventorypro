@@ -30,6 +30,11 @@ def isolated_inventory(tmp_path, monkeypatch):
     inventory_app.RATE_LIMIT_CACHE.clear()
     with inventory_app.app.app_context():
         db = inventory_app.get_db()
+        # Service unit fixtures start with an empty catalog; starter data has its own tests.
+        db.execute('DELETE FROM product_models')
+        db.execute('DELETE FROM product_media_files')
+        import shutil
+        shutil.rmtree(inventory_app.UPLOADS_DIR / 'product-media', ignore_errors=True)
         db.execute("UPDATE users SET password_hash=?, must_change_password=0 WHERE username='admin'",
                    (inventory_app.generate_password_hash('Synthetic-Test-Only-42!'),))
         category = db.execute("INSERT INTO categories (name, fields) VALUES ('Notebooks', '{}')").lastrowid

@@ -12,14 +12,19 @@ def object_row(db,kind,identifier):
     return row
 
 
-def resolve(db,uploads,kind,identifier):
+def resolution_source(kind):
     _,table,key=TABLES[kind]
-    row=db.execute(f'''SELECT o.*,pm.name AS product_name,pm.manufacturer,
+    return f'''SELECT o.*,pm.name AS product_name,pm.manufacturer,
         pi.media_hash AS catalog_hash,pi.source_url AS catalog_source_url,pi.license_code AS catalog_license_code,
         pi.attribution AS catalog_attribution,pi.changes AS catalog_changes FROM {table} o
         LEFT JOIN product_models pm ON pm.id=o.product_id
         LEFT JOIN product_images pi ON pi.id=(SELECT id FROM product_images WHERE product_id=o.product_id ORDER BY position,id LIMIT 1)
-        WHERE o.{key}=?''',(identifier,)).fetchone()
+        '''
+
+
+def resolve(db,uploads,kind,identifier,*,row=None):
+    _,_,key=TABLES[kind]
+    if row is None:row=db.execute(resolution_source(kind)+f' WHERE o.{key}=?',(identifier,)).fetchone()
     state=dict(row) if row else {'product_id':None,'updated_at':'','suppress_image':0,'override_hash':None,'match_method':'none'}
     own=bool(state.get('override_hash'))
     digest=None if state['suppress_image'] else state.get('override_hash') or state.get('catalog_hash')
@@ -37,6 +42,17 @@ def resolve(db,uploads,kind,identifier):
             'large_url':f'/media/inventory/{kind}/{identifier}/{digest}/large' if digest else '',
             'source_url':state.get(prefix+'_source_url') or '', 'license_code':state.get(prefix+'_license_code') or '',
             'attribution':state.get(prefix+'_attribution') or '', 'changes':state.get(prefix+'_changes') or ''}
+
+
+def resolve_many(db,uploads,rows):
+    result={}
+    for kind,(_,_,key) in TABLES.items():
+        identifiers=[row['id'] for row in rows if row['kind']==kind]
+        if not identifiers:continue
+        placeholders=','.join('?' for _ in identifiers)
+        found={row[key]:row for row in db.execute(resolution_source(kind)+f' WHERE o.{key} IN ({placeholders})',identifiers)}
+        for identifier in identifiers:result[(kind,identifier)]=resolve(db,uploads,kind,identifier,row=found.get(identifier,{}))
+    return result
 
 
 def choices(db,uploads,kind,identifier):

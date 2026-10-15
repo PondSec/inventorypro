@@ -43,6 +43,8 @@ import smtplib
 
 from inventorypro.domains.planning.routes import build_planning_blueprint
 from inventorypro.domains.catalog.routes import build_catalog_blueprint
+from inventorypro.domains.catalog.seed import initialize_catalog
+from inventorypro.domains.catalog.matching import sync_object as sync_product_object
 from inventorypro.domains.inventory.routes import build_inventory_blueprint
 from inventorypro.domains.categories.service import CategoryRemovalError, remove_category
 from inventorypro.config import resolve_application_secret
@@ -4780,6 +4782,7 @@ def init_db():
             apply_migrations(db, Path(__file__).with_name("migrations"))
         except MigrationError as error:
             raise RuntimeError("Datenbankmigration konnte nicht sicher angewendet werden.") from error
+        initialize_catalog(db, UPLOADS_DIR)
         db.commit()
 
 # Setup-Funktion zum Benutzer erstellen
@@ -9166,6 +9169,7 @@ def handle_device(device_id):
             if result.rowcount == 0:
                 return jsonify({"error": "Gerät nicht gefunden"}), 404
 
+            sync_product_object(db, "device", device_id)
             log_activity(db, "update", "device", device_id, {"name": device_data["name"]})
             db.commit()
             return jsonify({"status": "updated"}), 200
@@ -9212,6 +9216,7 @@ def handle_devices():
             json.dumps(device_data["specs"])
         ))
         device_id = cursor.lastrowid
+        sync_product_object(db, "device", device_id)
         log_activity(db, "create", "device", device_id, {"name": device_data["name"]})
         db.commit()
         return jsonify({"status": "created", "id": device_id}), 201
@@ -9401,6 +9406,7 @@ def manage_assets():
                     INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id)
                     VALUES (?, ?, ?)
                 ''', (asset_id, related_asset_id, relation_type_id))
+            sync_product_object(db, "asset", asset_id)
             log_activity(db, "create", "asset_entry", asset_id, {"name": name})
             db.commit()
             return jsonify({"status": "created", "id": asset_id}), 201
@@ -9641,6 +9647,7 @@ def asset_entry_detail(asset_id):
                 INSERT OR IGNORE INTO asset_relations (asset_id, related_asset_id, relation_type_id)
                 VALUES (?, ?, ?)
             ''', (asset_id, related_asset_id, relation_type_id))
+        sync_product_object(db, "asset", asset_id)
         log_activity(db, "update", "asset_entry", asset_id, {"name": name})
         db.commit()
         return jsonify({"status": "updated"}), 200
@@ -15561,6 +15568,7 @@ app.register_blueprint(build_inventory_blueprint(
     login_required=login_required, load_asset=asset_entry_detail,
     ticket_visible=ensure_ticket_access,
     get_export_settings=lambda db: serialize_server_settings(get_server_settings(db))[0],
+    get_uploads_dir=lambda: UPLOADS_DIR,
 ))
 
 app.register_blueprint(

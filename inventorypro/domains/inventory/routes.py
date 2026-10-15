@@ -11,9 +11,10 @@ from flask import Blueprint, abort, jsonify, redirect, render_template, request,
 from inventorypro.domains.exports.service import protect_spreadsheet_row
 from .service import SORTS, inventory_query, list_inventory, workspace_tasks
 from .objects import load_panel
+from inventorypro.domains.catalog.objects import resolve_many, resolve
 
 
-def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, load_asset, ticket_visible, get_export_settings):
+def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, load_asset, ticket_visible, get_export_settings, get_uploads_dir):
     blueprint = Blueprint('inventory_workspace', __name__)
 
     @blueprint.app_template_filter('inventory_date')
@@ -45,6 +46,8 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
             abort(403)
         maintenance_allowed = user_can('maintenance.view') or user_can('maintenance.manage')
         result = list_inventory(get_db(), request.args, devices_allowed=can_read('device'), assets_allowed=can_read('asset'), maintenance_allowed=maintenance_allowed)
+        images=resolve_many(get_db(),get_uploads_dir(),result['rows'])
+        for row in result['rows']:row['image_url']=images[(row['kind'],row['id'])]['url']
         def link(**changes):
             return '/inventory?' + urlencode({**{key: result[key] for key in ('q','kind','filter','sort','direction','category','location','assigned','page','per_page')}, **changes})
         return render_template('inventory_workspace.html', inventory=result, inventory_link=link,
@@ -107,6 +110,8 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
         obj = load_panel(db, kind, object_id, can=user_can, access=get_access(db), ticket_visible=ticket_visible)
         if obj is None:
             abort(404)
+        obj['photo']=resolve(db,get_uploads_dir(),kind,object_id)
+        obj['image_url']=obj['photo']['large_url']
         if request.args.get('format') == 'html':
             return render_template('_object_panel.html', object=obj, **context())
         return jsonify(obj)
@@ -123,6 +128,7 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
         if not row:
             abort(404)
         device = dict(row)
+        device['photo']=resolve(db,get_uploads_dir(),'device',object_id)
         try:
             device['specs'] = json.loads(device.get('specs') or '{}')
         except (ValueError, TypeError):
@@ -152,6 +158,8 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
             return response
         if response.status_code != 200:
             return response
-        return render_template('asset_detail.html', asset=response.get_json(), can_edit=user_can('assets.manage'), **context())
+        asset=response.get_json()
+        asset['photo']=resolve(get_db(),get_uploads_dir(),'asset',object_id)
+        return render_template('asset_detail.html', asset=asset, can_edit=user_can('assets.manage'), **context())
 
     return blueprint
