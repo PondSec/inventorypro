@@ -1,6 +1,7 @@
 {% extends 'base_app.html' %}
 {% set page_title = 'Abhängigkeiten' %}
 {% set page_module = 'dependencies' %}
+{% set page_section_label = 'Auswertung' %}
 {% set hide_page_intro = true %}
 {% block title %}Abhängigkeiten | Inventory Pro{% endblock %}
 {% block html_attrs %}x-data="dependencyApp()"{% endblock %}
@@ -8,65 +9,30 @@
 <script src="/static/vendor/cytoscape.min.js?v=3.26.0"></script>
 {% endblock %}
 {% block content %}
-<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div class="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                            <p class="text-xs uppercase tracking-widest text-slate-400">Dependency & Impact</p>
-                            <h2 class="text-2xl font-semibold text-slate-900">Abhängigkeiten verstehen</h2>
-                            <p class="mt-1 text-sm text-slate-500">Graph-Analysen, SPOFs und kritische Pfade.</p>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Software</p>
-                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.software"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Teams</p>
-                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.teams"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">Links</p>
-                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.links"></p>
-                            </div>
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p class="text-xs uppercase text-slate-400">SPOF</p>
-                                <p class="mt-2 text-2xl font-semibold text-slate-900" x-text="overview.spof"></p>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div class="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                            <p class="text-sm font-semibold text-slate-900">Graph-Toolbar</p>
-                            <p class="text-xs text-slate-500">Zoom, Layout und Fokus steuern.</p>
-                        </div>
-                        <div class="flex flex-wrap items-center gap-2">
-                            <button @click="refreshGraph()" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Neu laden</button>
-                            <button @click="fitGraph()" class="rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Fit</button>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="mt-8 grid gap-6 xl:grid-cols-3">
-                    <div class="xl:col-span-2 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                        <div>
-                            <h2 class="text-lg font-semibold text-slate-900">Graph-Visualisierung</h2>
-                            <p class="text-sm text-slate-500">Asset, Software, Teams, Tickets und Roadmaps in einem Graph.</p>
-                        </div>
-                        <div id="dependencyGraph" class="mt-6 h-[520px] w-full rounded-2xl border border-slate-200"></div>
+<p role="alert" x-show="workspaceError" x-text="workspaceError" class="form-error" x-cloak></p>
+<div class="module-summary" aria-label="Abhängigkeitskennzahlen"><span><strong x-text="overview.software"></strong> Software</span><span><strong x-text="overview.teams"></strong> Teams</span><span><strong x-text="overview.links"></strong> Beziehungen</span><span><strong x-text="overview.spof"></strong> Einzelne Ausfallpunkte</span></div>
+<nav class="workspace-tabs" role="tablist" aria-label="Abhängigkeitsbereiche">
+<button type="button" role="tab" id="dependencies-tab-graph" aria-controls="dependencies-panel-graph" :aria-selected="activeWorkspace === 'graph'" @click="activeWorkspace='graph'">Diagramm & Analyse</button>
+<button type="button" role="tab" id="dependencies-tab-software" aria-controls="dependencies-panel-software" :aria-selected="activeWorkspace === 'software'" @click="activeWorkspace='software'">Software & Installationen</button>
+<button type="button" role="tab" id="dependencies-tab-organisation" aria-controls="dependencies-panel-organisation" :aria-selected="activeWorkspace === 'organisation'" @click="activeWorkspace='organisation'">Organisation & Beziehungen</button>
+</nav>
+                <section id="dependencies-panel-graph" role="tabpanel" aria-labelledby="dependencies-tab-graph" x-show="activeWorkspace === 'graph'" class="dependency-layout">
+                    <div class="workspace-panel dependency-diagram">
+                        <div class="ui-panel-heading"><div><h2>Abhängigkeitsdiagramm</h2><p class="muted">Assets, Software, Teams und Vorgänge untersuchen.</p></div><div class="ui-actions"><button type="button" @click="refreshGraph()" class="btn btn-secondary">Aktualisieren</button><button type="button" @click="fitGraph()" class="btn btn-secondary">Alles einpassen</button></div></div>
+                        <label class="filter-search dependency-search"><i data-feather="search" class="ui-icon"></i><input type="search" x-model="graphSearch" @input.debounce.150ms="highlightGraph()" aria-label="Diagramm durchsuchen" placeholder="Assets, Software oder Vorgänge suchen"></label>
+                        <div id="dependencyGraph" class="dependency-canvas" role="img" aria-label="Abhängigkeitsdiagramm; sämtliche Einträge stehen auch in der folgenden Tabelle."></div>
+                        <details class="report-data"><summary>Daten als Tabelle anzeigen</summary><div class="data-table-scroll"><table class="data-table module-table"><thead><tr><th>Eintrag</th><th>Art</th></tr></thead><tbody><template x-for="node in filteredGraphNodes.slice((graphPage-1)*20,graphPage*20)" :key="node.key"><tr><td x-text="node.label"></td><td x-text="typeLabels[node.type] || node.type"></td></tr></template><tr x-show="!filteredGraphNodes.length"><td colspan="2">Keine passenden Einträge.</td></tr></tbody></table></div><div class="table-pagination"><span x-text="filteredGraphNodes.length+' Einträge'"></span><div class="ui-actions"><button type="button" class="btn btn-secondary" :disabled="graphPage === 1" @click="graphPage--">Zurück</button><span x-text="'Seite '+graphPage+' von '+Math.max(1,Math.ceil(filteredGraphNodes.length/20))"></span><button type="button" class="btn btn-secondary" :disabled="graphPage*20 >= filteredGraphNodes.length" @click="graphPage++">Weiter</button></div></div></details>
                         <div class="mt-4 flex flex-wrap gap-3 text-xs text-slate-500">
                             <span class="rounded-full bg-slate-100 px-3 py-1">Durchgezogene Kanten = explizit</span>
                             <span class="rounded-full bg-slate-100 px-3 py-1">Gestrichelt = automatisch (Assets, Installationen, Roadmaps)</span>
                         </div>
                     </div>
                     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                        <h2 class="text-lg font-semibold text-slate-900">Impact-Analyse</h2>
-                        <p class="text-sm text-slate-500">Szenarien simulieren: “Was fällt alles aus, wenn …?”</p>
+                        <h2 class="text-lg font-semibold text-slate-900">Auswirkungen prüfen</h2>
+                        <p class="text-sm text-slate-500">Szenarien simulieren: Welche Einträge hängen von der Quelle ab?</p>
                         <div class="mt-4 space-y-3">
                             <label class="block text-xs font-semibold text-slate-500">Quelle</label>
-                            <select x-model="impactQuery.sourceKey" aria-label="Quelle der Impact-Analyse" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                            <select x-model="impactQuery.sourceKey" aria-label="Quelle der Auswirkungsanalyse" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
                                 <option value="">Quelle auswählen</option>
                                 <template x-for="(items, type) in nodeOptions" :key="type">
                                     <optgroup :label="typeLabels[type] || type">
@@ -105,7 +71,7 @@
                             </div>
                         </div>
                         <div class="mt-6">
-                            <h3 class="text-sm font-semibold text-slate-800">Single Points of Failure</h3>
+                            <h3 class="text-sm font-semibold text-slate-800">Einzelne Ausfallpunkte</h3>
                             <div class="mt-2 space-y-2 max-h-40 overflow-auto">
                                 <template x-for="node in impactResult.spof" :key="node.key">
                                     <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs">
@@ -119,7 +85,7 @@
                     </div>
                 </section>
 
-                <section class="mt-10 grid gap-6 lg:grid-cols-2">
+                <section id="dependencies-panel-software" role="tabpanel" aria-labelledby="dependencies-tab-software" x-show="activeWorkspace === 'software'" x-cloak class="grid gap-4 lg:grid-cols-2">
                     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                         <h2 class="text-lg font-semibold text-slate-900">Software-Inventar</h2>
                         <p class="text-sm text-slate-500">Inventarisierung mit Owner-Team, Kritikalität und Support.</p>
@@ -143,7 +109,7 @@
                             <input x-model="newSoftware.support_contact" placeholder="Support Kontakt" aria-label="Support-Kontakt" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2">
                             <textarea x-model="newSoftware.description" placeholder="Beschreibung" aria-label="Software-Beschreibung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"></textarea>
                         </div>
-                        <button @click="createSoftware()" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Software anlegen</button>
+                        <button @click="createSoftware()" :disabled="workspaceBusy" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Software anlegen</button>
 
                         <div class="mt-6 space-y-3 max-h-72 overflow-auto">
                             <template x-for="item in software" :key="item.id">
@@ -154,7 +120,7 @@
                                             <p class="text-xs text-slate-500" x-text="`${item.vendor || '-'} • ${item.version || 'n/a'} • ${item.criticality}`"></p>
                                             <p class="text-xs text-slate-500" x-text="item.owner_team_name ? `Owner: ${item.owner_team_name}` : 'Kein Team zugeordnet'"></p>
                                         </div>
-                                        <button @click="deleteSoftware(item.id)" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
+                                        <button @click="deleteSoftware(item.id)" :disabled="workspaceBusy" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
                                     </div>
                                 </div>
                             </template>
@@ -197,7 +163,7 @@
                             </select>
                             <textarea x-model="newInstallation.notes" placeholder="Notizen" aria-label="Notizen zur Installation" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"></textarea>
                         </div>
-                        <button @click="createInstallation()" class="mt-4 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Installation hinzufügen</button>
+                        <button @click="createInstallation()" :disabled="workspaceBusy" class="mt-4 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Installation hinzufügen</button>
 
                         <div class="mt-6 space-y-3 max-h-72 overflow-auto">
                             <template x-for="item in installations" :key="item.id">
@@ -208,7 +174,7 @@
                                             <p class="text-xs text-slate-500" x-text="`${item.device_name || item.asset_name || 'Unbekannt'} • ${item.environment}`"></p>
                                             <p class="text-xs text-slate-500" x-text="`${item.status} • ${item.installed_version || 'Version n/a'}`"></p>
                                         </div>
-                                        <button @click="deleteInstallation(item.id)" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
+                                        <button @click="deleteInstallation(item.id)" :disabled="workspaceBusy" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
                                     </div>
                                 </div>
                             </template>
@@ -217,14 +183,14 @@
                     </div>
                 </section>
 
-                <section class="mt-10 grid gap-6 lg:grid-cols-2">
+                <section id="dependencies-panel-organisation" role="tabpanel" aria-labelledby="dependencies-tab-organisation" x-show="activeWorkspace === 'organisation'" x-cloak class="grid gap-4 lg:grid-cols-2">
                     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                         <h2 class="text-lg font-semibold text-slate-900">Teams & Abteilungen</h2>
                         <div class="mt-4 grid gap-3 md:grid-cols-2">
                             <input x-model="newDepartment.name" placeholder="Abteilung" aria-label="Name der Abteilung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                             <input x-model="newDepartment.description" placeholder="Beschreibung" aria-label="Beschreibung der Abteilung" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                         </div>
-                        <button @click="createDepartment()" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Abteilung anlegen</button>
+                        <button @click="createDepartment()" :disabled="workspaceBusy" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Abteilung anlegen</button>
 
                         <div class="mt-6 space-y-2">
                             <template x-for="department in departments" :key="department.id">
@@ -233,7 +199,7 @@
                                         <p class="font-semibold text-slate-900" x-text="department.name"></p>
                                         <p class="text-xs text-slate-500" x-text="department.description || 'Keine Beschreibung'"></p>
                                     </div>
-                                    <button @click="deleteDepartment(department.id)" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
+                                    <button @click="deleteDepartment(department.id)" :disabled="workspaceBusy" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
                                 </div>
                             </template>
                             <p x-show="departments.length === 0" class="text-xs text-slate-400">Keine Abteilungen erfasst.</p>
@@ -250,7 +216,7 @@
                             <input x-model="newTeam.lead_user" placeholder="Team Lead" aria-label="Leitung des Teams" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                             <input x-model="newTeam.notes" placeholder="Notizen" aria-label="Notizen zum Team" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                         </div>
-                        <button @click="createTeam()" class="mt-4 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Team anlegen</button>
+                        <button @click="createTeam()" :disabled="workspaceBusy" class="mt-4 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Team anlegen</button>
 
                         <div class="mt-6 space-y-2">
                             <template x-for="team in teams" :key="team.id">
@@ -259,7 +225,7 @@
                                         <p class="font-semibold text-slate-900" x-text="team.name"></p>
                                         <p class="text-xs text-slate-500" x-text="team.department_name ? `Abteilung: ${team.department_name}` : 'Ohne Abteilung'"></p>
                                     </div>
-                                    <button @click="deleteTeam(team.id)" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
+                                    <button @click="deleteTeam(team.id)" :disabled="workspaceBusy" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
                                 </div>
                             </template>
                             <p x-show="teams.length === 0" class="text-xs text-slate-400">Noch keine Teams angelegt.</p>
@@ -300,7 +266,7 @@
                             <input x-model="newLink.redundancy_group" placeholder="Redundanz-Gruppe" aria-label="Redundanzgruppe" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                             <input x-model="newLink.notes" placeholder="Notizen" aria-label="Notizen zur Abhängigkeit" class="rounded-2xl border border-slate-200 px-3 py-2 text-sm">
                         </div>
-                        <button @click="createDependencyLink()" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Abhängigkeit anlegen</button>
+                        <button @click="createDependencyLink()" :disabled="workspaceBusy" class="mt-4 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Abhängigkeit anlegen</button>
 
                         <div class="mt-6 space-y-2 max-h-80 overflow-auto">
                             <template x-for="link in dependencyLinks" :key="link.id">
@@ -311,7 +277,7 @@
                                             <p class="text-xs text-slate-500" x-text="`${link.relation} • ${link.criticality}`"></p>
                                             <p class="text-xs text-slate-500" x-text="link.redundancy_group ? `Redundanz: ${link.redundancy_group}` : 'Keine Redundanz'"></p>
                                         </div>
-                                        <button @click="deleteDependencyLink(link.id)" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
+                                        <button @click="deleteDependencyLink(link.id)" :disabled="workspaceBusy" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Löschen</button>
                                     </div>
                                 </div>
                             </template>
@@ -325,6 +291,12 @@
         function dependencyApp() {
             return {
                 graph: null,
+                graphDirty: false,
+                activeWorkspace: 'graph',
+                workspaceError: '',
+                workspaceBusy: false,
+                graphSearch: '',
+                graphPage: 1,
                 graphData: { nodes: [], edges: [] },
                 nodeOptions: {},
                 departments: [],
@@ -354,6 +326,10 @@
                     roadmap_step: 'Roadmap-Schritt'
                 },
                 async init() {
+                    this.$watch('activeWorkspace', value => {
+                        if (value === 'graph') this.$nextTick(() => { if (this.graphDirty) this.renderGraph(); else { this.graph?.resize(); this.fitGraph(); } });
+                    });
+                    new MutationObserver(() => this.applyGraphTheme()).observe(document.documentElement,{attributes:true,attributeFilter:['class','style']});
                     await this.loadAll();
                     await this.refreshGraph();
                     this.$nextTick(() => {
@@ -431,6 +407,8 @@
                     this.renderGraph();
                 },
                 renderGraph() {
+                    if (this.activeWorkspace !== 'graph') { this.graphDirty=true; return; }
+                    this.graphDirty=false;
                     const elements = [
                         ...this.graphData.nodes.map(node => ({
                             data: { id: node.key, label: node.label, type: node.type }
@@ -442,7 +420,7 @@
                                 target: edge.target,
                                 label: edge.relation,
                                 criticality: edge.criticality,
-                                implicit: edge.implicit
+                                implicit: edge.implicit ? "yes" : "no"
                             }
                         }))
                     ];
@@ -484,7 +462,7 @@
                                 }
                             },
                             {
-                                selector: 'edge[implicit = "true"]',
+                                selector: 'edge[implicit = "yes"]',
                                 style: {
                                     'line-style': 'dashed',
                                     'line-color': '#cbd5f5',
@@ -509,6 +487,31 @@
                             }
                         ]
                     });
+                    this.applyGraphTheme(); this.highlightGraph();
+                },
+                get filteredGraphNodes() {
+                    const query=this.graphSearch.trim().toLocaleLowerCase('de');
+                    return this.graphData.nodes.filter(node => !query || (node.label+' '+(this.typeLabels[node.type] || node.type)).toLocaleLowerCase('de').includes(query));
+                },
+                highlightGraph() {
+                    this.graphPage=1;
+                    if (!this.graph) return;
+                    this.graph.elements().removeClass('search-muted search-match');
+                    if (!this.graphSearch.trim()) return;
+                    const keys=new Set(this.filteredGraphNodes.map(node => node.key));
+                    const matches=this.graph.nodes().filter(node => keys.has(node.id()));
+                    this.graph.elements().addClass('search-muted');
+                    matches.closedNeighborhood().removeClass('search-muted');
+                    matches.addClass('search-match');
+                    if (matches.length) this.graph.fit(matches.closedNeighborhood(),32);
+                },
+                applyGraphTheme() {
+                    if (!this.graph) return;
+                    const style=getComputedStyle(document.documentElement);
+                    this.graph.style().selector('node').style({'background-color':style.getPropertyValue('--color-accent').trim(),'color':style.getPropertyValue('--color-text').trim()})
+                        .selector('edge').style({'line-color':style.getPropertyValue('--color-border-strong').trim(),'target-arrow-color':style.getPropertyValue('--color-border-strong').trim(),'text-background-color':style.getPropertyValue('--color-surface').trim(),'color':style.getPropertyValue('--color-text-muted').trim()})
+                        .selector('.search-muted').style({'opacity':0.12,'text-opacity':0})
+                        .selector('.search-match').style({'border-width':3,'border-color':style.getPropertyValue('--color-accent-strong').trim()}).update();
                 },
                 fitGraph() {
                     if (this.graph) {
@@ -541,8 +544,22 @@
                         this.updateOverview();
                     }
                 },
+                async changeRequest(url,options) {
+                    if (this.workspaceBusy) return {ok:false};
+                    this.workspaceBusy=true; this.workspaceError='';
+                    try {
+                        const response=await fetch(url,options);
+                        if (response.redirected) { this.workspaceError='Ihre Sitzung ist abgelaufen. Bitte erneut anmelden.'; return {ok:false}; }
+                        if (!response.ok) {
+                            const result=await response.json().catch(() => ({}));
+                            this.workspaceError=result.error || 'Die Änderung konnte nicht gespeichert werden. Bitte erneut versuchen.';
+                        }
+                        return response;
+                    } catch (error) { this.workspaceError='Server nicht erreichbar. Ihre Eingaben bleiben erhalten.'; return {ok:false}; }
+                    finally { this.workspaceBusy=false; }
+                },
                 async createDepartment() {
-                    const response = await fetch('/api/departments', {
+                    const response = await this.changeRequest('/api/departments', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(this.newDepartment)
@@ -555,14 +572,14 @@
                 },
                 async deleteDepartment(id) {
                     if (!confirm('Abteilung wirklich löschen?')) return;
-                    const response = await fetch(`/api/departments/${id}`, { method: 'DELETE' });
+                    const response = await this.changeRequest(`/api/departments/${id}`, { method: 'DELETE' });
                     if (response.ok) {
                         await this.loadDepartments();
                         await this.loadNodeOptions();
                     }
                 },
                 async createTeam() {
-                    const response = await fetch('/api/teams', {
+                    const response = await this.changeRequest('/api/teams', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(this.newTeam)
@@ -575,14 +592,14 @@
                 },
                 async deleteTeam(id) {
                     if (!confirm('Team wirklich löschen?')) return;
-                    const response = await fetch(`/api/teams/${id}`, { method: 'DELETE' });
+                    const response = await this.changeRequest(`/api/teams/${id}`, { method: 'DELETE' });
                     if (response.ok) {
                         await this.loadTeams();
                         await this.loadNodeOptions();
                     }
                 },
                 async createSoftware() {
-                    const response = await fetch('/api/software', {
+                    const response = await this.changeRequest('/api/software', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(this.newSoftware)
@@ -597,7 +614,7 @@
                 },
                 async deleteSoftware(id) {
                     if (!confirm('Software wirklich löschen?')) return;
-                    const response = await fetch(`/api/software/${id}`, { method: 'DELETE' });
+                    const response = await this.changeRequest(`/api/software/${id}`, { method: 'DELETE' });
                     if (response.ok) {
                         await this.loadSoftware();
                         await this.loadNodeOptions();
@@ -606,7 +623,7 @@
                     }
                 },
                 async createInstallation() {
-                    const response = await fetch('/api/software-installations', {
+                    const response = await this.changeRequest('/api/software-installations', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(this.newInstallation)
@@ -619,7 +636,7 @@
                 },
                 async deleteInstallation(id) {
                     if (!confirm('Installation wirklich löschen?')) return;
-                    const response = await fetch(`/api/software-installations/${id}`, { method: 'DELETE' });
+                    const response = await this.changeRequest(`/api/software-installations/${id}`, { method: 'DELETE' });
                     if (response.ok) {
                         await this.loadInstallations();
                         await this.refreshGraph();
@@ -642,7 +659,7 @@
                         redundancy_group: this.newLink.redundancy_group,
                         notes: this.newLink.notes
                     };
-                    const response = await fetch('/api/dependency-links', {
+                    const response = await this.changeRequest('/api/dependency-links', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
@@ -657,7 +674,7 @@
                 },
                 async deleteDependencyLink(id) {
                     if (!confirm('Abhängigkeit wirklich löschen?')) return;
-                    const response = await fetch(`/api/dependency-links/${id}`, { method: 'DELETE' });
+                    const response = await this.changeRequest(`/api/dependency-links/${id}`, { method: 'DELETE' });
                     if (response.ok) {
                         await this.loadDependencyLinks();
                         await this.refreshGraph();

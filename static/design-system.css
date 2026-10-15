@@ -507,3 +507,12 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 .app-body .app-content button { border-radius: 6px; }
 .app-body :is(button,a):is(.bg-indigo-600,.bg-blue-600,.bg-slate-900):not([role=tab]) { background: var(--button-bg); color: var(--button-text); min-height: var(--control-height); padding: 6px 12px; font-size: 13px; line-height: 20px; border-radius: 6px; box-shadow: none; }
 .app-body :is(button,a):is(.bg-indigo-600,.bg-blue-600,.bg-slate-900):not([role=tab]):hover { background: var(--button-bg-hover); }
+
+.module-summary { display: flex; flex-wrap: wrap; gap: 8px 24px; color: var(--color-text-muted); font-size: 12px; }
+.module-summary strong { color: var(--color-text); font-size: 15px; margin-right: 4px; }
+.dependency-layout { display: grid; grid-template-columns: minmax(0,2fr) minmax(280px,1fr); gap: 16px; align-items: start; }
+.app-body .dependency-diagram { padding: 0; overflow: hidden; border: 1px solid var(--color-border); }
+.dependency-search { margin: 0 16px 12px; }
+.dependency-canvas { height: min(55dvh,520px); min-height: 300px; border-block: 1px solid var(--color-border); }
+.dependency-diagram > .mt-4 { padding: 0 16px 16px; }
+@media(max-width:1000px) { .dependency-layout { grid-template-columns: minmax(0,1fr); } }
