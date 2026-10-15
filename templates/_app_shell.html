@@ -48,7 +48,7 @@
                 {% if is_superuser or 'locations.view' in permissions or 'locations.manage' in permissions %}{{ render_nav_link('/locations', 'Standorte', 'map-pin', current_path == '/locations') }}{% endif %}
                 {% if is_superuser or 'categories.view' in permissions or 'categories.manage' in permissions or 'asset_categories.view' in permissions or 'asset_categories.manage' in permissions %}{{ render_nav_link('/inventory/categories' if unified_inventory else '/?view=taxonomy', 'Asset-Kategorien' if unified_inventory else 'Vorlagen', 'sliders', current_path == '/inventory/categories' or current_path == '/' and inventory_view == 'taxonomy') }}{% endif %}
                 {% if can_devices or can_assets or can_settings %}{{ render_nav_link('/inventory/catalog', 'Produktkatalog', 'image', current_path.startswith('/inventory/catalog')) }}{% endif %}
-                {% if can_assets %}{{ render_nav_link('/inventory/planning', 'Lager- und Platzplanung', 'archive', current_path == '/inventory/planning') }}{% endif %}
+                {% if can_assets or unified_inventory and can_devices %}{{ render_nav_link('/inventory/planning', 'Lager- und Platzplanung', 'archive', current_path == '/inventory/planning') }}{% endif %}
             {% endcall %}
             {% endif %}
             {% if is_superuser or 'tickets.view_all' in permissions or 'tickets.view_own' in permissions or 'tickets.create' in permissions or 'ticket_categories.manage' in permissions or 'ticket_alerts.manage' in permissions or 'notifications.manage' in permissions %}

@@ -124,3 +124,25 @@ def test_readonly_planning_user_cannot_save_or_delete(planning):
     with client.session_transaction() as session:
         session.clear()
     assert client.get('/api/planning/plans').status_code==302
+
+
+def test_unified_planning_respects_converted_scope_in_search_preview_and_saved_plans(planning):
+    from inventorypro.domains.inventory.unification import convert_inventory
+    from test_product_catalog_routes import role
+    client,payload=planning
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();convert_inventory(db)
+        hidden=db.execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=1').fetchone()[0];db.commit()
+    saved=client.post('/api/planning/plans',json=payload)
+    assert saved.status_code==201
+    role(client,'planning-original-assets',['assets.view','assets.manage'])
+    assert client.get('/api/planning/assets?q=Notebook').json['total']==0
+    hidden_payload=copy.deepcopy(payload);hidden_payload['items'][0]['id']=hidden
+    assert client.post('/api/planning/preview',json=hidden_payload).status_code==403
+    assert client.post('/api/planning/plans',json=hidden_payload).status_code==403
+    assert client.get('/api/planning/plans/'+str(saved.json['id'])).status_code==200
+    role(client,'planning-converted-only',['devices.view','devices.manage'])
+    assert client.get('/inventory/planning').status_code==200
+    assert client.get('/api/planning/assets?q=Notebook').json['total']==40
+    assert client.get('/api/planning/plans').json['items']==[]
+    assert client.get('/api/planning/plans/'+str(saved.json['id'])).status_code==403
