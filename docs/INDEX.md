@@ -1,18 +1,14 @@
-# Dokumentation
+# Dokumentation / Documentation
 
-- [Installation und Betrieb](installation.md)
-- [Automatische Assetübernahme und Sicherung](asset-upgrade.md)
-- [Produktbilder und gemeinsamer Speicher](product-images.md)
-- [Ausgeführte Dockerübernahme](docker-asset-upgrade-qa.md)
-- [Bekannte Einschränkungen](known-issues.md)
-- [Designsystem](design-system.md) und [Bedienmuster](ui-patterns.md)
-- [UI-Änderungshistorie](changelog-ui.md)
-- [Health-Modul](modules/health.md) und [Wartungskonsole](modules/terminal.md)
-- [Technisches Audit](enterprise/AUDIT.md)
-- [Ausgeführte Qualitätssicherung](enterprise/QUALITY.md)
-- [Stable 0.3.0: signierte Release- und Updaterabnahme](release-0.3.0-qa.md)
-- [Updatekompatibilität und Veröffentlichung](enterprise/UPDATE-COMPATIBILITY.md)
-- [Lager- und Platzplanung](enterprise/STORAGE-PLANNING.md)
+| Thema / Topic | Deutsch | English |
+| --- | --- | --- |
+| Installation, Backup, Restore | [Installation](de/installation.md) | [Installation](en/installation.md) |
+| Bestand, Kategorien, enthaltene Assets | [Inventar](de/inventory.md) | [Inventory](en/inventory.md) |
+| Produktkatalog und Bilder | [Produktbilder](de/product-images.md) | [Product images](en/product-images.md) |
+| Tickets, Planung und weitere Module | [Module](de/modules.md) | [Modules](en/modules.md) |
+| Benutzer, Sicherheit und Sprache | [Administration](de/administration.md) | [Administration](en/administration.md) |
+| Updates und Releaseverfahren | [Updates](de/updates.md) | [Updates](en/updates.md) |
+| Entwicklung und Tests | [Entwicklung](de/development.md) | [Development](en/development.md) |
+| Änderungen | [Changelog](CHANGELOG.md) | [Changelog](CHANGELOG.md) |
 
-Historische Module-Spezifikationen dokumentieren Fachverträge; aktueller
-Implementierungsstand und tatsächlich ausgeführte Tests stehen im Qualitätsbericht.
+[README](../README.md) · [Lizenz / License](../LICENSE) · [Bildlizenz / Image license](../inventorypro/data/product_images/LICENSE.md)
