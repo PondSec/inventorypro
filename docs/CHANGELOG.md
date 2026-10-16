@@ -1,6 +1,6 @@
 # Änderungen / Changelog
 
-## Noch nicht veröffentlicht / Unreleased
+## 0.3.1
 
 ### Deutsch
 
