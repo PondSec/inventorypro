@@ -144,3 +144,15 @@ def test_currency_and_stale_edit_guards(db):
         wishes.save_project(db, can, actor(db), {'currency': 'USD', 'expectedRevision': parent['revision']}, parent['id'])
     with pytest.raises(wishes.WishError):
         wishes.save_wish(db, can, actor(db), {'name': 'Stale', 'expectedRevision': row['revision'] + 1}, row['id'])
+
+
+def test_releasing_an_accidental_acquisition_keeps_inventory_and_replay_protection(db):
+    original = save(db)
+    row = acquire(db, original)
+    record = row['acquisitions'][0]
+    released = wishes.release(db, can, actor(db), row['id'], record['id'], {'expectedRevision': row['revision']})
+    assert released['missing'] == 1
+    assert assets.get_asset(db, can, record['asset_id'])['name'] == 'Workbench'
+    assert acquire(db, original)['missing'] == 1
+    with pytest.raises(wishes.WishError):
+        wishes.release(db, can, actor(db), row['id'], record['id'], {'expectedRevision': row['revision']})

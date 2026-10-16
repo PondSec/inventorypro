@@ -98,8 +98,18 @@
       const li = document.createElement('li');
       const link = document.createElement(item.asset_id ? 'a' : 'span');
       if (item.asset_id) link.href = '/inventory/assets/' + item.asset_id;
-      link.textContent = item.restricted ? t('Asset ohne Anzeigeberechtigung') : item.asset_name + (item.asset_id ? '' : ' · ' + t('Nicht mehr im Bestand'));
-      li.append(link); list.append(li);
+      link.textContent = item.restricted ? t('Asset ohne Anzeigeberechtigung') : item.asset_name + (item.asset_id ? '' : ' · ' + t('Nicht mehr zugeordnet'));
+      li.append(link);
+      if (item.asset_id && config.canManage && !initial.project_asset_id) {
+        const release = document.createElement('button'); release.type = 'button'; release.className = 'btn btn-ghost'; release.textContent = t('Zuordnung lösen');
+        release.addEventListener('click', () => {
+          if (dirty && !confirm(t('Ungespeicherte Änderungen verwerfen?'))) return;
+          if (confirm(t('Zuordnung zum Wunsch lösen? Das Asset bleibt im Bestand.'))) submit(wishForm, async () => {
+            await api('/api/wishes/' + initial.id + '/acquisitions/' + item.id, 'DELETE', {expectedRevision: initial.revision}); done();
+          });
+        }); li.append(release);
+      }
+      list.append(li);
     }
     projectCurrency(); dirty = false;
   }

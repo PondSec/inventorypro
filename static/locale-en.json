@@ -3387,5 +3387,10 @@
   "Bitte zuerst die einheitliche Asset-Verwaltung aktivieren.": "Enable unified asset management first.",
   "Übernahme anpassen": "Adjust acquisition",
   "Bereits erfasste Assets werden nicht erneut angelegt.": "Existing inventory assets will not be duplicated.",
-  "Kosten noch unvollständig": "Costs are incomplete"
+  "Kosten noch unvollständig": "Costs are incomplete",
+  "Nicht mehr zugeordnet": "No longer linked",
+  "Zuordnung lösen": "Unlink",
+  "Zuordnung zum Wunsch lösen? Das Asset bleibt im Bestand.": "Unlink this asset from the wish? The asset will remain in inventory.",
+  "Zuordnung nicht gefunden.": "Link not found.",
+  "Das Konto ist noch mit Wünschen oder Projektverläufen verknüpft. Bitte diese Pläne vor dem Löschen des Kontos bereinigen.": "This account is still linked to wishes or project history. Resolve these plans before deleting the account."
 }

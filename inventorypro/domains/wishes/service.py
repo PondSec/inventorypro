@@ -87,7 +87,7 @@ def wish(db, can, actor, identifier, write=False):
 
 
 def revision(row, payload):
-    if isinstance(payload.get('expectedRevision'), bool) or payload.get('expectedRevision') != row['revision']:
+    if isinstance(payload.get('expectedRevision'), bool) or not isinstance(payload.get('expectedRevision'), int) or payload.get('expectedRevision') != row['revision']:
         raise WishError('Der Plan wurde inzwischen geändert. Bitte neu laden und die Änderungen prüfen.', 409)
 
 
@@ -275,3 +275,17 @@ def remove(db, can, actor, kind, identifier, payload):
             # Unassigned wishes keep their creator and become private again.
             db.execute("UPDATE wishes SET project_id=NULL,visibility='private',revision=revision+1 WHERE project_id=?", (identifier,))
         db.execute('DELETE FROM '+('wish_projects' if kind == 'projects' else 'wishes')+' WHERE id=?', (identifier,))
+
+
+def release(db, can, actor, identifier, acquisition, payload):
+    """Undo a plan association, retaining the actual asset and replay tombstone."""
+    with assets.mutation(db):
+        row = wish(db, can, actor, identifier, True)
+        revision(row, payload)
+        if row.get('project_asset_id'):
+            raise WishError('Dieses Projekt ist bereits im Bestand. Bitte die Zusammenstellung am Asset bearbeiten.', 409)
+        result = db.execute('UPDATE wish_acquisitions SET asset_id=NULL WHERE id=? AND wish_id=? AND asset_id IS NOT NULL', (acquisition, identifier))
+        if not result.rowcount:
+            raise WishError('Zuordnung nicht gefunden.', 404)
+        db.execute('UPDATE wishes SET revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE id=?', (identifier,))
+        return wish(db, can, actor, identifier)

@@ -70,6 +70,12 @@ def test_standalone_wish_is_inventoried_with_one_click(wishes_live, browser):
     assert response.value.status == 200
     expect(page.locator('.wish-quantity')).to_have_text('1 / 1')
     expect(page.get_by_role('button', name='Habe ich', exact=True)).to_have_count(0)
+    page.get_by_role('button', name='A cordless drill', exact=True).click()
+    page.once('dialog',lambda confirmation:confirmation.accept())
+    page.get_by_role('button',name='Zuordnung lösen',exact=True).click()
+    expect(page.locator('.wish-quantity')).to_have_text('0 / 1')
+    with inventory_app.app.app_context():
+        assert inventory_app.get_db().execute("SELECT count(*) FROM assets WHERE name='A cordless drill'").fetchone()[0]==1
     page.close()
 
 

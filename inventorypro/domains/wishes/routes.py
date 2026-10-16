@@ -195,4 +195,11 @@ def build_wishes_blueprint(*, get_db, user_can, get_access, login_required, pars
         commit('assemble', 'wish_project', identifier)
         return jsonify(result)
 
+    @bp.delete('/api/wishes/<int:identifier>/acquisitions/<int:acquisition>')
+    @login_required
+    def release(identifier, acquisition):
+        result = service.release(get_db(), user_can, actor(), identifier, acquisition, body())
+        commit('release', 'wish', identifier)
+        return jsonify(result)
+
     return bp
