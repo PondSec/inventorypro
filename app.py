@@ -48,6 +48,7 @@ from inventorypro.domains.catalog.seed import initialize_catalog
 from inventorypro.domains.catalog.matching import sync_object as sync_product_object
 from inventorypro.domains.inventory.routes import build_inventory_blueprint
 from inventorypro.domains.inventory.asset_routes import build_assets_blueprint
+from inventorypro.domains.wishes.routes import build_wishes_blueprint
 from inventorypro.domains.inventory.category_routes import build_category_blueprint,can_manage as can_manage_asset_category,scopes as asset_category_scopes
 from inventorypro.domains.inventory import assets as canonical_assets
 from inventorypro.domains.inventory.ticket_assets import normalize_links as normalize_ticket_asset_links
@@ -358,6 +359,8 @@ DEFAULT_SERVER_SETTINGS = {
     }
 }
 PERMISSIONS = [
+    {"key": "wishes.view", "label": "Wünsche und Projekte anzeigen", "description": "Eigene und mit dem Team geteilte Pläne einsehen.", "group": "Planung"},
+    {"key": "wishes.manage", "label": "Wünsche und Projekte verwalten", "description": "Eigene und geteilte Wünsche planen. Die Übernahme in den Bestand erfordert zusätzlich Asset-Rechte.", "group": "Planung"},
     {
         "key": "categories.view",
         "label": "Kategorien anzeigen",
@@ -15785,6 +15788,9 @@ app.register_blueprint(build_planning_blueprint(
     get_db=get_db, user_can=user_can, get_access=get_user_access, login_required=login_required,
     pack=pack_assets_into_storage, build_layers=build_binpacking_layers, enrich_layers=enrich_binpacking_layers, log_activity=log_activity,
 ))
+
+app.register_blueprint(build_wishes_blueprint(get_db=get_db,user_can=user_can,get_access=get_user_access,login_required=login_required,
+    parse_fields=parse_field_definitions,validate_specs=validate_dynamic_specs,log_activity=log_activity))
 
 app.register_blueprint(build_catalog_blueprint(
     get_db=get_db, get_access=get_user_access, user_can=user_can, login_required=login_required,
