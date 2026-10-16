@@ -14,7 +14,7 @@ def run(arguments):
     return result.stdout.strip()
 
 
-SEED='''import app,json
+SEED='''import app,json,sqlite3,importlib.util
 from pathlib import Path
 with app.app.app_context():
  db=app.get_db()
@@ -24,7 +24,8 @@ with app.app.app_context():
  devices=[]
  for index in range(20):
   devices.append(db.execute('INSERT INTO devices(name,category_id,serial_number,location_id,specs) VALUES (?,?,?,?,?)',('MacBook Air 13″ M4' if index==0 else 'QA Upgrade Device '+str(index),category,'QA-UPGRADE-'+str(index),location,json.dumps({'Hersteller':'Apple','Modell':'MacBook Air 13″ M4','Unknown':'Retained'}) if index==0 else '{}')).lastrowid)
- asset_category=db.execute("SELECT id FROM asset_categories WHERE name='Assets'").fetchone()[0]
+ existing_category=db.execute("SELECT id FROM asset_categories WHERE name='Assets'").fetchone()
+ asset_category=existing_category[0] if existing_category else db.execute("INSERT INTO asset_categories(name) VALUES ('QA Upgrade Sets')").lastrowid
  parents=[]
  for index in range(2):
   parent=db.execute('INSERT INTO assets(name,category_id,notes,specs) VALUES (?,?,?,?)',('QA Upgrade Set '+str(index),asset_category,'QA retained description','{"Unknown":"Retained"}')).lastrowid;parents.append(parent)
@@ -33,9 +34,16 @@ with app.app.app_context():
  db.execute('INSERT INTO ticket_assets(ticket_id,asset_id) VALUES (?,?)',(ticket,parents[0]))
  db.execute("INSERT INTO roadmaps(title,ticket_id) VALUES ('QA linked roadmap',?)",(ticket,))
  db.execute('UPDATE server_settings SET update_policy_json=?',(json.dumps({'autoUpdateEnabled':False,'maintenanceWindow':'04:15','channel':'stable','checkIntervalMinutes':90}),))
+ if importlib.util.find_spec('inventorypro.domains.catalog') is not None:
+  from inventorypro.domains.catalog.matching import sync_inventory
+  sync_inventory(db)
  db.commit()
  tables=['devices','assets','asset_devices','users','user_roles','role_permissions','tickets','roadmaps']
  snapshot={table:[dict(row) for row in db.execute('SELECT * FROM '+table+' ORDER BY id')] for table in tables}
+ state=db.execute('SELECT unified_assets FROM inventory_model_state WHERE id=1').fetchone() if db.execute("SELECT 1 FROM sqlite_master WHERE name='inventory_model_state'").fetchone() else None
+ snapshot['unified']=bool(state and state[0])
+ snapshot['conversionBackups']=len(list(Path('/data/backups/pre-asset-conversion').glob('*.sqlite3')))
+ with sqlite3.connect('/data/qa-before-upgrade.sqlite3') as backup:db.backup(backup)
  snapshot['policy']=db.execute('SELECT update_policy_json FROM server_settings').fetchone()[0]
  snapshot['secret']=Path('/data/instance/application-secret.key').read_text()
  Path('/data/uploads').mkdir(exist_ok=True);Path('/data/uploads/qa-retained.txt').write_text('QA persistent upload')
@@ -68,9 +76,11 @@ with app.app.app_context():
  assert Path('/data/instance/application-secret.key').read_text()==expected['secret']
  assert Path('/data/uploads/qa-retained.txt').read_text()=='QA persistent upload'
  backups=list(Path('/data/backups/pre-asset-conversion').glob('*.sqlite3'))
- assert len(backups)==1
- with sqlite3.connect(backups[0]) as backup:assert backup.execute('SELECT count(*) FROM assets').fetchone()[0]==2
-print('PASS: 20 devices become 20 scoped assets; 2 existing sets, quantities, roles, tickets, uploads, policy and secret retained; starter product photo resolves.')
+ assert db.execute('SELECT ui_language FROM server_settings WHERE id=1').fetchone()[0]=='de'
+ assert len(backups)==expected['conversionBackups']+(0 if expected['unified'] else 1)
+ if not expected['unified']:
+  with sqlite3.connect(backups[-1]) as backup:assert backup.execute('SELECT count(*) FROM assets').fetchone()[0]==2
+print('PASS: 22 canonical assets without duplication; existing IDs, quantities, roles, tickets, uploads, policy and secret retained; locale migration and starter image verified.')
 '''
 
 HTTP='''import json,urllib.request,urllib.parse,http.cookiejar,sys
@@ -95,7 +105,7 @@ print('PASS: migrated login, paginated asset API and product photo work over HTT
 
 RESTORE='''from pathlib import Path
 import sqlite3
-source=next(Path('/data/backups/pre-asset-conversion').glob('*.sqlite3'))
+source=Path('/data/qa-before-upgrade.sqlite3')
 with sqlite3.connect(source) as original,sqlite3.connect('/data/inventory.db') as target:original.backup(target)
 '''
 
@@ -121,7 +131,7 @@ def main():
             restored=json.loads(python("import app,json\nwith app.app.app_context():\n db=app.get_db();print(json.dumps({table:[dict(row) for row in db.execute('SELECT * FROM '+table+' ORDER BY id')] for table in ['devices','assets','asset_devices','users','user_roles','role_permissions','tickets','roadmaps']}))"))
             expected=json.loads(snapshot)
             for table,rows in restored.items():assert rows==expected[table],table
-            print('PASS: previous image starts with pre-conversion database; all original business rows restored after forced rollback.')
+            print('PASS: previous image starts with the exact pre-upgrade database; all original business rows restored after forced rollback.')
         finally:subprocess.run(base+['down','--volumes','--remove-orphans'],capture_output=True)
 
 
