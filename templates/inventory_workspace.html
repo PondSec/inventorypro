@@ -1,6 +1,8 @@
 {% extends 'base_app.html' %}
 {% from '_ui.html' import icon, thumbnail, status, kpi_tile with context %}
 {% set page_title = 'Inventar' %}
+{% set can_bulk = unified_inventory and (is_superuser or 'assets.manage' in permissions or 'devices.manage' in permissions) %}
+{% set can_select = can_export or can_bulk %}
 {% set page_section_label = 'Inventar' %}
 {% set page_description = 'Verwalten Sie Assets und ihre enthaltenen Komponenten zentral an einem Ort.' if unified_inventory else 'Verwalten Sie Geräte, Komponenten und IT-Assets zentral an einem Ort.' %}
 {% set page_breadcrumbs = [{'label':'Inventar','href':'/inventory'}, {'label':'Bestand' if unified_inventory else 'Geräte' if inventory.kind == 'device' else 'Sets & Zubehör' if inventory.kind == 'asset' else 'Übersicht'}] %}
@@ -47,16 +49,16 @@
         </details>
     </div>
     {% if inventory.q or inventory.filter or inventory.category or inventory.location or inventory.assigned %}<div class="active-filters"><span>{{ inventory.total }} Treffer{% if inventory.q %} für „{{ inventory.q }}“{% endif %}</span><a href="{{ inventory_link(q='',filter='',category='',location='',assigned='',page=1) }}">Filter zurücksetzen {{ icon('x') }}</a></div>{% endif %}
-    {% if can_export %}<div class="selection-toolbar" data-selection-toolbar hidden><span role="status" data-selection-count></span><a class="btn btn-secondary" data-selection-export>Auswahl exportieren</a><button type="button" class="btn btn-secondary" data-clear-selection>Auswahl aufheben</button></div>{% endif %}
+    {% if can_select %}<div class="selection-toolbar" data-selection-toolbar hidden><span role="status" data-selection-count></span>{% if can_bulk %}<button type="button" class="btn btn-secondary" data-bulk-action="update">Gemeinsam bearbeiten</button><button type="button" class="btn btn-secondary" data-bulk-action="delete">Auswahl löschen</button>{% endif %}{% if can_export %}<a class="btn btn-secondary" data-selection-export>Auswahl exportieren</a>{% endif %}<button type="button" class="btn btn-secondary" data-clear-selection>Auswahl aufheben</button></div>{% endif %}
     <div class="data-table-scroll inventory-table-scroll" tabindex="0" aria-label="Bestandstabelle, scrollbar">
         <table class="data-table inventory-table">
-            <thead><tr>{% if can_export %}<th class="selection-column"><input type="checkbox" data-select-all aria-label="Alle Einträge dieser Seite auswählen"></th>{% endif %}
+            <thead><tr>{% if can_select %}<th class="selection-column"><input type="checkbox" data-select-all aria-label="Alle Einträge dieser Seite auswählen"></th>{% endif %}
                 {% for key,label in [('name','Name'),('category','Typ'),('location','Standort')] %}<th scope="col" aria-sort="{{ ('ascending' if inventory.direction == 'asc' else 'descending') if inventory.sort == key else 'none' }}"><a href="{{ inventory_link(sort=key,direction='desc' if inventory.sort == key and inventory.direction == 'asc' else 'asc',page=1) }}">{{ ui_t(label) }}{% if inventory.sort == key %} {{ '↑' if inventory.direction == 'asc' else '↓' }}{% endif %}</a></th>{% endfor %}
                 {% if can_assets %}<th scope="col"><a href="{{ inventory_link(sort='assigned_to',direction='desc' if inventory.sort == 'assigned_to' and inventory.direction == 'asc' else 'asc',page=1) }}">Zugewiesen an</a></th>{% endif %}<th scope="col">Status</th><th scope="col"><a href="{{ inventory_link(sort='updated_at',direction='desc' if inventory.sort != 'updated_at' or inventory.direction == 'asc' else 'asc',page=1) }}">Letzte Änderung</a></th><th class="row-actions-column"><span class="sr-only">Aktionen</span></th>
             </tr></thead>
             <tbody>{% for row in inventory.rows %}
             <tr data-preview-key="{{ row.kind }}-{{ row.id }}" data-preview="{{ {'name':row.name,'kind':'Asset' if unified_inventory else 'Gerät' if row.kind == 'device' else 'Set / Zubehör','category':row.category,'serial':row.serial_number,'location':row.location,'status':'Ausgemustert' if row.retired else 'Im Bestand'} | tojson | forceescape }}">
-                {% if can_export %}<td class="selection-column"><input type="checkbox" data-select-entry="{{ row.kind }}-{{ row.id }}" aria-label="{{ row.name }} auswählen"></td>{% endif %}
+                {% if can_select %}<td class="selection-column"><input type="checkbox" data-select-entry="{{ row.kind }}-{{ row.id }}" aria-label="{{ row.name }} auswählen"></td>{% endif %}
                 <td class="object-name-cell"><a class="object-link" data-object-link aria-label="{{ row.name }}" href="/inventory/{{ 'devices' if row.kind == 'device' else 'assets' }}/{{ row.id }}">{{ thumbnail(row.icon,row.image_url | default('')) }}<span class="object-label-text"><strong title="{{ row.name }}">{{ row.name }}</strong><small>{{ row.serial_number or ('Set #' ~ row.id if row.kind == 'asset' else 'Ohne Identifikation') }}</small></span></a></td>
                 <td><span class="type-badge" title="{{ row.category or 'Ohne Vorlage' }}">{{ row.category or ('Asset' if unified_inventory else 'Gerät' if row.kind == 'device' else 'Set / Zubehör') }}</span></td>
                 <td><span class="table-meta">{{ icon('map-pin') }}<span title="{{ row.location or 'Nicht festgelegt' }}">{{ row.location or 'Nicht festgelegt' }}</span></span></td>
@@ -64,7 +66,7 @@
                 <td>{{ status('Ausgemustert' if row.retired else 'Im Bestand','neutral' if row.retired else 'success') }}</td><td class="table-date">{{ row.updated_at | inventory_date(true) }}</td>
                 <td class="row-actions-column"><details data-row-menu class="row-menu"><summary aria-label="Aktionen für {{ row.name }}">{{ icon('more-horizontal') }}</summary><div class="row-menu-panel"><a href="/inventory/{{ 'devices' if row.kind == 'device' else 'assets' }}/{{ row.id }}">Detailseite</a>{% if is_superuser or (row.kind == 'device' and 'devices.manage' in permissions) or (row.kind == 'asset' and 'assets.manage' in permissions) %}<a href="{{ '/inventory/assets/' ~ row.id ~ '/edit' if unified_inventory else '/?view=' ~ ('devices' if row.kind=='device' else 'assets') ~ '&edit_' ~ row.kind ~ '=' ~ row.id }}">Bearbeiten</a>{% endif %}</div></details></td>
             </tr>
-            {% else %}<tr><td colspan="{{ 6 + (1 if can_assets else 0) + (1 if can_export else 0) }}"><div class="empty-state">{{ icon('search') }}<h2>Keine passenden Einträge</h2><p>Ändern Sie die Suche oder setzen Sie die Filter zurück.</p><a href="/inventory">Alle Einträge anzeigen</a></div></td></tr>{% endfor %}</tbody>
+            {% else %}<tr><td colspan="{{ 6 + (1 if can_assets else 0) + (1 if can_select else 0) }}"><div class="empty-state">{{ icon('search') }}<h2>Keine passenden Einträge</h2><p>Ändern Sie die Suche oder setzen Sie die Filter zurück.</p><a href="/inventory">Alle Einträge anzeigen</a></div></td></tr>{% endfor %}</tbody>
         </table>
     </div>
     <footer class="table-pagination">
@@ -79,9 +81,10 @@
 </section>
 {% endblock %}
 {% block overlays %}
+{% if can_bulk %}{% include '_inventory_bulk_dialog.html' %}{% endif %}
 <dialog id="inventory-preview" class="object-panel" aria-labelledby="object-panel-name" data-inventory-preview>
     <div class="object-panel-close"><button type="button" class="icon-button" data-close-preview aria-label="Details schließen" autofocus><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
     <div data-object-content></div><p class="sr-only" role="status" data-copy-status></p>
 </dialog>
 {% endblock %}
-{% block page_scripts %}<script src="/static/inventory-views.js?v=2"></script><script src="/static/inventory-preview.js?v=3"></script><script src="/static/inventory-table.js?v=1"></script><script src="/static/inventory-photos.js?v=1"></script>{% endblock %}
+{% block page_scripts %}<script src="/static/inventory-views.js?v=2"></script><script src="/static/inventory-preview.js?v=3"></script><script src="/static/inventory-table.js?v=2"></script><script src="/static/inventory-photos.js?v=1"></script>{% if can_bulk %}<script src="/static/inventory-bulk.js?v=1"></script>{% endif %}{% endblock %}

@@ -17,13 +17,16 @@
   function update() {
     const selected = items.filter(item => item.checked);
     toolbar.hidden = !selected.length;
-    toolbar.querySelector('[data-selection-count]').textContent = selected.length + (selected.length === 1 ? uiText(' Eintrag') : uiText(' Einträge')) + ' dieser Seite ausgewählt';
+    toolbar.querySelector('[data-selection-count]').textContent = uiText('{0} Einträge dieser Seite ausgewählt', [selected.length]);
     all.checked = !!items.length && selected.length === items.length;
     all.indeterminate = selected.length > 0 && selected.length < items.length;
     for (const item of items) item.closest('tr').toggleAttribute('data-bulk-selected', item.checked);
-    const url = new URL(document.querySelector('[data-inventory-export]').href);
-    url.searchParams.set('selection', selected.map(item => item.dataset.selectEntry).join(','));
-    toolbar.querySelector('[data-selection-export]').href = url.href;
+    const exportLink = toolbar.querySelector('[data-selection-export]');
+    if (exportLink) {
+      const url = new URL(document.querySelector('[data-inventory-export]').href);
+      url.searchParams.set('selection', selected.map(item => item.dataset.selectEntry).join(','));
+      exportLink.href = url.href;
+    }
   }
   all.addEventListener('change', () => {for (const item of items) item.checked = all.checked; update();});
   items.forEach(item => item.addEventListener('change', update));
