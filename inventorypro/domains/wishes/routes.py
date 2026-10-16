@@ -58,8 +58,11 @@ def build_wishes_blueprint(*, get_db, user_can, get_access, login_required, pars
             sum(CASE WHEN w.unit_price_cents IS NULL THEN 1 ELSE 0 END) AS unpriced
             FROM wishes w WHERE w.project_id=? AND w.archived=0''', (row['id'],)).fetchone()
         result.update(dict(aggregate))
-        result['spent'] = db.execute('''SELECT sum(a.unit_cost_cents) FROM wish_acquisitions a JOIN wishes w ON w.id=a.wish_id
-            WHERE w.project_id=? AND w.archived=0''', (row['id'],)).fetchone()[0]
+        cost = db.execute('''SELECT sum(a.unit_cost_cents) AS total,
+            sum(CASE WHEN a.unit_cost_cents IS NULL THEN 1 ELSE 0 END) AS unknown
+            FROM wish_acquisitions a JOIN wishes w ON w.id=a.wish_id
+            WHERE w.project_id=? AND w.archived=0 AND a.asset_id IS NOT NULL''', (row['id'],)).fetchone()
+        result['spent'], result['spent_unknown'] = cost['total'], cost['unknown'] or 0
         result['missing'] = max(0, result['needed'] - result['owned'])
         result['progress'] = round(100 * result['owned'] / result['needed']) if result['needed'] else 0
         result['inventory_link'] = bool(result['asset_id'] and assets.can_access(db, user_can, result['asset_id']))

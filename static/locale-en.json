@@ -3392,5 +3392,6 @@
   "Zuordnung lösen": "Unlink",
   "Zuordnung zum Wunsch lösen? Das Asset bleibt im Bestand.": "Unlink this asset from the wish? The asset will remain in inventory.",
   "Zuordnung nicht gefunden.": "Link not found.",
-  "Das Konto ist noch mit Wünschen oder Projektverläufen verknüpft. Bitte diese Pläne vor dem Löschen des Kontos bereinigen.": "This account is still linked to wishes or project history. Resolve these plans before deleting the account."
+  "Das Konto ist noch mit Wünschen oder Projektverläufen verknüpft. Bitte diese Pläne vor dem Löschen des Kontos bereinigen.": "This account is still linked to wishes or project history. Resolve these plans before deleting the account.",
+  "Kosten vorhandener Teile": "Cost of acquired items"
 }
