@@ -27,3 +27,10 @@ Die Suite verwendet isolierte Datenbanken und synthetische Datensätze. Browsert
 `scripts/visual_audit.py` schreibt Screenshots standardmäßig in `.qa-artifacts/visual-audit`, nicht in die öffentliche Dokumentation. Reale Daten, Betriebsprotokolle oder interne Infrastruktur dürfen weder Testfixtures noch öffentliche Screenshots werden. Ein Testbericht nennt die tatsächlich ausgeführten Prüfungen und Einschränkungen.
 
 Die Release-Skripte `check_release_install.py`, `check_asset_image_upgrade.py`, `check_release_upgrade.py` und `check_release_volume_rollback.py` prüfen Dockerinstallation und Rückfall. Aufrufoptionen jeweils mit `--help` lesen. Tests zuerst mit wegwerfbaren Testvolumes ausführen.
+
+
+### Visuelle Prüfung der Planung
+
+`python -m pytest -q tests/test_wishes_visual.py` vergleicht die Planungsansicht in Chromium und Firefox, mit hellem und dunklem Theme sowie Desktop- und Mobilgrößen. Die eingecheckten Pixelbaselines wurden unter macOS geprüft. Auf anderen Betriebssystemen werden Ansichten aufgenommen; ohne passende Baseline wird der Pixelvergleich als übersprungen ausgewiesen. Interaktionstests laufen trotzdem.
+
+Neue Vergleichsbilder ausdrücklich mit `UPDATE_WISH_VISUALS=1 python -m pytest -q tests/test_wishes_visual.py` erzeugen, alle Änderungen visuell prüfen und danach ohne diese Variable erneut testen. Baselines niemals allein wegen eines fehlgeschlagenen Vergleichs ersetzen.

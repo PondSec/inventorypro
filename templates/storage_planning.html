@@ -6,9 +6,9 @@
 {% block html_attrs %}x-data="storagePlanning()"{% endblock %}
 {% block content %}
 <ol class="wizard-steps" aria-label="Einrichtungsschritte"><template x-for="(label,index) in labels" :key="index"><li :aria-current="step===index+1 ? 'step' : null"><span x-text="index+1"></span><strong x-text="label"></strong></li></template></ol>
+<div role="alert" class="form-error" x-show="error" x-cloak><p x-text="error"></p></div>
 <section class="workspace-panel" x-cloak @input="changed=true">
     <h2 class="wizard-heading" tabindex="-1" x-ref="stepHeading" x-text="labels[step-1]"></h2>
-    <div role="alert" class="form-error" x-show="error"><p x-text="error"></p></div>
     <section x-show="step===1">
         <p>Wählen Sie einen vorhandenen Behälter oder benennen Sie einen Lagerplatz für eine neue Planung.</p>
         <label class="detail-form">Lagerplatz oder Behälter<input class="input" x-model="containerName" @input="containerId=null" placeholder="z. B. Regal A · Fach 3"></label>
@@ -45,10 +45,11 @@
         <div class="data-table-scroll"><table class="data-table"><caption>Packliste · alle Koordinaten und Maße in Millimetern</caption><thead><tr><th>Schritt</th><th>Gegenstand</th><th>Position X / Y / Z</th><th>Breite × Höhe × Tiefe</th><th>Bereich</th></tr></thead><tbody><template x-for="(placement,index) in (preview?.placements || [])" :key="index"><tr><td x-text="placement.step"></td><td x-text="placement.asset_name"></td><td x-text="`${placement.x} / ${placement.y} / ${placement.z}`"></td><td x-text="`${placement.width} × ${placement.height} × ${placement.depth}`"></td><td x-text="placement.zone_label"></td></tr></template></tbody></table></div>
         <section x-show="preview?.unplaced_count"><h3>Nicht eingeplant</h3><ul><template x-for="(item,index) in (preview?.unplaced_assets || [])" :key="index"><li x-text="item.name"></li></template></ul><p>Das Verfahren hat dafür keine Platzierung gefunden. Andere Anordnungen können möglich sein.</p></section>
         {% if 'assets.manage' in permissions or (unified_inventory and 'devices.manage' in permissions) or is_superuser %}<div class="list-toolbar"><label class="grow">Planname<input class="input" x-model="planName" maxlength="120" placeholder="Packplan benennen"></label><button class="btn btn-primary" type="button" @click="save()" :disabled="busy || !!savedId">Plan speichern</button></div>{% endif %}
-        <p x-show="savedId" role="status">Plan gespeichert. Die bestehende 3D-Ansicht ist optional verfügbar.</p><button class="btn btn-secondary" type="button" x-show="savedId" @click="open3d()">3D-Ansicht öffnen</button>
+        <p x-show="savedId" role="status">Plan gespeichert. Die bestehende 3D-Ansicht ist optional verfügbar.</p><button class="btn btn-secondary" type="button" @click="open3d()">3D-Ansicht öffnen</button>
     </section>
     <footer class="wizard-actions"><button class="btn btn-secondary" type="button" x-show="step>1" :disabled="busy" @click="step--; error=''">Vorheriger Schritt</button><button class="btn btn-primary" type="button" x-show="step<5" :disabled="busy" @click="next()" x-text="busy ? 'Wird berechnet …' : (step===4 ? 'Packliste berechnen' : uiText('Nächster Schritt'))"></button></footer>
 </section>
-<details class="workspace-panel"><summary>Gespeicherte Pläne (letzte 50)</summary><ul class="task-list"><template x-for="plan in savedPlans" :key="plan.id"><li><button class="btn btn-secondary" type="button" @click="openSaved(plan.id)" x-text="plan.name"></button></li></template></ul><p x-show="!savedPlans.length">Noch keine Pläne gespeichert.</p></details>
+<details class="workspace-panel"><summary id="saved-plans-heading">Gespeicherte Pläne (letzte 50)</summary><ul class="task-list"><template x-for="plan in savedPlans" :key="plan.id"><li class="saved-plan-row"><button class="btn btn-secondary" type="button" :disabled="busy" @click="openSaved(plan.id)" x-text="plan.name"></button>{% if 'assets.manage' in permissions or (unified_inventory and 'devices.manage' in permissions) or is_superuser %}<button class="btn btn-secondary" type="button" :disabled="busy" @click="deleteSaved(plan)" :aria-label="uiText('Plan „{0}“ löschen', [plan.name])">Löschen</button>{% endif %}</li></template></ul><p x-show="!savedPlans.length">Noch keine Pläne gespeichert.</p></details>
 {% endblock %}
-{% block page_scripts %}<script src="/static/storage-planning.js?v=1"></script>{% endblock %}
+{% block overlays %}{% include '_packing_viewer.html' %}{% endblock %}
+{% block page_scripts %}<script src="/static/packing-scene.js?v=1"></script><script src="/static/storage-planning.js?v=2"></script>{% endblock %}

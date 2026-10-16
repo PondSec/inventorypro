@@ -57,6 +57,7 @@
                 {% if is_superuser or 'ticket_categories.manage' in permissions or 'ticket_alerts.manage' in permissions or 'notifications.manage' in permissions %}{{ render_nav_link('/admin/tickets', 'Administration', 'sliders', current_path.startswith('/admin/tickets')) }}{% endif %}
             {% endcall %}
             {% endif %}
+            {% if is_superuser or 'wishes.view' in permissions or 'wishes.manage' in permissions %}{{ render_nav_link('/wishes', 'Wünsche & Projekte', 'heart', current_path.startswith('/wishes')) }}{% endif %}
             {% if is_superuser or 'procurement.view' in permissions or 'procurement.manage' in permissions %}{{ render_nav_link('/procurement', 'Beschaffung', 'shopping-cart', current_path == '/procurement') }}{% endif %}
             {% if is_superuser or 'knowledge.view' in permissions or 'knowledge.manage' in permissions %}{{ render_nav_link('/knowledge', 'Wissensbasis', 'book-open', current_path == '/knowledge') }}{% endif %}
             {% if is_superuser or 'roadmap.view' in permissions or 'roadmap.manage' in permissions %}{{ render_nav_link('/roadmap', 'Roadmap', 'git-merge', current_path == '/roadmap') }}{% endif %}

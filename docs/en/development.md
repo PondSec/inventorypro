@@ -27,3 +27,10 @@ The suite uses isolated databases and synthetic records. Browser tests run in Ch
 `scripts/visual_audit.py` writes screenshots to `.qa-artifacts/visual-audit` by default, not to public documentation. Real records, operational logs and internal infrastructure must never become fixtures or public screenshots. Reports must identify checks actually executed and environmental limitations.
 
 The release scripts `check_release_install.py`, `check_asset_image_upgrade.py`, `check_release_upgrade.py` and `check_release_volume_rollback.py` test Docker installation and rollback. Read each script's `--help` for options. Use disposable test volumes first.
+
+
+### Planning visual checks
+
+`python -m pytest -q tests/test_wishes_visual.py` compares the planning workspace in Chromium and Firefox, with light and dark themes at desktop and mobile sizes. The committed pixel baselines were reviewed on macOS. Other operating systems capture the views; without a matching baseline, the pixel comparison is reported as skipped. Interaction tests still run.
+
+Explicitly generate replacement images with `UPDATE_WISH_VISUALS=1 python -m pytest -q tests/test_wishes_visual.py`, review every change visually, then run again without that variable. Never replace baselines solely because a comparison failed.

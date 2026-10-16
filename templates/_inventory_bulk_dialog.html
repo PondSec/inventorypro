@@ -1,0 +1,17 @@
+<dialog class="ui-dialog inventory-bulk-dialog" data-bulk-dialog aria-labelledby="bulk-dialog-title">
+    <header><h2 id="bulk-dialog-title" data-bulk-title>Gemeinsam bearbeiten</h2><button type="button" class="icon-button" data-bulk-close aria-label="Schließen">{{ icon('x') }}</button></header>
+    <form data-bulk-form>
+        <p role="alert" class="form-error" data-bulk-error hidden></p>
+        <p role="status" data-bulk-summary></p>
+        <details><summary>Ausgewählte Assets</summary><ul class="bulk-selected-list" data-bulk-names></ul></details>
+        <div data-bulk-edit>
+            <p>Nur ausdrücklich gewählte Felder werden geändert. Alle anderen Angaben bleiben erhalten.</p>
+            {% for key,label,kind in [('category_id','Asset-Kategorie','select'),('location_id','Standort','select'),('cost_center','Kostenstelle','text'),('warranty_end','Garantieende','date'),('retirement_date','Ausmusterungsdatum','date'),('retirement_reason','Ausmusterungsgrund','text')] %}
+            <fieldset class="bulk-field" data-bulk-field="{{ key }}"><legend>{{ ui_t(label) }}</legend><label><span class="sr-only">{{ ui_t(label) }}: {{ ui_t('Aktion') }}</span><select class="input" data-field-action><option value="keep">Unverändert lassen</option><option value="set">Wert setzen</option><option value="clear">Wert entfernen</option></select></label><label hidden data-field-value-label><span class="sr-only">{{ ui_t(label) }}: {{ ui_t('Neuer Wert') }}</span>{% if kind == 'select' %}<select class="input" data-field-value disabled></select>{% else %}<input class="input" type="{{ kind }}" maxlength="{{ 2000 if key == 'retirement_reason' else 240 }}" data-field-value disabled>{% endif %}</label></fieldset>
+            {% endfor %}
+            <p class="muted">Beim Kategorienwechsel bleiben Eigenschaften erhalten. Pflichtfelder der neuen Kategorie werden für jedes Asset geprüft.</p>
+        </div>
+        <p data-bulk-delete hidden>Die ausgewählten Assets werden endgültig gelöscht. Enthaltene und übergeordnete Assets bleiben erhalten; ihre Verknüpfungen werden aufgelöst. Tickets und Bestellungen bleiben erhalten.</p>
+        <footer class="bulk-dialog-actions"><button type="button" class="btn btn-secondary" data-bulk-close>Abbrechen</button><button type="submit" class="btn btn-primary" data-bulk-submit>Änderungen speichern</button></footer>
+    </form>
+</dialog>

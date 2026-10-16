@@ -75,7 +75,7 @@ def exact_match(db,identity,name=''):
     # A complete reviewed model name may identify the model offline. Partial
     # names, owner suffixes and generic names never get an automatic photo.
     candidate_name = compact(identity.get('model') or ('' if identity.get('model_code') else _name_without_inventory_suffix(name)))
-    if len(candidate_name)>=12 and any(character.isdigit() for character in candidate_name):
+    if len(candidate_name)>=5 and any(character.isdigit() for character in candidate_name):
         for row in db.execute('''SELECT pi.product_id,pm.manufacturer_key FROM product_identifiers pi
             JOIN product_models pm ON pm.id=pi.product_id
             WHERE pi.kind='name' AND pi.value=? AND pi.auto_match=1''',(candidate_name,)):
@@ -125,7 +125,8 @@ def sync_object(db,kind,object_id,*,force=False,catalog_revision=None,row=None,e
         return {'product_id':previous['product_id'],'method':previous['match_method'],'reason':'manual','changed':False}
     if not force and not db.execute('SELECT local_auto_match FROM product_catalog_settings WHERE id=1').fetchone()[0]:
         return {'product_id':previous['product_id'] if previous else None,'method':'none','reason':'disabled','changed':False}
-    identity = identity_from_specs(source['specs'])
+    from .identity import for_object
+    identity = for_object(source['specs'],source['name'])
     fingerprint = sha256(json.dumps([catalog_revision or revision(db),identity,source['name']],sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     if previous and previous['fingerprint']==fingerprint and not force:
         if external and not previous['product_id'] and not previous['override_hash']:

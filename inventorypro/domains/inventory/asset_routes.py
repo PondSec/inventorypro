@@ -64,6 +64,25 @@ def build_assets_blueprint(*,get_db,user_can,get_access,login_required,parse_fie
     def asset_create():
         active();result=assets.create_asset(get_db(),user_can,data(),parse_fields=parse_fields,validate_specs=validate_specs)
         write('create',result['id']);return jsonify(result),201
+    @bp.post('/api/inventory/assets/bulk/prepare')
+    @login_required
+    def asset_bulk_prepare():
+        from .bulk import prepare
+        active()
+        rows=prepare(get_db(),user_can,data())
+        return jsonify(items=[{'id':row['id'],'name':row['name'],'expectedRevision':row['revision']} for row in rows],
+                       options=editor_options(get_db(),user_can,parse_fields))
+    @bp.post('/api/inventory/assets/bulk')
+    @login_required
+    def asset_bulk_apply():
+        from .bulk import apply
+        active();payload=data();db=get_db()
+        with assets.mutation(db):
+            identifiers=apply(db,user_can,payload,parse_fields=parse_fields,validate_specs=validate_specs)
+            for identifier in identifiers:
+                log_activity(db,'bulk_'+payload['action'],'asset',identifier)
+        db.commit()
+        return jsonify(changed=len(identifiers))
     @bp.route('/api/inventory/assets/<int:identifier>',methods=['GET','PUT','DELETE'])
     @login_required
     def asset_detail(identifier):

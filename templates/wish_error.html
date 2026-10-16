@@ -1,0 +1,3 @@
+{% extends 'base_app.html' %}
+{% set page_title='Plan nicht verfügbar' %}{% set page_section_label='Wünsche & Projekte' %}
+{% block content %}<section class="workspace-panel ui-section"><p role="alert">{{ ui_t(error_message) }}</p>{% if can_view %}<a class="btn btn-secondary" href="/wishes">Wünsche & Projekte</a>{% else %}<a class="btn btn-secondary" href="/account/security">Kontosicherheit</a>{% endif %}</section>{% endblock %}

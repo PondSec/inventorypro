@@ -89,16 +89,19 @@ def test_asset_tags_shared_file_and_software_remain_operable(unified_live,browse
     identifier=new_asset(page,unified_live,'QA extras asset')
     page.locator('summary').filter(has_text='Tags').click()
     page.get_by_label('Neuer Tag',exact=True).fill('QA hardware')
-    page.get_by_role('button',name='Tag hinzufügen',exact=True).click()
+    with page.expect_navigation(wait_until='domcontentloaded'):
+        page.get_by_role('button',name='Tag hinzufügen',exact=True).click()
     page.locator('summary').filter(has_text='Tags').click();expect(page.get_by_text('QA hardware',exact=True)).to_be_visible()
     page.locator('summary').filter(has_text='Dateien').click()
     page.get_by_label('Datei',exact=True).set_input_files({'name':'qa.txt','mimeType':'text/plain','buffer':b'QA file across clients'})
-    page.get_by_role('button',name='Datei hochladen',exact=True).click()
+    with page.expect_navigation(wait_until='domcontentloaded'):
+        page.get_by_role('button',name='Datei hochladen',exact=True).click()
     page.locator('summary').filter(has_text='Dateien').click();expect(page.get_by_role('link',name='qa.txt',exact=True)).to_be_visible()
     file_url=page.get_by_role('link',name='qa.txt',exact=True).get_attribute('href')
     page.locator('summary').filter(has_text='Software').click()
     page.get_by_label('Software',exact=True).select_option(str(software));page.get_by_label('Installierte Version',exact=True).fill('1.0')
-    page.get_by_role('button',name='Software zuordnen',exact=True).click()
+    with page.expect_navigation(wait_until='domcontentloaded'):
+        page.get_by_role('button',name='Software zuordnen',exact=True).click()
     page.locator('summary').filter(has_text='Software').click();expect(page.get_by_text('QA App',exact=True)).to_be_visible()
     assert context.request.get(unified_live+file_url).status==200
     context.close()

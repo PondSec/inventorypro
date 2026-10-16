@@ -15,18 +15,23 @@ def build_planning_blueprint(*, get_db, user_can, get_access, login_required, pa
     def require_read():
         if not (user_can('assets.view') or user_can('assets.manage') or (canonical_assets.unified(get_db()) and (user_can('devices.view') or user_can('devices.manage')))):
             abort(403)
-    def visible_payload(payload):
+    def visible_payload(payload,*,allow_missing=False):
         if not canonical_assets.unified(get_db()) or not isinstance(payload,dict):return True
         ids=[payload.get('container_id')]+[item.get('id') for item in payload.get('items',[]) if isinstance(item,dict)] if isinstance(payload.get('items',[]),list) else []
         for identifier in ids:
             if isinstance(identifier,int) and not isinstance(identifier,bool):
                 try:
                     if not canonical_assets.can_access(get_db(),user_can,identifier):return False
-                except canonical_assets.AssetError:return False
+                except canonical_assets.AssetError as error:
+                    if allow_missing and error.status==404:continue
+                    return False
         return True
-    def visible_plan(raw):
-        try:return visible_payload(json.loads(raw))
+    def visible_plan(raw,*,allow_missing=False):
+        try:return visible_payload(json.loads(raw),allow_missing=allow_missing)
         except (ValueError,TypeError):return False
+    def owns_plan(row):
+        access=get_access(get_db())
+        return access['is_superuser'] or row['created_by_user_id']==access['user']['id']
     def require_manage():
         if not (user_can('assets.manage') or (canonical_assets.unified(get_db()) and user_can('devices.manage'))):abort(403)
     def preview(payload):
@@ -67,8 +72,8 @@ def build_planning_blueprint(*, get_db, user_can, get_access, login_required, pa
     @login_required
     def plans():
         require_read()
-        rows=get_db().execute('SELECT id,name,created_at,payload_json FROM storage_plans ORDER BY id DESC LIMIT 50').fetchall()
-        return jsonify(items=[{key:row[key] for key in ['id','name','created_at']} for row in rows if visible_plan(row['payload_json'])])
+        rows=get_db().execute('SELECT id,name,created_at,payload_json,created_by_user_id FROM storage_plans ORDER BY id DESC LIMIT 50').fetchall()
+        return jsonify(items=[{key:row[key] for key in ['id','name','created_at']} for row in rows if visible_plan(row['payload_json'],allow_missing=owns_plan(row))])
 
     @blueprint.post('/api/planning/plans')
     @login_required
@@ -98,7 +103,7 @@ def build_planning_blueprint(*, get_db, user_can, get_access, login_required, pa
         row=get_db().execute('SELECT * FROM storage_plans WHERE id=?',(plan_id,)).fetchone()
         if not row:
             abort(404)
-        if not visible_plan(row['payload_json']):abort(403)
+        if not visible_plan(row['payload_json'],allow_missing=owns_plan(row)):abort(403)
         if request.method=='DELETE':
             require_manage()
             db=get_db()

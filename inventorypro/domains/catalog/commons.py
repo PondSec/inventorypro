@@ -86,6 +86,8 @@ def image_info(filename):
         get=lambda key:plain(metadata.get(key,{}).get('value',''))
         short=get('LicenseShortName').casefold().replace('_',' ')
         license_url=get('LicenseUrl').replace('http://','https://')
+        # Commons also returns official localized deed URLs, not just the root.
+        license_url=re.sub(r'/deed\.[a-zA-Z_-]+/?$', '/', license_url)
         match=re.fullmatch(r'https://creativecommons.org/licenses/(by|by-sa)/(1\.0|2\.0|2\.5|3\.0|4\.0)/?',license_url)
         if match and short in {f'cc {match[1]} {match[2]}',f'cc-{match[1]}-{match[2]}'}:
             license_code='CC-'+match[1].upper()+'-'+match[2]
@@ -106,6 +108,38 @@ def image_info(filename):
     return None
 
 
+def _title_matches(identity, title):
+    """Require the entire public model; reject comparisons and other variants."""
+    from .identity import inferred_name
+    if not isinstance(title,str) or not title.startswith('File:'):
+        return False
+    stem=re.sub(r'\.(?:jpe?g|png|webp)$','',title[5:],flags=re.IGNORECASE)
+    key=compact(stem);model=compact(identity['model']);maker=manufacturer_key(identity['manufacturer'])
+    if len(model)<5 or not any(c.isdigit() for c in model):return False
+    trusted=inferred_name(identity['manufacturer']+' '+identity['model'])
+    prefixes=[maker+model]
+    if trusted and manufacturer_key(trusted['manufacturer'])==maker:prefixes.append(model)
+    suffixes={'','andcase','withcase','case','front','rear','side','top','bottom','open','closed'}
+    return any(key.startswith(prefix) and key[len(prefix):] in suffixes for prefix in prefixes)
+
+
+def commons_lookup(identity):
+    """Some exact product photos exist on Commons without a Wikidata item."""
+    if not identity['model'] or identity['gtin']:return {'status':'no_match','candidates':[]}
+    from .identity import inferred_name
+    trusted=inferred_name(identity['manufacturer']+' '+identity['model'])
+    query=identity['model'] if trusted else identity['manufacturer']+' '+identity['model']
+    data=fetch_json(COMMONS+urlencode({'action':'query','format':'json','list':'search',
+        'srsearch':query,'srnamespace':6,'srlimit':8}))
+    titles=[row.get('title','') for row in data.get('query',{}).get('search',[]) if _title_matches(identity,row.get('title'))]
+    for title in sorted(set(titles),key=lambda value:(len(value),value))[:3]:
+        image=image_info(title[5:])
+        if image:
+            return {'status':'matched','identity':identity,'candidates':[],
+                'entity':{'source_ref':title,'source_url':image['source_url'],'name':identity['model'],'source_kind':'commons'},'image':image}
+    return {'status':'unlicensed' if titles else 'no_match','candidates':[]}
+
+
 def lookup(identity):
     identity=public_identity(identity)
     if not identity:return {'status':'insufficient','candidates':[]}
@@ -119,13 +153,19 @@ def lookup(identity):
     candidates=[{'source_ref':identifier,'name':names(entity)[0] if names(entity) else identifier,
         'source_url':'https://www.wikidata.org/wiki/'+identifier,'exact':_exact(identity,entity,makers)} for identifier,entity in entities.items()]
     exact=[candidate for candidate in candidates if candidate['exact']]
-    if len(exact)!=1:return {'status':'ambiguous' if exact else 'no_match','candidates':candidates}
+    if len(exact)>1:return {'status':'ambiguous','candidates':candidates}
+    if not exact:
+        result=commons_lookup(identity)
+        result['candidates']=candidates
+        return result
     candidate=exact[0];entity=entities[candidate['source_ref']]
     gtin=valid_gtin(identity['gtin'])
     if gtin and gtin in {valid_gtin(code) for code in values(entity,'P3962') if isinstance(code,str)}:
         candidate['verified_gtin']=gtin
     pictures=values(entity,'P18')
-    if not pictures:return {'status':'no_image','candidates':candidates}
+    if not pictures:
+        result=commons_lookup(identity)
+        return result if result['status']=='matched' else {'status':'no_image','candidates':candidates}
     image=image_info(pictures[0])
     if image is None:return {'status':'unlicensed','candidates':candidates}
     return {'status':'matched','candidates':candidates,'identity':identity,'entity':candidate,'image':image}

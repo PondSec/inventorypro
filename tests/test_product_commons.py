@@ -83,3 +83,30 @@ def test_two_exact_entities_remain_ambiguous(monkeypatch):
         return result
     monkeypatch.setattr(commons,'fetch_json',api)
     assert commons.lookup(identity())['status']=='ambiguous'
+
+
+def test_localized_official_cc0_deed_is_accepted(monkeypatch):
+    fixture_api(monkeypatch,license='CC0',license_url='http://creativecommons.org/publicdomain/zero/1.0/deed.en')
+    result=commons.lookup(identity())
+    assert result['status']=='matched' and result['image']['license_code']=='CC0-1.0'
+
+
+@pytest.mark.parametrize('title,expected', [
+    ('File:AirPods 4 ANC and case.jpg',True), ('File:Apple AirPods 4 ANC.jpg',True),
+    ('File:AirPods 4 and AirPods Pro 2.jpg',False), ('File:Airpods 4.jpg',False),
+    ('File:AirPods 4 ANC 2.jpg',False), ('File:AirPods Pro 2.jpg',False)])
+def test_commons_titles_preserve_generation_variant_and_exclude_comparisons(title,expected):
+    assert commons._title_matches(identity(manufacturer='Apple',model='AirPods 4 ANC'),title) is expected
+
+
+def test_exact_commons_photo_without_wikidata_entity_is_found(monkeypatch):
+    queries=fixture_api(monkeypatch,license='CC0',license_url='https://creativecommons.org/publicdomain/zero/1.0/deed.en')
+    original=commons.fetch_json
+    def api(url):
+        if 'wbsearchentities' in url:return {'search':[]}
+        if 'list=search' in url:return {'query':{'search':[{'title':'File:AirPods 4 ANC and case.jpg'},{'title':'File:AirPods 4 and AirPods Pro 2.jpg'}]}}
+        return original(url)
+    monkeypatch.setattr(commons,'fetch_json',api)
+    result=commons.lookup(identity(manufacturer='Apple',model='AirPods 4 ANC'))
+    assert result['status']=='matched' and result['entity']['source_kind']=='commons'
+    assert result['entity']['source_ref']=='File:AirPods 4 ANC and case.jpg'

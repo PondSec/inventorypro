@@ -37,7 +37,7 @@ def test_english_modules_dynamic_feedback_and_business_values(unified_live,brows
     expect(page.get_by_role('dialog',name='Select contained assets')).to_be_visible()
     expect(page.get_by_text('No assets selected yet.',exact=True)).to_be_visible()
     page.get_by_role('button',name='Cancel',exact=True).click()
-    set_language(page,'de');page.reload();expect(page.get_by_role('button',name='Bearbeiten',exact=True)).to_be_visible()
+    set_language(page,'de');page.reload(wait_until='domcontentloaded');expect(page.get_by_role('button',name='Bearbeiten',exact=True)).to_be_visible()
     assert not errors,errors
     context.close()
 

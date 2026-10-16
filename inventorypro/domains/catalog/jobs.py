@@ -9,11 +9,13 @@ import uuid
 
 from . import commons, service
 from .matching import TABLES, identity_from_specs, sync_object, compact, manufacturer_key
+from .identity import for_object
 from .media import store_image, MAX_UPLOAD_BYTES
 from .network import fetch, IMAGE_HOSTS, ProviderError
 
 _WORKERS=set()
 _WORKER_LOCK=threading.Lock()
+_SCAN_CURSORS={}
 
 
 def settings(db):
@@ -61,12 +63,12 @@ def enqueue_inventory(db,*,after=None,limit=100):
     is_unified=unified(db)
     for kind,(table,links,key) in TABLES.items():
         if is_unified and kind=='device':continue
-        rows=db.execute(f'''SELECT a.id,a.specs FROM {table} a LEFT JOIN {links} p ON p.{key}=a.id
+        rows=db.execute(f'''SELECT a.id,a.name,a.specs FROM {table} a LEFT JOIN {links} p ON p.{key}=a.id
             WHERE a.id>? AND coalesce(p.suppress_image,0)=0 AND p.override_hash IS NULL
             AND coalesce(p.match_method,'none')<>'manual' AND NOT EXISTS (SELECT 1 FROM product_images pi WHERE pi.product_id=p.product_id) ORDER BY a.id LIMIT ?''',((after or {}).get(kind,0),min(250,max(1,limit)))).fetchall()
         for row in rows:
             result['processed']+=1;result['last'][kind]=row['id']
-            result['queued']+=bool(enqueue(db,kind,row['id'],identity_from_specs(row['specs'])))
+            result['queued']+=bool(enqueue(db,kind,row['id'],for_object(row['specs'],row['name'])))
     return result
 
 
@@ -112,7 +114,7 @@ def _import(db,uploads_dir,job,result,data,mime):
         (manufacturer_key(identity['manufacturer']),compact(identity['model'] or result['entity']['name']))).fetchone()
     model=service.get_model(db,existing[0]) if existing else service.create_model(db,{'manufacturer':identity['manufacturer'],
         'name':identity['model'] or result['entity']['name'],'gtin':result['entity'].get('verified_gtin',''),
-        'source_url':result['entity']['source_url']},source_kind='wikidata',source_ref=result['entity']['source_ref'])
+        'source_url':result['entity']['source_url']},source_kind=result['entity'].get('source_kind','wikidata'),source_ref=result['entity']['source_ref'])
     verified_gtin=result['entity'].get('verified_gtin')
     if verified_gtin and verified_gtin==identity.get('gtin') and not any(item['kind']=='gtin' and item['value']==verified_gtin for item in model['identifiers']):
         db.execute("INSERT OR IGNORE INTO product_identifiers(product_id,kind,manufacturer_key,value) VALUES (?,'gtin','',?)",(model['id'],verified_gtin))
@@ -121,9 +123,9 @@ def _import(db,uploads_dir,job,result,data,mime):
         model=service.add_model_image(db,model['id'],media,result['image'],model['updated_at'])
     for target in db.execute('SELECT kind,object_id FROM product_lookup_targets WHERE job_id=?',(job['id'],)).fetchall():
         table,_,_=TABLES[target['kind']]
-        row=db.execute(f'SELECT specs FROM {table} WHERE id=?',(target['object_id'],)).fetchone()
+        row=db.execute(f'SELECT specs,name FROM {table} WHERE id=?',(target['object_id'],)).fetchone()
         # Never attach an answer to an object edited/deleted during the lookup.
-        if row and commons.public_identity(identity_from_specs(row['specs']))==identity:
+        if row and commons.public_identity(for_object(row['specs'],row['name']))==identity:
             sync_object(db,target['kind'],target['object_id'],force=True,external=False)
     return model['id']
 
@@ -166,6 +168,12 @@ def start_worker(app,get_db,uploads_dir):
         try:
             with app.app_context():
                 connection=get_db()
+                # Visit existing inventory incrementally as well as new edits.
+                # The bounded local scan never adds network I/O to page loads.
+                with _WORKER_LOCK:cursor=dict(_SCAN_CURSORS.get(database,{}))
+                scan=enqueue_inventory(connection,after=cursor,limit=250)
+                connection.commit()
+                with _WORKER_LOCK:_SCAN_CURSORS[database]=scan['last'] if scan['processed'] else {}
                 for _ in range(50):
                     if not process_next(connection,uploads_dir):break
         except (sqlite3.Error,OSError):app.logger.warning('Produktbild-Abgleich wird beim nächsten Zugriff fortgesetzt.')

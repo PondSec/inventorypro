@@ -526,3 +526,30 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 .app-body [role=tablist] [role=tab][aria-selected=true] { color: var(--color-accent) !important; }
 
 .ui-license-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;padding:1rem;max-width:100%}
+
+/* Shared-field edits leave each asset's individual identity intact. */
+.inventory-bulk-dialog { width: min(660px,calc(100vw - 32px)); }
+.bulk-selected-list { max-height: 140px; overflow-y: auto; margin-block: 8px; padding-left: 20px; }
+.bulk-field { border: 0; padding: 10px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0; }
+.bulk-field legend { font-weight: 600; font-size: 13px; }
+.bulk-field label { min-width: 0; }
+.bulk-field .input { width: 100%; }
+.bulk-dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+@media (max-width: 540px) { .bulk-field { grid-template-columns: 1fr; } }
+
+/* Packing stays in its current workspace, including unsaved previews. */
+.packing-viewer { width: min(1200px,calc(100vw - 32px)); max-width: none; }
+.packing-viewer-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 16px; }
+.packing-viewer-content { display: grid; grid-template-columns: minmax(160px,240px) minmax(0,1fr); gap: 16px; }
+.packing-viewer-steps { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto; }
+.packing-viewer-steps .btn { justify-content: flex-start; white-space: normal; text-align: left; flex-shrink: 0; }
+.packing-viewer button[aria-pressed=true] { background: var(--color-accent-soft); color: var(--color-accent); border-color: var(--color-accent); }
+.packing-viewer .binpacking-scene { min-height: 0; border-radius: 8px; }
+.packing-viewer .binpacking-scene__svg { min-height: 0; height: auto; }
+.packing-viewer-current { display: flex; flex-wrap: wrap; gap: 12px; padding-block: 12px; }
+.saved-plan-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+@media (max-width: 640px) { .packing-viewer-content { grid-template-columns: minmax(0,1fr); } .packing-viewer-steps { max-height: 140px; } }
+.packing-viewer .binpacking-scene { background: var(--color-surface-muted); border-color: var(--color-border); }
+.packing-viewer .binpacking-scene__edges line { stroke: var(--color-text-muted); }
+.packing-viewer .binpacking-scene__face.is-storage { fill: color-mix(in srgb,var(--color-surface-muted) 85%,transparent); stroke: var(--color-border-strong); }
+.packing-viewer .binpacking-scene__label .binpacking-scene__name { fill: var(--color-text); stroke: var(--color-surface-muted); }
