@@ -1,4 +1,19 @@
-# Releaseprüfung 0.3.1
+# Releaseprüfung 0.4.0
+
+[English](../en/quality.md) · [Dokumentation](../INDEX.md)
+
+Geprüft am 16. Oktober 2026.
+
+- Vollständige lokale Regression: 714 Tests und 46 Unterprüfungen bestanden; Python 3.14, Chromium und Firefox.
+- Zusätzliche Linux-Docker-Prüfung mit Python 3.12: 94 Backendtests bestanden. Beide Läufe melden zwei bestehende Deprecation-Warnungen aus der LDAP-Abhängigkeit.
+- Neue Abläufe: private und geteilte Wünsche, Teilmengen, Übernahme als echte Assets, vorhandene Assets, Projektzusammenstellung, Berechtigungen und atomare Mehrfachaktionen.
+- Lagerplanung: 3D-Ansicht im Arbeitsbereich, sichtbare Platzierungen, Tastatur, Light/Dark, mobile Dialoge, Löschen und Fehlerbehandlung.
+- Deutsch und Englisch sowie unveränderte Nutzerdaten sind durch Browsertests geprüft. Vorhandene visuelle Baselines wurden verglichen; neue Lageransichten zusätzlich als Screenshots kontrolliert.
+- Neue Commits wurden auf Zugangsdaten geprüft; keine Funde. Private Betriebsunterlagen gehören nicht zu den Release-Artefakten.
+
+Die signierten Release-Artefakte durchlaufen zusätzlich die Linux-Releasepipeline sowie Installations-, Upgrade- und Rollbackprüfungen vor Veröffentlichung. Deren Ergebnis wird nach Abschluss ergänzt. Windows und Safari wurden nicht ausgeführt. Die öffentliche Bildquelle garantiert keine vollständige Produktabdeckung.
+
+## Frühere Prüfung: 0.3.1
 
 [English](../en/quality.md) · [Dokumentation](../INDEX.md)
 

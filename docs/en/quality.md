@@ -1,4 +1,19 @@
-# Release verification 0.3.1
+# Release verification 0.4.0
+
+[Deutsch](../de/quality.md) · [Documentation](../INDEX.md)
+
+Checked on 16 October 2026.
+
+- Complete local regression: 714 tests and 46 subtests passed on Python 3.14 with Chromium and Firefox.
+- Additional Linux Docker run on Python 3.12: 94 backend tests passed. Both runs report two existing LDAP dependency deprecation warnings.
+- New workflows cover private and shared wishes, partial quantities, acquisition as real assets, existing inventory links, project assembly, permissions and atomic bulk actions.
+- Storage planning covers its in-place 3D view, visible placements, keyboard interaction, Light/Dark themes, mobile dialogs, deletion and failure handling.
+- Browser tests cover German and English interfaces and unchanged user content. Existing visual baselines were compared; new storage views were also inspected as screenshots.
+- New commits were scanned for credentials with no findings. Private operational documents are excluded from release artifacts.
+
+Signed release artifacts also undergo the Linux release pipeline and installation, upgrade and rollback acceptance before publication. Results will be added after completion. Windows and Safari were not run. The public image source does not guarantee complete product coverage.
+
+## Earlier verification: 0.3.1
 
 [Deutsch](../de/quality.md) · [Documentation](../INDEX.md)
 
