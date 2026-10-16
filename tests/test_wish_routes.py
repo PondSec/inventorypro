@@ -42,6 +42,9 @@ def test_private_project_does_not_expose_its_wishes(unified_client):
     assert unified_client.get('/api/wishes/projects').json == []
     assert unified_client.get(f"/api/wishes/{row['id']}").status_code == 404
     assert unified_client.get(f"/api/wishes/projects/{parent['id']}").status_code == 404
+    response=unified_client.get(f"/wishes/projects/{parent['id']}")
+    assert response.status_code==404 and b'Private project' not in response.data
+    assert b'app-shell' in response.data
 
 
 def test_invalid_body_returns_json_and_cannot_modify_data(unified_client):

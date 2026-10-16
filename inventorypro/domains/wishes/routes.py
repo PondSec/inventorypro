@@ -28,7 +28,9 @@ def build_wishes_blueprint(*, get_db, user_can, get_access, login_required, pars
         get_db().rollback()
         if request.path.startswith('/api/'):
             return jsonify(error=str(error), fields=error.fields), error.status
-        abort(error.status)
+        access=get_access(get_db())
+        return render_template('wish_error.html',error_message=str(error),can_view=user_can('wishes.view') or user_can('wishes.manage'),
+            username=session.get('username'),permissions=sorted(access['permissions']),is_superuser=access['is_superuser']),error.status
 
     @bp.app_template_filter('wish_money')
     def money(value, currency='EUR'):
