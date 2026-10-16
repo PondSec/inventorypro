@@ -176,3 +176,44 @@ def test_legacy_mutation_guard_cannot_bypass_csrf_or_mfa(unified_client,monkeypa
     with client.session_transaction() as session:session['mfa_required']=True;session['mfa_verified']=False
     assert client.delete('/api/devices/1',headers={'X-CSRF-Token':token}).status_code==403
     with inventory_app.app.app_context():assert inventory_app.get_db().execute('SELECT 1 FROM devices WHERE id=1').fetchone()
+
+
+@pytest.mark.parametrize('legacy_endpoint',[False,True])
+def test_delete_detaches_container_contents_tickets_and_order_references(unified_client,legacy_endpoint):
+    client=unified_client;parent=create(client,'QA workstation');child=create(client,'QA RAM retained')
+    with inventory_app.app.app_context():middle=inventory_app.get_db().execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=1').fetchone()[0]
+    state=client.get(f'/api/inventory/assets/{middle}').json
+    assert client.put(f"/api/inventory/assets/{parent['id']}/components",json={'expectedRevision':parent['revision'],'items':[{'id':middle}]}).status_code==200
+    linked=client.put(f'/api/inventory/assets/{middle}/components',json={'expectedRevision':state['revision'],'items':[{'id':child['id'],'quantity':2}]})
+    assert linked.status_code==200
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db()
+        ticket=db.execute("INSERT INTO tickets(title,description,status,created_by) VALUES ('QA retain ticket','Synthetic','open','admin')").lastrowid
+        db.execute('INSERT INTO ticket_assets(ticket_id,asset_id) VALUES (?,?)',(ticket,middle))
+        order=db.execute("INSERT INTO purchase_orders(po_number) VALUES ('QA-DELETE-RETAIN')").lastrowid
+        line=db.execute("INSERT INTO purchase_order_items(purchase_order_id,item_name,asset_id,device_id) VALUES (?,'QA keep order line',?,1)",(order,middle)).lastrowid
+        db.commit()
+    path=f'/api/asset-entries/{middle}' if legacy_endpoint else f'/api/inventory/assets/{middle}'
+    response=client.delete(path,json={'expectedRevision':linked.json['revision']})
+    assert response.status_code==200,response.json
+    assert client.get(f'/api/inventory/assets/{middle}').status_code==404
+    assert client.get(f"/api/inventory/assets/{parent['id']}").json['components']==[]
+    assert client.get(f"/api/inventory/assets/{child['id']}").json['used_in']==[]
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db()
+        assert db.execute('SELECT title FROM tickets WHERE id=?',(ticket,)).fetchone()[0]=='QA retain ticket'
+        assert db.execute('SELECT item_name,asset_id,device_id FROM purchase_order_items WHERE id=?',(line,)).fetchone()[:]==('QA keep order line',None,None)
+        assert db.execute('SELECT 1 FROM purchase_orders WHERE id=?',(order,)).fetchone()
+        assert not db.execute('SELECT 1 FROM devices WHERE id=1').fetchone()
+        assert not db.execute('PRAGMA foreign_key_check').fetchall()
+
+
+def test_legacy_asset_delete_keeps_csrf_and_object_permissions(unified_client,monkeypatch):
+    from test_product_catalog_routes import role
+    item=create(unified_client,'QA protected asset')
+    monkeypatch.setitem(inventory_app.app.config,'TESTING',False)
+    assert unified_client.delete(f"/api/asset-entries/{item['id']}").status_code==403
+    token=unified_client.get('/api/csrf-token').json['csrfToken']
+    role(unified_client,'asset-reader',['assets.view'])
+    assert unified_client.delete(f"/api/asset-entries/{item['id']}",headers={'X-CSRF-Token':token}).status_code==403
+    assert unified_client.get(f"/api/inventory/assets/{item['id']}").status_code==200

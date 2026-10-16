@@ -39,6 +39,9 @@ def build_assets_blueprint(*,get_db,user_can,get_access,login_required,parse_fie
                     assets.delete_asset(db,user_can,mapped[0],assets.version(db,mapped[0]));write('delete',mapped[0]);return jsonify(status='deleted')
             identifier=(request.view_args or {}).get('asset_id')
             if identifier is not None:assets.require(db,user_can,identifier)
+            if request.endpoint=='asset_entry_detail' and request.method=='DELETE':
+                assets.delete_asset(db,user_can,identifier,assets.version(db,identifier));write('delete',identifier)
+                return jsonify(status='deleted')
         except assets.AssetError as problem:
             db.rollback();return jsonify(error=str(problem)),problem.status
         return None

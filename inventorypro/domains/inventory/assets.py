@@ -194,17 +194,25 @@ def remove_component(db,can,parent,child,expected):
 def delete_asset(db,can,identifier,expected):
     with mutation(db):
         require(db,can,identifier,write=True);_check_revision(db,identifier,expected)
-        if db.execute('SELECT 1 FROM asset_components WHERE child_asset_id=?',(identifier,)).fetchone():
-            raise AssetError('Das Asset wird noch in anderen Assets verwendet. Bitte zuerst die Inhaltszuordnungen lösen oder das Asset ausmustern.',409)
-        # Independent references block deletion. Owned legacy detail rows may
-        # be removed only as part of this explicit object deletion; unknown FKs
-        # roll the entire operation back, including compatibility cleanup.
+        # An explicit deletion removes this object and its links, never another
+        # asset or an independent ticket, service, software item or order.
+        # Unknown references still roll back this entire transaction.
         try:
             legacy=db.execute('SELECT device_id FROM asset_legacy_devices WHERE asset_id=?',(identifier,)).fetchone()
+            db.execute('DELETE FROM asset_components WHERE parent_asset_id=? OR child_asset_id=?',(identifier,identifier))
+            db.execute('DELETE FROM asset_devices WHERE asset_id=?',(identifier,))
+            db.execute('DELETE FROM asset_relations WHERE asset_id=? OR related_asset_id=?',(identifier,identifier))
+            for table in ['ticket_assets','asset_services','asset_assignments','asset_assignment_history','asset_lifecycle_events','asset_maintenance_tasks','software_installations']:
+                db.execute(f'DELETE FROM {table} WHERE asset_id=?',(identifier,))
+            db.execute('UPDATE purchase_order_items SET asset_id=NULL WHERE asset_id=?',(identifier,))
+            db.execute("DELETE FROM dependency_links WHERE (source_type='asset' AND source_id=?) OR (target_type='asset' AND target_id=?)",(identifier,identifier))
             if legacy:
                 device_id=legacy[0]
+                db.execute('DELETE FROM asset_devices WHERE device_id=?',(device_id,))
                 for table in ['device_notes','device_tags','maintenance_tasks','software_installations']:
                     db.execute(f'DELETE FROM {table} WHERE device_id=?',(device_id,))
+                db.execute('UPDATE purchase_order_items SET device_id=NULL WHERE device_id=?',(device_id,))
+                db.execute("UPDATE attachments SET deleted_at=CURRENT_TIMESTAMP WHERE entity_type='device' AND entity_id=? AND deleted_at IS NULL",(device_id,))
                 db.execute("DELETE FROM dependency_links WHERE (source_type='device' AND source_id=?) OR (target_type='device' AND target_id=?)",(device_id,device_id))
                 db.execute('DELETE FROM asset_legacy_devices WHERE asset_id=?',(identifier,))
                 db.execute('DELETE FROM devices WHERE id=?',(device_id,))

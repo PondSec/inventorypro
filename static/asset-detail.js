@@ -64,7 +64,7 @@
   });
   document.querySelector('[data-delete-asset]')?.addEventListener('click',async event=>{
     if(!otherChanges(null))return;
-    if(!confirm('Asset löschen? Enthaltene Assets bleiben erhalten. Verknüpfte Vorgänge können die Löschung verhindern.'))return;
+    if(!confirm('Dieses Asset löschen? Alle Inhaltszuordnungen und Verknüpfungen dieses Assets werden gelöst. Andere Assets, Tickets und Bestellungen bleiben erhalten.'))return;
     const button=event.currentTarget;button.disabled=true;
     try{await api(`/api/inventory/assets/${id}`,'DELETE',{expectedRevision:revision});dirtyForms.clear();location.assign('/inventory');}catch(problem){showError(problem);button.disabled=false;}
   });
