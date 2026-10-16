@@ -2,7 +2,7 @@
 
 Stand 15.10.2026. Die tatsächlich ausgeführten Prüfungen und Umgebungen stehen im
 [Qualitätsbericht](enterprise/QUALITY.md); aktuelle Änderungen im
-[Changelog](changelog-ui.md).
+[Änderungen](changelog-ui.md).
 
 - Stable 0.3.0 ist auf GitLab und im kompatiblen GitHub-Feed veröffentlicht.
   Anonyme Registry-/Paketdownloads, beide aktiven Signaturen sowie tatsächliche

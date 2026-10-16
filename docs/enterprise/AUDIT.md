@@ -67,4 +67,4 @@ unberührte lokale .DS_Store-Änderung und blockierende iCloud-Dataless-Dateien.
 ## Abnahme
 
 Keine vollständige Abnahme allein durch Quellcodeprüfung. Fortschritt, tatsächlich
- ausgeführte Tests, Commit-IDs und verbleibende Grenzen: [Quality](QUALITY.md).
+ ausgeführte Tests, Commit-IDs und verbleibende Grenzen: [Qualitätsbericht](QUALITY.md).

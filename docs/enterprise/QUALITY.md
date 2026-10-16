@@ -43,8 +43,8 @@ mit tatsächlichem alten/neuen Updater sowie Datenbankrücksetzung geprüft.
   WCAG-Zertifizierung. Alte nicht eingerichtete Updater können nicht automatisch
   starten; abgeschaltete Updates und Wartungsfenster werden respektiert.
 
-Details: [Changelog](../changelog-ui.md),
-Chromium/Firefox pixel regression,
+Details: [Änderungen](../changelog-ui.md),
+Pixelregression mit Chromium und Firefox,
 [Dockerübernahme](../docker-asset-upgrade-qa.md).
 
 ## Historische Abnahme des veröffentlichten 0.2.0

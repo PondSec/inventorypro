@@ -4,7 +4,7 @@
 
 Auf GitLab und im kompatiblen GitHub-Feed veröffentlicht. Finale Images,
 Signaturen, alte/neue Updater und Datenbankrücksetzung sind tatsächlich geprüft:
-[Releaseabnahme](release-0.3.0-qa.md), [Changelog](changelog-ui.md).
+[Releaseabnahme](release-0.3.0-qa.md), [Änderungen](changelog-ui.md).
 
 - Gemeinsame kompakte Navigation, Kopfzeile, Tabellen, Formulare und Details
   mit Light-/Dark-Theme in allen Modulen. Bestand als Inventarstartseite.
