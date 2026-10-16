@@ -60,54 +60,54 @@ document.addEventListener('alpine:init', () => {
         bulkDialog: { open: false, field: '', value: '', title: '' },
         queues: [
             { key: 'my-work', label: 'Meine Arbeit', icon: 'briefcase' },
-            { key: 'unassigned', label: 'Nicht zugewiesen', icon: 'user-x' },
+            { key: 'unassigned', label: uiText('Nicht zugewiesen'), icon: 'user-x' },
             { key: 'mine', label: 'Meine offenen Tickets', icon: 'user-check' },
-            { key: 'all-open', label: 'Alle offenen Tickets', icon: 'inbox' },
-            { key: 'waiting', label: 'Wartend', icon: 'pause-circle' },
-            { key: 'sla-risk', label: 'SLA gefährdet', icon: 'clock' },
-            { key: 'overdue', label: 'Überfällig', icon: 'alert-triangle' },
+            { key: 'all-open', label: uiText('Alle offenen Tickets'), icon: 'inbox' },
+            { key: 'waiting', label: uiText('Wartend'), icon: 'pause-circle' },
+            { key: 'sla-risk', label: uiText('SLA gefährdet'), icon: 'clock' },
+            { key: 'overdue', label: uiText('Überfällig'), icon: 'alert-triangle' },
             { key: 'escalated', label: 'Eskaliert', icon: 'arrow-up-circle' },
-            { key: 'due-today', label: 'Heute fällig', icon: 'calendar' },
-            { key: 'recently-closed', label: 'Kürzlich geschlossen', icon: 'check-circle' }
+            { key: 'due-today', label: uiText('Heute fällig'), icon: 'calendar' },
+            { key: 'recently-closed', label: uiText('Kürzlich geschlossen'), icon: 'check-circle' }
         ],
         statuses: [
-            { value: 'open', label: 'Offen' },
-            { value: 'in_progress', label: 'In Bearbeitung' },
-            { value: 'pending', label: 'Wartend' },
-            { value: 'resolved', label: 'Gelöst' },
-            { value: 'closed', label: 'Geschlossen' }
+            { value: 'open', label: uiText('Offen') },
+            { value: 'in_progress', label: uiText('In Bearbeitung') },
+            { value: 'pending', label: uiText('Wartend') },
+            { value: 'resolved', label: uiText('Gelöst') },
+            { value: 'closed', label: uiText('Geschlossen') }
         ],
         priorities: [
-            { value: 'low', label: 'Niedrig' },
+            { value: 'low', label: uiText('Niedrig') },
             { value: 'normal', label: 'Normal' },
-            { value: 'high', label: 'Hoch' },
-            { value: 'urgent', label: 'Kritisch' }
+            { value: 'high', label: uiText('Hoch') },
+            { value: 'urgent', label: uiText('Kritisch') }
         ],
         columns: [
             { key: 'id', label: 'Ticket', className: 'id-column' },
             { key: 'status', label: 'Status', className: 'status-column' },
-            { key: 'priority', label: 'Priorität', className: 'priority-column' },
-            { key: 'title', label: 'Titel', className: 'title-column' },
-            { key: 'requester', label: 'Anfragender' },
-            { key: 'assignee', label: 'Zuständig' },
-            { key: 'category', label: 'Kategorie' },
+            { key: 'priority', label: uiText('Priorität'), className: 'priority-column' },
+            { key: 'title', label: uiText('Titel'), className: 'title-column' },
+            { key: 'requester', label: uiText('Anfragender') },
+            { key: 'assignee', label: uiText('Zuständig') },
+            { key: 'category', label: uiText('Kategorie') },
             { key: 'assets', label: 'Assets' },
             { key: 'sla', label: 'SLA', className: 'sla-column' },
-            { key: 'updated_at', label: 'Aktualisiert' },
-            { key: 'due_date', label: 'Fällig' }
+            { key: 'updated_at', label: uiText('Aktualisiert') },
+            { key: 'due_date', label: uiText('Fällig') }
         ],
         detailTabs: [
             { key: 'conversation', label: 'Konversation' },
-            { key: 'knowledge', label: 'Wissen & ähnliche Fälle' },
-            { key: 'activity', label: 'Aktivitäten' },
-            { key: 'attachments', label: 'Anhänge' }
+            { key: 'knowledge', label: uiText('Wissen & ähnliche Fälle') },
+            { key: 'activity', label: uiText('Aktivitäten') },
+            { key: 'attachments', label: uiText('Anhänge') }
         ],
 
         async init() {
             this.restoreStateFromUrl();
             window.addEventListener('popstate', () => this.handleHistory());
             window.addEventListener('online', () => this.showToast('Verbindung wiederhergestellt.'));
-            window.addEventListener('offline', () => this.showToast('Du bist offline. Änderungen können nicht gespeichert werden.', 'error'));
+            window.addEventListener('offline', () => this.showToast(uiText('Du bist offline. Änderungen können nicht gespeichert werden.'), 'error'));
             await Promise.all([this.loadCategories(), this.loadQueueCounts(), this.loadSavedViews()]);
             await this.loadTickets();
             if (window.initialTicketId) {
@@ -453,7 +453,7 @@ document.addEventListener('alpine:init', () => {
 
         async saveView() {
             if (!this.newView.name.trim()) {
-                this.showToast('Bitte gib der Ansicht einen Namen.', 'error');
+                this.showToast(uiText('Bitte gib der Ansicht einen Namen.'), 'error');
                 return;
             }
             try {
@@ -561,10 +561,10 @@ document.addEventListener('alpine:init', () => {
             } catch (error) {
                 this.showToast(error.message, 'error');
                 if (error.code === 'change_review_required' && error.payload?.review_ticket_id) {
-                    this.showToast(`Zuerst Review #${error.payload.review_ticket_id} abschließen.`, 'error');
+                    this.showToast(uiText("Zuerst Review #{0} abschließen.", [error.payload.review_ticket_id]), 'error');
                 }
                 if (error.code === 'ticket_update_conflict') {
-                    this.showToast('Der aktuelle Ticketstand wurde geladen. Bitte Änderung erneut prüfen.', 'error');
+                    this.showToast(uiText('Der aktuelle Ticketstand wurde geladen. Bitte Änderung erneut prüfen.'), 'error');
                 }
                 await this.loadTicket(ticket.id, false);
             }
@@ -583,7 +583,7 @@ document.addEventListener('alpine:init', () => {
                 const ticketId = this.selectedTicket.id;
                 this.newComment = '';
                 await this.loadTicket(ticketId, false);
-                this.showToast(this.internalComment ? 'Interne Notiz hinzugefügt.' : 'Antwort gesendet.');
+                this.showToast(this.internalComment ? uiText('Interne Notiz hinzugefügt.') : 'Antwort gesendet.');
             } catch (error) {
                 this.showToast(error.message, 'error');
             } finally {
@@ -614,7 +614,7 @@ document.addEventListener('alpine:init', () => {
                 await this.api('/attachments/upload', { method: 'POST', body: form });
                 await this.loadAttachments(this.selectedTicket.id);
                 this.detailTab = 'attachments';
-                this.showToast('Anhang hochgeladen.');
+                this.showToast(uiText('Anhang hochgeladen.'));
             } catch (error) {
                 this.showToast(error.message, 'error');
             } finally {
@@ -666,11 +666,11 @@ document.addEventListener('alpine:init', () => {
 
         async createTicket() {
             if (!this.newTicket.title.trim() || !this.newTicket.description.trim()) {
-                this.createError = 'Titel und Beschreibung sind erforderlich.';
+                this.createError = uiText('Titel und Beschreibung sind erforderlich.');
                 return;
             }
             if (this.creatingReview && !this.newTicket.change_ticket_id) {
-                this.createError = 'Für ein Review muss ein zugehöriger Change ausgewählt werden.';
+                this.createError = uiText('Für ein Review muss ein zugehöriger Change ausgewählt werden.');
                 return;
             }
             this.saving = true;
@@ -701,9 +701,9 @@ document.addEventListener('alpine:init', () => {
                 await Promise.all([this.loadTickets(), this.loadQueueCounts()]);
                 await this.loadTicket(ticketId, true);
                 if (result.review_ticket_id) {
-                    this.showToast(`Change #${ticketId} und Review #${result.review_ticket_id} erstellt.`);
+                    this.showToast(uiText("Change #{0} und Review #{1} erstellt.", [ticketId, result.review_ticket_id]));
                 } else if (result.change_ticket_id) {
-                    this.showToast(`Review #${ticketId} mit Change #${result.change_ticket_id} verknüpft.`);
+                    this.showToast(uiText("Review #{0} mit Change #{1} verknüpft.", [ticketId, result.change_ticket_id]));
                 } else {
                     this.showToast(`Ticket #${ticketId} erstellt.`);
                 }
@@ -775,7 +775,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         openBulk(field) {
-            const labels = { assignee: 'Tickets zuweisen', status: 'Status ändern', priority: 'Priorität ändern' };
+            const labels = { assignee: 'Tickets zuweisen', status: 'Status ändern', priority: uiText('Priorität ändern') };
             const defaults = { assignee: '', status: 'in_progress', priority: 'normal' };
             this.rememberFocus();
             this.bulkDialog = { open: true, field, value: defaults[field], title: labels[field] };
@@ -814,9 +814,9 @@ document.addEventListener('alpine:init', () => {
             if (!this.canDeleteSelection() || this.deletingTickets) return;
             const ticketIds = [...this.selectedIds];
             const message = ticketIds.length === 1
-                ? 'Das ausgewählte Ticket endgültig löschen?'
-                : `${ticketIds.length} ausgewählte Tickets endgültig löschen?`;
-            if (!window.confirm(`${message}\n\nKommentare und Verknüpfungen werden ebenfalls entfernt.`)) return;
+                ? uiText('Das ausgewählte Ticket endgültig löschen?')
+                : uiText("{0} ausgewählte Tickets endgültig löschen?", [ticketIds.length]);
+            if (!window.confirm(uiText("{0}\n\nKommentare und Verknüpfungen werden ebenfalls entfernt.", [message]))) return;
 
             this.deletingTickets = true;
             const deleted=[],failed=[];
@@ -830,14 +830,14 @@ document.addEventListener('alpine:init', () => {
                 if (this.selectedTicket && deleted.includes(this.selectedTicket.id)) this.closeTicket();
                 this.selectedIds=failed.map(item=>item.id);
                 await Promise.all([this.loadTickets(),this.loadQueueCounts()]);
-                if (failed.length) this.showToast(`${deleted.length} gelöscht, ${failed.length} nicht gelöscht. #${failed[0].id}: ${failed[0].message}`,'error');
-                else this.showToast(deleted.length===1 ? 'Ticket gelöscht.' : `${deleted.length} Tickets gelöscht.`);
+                if (failed.length) this.showToast(uiText("{0} gelöscht, {1} nicht gelöscht. #{2}: {3}", [deleted.length, failed.length, failed[0].id, failed[0].message]),'error');
+                else this.showToast(deleted.length===1 ? uiText('Ticket gelöscht.') : uiText("{0} Tickets gelöscht.", [deleted.length]));
             } finally {this.deletingTickets=false;}
         },
 
         exportSelected() {
             const rows = this.tickets.filter(ticket => this.selectedIds.includes(ticket.id));
-            const header = ['Ticket', 'Status', 'Priorität', 'Titel', 'Anfragender', 'Zuständig', 'Kategorie', 'Aktualisiert'];
+            const header = ['Ticket', 'Status', uiText('Priorität'), uiText('Titel'), uiText('Anfragender'), uiText('Zuständig'), uiText('Kategorie'), uiText('Aktualisiert')];
             const escape = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
             const csv = [
                 header,
@@ -935,7 +935,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         statusLabel(value) {
-            return this.statuses.find(item => item.value === value)?.label || value || 'Unbekannt';
+            return this.statuses.find(item => item.value === value)?.label || value || uiText('Unbekannt');
         },
 
         priorityLabel(value) {
@@ -943,7 +943,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         categoryLabel(id) {
-            return this.categories.find(category => Number(category.id) === Number(id))?.name || 'Ohne Kategorie';
+            return this.categories.find(category => Number(category.id) === Number(id))?.name || uiText('Ohne Kategorie');
         },
 
         isClosedStatus(value) {
@@ -958,7 +958,7 @@ document.addEventListener('alpine:init', () => {
 
         reviewGateLabel(ticket = this.selectedTicket) {
             const relation = ticket?.review_relation;
-            if (!relation) return 'Kein Review verknüpft';
+            if (!relation) return uiText('Kein Review verknüpft');
             if (relation.role === 'review') {
                 return `Change #${relation.change_ticket_id}`;
             }
@@ -982,11 +982,11 @@ document.addEventListener('alpine:init', () => {
         activitySummary(activity) {
             const details = activity?.details || {};
             if (details.preview) {
-                return `${details.is_internal ? 'Interne Notiz' : 'Kommentar'}: ${details.preview}`;
+                return `${details.is_internal ? uiText('Interne Notiz') : 'Kommentar'}: ${details.preview}`;
             }
             if (details.email) return `E-Mail: ${details.email}`;
             if (details.title) return details.title;
-            if (details.merged_into) return `Zusammengeführt in Ticket #${details.merged_into}`;
+            if (details.merged_into) return uiText("Zusammengeführt in Ticket #{0}", [details.merged_into]);
             return '';
         },
 
@@ -997,7 +997,7 @@ document.addEventListener('alpine:init', () => {
 
         slaState(ticket) {
             if (['closed', 'resolved'].includes(ticket.status)) return { state: 'met', icon: 'check-circle', label: 'SLA abgeschlossen' };
-            if (!ticket.due_date) return { state: 'neutral', icon: 'clock', label: 'Kein Ziel' };
+            if (!ticket.due_date) return { state: 'neutral', icon: 'clock', label: uiText('Kein Ziel') };
             const remaining = new Date(`${ticket.due_date}T23:59:59`) - new Date();
             if (remaining < 0) return { state: 'breached', icon: 'alert-octagon', label: `Verletzt seit ${this.durationLabel(Math.abs(remaining))}` };
             if (remaining < 4 * 3600000) return { state: 'critical', icon: 'alert-triangle', label: `${this.durationLabel(remaining)} verbleibend` };
