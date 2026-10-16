@@ -22,6 +22,10 @@ def test_english_modules_dynamic_feedback_and_business_values(unified_live,brows
         expect(page.get_by_role('button',name='Toggle navigation',exact=True)).to_be_visible()
         expect(page.locator('.app-sidebar')).to_contain_text('Settings')
         expect(page.locator('.app-sidebar')).to_contain_text('Knowledge base')
+        if route=='/inventory':
+            expect(page.get_by_role('columnheader',name='Type',exact=True)).to_be_visible()
+            expect(page.locator('.data-table tbody .status-badge').first).to_have_text('In inventory')
+            expect(page.get_by_text('Not set',exact=True).first).to_be_visible()
         assert not errors,(route,errors)
     page.goto(live_inventory+'/inventory/assets/new')
     page.get_by_label('Name *',exact=True).fill('Standort');page.get_by_role('button',name='Save',exact=True).click()
