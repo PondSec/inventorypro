@@ -64,7 +64,7 @@ def message_patterns():
 def literal(message):
     """Only called for trusted literal template text, never a model value."""
     key=html.unescape(message).strip()
-    if language()=='de' or key not in catalog():return Markup(message)
+    if language()=='de' or key not in catalog() or catalog()[key]==key:return Markup(message)
     prefix=message[:len(message)-len(message.lstrip())];suffix=message[len(message.rstrip()):]
     return Markup(prefix)+escape(catalog()[key])+Markup(suffix)
 
@@ -79,7 +79,7 @@ class _StaticText(HTMLParser):
     def handle_starttag(self,tag,attrs):
         if tag in {'script','style'}:self.raw=tag
         text=self.get_starttag_text();offset=self.absolute_offset()
-        for match in re.finditer(r'\b(?:aria-label|aria-description|title|placeholder|alt)\s*=\s*([\'"])(.*?)\1',text,re.S):
+        for match in re.finditer(r'(?<![\w:.@-])(?:aria-label|aria-description|title|placeholder|alt)\s*=\s*([\'"])(.*?)\1',text,re.S):
             self.attributes.append((offset+match.start(2),offset+match.end(2)))
     def handle_startendtag(self,tag,attrs):self.handle_starttag(tag,attrs)
     def handle_endtag(self,tag):
@@ -118,6 +118,8 @@ def template_literals(source):
 
 def localize_template(source):
     source,intervals=template_literals(source)
+    technical=[(m.start(),m.end()) for m in re.finditer(r'{%[-+]?\s*block\s+(?:html_attrs|body_attrs|body_class|page_class|app_content_class|app_content_attrs)\b.*?{%[-+]?\s*endblock\b.*?%}',source,re.S)]
+    intervals=[item for item in intervals if not any(start<=item[0]<end for start,end in technical)]
     for start,end,text in reversed(intervals):
         source=source[:start]+'{{ ui_literal('+json.dumps(text,ensure_ascii=False)+') }}'+source[end:]
     return source

@@ -66,3 +66,10 @@ def test_english_catalog_preserves_placeholders_and_core_vocabulary():
     for key,value in messages.items():
         assert isinstance(value,str) and value.strip(),key
         assert sorted(re.findall(r'\{\d+\}',key))==sorted(re.findall(r'\{\d+\}',value)),key
+
+
+def test_technical_blocks_keep_literal_attributes_and_css_classes(translated,monkeypatch):
+    import inventorypro.i18n as i18n
+    monkeypatch.setattr(i18n.catalog,'_messages',{'sd-body':'translated-class','x-data="app()"':'translated-code'})
+    source='{% block html_attrs %}x-data="app()"{% endblock %}{% block body_class %}sd-body{% endblock %}'
+    assert render(source)=='x-data="app()"sd-body'
