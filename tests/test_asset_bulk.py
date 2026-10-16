@@ -72,3 +72,29 @@ def test_bulk_scopes_and_csrf_are_enforced(unified_client,monkeypatch):
     assert c.post('/api/inventory/assets/bulk',json={'action':'delete','items':items}).status_code==403
     monkeypatch.setitem(inventory_app.app.config,'TESTING',False)
     assert c.post('/api/inventory/assets/bulk',json={'action':'delete','items':items}).status_code==403
+
+
+def test_category_validation_failure_on_later_asset_rolls_back_earlier_update(unified_client):
+    import json
+    c=unified_client;a=create(c,'QA valid specs');b=create(c,'QA incompatible specs')
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db()
+        category=db.execute('INSERT INTO asset_categories(name,fields) VALUES (?,?)',('QA numeric',json.dumps({'Size':{'type':'number'}}))).lastrowid
+        db.execute('UPDATE assets SET specs=? WHERE id=?',(json.dumps({'Size':10,'Keep':'yes'}),a['id']))
+        db.execute('UPDATE assets SET specs=? WHERE id=?',(json.dumps({'Size':'invalid'}),b['id']));db.commit()
+    items=prepared(c,a,b)
+    result=c.post('/api/inventory/assets/bulk',json={'action':'update','items':items,'changes':{'category_id':category,'cost_center':'No partial changes'}})
+    assert result.status_code==400
+    saved=c.get(f"/api/inventory/assets/{a['id']}").json
+    assert saved['category_id'] is None and saved['cost_center']=='' and saved['specs']['Keep']=='yes'
+    assert saved['revision']==items[0]['expectedRevision']
+
+
+def test_bulk_hundred_rows_are_bounded_and_audited(unified_client):
+    c=unified_client;rows=[create(c,f'QA batch {i}') for i in range(100)]
+    result=c.post('/api/inventory/assets/bulk',json={'action':'update','items':prepared(c,*rows),'changes':{'cost_center':'QA batch'}})
+    assert result.status_code==200 and result.json['changed']==100
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db()
+        assert db.execute("SELECT count(*) FROM assets WHERE cost_center='QA batch'").fetchone()[0]==100
+        assert db.execute("SELECT count(*) FROM activity_log WHERE action='bulk_update' AND entity_type='asset' AND username='admin'").fetchone()[0]==100
