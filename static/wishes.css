@@ -1,0 +1,32 @@
+/* Planning uses the same semantic surfaces and controls as owned inventory. */
+.wish-workspace { overflow: hidden; }
+.wish-filters { border-bottom: 1px solid var(--color-border); padding: 12px; flex-wrap: wrap; }
+.wish-filters .filter-search { min-width: min(260px,100%); flex: 1; }
+.wish-table { min-width: 820px; }
+.wish-table small { display: block; color: var(--color-text-muted); font-size: 12px; }
+.wish-table td { vertical-align: middle; }
+.wish-table .list-row-trigger { min-height: 42px; text-align: left; width: 100%; }
+.wish-quantity { display: inline-block; min-width: 48px; margin-right: 8px; font-variant-numeric: tabular-nums; }
+.wish-pagination { padding: 14px 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--color-border); color: var(--color-text-muted); }
+.wish-pagination nav,.wish-pagination form,.wish-pagination label { display: flex; align-items: center; gap: 8px; }
+.wish-pagination select { padding: 6px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: var(--color-text); }
+.wish-project-overview { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; }
+.wish-project-overview > div { display: grid; gap: 5px; min-width: 120px; }
+.wish-project-overview strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.wish-project-overview small { color: var(--color-text-muted); }
+.wish-project-overview progress,.wish-table progress { display: block; width: 140px; height: 6px; accent-color: var(--color-accent); margin-block: 5px; }
+.wish-dialog { width: min(640px,calc(100vw - 32px)); }
+.wish-dialog form { display: grid; gap: 16px; }
+.wish-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
+.wish-form-grid label { display: grid; align-content: start; gap: 5px; min-width: 0; font-weight: 500; }
+.wish-form-grid .input { width: 100%; min-width: 0; }
+.wish-form-wide { grid-column: 1 / -1; }
+.wish-dialog-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+.wish-dialog-actions > span { flex: 1; }
+.wish-dialog-object { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+.wish-history li { padding: 6px 0; border-bottom: 1px solid var(--color-border); }
+.wish-history h3 { font-weight: 600; margin-bottom: 6px; }
+.wish-asset-results { display: grid; gap: 4px; max-height: 220px; overflow: auto; margin-block: 10px; }
+.wish-asset-results button { text-align: left; justify-content: start; }
+.wish-notice { padding: 10px 14px; color: var(--color-success); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 6px; }
+@media(max-width:600px) { .wish-form-grid { grid-template-columns: 1fr; } .wish-form-wide { grid-column: auto; } .wish-pagination { justify-content: center; } .wish-filters > * { max-width: 100%; } .wish-dialog-actions .btn { flex-grow: 1; } }

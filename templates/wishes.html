@@ -1,0 +1,53 @@
+{% extends 'base_app.html' %}
+{% from '_ui.html' import icon,status as badge with context %}
+{% set page_module='wishes' %}
+{% set page_title=project.name if project else 'Wünsche & Projekte' %}
+{% set page_section_label='Wünsche & Projekte' %}
+{% set page_description=project.description if project else 'Wünsche sammeln, Vorhaben zusammenstellen und nach und nach in den Bestand übernehmen.' %}
+{% block title %}{{ page_title }} | Inventory Pro{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="/static/wishes.css?v=1">{% endblock %}
+{% block page_actions %}
+{% if project %}<a class="btn btn-secondary" href="/wishes?tab=projects">{{ icon('arrow-left') }}Alle Projekte</a>{% if can_manage %}<button type="button" class="btn btn-secondary" data-edit-project="{{ project.id }}">{{ icon('edit-2') }}Projekt bearbeiten</button>{% endif %}{% endif %}
+{% if can_manage %}{% if not project %}<button type="button" class="btn btn-secondary" data-new-project>{{ icon('folder-plus') }}Projekt erstellen</button>{% endif %}{% if not project or not project.asset_id %}<button type="button" class="btn btn-primary" data-new-wish>{{ icon('plus') }}{{ 'Bestandteil hinzufügen' if project else 'Wunsch hinzufügen' }}</button>{% endif %}{% endif %}
+{% endblock %}
+{% block content %}
+<p class="form-error" role="alert" data-page-error hidden></p>
+{% if request.args.get('saved') %}<p class="wish-notice" role="status">Änderungen gespeichert.</p>{% endif %}
+{% if project %}
+<section class="workspace-panel ui-section wish-project-overview" aria-label="Projektfortschritt">
+<div><span class="ui-label">Vorhanden</span><strong>{{ project.owned }} / {{ project.needed }}</strong><progress value="{{ project.owned }}" max="{{ project.needed or 1 }}" aria-label="Projektfortschritt"></progress><span>{{ project.missing }} {{ ui_t('noch offen') }}</span></div>
+<div><span class="ui-label">Geplant</span><strong>{{ project.estimate | wish_money(project.currency) }}</strong>{% if project.unpriced %}<small>{{ project.unpriced }} {{ ui_t('ohne Preisangabe') }}</small>{% endif %}</div>
+<div><span class="ui-label">Bisher ausgegeben</span><strong>{{ project.spent | wish_money(project.currency) }}</strong></div>
+<div><span class="ui-label">Budget</span><strong>{{ project.budget_cents | wish_money(project.currency) }}</strong>{% if project.budget_cents is not none and project.estimate is not none %}<small{% if project.estimate > project.budget_cents %} class="form-error"{% endif %}>{{ (project.budget_cents-project.estimate) | wish_money(project.currency) }} {{ ui_t('verbleibend nach Planung') }}</small>{% endif %}</div>
+<div><span class="ui-label">Sichtbarkeit</span>{{ badge('Privat' if project.visibility=='private' else 'Mit dem Team geteilt') }}{% if project.target_date %}<small>{{ ui_t('Zieltermin') }}: {{ project.target_date }}</small>{% endif %}</div>
+{% if project.inventory_link %}<a class="btn btn-secondary" href="/inventory/assets/{{ project.asset_id }}">{{ icon('package') }}Asset ansehen</a>{% elif project.asset_id %}{{ badge('Im Bestand','success') }}{% elif can_manage and can_inventory and project.needed and not project.missing %}<button type="button" class="btn btn-primary" data-assemble-project="{{ project.id }}">{{ icon('package') }}Als Asset zusammenstellen</button>{% endif %}
+</section>
+{% else %}
+<nav class="page-tabbar" aria-label="Planungsbereiche"><a class="page-tab{% if kind=='wishes' %} active{% endif %}" href="/wishes" {% if kind=='wishes' %}aria-current="page"{% endif %}>{{ icon('heart') }}Wünsche</a><a class="page-tab{% if kind=='projects' %} active{% endif %}" href="/wishes?tab=projects" {% if kind=='projects' %}aria-current="page"{% endif %}>{{ icon('folder') }}Projekte</a></nav>
+{% endif %}
+<section class="workspace-panel wish-workspace">
+<form method="get" class="ui-toolbar wish-filters" role="search" aria-label="Pläne filtern">
+{% if kind=='projects' %}<input type="hidden" name="tab" value="projects">{% endif %}
+<label class="filter-search">{{ icon('search') }}<input type="search" name="q" value="{{ q }}" aria-label="Wünsche und Projekte durchsuchen" placeholder="Name, Modell oder Notizen suchen …"></label>
+<label class="filter-select"><span class="sr-only">Fortschritt</span><select name="status" aria-label="Fortschritt"><option value="">Alle aktiven</option><option value="missing" {% if status=='missing' %}selected{% endif %}>Noch offen</option><option value="owned" {% if status=='owned' %}selected{% endif %}>Im Bestand</option>{% if kind=='wishes' %}<option value="archived" {% if status=='archived' %}selected{% endif %}>Archiviert</option>{% endif %}</select></label>
+<label class="filter-select"><span class="sr-only">Sichtbarkeit</span><select name="visibility" aria-label="Sichtbarkeit"><option value="">Alle sichtbaren</option><option value="private" {% if visibility=='private' %}selected{% endif %}>Privat</option><option value="team" {% if visibility=='team' %}selected{% endif %}>Mit dem Team geteilt</option></select></label>
+{% if kind=='wishes' %}<label class="filter-select"><span class="sr-only">Priorität</span><select name="priority" aria-label="Priorität"><option value="">Alle Prioritäten</option>{% for key,label in [('high','Hoch'),('normal','Normal'),('low','Niedrig')] %}<option value="{{ key }}" {% if priority==key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+<input type="hidden" name="per_page" value="{{ per_page }}"><button class="btn btn-secondary" type="submit">Filtern</button><a class="btn btn-ghost" href="{{ request.path }}{% if kind=='projects' %}?tab=projects{% endif %}">Zurücksetzen</a>
+</form>
+<div class="data-table-scroll"><table class="data-table wish-table"><thead><tr><th scope="col">{{ 'Projekt' if kind=='projects' else 'Wunsch' }}</th><th scope="col">Fortschritt</th><th scope="col">{{ 'Geplant' if kind=='projects' else 'Preis pro Stück' }}</th><th scope="col">{{ 'Budget' if kind=='projects' else 'Projekt' }}</th><th scope="col">Sichtbarkeit</th><th scope="col"><span class="sr-only">Aktionen</span></th></tr></thead>
+<tbody>{% for item in items %}<tr>
+{% if kind=='projects' %}
+<td><a class="list-row-trigger" href="/wishes/projects/{{ item.id }}"><strong>{{ item.name }}</strong><small>{{ item.description | truncate(90) }}</small></a></td><td><span>{{ item.owned }} / {{ item.needed }}</span><progress value="{{ item.owned }}" max="{{ item.needed or 1 }}" aria-label="{{ ui_t('Projektfortschritt') }}: {{ item.name }}"></progress>{{ badge('Im Bestand' if item.asset_id else 'Noch offen','success' if item.asset_id else 'neutral') }}</td><td>{{ item.estimate | wish_money(item.currency) }}{% if item.unpriced %}<small>{{ item.unpriced }} {{ ui_t('ohne Preisangabe') }}</small>{% endif %}</td><td>{{ item.budget_cents | wish_money(item.currency) }}</td><td>{{ badge('Privat' if item.visibility=='private' else 'Mit dem Team geteilt') }}</td><td>{% if can_manage %}<button type="button" class="icon-button" data-edit-project="{{ item.id }}" aria-label="{{ ui_t('Projekt bearbeiten') }}: {{ item.name }}">{{ icon('edit-2') }}</button>{% endif %}</td>
+{% else %}
+<td><button type="button" class="list-row-trigger" data-edit-wish="{{ item.id }}"><strong>{{ item.name }}</strong><small>{{ item.manufacturer }}{% if item.manufacturer and item.model %} · {% endif %}{{ item.model }}{% if item.priority=='high' %} · {{ ui_t('Hohe Priorität') }}{% endif %}</small></button></td><td><span class="wish-quantity">{{ item.owned }} / {{ item.quantity }}</span>{{ badge('Archiviert' if item.archived else 'Im Bestand' if not item.missing else 'Noch offen','success' if not item.missing and not item.archived else 'neutral') }}</td><td>{{ item.unit_price_cents | wish_money(item.currency) }}</td><td>{% if item.project_id %}<a href="/wishes/projects/{{ item.project_id }}">{{ item.project_name }}</a>{% else %}<span class="muted">Einzelwunsch</span>{% endif %}</td><td>{{ badge('Privat' if item.effective_visibility=='private' else 'Mit dem Team geteilt') }}</td><td>{% if can_manage and can_inventory and item.missing and not item.archived and not item.project_asset_id %}<button type="button" class="btn btn-secondary" data-acquire-wish="{{ item.id }}">{{ icon('check') }}Habe ich</button>{% endif %}</td>
+{% endif %}</tr>{% endfor %}</tbody></table>
+{% if not items %}<div class="empty-state">{{ icon('heart' if kind=='wishes' else 'folder') }}<h2>{{ 'Noch keine passenden Projekte' if kind=='projects' else 'Noch keine passenden Wünsche' }}</h2><p>{{ 'Plane ein Vorhaben und sammle seine Bestandteile.' if kind=='projects' else 'Trage ein, was du dir wünschst. Es erscheint erst nach der Übernahme im Bestand.' }}</p>{% if can_manage %}<button class="btn btn-primary" type="button" {{ 'data-new-project' if kind=='projects' else 'data-new-wish' }}>{{ 'Projekt erstellen' if kind=='projects' else 'Wunsch hinzufügen' }}</button>{% endif %}</div>{% endif %}
+</div>
+<footer class="wish-pagination"><span>{{ (page-1)*per_page+1 if total else 0 }}–{{ [page*per_page,total]|min }} {{ ui_t('von') }} {{ total }} {{ ui_t('Einträgen') }}</span><nav aria-label="Seiten">{% if page>1 %}<a class="btn btn-secondary" href="{{ page_url(page-1) }}" aria-label="Vorherige Seite">{{ icon('chevron-left') }}</a>{% endif %}{% for number in page_numbers %}<a class="btn {{ 'btn-primary' if number==page else 'btn-secondary' }}" href="{{ page_url(number) }}" {% if number==page %}aria-current="page"{% endif %}>{{ number }}</a>{% endfor %}{% if page<pages %}<a class="btn btn-secondary" href="{{ page_url(page+1) }}" aria-label="Nächste Seite">{{ icon('chevron-right') }}</a>{% endif %}</nav><form method="get">{% for key,value in request.args.items() if key not in ['page','per_page'] %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}<label>Einträge pro Seite<select name="per_page" aria-label="Einträge pro Seite" data-page-size>{% for size in [10,20,50] %}<option value="{{ size }}" {% if size==per_page %}selected{% endif %}>{{ size }}</option>{% endfor %}</select></label><button type="submit" class="btn btn-ghost">Anwenden</button></form></footer>
+</section>
+{% endblock %}
+{% block overlays %}
+{% include '_wish_dialogs.html' %}
+<script type="application/json" data-wish-config>{{ {'project': project,'canManage': can_manage,'canInventory': can_inventory,'categories': categories,'locations': locations,'projects': projects} | tojson }}</script>
+{% endblock %}
+{% block page_scripts %}<script src="/static/wishes.js?v=1"></script>{% endblock %}

@@ -48,3 +48,16 @@ def test_invalid_body_returns_json_and_cannot_modify_data(unified_client):
     for value in [None, [], 'data']:
         response = unified_client.post('/api/wishes', json=value)
         assert response.status_code == 400 and response.json['error']
+
+
+def test_pages_pagination_and_literal_search(unified_client):
+    client = unified_client
+    for index in range(12):
+        assert client.post('/api/wishes', json={'name': f'Garden chair {index:02}'}).status_code == 201
+    response = client.get('/wishes')
+    assert response.status_code == 200 and b'Garden chair 11' in response.data and b'Garden chair 00' not in response.data
+    assert b'Garden chair 00' in client.get('/wishes?page=2').data
+    assert b'Garden chair 11' not in client.get('/wishes?q=%25').data
+    assert client.get('/wishes?tab=projects').status_code == 200
+    parent = client.post('/api/wishes/projects', json={'name': 'Workshop'}).json
+    assert client.get(f"/wishes/projects/{parent['id']}").status_code == 200
