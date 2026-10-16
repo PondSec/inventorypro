@@ -48,3 +48,15 @@ def test_name_only_lookup_is_queued_and_cached_for_other_clients(client,monkeypa
         assert calls[0]['model']=='AirPods 4 ANC' and 'PRIVATE' not in json.dumps(calls)
     photo=client.get('/api/inventory/device/1/photo').json
     assert photo['source']=='catalog' and client.get(photo['url']).status_code==200
+
+
+def test_photo_batch_is_bounded_and_never_exposes_an_unauthorized_asset(client):
+    from test_product_catalog_routes import role
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();db.execute("INSERT INTO assets(name,specs) VALUES ('Restricted','{}')");db.commit()
+    assert client.get('/api/inventory/photos?objects=device-1,device-2').status_code==200
+    assert client.get('/api/inventory/photos?objects=device-1,device-1').status_code==400
+    assert client.get('/api/inventory/photos?objects=').status_code==400
+    assert client.get('/api/inventory/photos?objects='+','.join(f'device-{i}' for i in range(1,102))).status_code==400
+    role(client,'device-photo-reader',['devices.view'])
+    assert client.get('/api/inventory/photos?objects=device-1,asset-1').status_code==403

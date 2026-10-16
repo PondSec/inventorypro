@@ -1,4 +1,5 @@
 """Authenticated catalog and object-photo APIs; files never expose arbitrary hashes."""
+import re
 from flask import Blueprint, abort, jsonify, request, send_file, session, render_template, current_app
 from werkzeug.exceptions import RequestEntityTooLarge
 from . import service, jobs
@@ -78,6 +79,26 @@ def build_catalog_blueprint(*,get_db,get_access,user_can,login_required,get_uplo
     @login_required
     def external_status():
         require_catalog(True);return jsonify(jobs.status(get_db()))
+
+    @bp.get('/api/inventory/photos')
+    @login_required
+    def visible_photos():
+        keys=request.args.get('objects','').split(',')
+        if not 1<=len(keys)<=100 or len(set(keys))!=len(keys):
+            raise service.CatalogError('Bitte höchstens 100 eindeutige Inventareinträge auswählen.')
+        objects=[]
+        for key in keys:
+            match=re.fullmatch(r'(asset|device)-([1-9]\d{0,9})',key)
+            if not match:raise service.CatalogError('Ungültiger Inventareintrag.')
+            kind,identifier=match[1],int(match[2])
+            if kind=='device':
+                from inventorypro.domains.inventory.assets import unified
+                if unified(get_db()):
+                    mapped=get_db().execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=?',(identifier,)).fetchone()
+                    if mapped:kind,identifier='asset',mapped[0]
+            require_object(kind,identifier)
+            objects.append((key,kind,identifier))
+        return jsonify(enabled=jobs.enabled(get_db()),items={key:resolve(get_db(),get_uploads_dir(),kind,identifier)['url'] for key,kind,identifier in objects})
     @bp.put('/api/catalog/external')
     @login_required
     def external_settings():
