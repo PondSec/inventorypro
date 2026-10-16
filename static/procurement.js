@@ -95,8 +95,8 @@ document.addEventListener('alpine:init', () => {
         rememberForm(kind){this.modalSnapshots[kind]=JSON.stringify(this['current'+kind]);},
         async request(url,options={}) {
             const response=await fetch(url,options);
-            if(response.redirected)throw new Error('Die Sitzung ist abgelaufen. Bitte erneut anmelden.');
-            if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error || 'Die Änderung konnte nicht gespeichert werden. Ihre Eingaben bleiben erhalten.');}
+            if(response.redirected)throw new Error(uiText('Die Sitzung ist abgelaufen. Bitte erneut anmelden.'));
+            if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error || uiText('Die Änderung konnte nicht gespeichert werden. Ihre Eingaben bleiben erhalten.'));}
             return response;
         },
         filteredRows(tab=this.activeTab) {
@@ -111,8 +111,8 @@ document.addEventListener('alpine:init', () => {
         recordFields(){
             if(!this.selectedRecord)return [];
             const {kind,data}=this.selectedRecord;
-            const fields=kind==='vendor' ? {vendor_type:'Typ',contact_name:'Kontakt',email:'E-Mail',phone:'Telefon',website:'Website',address:'Adresse',rating:'Bewertung',notes:'Notizen'} : kind==='contract' ? {vendor_name:'Lieferant',contract_type:'Typ',status:'Status',start_date:'Start',end_date:'Ende',renewal_type:'Verlängerung',renewal_notice_days:'Kündigungsfrist in Tagen',cost:'Kosten',currency:'Währung',owner:'Verantwortlich',service_level:'Service-Level',notes:'Notizen'} : {vendor_name:'Lieferant',status:'Status',order_date:'Bestellt am',expected_date:'Erwartete Lieferung',received_date:'Erhalten am',requester:'Angefragt von',approver:'Freigabe',cost_center:'Kostenstelle',tax:'Steuer',total:'Gesamt',currency:'Währung',item_count:'Positionen',notes:'Notizen'};
-            return Object.entries(fields).map(([key,label])=>[label,data[key] ?? 'Nicht erfasst']);
+            const fields=kind==='vendor' ? {vendor_type:uiText('Typ'),contact_name:uiText('Kontakt'),email:uiText('E-Mail'),phone:uiText('Telefon'),website:'Website',address:uiText('Adresse'),rating:'Bewertung',notes:uiText('Notizen')} : kind==='contract' ? {vendor_name:uiText('Lieferant'),contract_type:uiText('Typ'),status:'Status',start_date:'Start',end_date:uiText('Ende'),renewal_type:uiText('Verlängerung'),renewal_notice_days:uiText('Kündigungsfrist in Tagen'),cost:uiText('Kosten'),currency:uiText('Währung'),owner:uiText('Verantwortlich'),service_level:uiText('Service-Level'),notes:uiText('Notizen')} : {vendor_name:uiText('Lieferant'),status:'Status',order_date:'Bestellt am',expected_date:'Erwartete Lieferung',received_date:'Erhalten am',requester:uiText('Angefragt von'),approver:'Freigabe',cost_center:uiText('Kostenstelle'),tax:uiText('Steuer'),total:uiText('Gesamt'),currency:uiText('Währung'),item_count:uiText('Positionen'),notes:uiText('Notizen')};
+            return Object.entries(fields).map(([key,label])=>[label,data[key] ?? uiText('Nicht erfasst')]);
         },
 
         can(permissionKey) {
@@ -186,7 +186,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         closeVendorModal(force=false) {
-            if(!force && (this.saving || (this.formDirty('Vendor') && !confirm('Nicht gespeicherte Änderungen verwerfen?'))))return;
+            if(!force && (this.saving || (this.formDirty('Vendor') && !confirm(uiText('Nicht gespeicherte Änderungen verwerfen?')))))return;
             this.vendorModalOpen = false;
         },
 
@@ -212,19 +212,19 @@ document.addEventListener('alpine:init', () => {
                 this.closeVendorModal(true);
             } else {
                 const error = await response.json();
-                alert(error.error || 'Lieferant konnte nicht gespeichert werden');
+                alert(error.error || uiText('Lieferant konnte nicht gespeichert werden'));
             }
         },
 
         async deleteVendor(id) {
-            if (!confirm('Lieferant wirklich loeschen?')) return;
+            if (!confirm(uiText('Lieferant wirklich loeschen?'))) return;
             const response = await this.request(`/api/vendors/${id}`, { method: 'DELETE' });
             if (response.ok) {
                 await this.loadVendors();
                 this.updateOverview();
             } else {
                 const error = await response.json();
-                alert(error.error || 'Lieferant konnte nicht geloescht werden');
+                alert(error.error || uiText('Lieferant konnte nicht geloescht werden'));
             }
         },
 
@@ -251,7 +251,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         closeContractModal(force=false) {
-            if(!force && (this.saving || (this.formDirty('Contract') && !confirm('Nicht gespeicherte Änderungen verwerfen?'))))return;
+            if(!force && (this.saving || (this.formDirty('Contract') && !confirm(uiText('Nicht gespeicherte Änderungen verwerfen?')))))return;
             this.contractModalOpen = false;
         },
 
@@ -278,12 +278,12 @@ document.addEventListener('alpine:init', () => {
                 this.closeContractModal(true);
             } else {
                 const error = await response.json();
-                alert(error.error || 'Vertrag konnte nicht gespeichert werden');
+                alert(error.error || uiText('Vertrag konnte nicht gespeichert werden'));
             }
         },
 
         async deleteContract(id) {
-            if (!confirm('Vertrag wirklich loeschen?')) return;
+            if (!confirm(uiText('Vertrag wirklich loeschen?'))) return;
             const response = await this.request(`/api/contracts/${id}`, { method: 'DELETE' });
             if (response.ok) {
                 await this.loadContracts();
@@ -291,7 +291,7 @@ document.addEventListener('alpine:init', () => {
                 await this.refreshRenewals();
             } else {
                 const error = await response.json();
-                alert(error.error || 'Vertrag konnte nicht geloescht werden');
+                alert(error.error || uiText('Vertrag konnte nicht geloescht werden'));
             }
         },
 
@@ -323,7 +323,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         closeOrderModal(force=false) {
-            if(!force && (this.saving || (this.formDirty('Order') && !confirm('Nicht gespeicherte Änderungen verwerfen?'))))return;
+            if(!force && (this.saving || (this.formDirty('Order') && !confirm(uiText('Nicht gespeicherte Änderungen verwerfen?')))))return;
             this.orderModalOpen = false;
         },
 
@@ -372,7 +372,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async saveOrder() {
-            if(!this.orderLoaded)throw new Error('Die Bestellung konnte nicht geladen werden. Bitte erneut öffnen.');
+            if(!this.orderLoaded)throw new Error(uiText('Die Bestellung konnte nicht geladen werden. Bitte erneut öffnen.'));
             const payload = {
                 ...this.currentOrder,
                 items: this.currentOrder.items.map(item => ({
@@ -402,19 +402,19 @@ document.addEventListener('alpine:init', () => {
                 this.closeOrderModal(true);
             } else {
                 const error = await response.json();
-                alert(error.error || 'Bestellung konnte nicht gespeichert werden');
+                alert(error.error || uiText('Bestellung konnte nicht gespeichert werden'));
             }
         },
 
         async deleteOrder(id) {
-            if (!confirm('Bestellung wirklich loeschen?')) return;
+            if (!confirm(uiText('Bestellung wirklich loeschen?'))) return;
             const response = await this.request(`/api/purchase-orders/${id}`, { method: 'DELETE' });
             if (response.ok) {
                 await this.loadOrders();
                 this.updateOverview();
             } else {
                 const error = await response.json();
-                alert(error.error || 'Bestellung konnte nicht geloescht werden');
+                alert(error.error || uiText('Bestellung konnte nicht geloescht werden'));
             }
         }
     }));
