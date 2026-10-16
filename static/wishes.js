@@ -6,6 +6,7 @@
   const dialogs = [...document.querySelectorAll('.wish-dialog')];
   let row = null, activeKind = '', dirty = false, busy = false, opener = null;
   let existingAsset = null, requestKey = '', searchTimer, searchController;
+  const quickRequests = new Map();
   const t = window.uiText;
   async function api(url, method = 'GET', payload) {
     const response = await fetch(url, {method, headers: {'Content-Type': 'application/json'}, ...(payload ? {body: JSON.stringify(payload)} : {})});
@@ -154,11 +155,24 @@
   }
   assembleForm.elements.category_id.addEventListener('change', () => fields(assembleForm.querySelector('[data-assemble-specs]'), assembleForm.elements.category_id.value));
   document.addEventListener('click', async event => {
-    const button = event.target.closest('[data-new-wish],[data-new-project],[data-edit-wish],[data-edit-project],[data-acquire-wish],[data-assemble-project]');
+    const button = event.target.closest('[data-new-wish],[data-new-project],[data-edit-wish],[data-edit-project],[data-acquire-wish],[data-have-wish],[data-assemble-project]');
     if (!button || busy) return;
     opener = button; pageError.hidden = true; button.disabled = true;
     try {
-      if (button.hasAttribute('data-new-wish')) await openWish();
+      if (button.dataset.haveWish) {
+        busy = true;
+        const id = button.dataset.haveWish;
+        const initial = await api('/api/wishes/' + id);
+        if (!quickRequests.has(id)) quickRequests.set(id, crypto.randomUUID ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2,'0')).join(''));
+        try {
+          await api('/api/wishes/' + id + '/acquire', 'POST', {expectedRevision: initial.revision, requestKey: quickRequests.get(id), quantity: 1});
+          done();
+        } catch (problem) {
+          if (Object.keys(problem.fields || {}).length) { await openAcquire(id); showError(acquireForm, problem); }
+          else throw problem;
+        } finally { busy = false; }
+      }
+      else if (button.hasAttribute('data-new-wish')) await openWish();
       else if (button.hasAttribute('data-new-project')) await openProject();
       else if (button.dataset.editWish) await openWish(button.dataset.editWish);
       else if (button.dataset.editProject) await openProject(button.dataset.editProject);

@@ -36,7 +36,7 @@ def test_project_research_partial_acquisition_and_assembly(wishes_live, browser)
     page.wait_for_load_state('networkidle')
     expect(page.get_by_role('button', name='Garden chair', exact=True)).to_be_visible()
     for remaining in [1, 0]:
-        page.get_by_role('button', name='Habe ich', exact=True).click()
+        page.get_by_role('button', name='Übernahme anpassen: Garden chair', exact=True).click()
         acquire = page.locator('[data-acquire-dialog]')
         expect(acquire.get_by_label('Menge jetzt vorhanden')).to_have_value('1')
         with page.expect_response(lambda r: r.url.endswith('/acquire')) as result:
@@ -53,6 +53,46 @@ def test_project_research_partial_acquisition_and_assembly(wishes_live, browser)
     page.get_by_role('link', name='Asset ansehen', exact=True).click()
     expect(page.get_by_role('heading', name='Garden workspace', exact=True)).to_be_visible()
     assert not errors
+    page.close()
+
+
+def test_standalone_wish_is_inventoried_with_one_click(wishes_live, browser):
+    page = browser.new_page()
+    sign_in(page, wishes_live)
+    page.goto(wishes_live + '/wishes')
+    page.get_by_role('button', name='Wunsch hinzufügen').first.click()
+    dialog = page.locator('[data-wish-dialog]')
+    dialog.get_by_label('Bezeichnung').fill('A cordless drill')
+    dialog.get_by_role('button', name='Speichern', exact=True).click()
+    expect(dialog).not_to_be_visible()
+    with page.expect_response(lambda r: r.url.endswith('/acquire')) as response:
+        page.get_by_role('button', name='Habe ich', exact=True).click()
+    assert response.value.status == 200
+    expect(page.locator('.wish-quantity')).to_have_text('1 / 1')
+    expect(page.get_by_role('button', name='Habe ich', exact=True)).to_have_count(0)
+    page.close()
+
+
+def test_english_planning_preserves_user_content(wishes_live, browser):
+    with inventory_app.app.app_context():
+        db = inventory_app.get_db()
+        db.execute("UPDATE server_settings SET ui_language='en' WHERE id=1")
+        db.commit()
+    page = browser.new_page()
+    page.goto(wishes_live + '/login')
+    page.get_by_label('Username').fill('admin')
+    page.locator('input[name=password]').fill('Synthetic-Test-Only-42!')
+    page.get_by_role('button', name='Sign in', exact=True).click()
+    page.wait_for_url(lambda url: url in {wishes_live+'/', wishes_live+'/inventory'})
+    page.goto(wishes_live + '/wishes')
+    expect(page.get_by_role('heading', name='Wishes & projects', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Add wish').first.click()
+    dialog = page.locator('[data-wish-dialog]')
+    dialog.get_by_label('Name', exact=True).fill('Nicht übersetzen')
+    dialog.get_by_role('button', name='Save', exact=True).click()
+    expect(page.get_by_role('button', name='Nicht übersetzen', exact=True)).to_be_visible()
+    page.get_by_role('button', name='I have this', exact=True).click()
+    expect(page.locator('.wish-quantity')).to_have_text('1 / 1')
     page.close()
 
 
