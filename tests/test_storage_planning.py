@@ -146,3 +146,27 @@ def test_unified_planning_respects_converted_scope_in_search_preview_and_saved_p
     assert client.get('/api/planning/assets?q=Notebook').json['total']==40
     assert client.get('/api/planning/plans').json['items']==[]
     assert client.get('/api/planning/plans/'+str(saved.json['id'])).status_code==403
+
+
+def test_owner_can_remove_saved_plan_after_a_referenced_asset_is_deleted(planning):
+    from inventorypro.domains.inventory.unification import convert_inventory
+    client,payload=planning
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();convert_inventory(db);db.commit()
+    identifier=client.post('/api/planning/plans',json=payload).json['id']
+    item=payload['items'][0]['id']
+    revision=client.get(f'/api/inventory/assets/{item}').json['revision']
+    assert client.delete(f'/api/inventory/assets/{item}',json={'expectedRevision':revision}).status_code==200
+    assert any(p['id']==identifier for p in client.get('/api/planning/plans').json['items'])
+    assert client.delete(f'/api/planning/plans/{identifier}').status_code==200
+    assert client.get(f"/api/inventory/assets/{payload['container_id']}").status_code==200
+
+
+def test_plan_deletion_keeps_assets_and_requires_csrf(planning,monkeypatch):
+    client,payload=planning;identifier=client.post('/api/planning/plans',json=payload).json['id']
+    with inventory_app.app.app_context():before=[tuple(r) for r in inventory_app.get_db().execute('SELECT * FROM assets ORDER BY id')]
+    monkeypatch.setitem(inventory_app.app.config,'TESTING',False)
+    assert client.delete(f'/api/planning/plans/{identifier}').status_code==403
+    token=client.get('/api/csrf-token').json['csrfToken']
+    assert client.delete(f'/api/planning/plans/{identifier}',headers={'X-CSRF-Token':token}).status_code==200
+    with inventory_app.app.app_context():assert before==[tuple(r) for r in inventory_app.get_db().execute('SELECT * FROM assets ORDER BY id')]
