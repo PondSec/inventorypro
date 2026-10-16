@@ -6,9 +6,9 @@ The product catalog stores manufacturer, model, identifiers, image provenance an
 
 ## Automatic matching
 
-An administrator can enable the public image source in the product catalog and run the missing-image search. Wikidata provides model information; suitable pictures are retrieved from Wikimedia Commons. Searches use only manufacturer and public model information. Personal assignments, locations, serial numbers and internal inventory names are not transmitted.
+An administrator can enable the public image source in the product catalog and run the missing-image search. Wikidata provides model information; suitable pictures are retrieved from Wikimedia Commons. When a photo exists only on Commons, an additional lookup requires a complete, unambiguous model name in the file title. Comparison images and other generations are excluded. Searches use only manufacturer and public model information. Personal assignments, locations, serial numbers and internal inventory names are not transmitted.
 
-Manufacturer and full model must match. Ambiguous results or unsuitable licenses are not assigned automatically. Source management shows jobs, missing matches and errors. No public database covers every possible inventory item. A consistent type icon appears when no suitable image is available.
+Manufacturer and full model must match. Clear product names such as “Apple AirPods 4 ANC” are recognized without separate manufacturer and model fields. Name recognition uses bounded product patterns; unknown free text and personal name suffixes are not transmitted as search terms. For other products, enter the manufacturer and full model in their properties. Opening inventory starts an incremental background check of existing items; the list does not wait for external image requests. Ambiguous results or unsuitable licenses are not assigned automatically. Source management shows jobs, missing matches and errors. No public database covers every possible inventory item. A consistent type icon appears when no suitable image is available.
 
 ## Custom photos and persistence
 

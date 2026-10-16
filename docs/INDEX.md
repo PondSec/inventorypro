@@ -4,6 +4,7 @@
 | --- | --- | --- |
 | Installation, Backup, Restore | [Installation](de/installation.md) | [Installation](en/installation.md) |
 | Bestand, Kategorien, enthaltene Assets | [Inventar](de/inventory.md) | [Inventory](en/inventory.md) |
+| Wünsche und Projekte | [Wünsche und Projekte](de/wishes.md) | [Wishes and projects](en/wishes.md) |
 | Produktkatalog und Bilder | [Produktbilder](de/product-images.md) | [Product images](en/product-images.md) |
 | Tickets, Planung und weitere Module | [Module](de/modules.md) | [Modules](en/modules.md) |
 | Benutzer, Sicherheit und Sprache | [Administration](de/administration.md) | [Administration](en/administration.md) |
