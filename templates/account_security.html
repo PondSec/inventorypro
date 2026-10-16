@@ -78,8 +78,8 @@
         }
 
         function showInactive() {
-            status.textContent = 'TOTP ist für dieses Konto nicht aktiviert.';
-            badge.textContent = 'Inaktiv';
+            status.textContent = uiText('TOTP ist für dieses Konto nicht aktiviert.');
+            badge.textContent = uiText('Inaktiv');
             badge.className = 'rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600';
             actions.hidden = false;
             enrollment.hidden = true;
@@ -87,8 +87,8 @@
         }
 
         function showActive() {
-            status.textContent = 'TOTP ist aktiviert und wird nach dem Passwort abgefragt.';
-            badge.textContent = 'Aktiv';
+            status.textContent = uiText('TOTP ist aktiviert und wird nach dem Passwort abgefragt.');
+            badge.textContent = uiText('Aktiv');
             badge.className = 'rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700';
             actions.hidden = true;
             enrollment.hidden = true;
@@ -98,7 +98,7 @@
         async function responseData(response) {
             const data = await response.json();
             if (!response.ok) {
-                throw new Error(data.error || 'Die Aktion konnte nicht ausgeführt werden.');
+                throw new Error(data.error || uiText('Die Aktion konnte nicht ausgeführt werden.'));
             }
             return data;
         }

@@ -53,7 +53,7 @@
                 const response = await fetch('/api/otp/setup', { method: 'POST', credentials: 'include' });
                 const data = await response.json();
                 if (!response.ok) {
-                    throw new Error(data.error || 'MFA-Einrichtung konnte nicht gestartet werden.');
+                    throw new Error(data.error || uiText('MFA-Einrichtung konnte nicht gestartet werden.'));
                 }
                 if (data.enabled) {
                     window.location.assign('/verify');
@@ -76,7 +76,7 @@
                 });
                 const data = await response.json();
                 if (!response.ok) {
-                    showError(data.error || 'Der Code konnte nicht bestätigt werden.');
+                    showError(data.error || uiText('Der Code konnte nicht bestätigt werden.'));
                     return;
                 }
                 window.location.assign('/');

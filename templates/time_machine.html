@@ -232,11 +232,11 @@
                 selectedRoadmaps: [],
                 selectedLayer: 'all',
                 layers: [
-                    {% if not unified_inventory %}{ key: 'devices', label: 'Geräte', color: 'slate' },{% endif %}
+                    {% if not unified_inventory %}{ key: 'devices', label: uiText('Geräte'), color: 'slate' },{% endif %}
                     { key: 'assets', label: 'Assets', color: 'indigo' },
                     { key: 'tickets', label: 'Tickets', color: 'amber' },
                     { key: 'roadmaps', label: 'Roadmaps', color: 'cyan' },
-                    { key: 'dependencies', label: 'Abhängigkeiten', color: 'purple' },
+                    { key: 'dependencies', label: uiText('Abhängigkeiten'), color: 'purple' },
                     { key: 'organisation', label: 'Organisation', color: 'emerald' }
                 ],
                 branchOptions: [
@@ -357,10 +357,10 @@
                 get comparisonMetrics() {
                     const metrics = [
                         { key: 'assets', label: 'Assets' },
-                        {% if not unified_inventory %}{ key: 'devices', label: 'Geräte' },{% endif %}
+                        {% if not unified_inventory %}{ key: 'devices', label: uiText('Geräte') },{% endif %}
                         { key: 'tickets', label: 'Tickets' },
                         { key: 'roadmaps', label: 'Roadmaps' },
-                        { key: 'dependencies', label: 'Abhängigkeiten' },
+                        { key: 'dependencies', label: uiText('Abhängigkeiten') },
                         { key: 'tickets_open', label: 'Tickets offen' }
                     ];
                     return metrics.map(metric => {

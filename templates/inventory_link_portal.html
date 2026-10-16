@@ -182,7 +182,7 @@
                     const response = await fetch(`/api/inventory-links/${linkId}/auth/status`);
                     const result = await response.json();
                     if (!response.ok) {
-                        throw new Error(result.error || 'Authentifizierungsstatus konnte nicht geladen werden.');
+                        throw new Error(result.error || uiText('Authentifizierungsstatus konnte nicht geladen werden.'));
                     }
                     if (result.authenticated) {
                         hideOverlay();

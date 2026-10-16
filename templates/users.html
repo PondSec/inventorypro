@@ -520,19 +520,19 @@
                 async createUser() {
                     if(this.creatingUser)return;
                     this.errorMessage='';this.successMessage='';
-                    if(this.newUser.email && !this.isValidEmail(this.newUser.email)){this.errorMessage='Ungültige E-Mail-Adresse';return;}
+                    if(this.newUser.email && !this.isValidEmail(this.newUser.email)){this.errorMessage=uiText('Ungültige E-Mail-Adresse');return;}
                     this.creatingUser=true;
                     try{
                         const response=await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.newUser)});
-                        if(response.redirected)throw new Error('Ihre Sitzung ist abgelaufen. Bitte erneut anmelden.');
+                        if(response.redirected)throw new Error(uiText('Ihre Sitzung ist abgelaufen. Bitte erneut anmelden.'));
                         const result=await response.json().catch(()=>({}));
-                        if(!response.ok)throw new Error(result.error || 'Benutzer konnte nicht erstellt werden. Bitte erneut versuchen.');
-                        this.successMessage='Benutzer erstellt.';
+                        if(!response.ok)throw new Error(result.error || uiText('Benutzer konnte nicht erstellt werden. Bitte erneut versuchen.'));
+                        this.successMessage=uiText('Benutzer erstellt.');
                         this.newUser={username:'',email:'',password:'',role_ids:[]};
                         this.$refs.createUserPanel.removeAttribute('open');
                         this.$refs.createUserPanel.querySelector('summary').focus();
                         await this.loadUsers();
-                    }catch(error){this.errorMessage=error.message || 'Server nicht erreichbar. Ihre Eingaben bleiben erhalten.';}
+                    }catch(error){this.errorMessage=error.message || uiText('Server nicht erreichbar. Ihre Eingaben bleiben erhalten.');}
                     finally{this.creatingUser=false;}
                 },
 
@@ -561,12 +561,12 @@
                         body: JSON.stringify(payload)
                     });
                     if (response.ok) {
-                        this.roleMessage = 'Rolle erstellt.';
+                        this.roleMessage = uiText('Rolle erstellt.');
                         this.newRole = { name: '', description: '' };
                         await this.loadRoles();
                     } else {
                         const error = await response.json();
-                        this.roleError = error.error || 'Fehler beim Erstellen';
+                        this.roleError = error.error || uiText('Fehler beim Erstellen');
                     }
                 },
 
@@ -588,19 +588,19 @@
                         await this.loadRoles();
                     } else {
                         const error = await response.json();
-                        alert(error.error || 'Fehler beim Speichern');
+                        alert(error.error || uiText('Fehler beim Speichern'));
                     }
                 },
 
                 async deleteRole(role) {
                     if (!this.can('roles.manage')) return;
-                    if (!confirm(`Rolle ${role.name} wirklich löschen?`)) return;
+                    if (!confirm(uiText("Rolle {0} wirklich löschen?", [role.name]))) return;
                     const response = await fetch(`/api/roles/${role.id}`, { method: 'DELETE' });
                     if (response.ok) {
                         await this.loadRoles();
                     } else {
                         const error = await response.json();
-                        alert(error.error || 'Fehler beim Löschen');
+                        alert(error.error || uiText('Fehler beim Löschen'));
                     }
                 },
 
@@ -622,7 +622,7 @@
                         await this.loadUsers();
                     } else {
                         const error = await response.json();
-                        alert(error.error || 'Fehler beim Speichern');
+                        alert(error.error || uiText('Fehler beim Speichern'));
                     }
                 },
 
@@ -645,7 +645,7 @@
                     this.emailError = '';
                     this.emailSuccess = '';
                     if (this.emailValue && !this.isValidEmail(this.emailValue)) {
-                        this.emailError = 'Ungültige E-Mail-Adresse';
+                        this.emailError = uiText('Ungültige E-Mail-Adresse');
                         return;
                     }
                     const response = await fetch(`/api/users/${this.emailUser.id}`, {
@@ -659,7 +659,7 @@
                         this.emailModalOpen = false;
                     } else {
                         const error = await response.json();
-                        this.emailError = error.error || 'Fehler beim Speichern';
+                        this.emailError = error.error || uiText('Fehler beim Speichern');
                     }
                 },
 
@@ -675,18 +675,18 @@
                         await this.loadUsers();
                     } else {
                         const error = await response.json();
-                        alert(error.error || 'Fehler beim Zurücksetzen');
+                        alert(error.error || uiText('Fehler beim Zurücksetzen'));
                     }
                 },
 
                 async deleteUser(user) {
-                    if (!confirm(`Benutzer ${user.username} wirklich löschen?`)) return;
+                    if (!confirm(uiText("Benutzer {0} wirklich löschen?", [user.username]))) return;
                     const response = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
                     if (response.ok) {
                         await this.loadUsers();
                     } else {
                         const error = await response.json();
-                        alert(error.error || 'Fehler beim Löschen');
+                        alert(error.error || uiText('Fehler beim Löschen'));
                     }
                 },
 

@@ -1226,9 +1226,9 @@
                 activeSection: window.inventoryInitialSection || 'server',
                 serverPanel: 'general',
                 serverPanels: [
-                    {id:'general',label:'Allgemein'}, {id:'updates',label:'Updates'},
-                    {id:'backup',label:'Sicherung'}, {id:'data',label:'Daten'},
-                    {id:'security',label:'Sicherheit'}, {id:'connections',label:'Verbindungen'},
+                    {id:'general',label:uiText('Allgemein')}, {id:'updates',label:'Updates'},
+                    {id:'backup',label:uiText('Sicherung')}, {id:'data',label:uiText('Daten')},
+                    {id:'security',label:uiText('Sicherheit')}, {id:'connections',label:uiText('Verbindungen')},
                     {id:'terminal',label:'Terminalregeln'},
                 ],
                 originalCustomization: null,
@@ -1428,7 +1428,7 @@
                     return this.originalCustomization !== null && JSON.stringify(this.customization) !== this.originalCustomization;
                 },
                 reloadSettings() {
-                    if (this.hasChanges() && !confirm('Ungespeicherte Einstellungen verwerfen?')) return;
+                    if (this.hasChanges() && !confirm(uiText('Ungespeicherte Einstellungen verwerfen?'))) return;
                     return this.fetchSettings();
                 },
                 invalidSetting(panel, message, field) {
@@ -1448,7 +1448,7 @@
                         const response = await fetch('/api/settings/server');
                         if (!response.ok) {
                             const error = await response.json();
-                            throw new Error(error.error || 'Konnte Einstellungen nicht laden.');
+                            throw new Error(error.error || uiText('Konnte Einstellungen nicht laden.'));
                         }
                         const data = await response.json();
                         this.settings = data.settings;
@@ -1470,7 +1470,7 @@
                         const response = await fetch('/api/inventory-links');
                         if (!response.ok) {
                             const error = await response.json();
-                            throw new Error(error.error || 'Konnte Links nicht laden.');
+                            throw new Error(error.error || uiText('Konnte Links nicht laden.'));
                         }
                         this.inventoryLinks = await response.json();
                     } catch (error) {
@@ -1554,7 +1554,7 @@
                             });
                             if (!response.ok) {
                                 const error = await response.json();
-                                throw new Error(error.error || 'Konnte Link nicht speichern.');
+                                throw new Error(error.error || uiText('Konnte Link nicht speichern.'));
                             }
                             this.inventoryLinkMessage = 'Link aktualisiert.';
                         } else {
@@ -1565,9 +1565,9 @@
                             });
                             if (!response.ok) {
                                 const error = await response.json();
-                                throw new Error(error.error || 'Konnte Link nicht speichern.');
+                                throw new Error(error.error || uiText('Konnte Link nicht speichern.'));
                             }
-                            this.inventoryLinkMessage = 'Link hinzugefügt.';
+                            this.inventoryLinkMessage = uiText('Link hinzugefügt.');
                         }
                         await this.fetchInventoryLinks();
                         this.resetInventoryLinkForm(false);
@@ -1586,7 +1586,7 @@
                         const response = await fetch(`/api/inventory-links/${link.id}`, { method: 'DELETE' });
                         if (!response.ok) {
                             const error = await response.json();
-                            throw new Error(error.error || 'Konnte Link nicht entfernen.');
+                            throw new Error(error.error || uiText('Konnte Link nicht entfernen.'));
                         }
                         this.inventoryLinkMessage = 'Link entfernt.';
                         await this.fetchInventoryLinks();
@@ -1619,7 +1619,7 @@
                         if (result.status === 'ok') {
                             this.inventoryLinkMessage = 'Verbindung erfolgreich.';
                         } else if (result.status === 'unauthorized') {
-                            this.inventoryLinkError = 'Nicht autorisiert. Bitte Credentials prüfen.';
+                            this.inventoryLinkError = uiText('Nicht autorisiert. Bitte Credentials prüfen.');
                         } else {
                             this.inventoryLinkError = result.error || 'Verbindung fehlgeschlagen.';
                         }
@@ -1640,37 +1640,37 @@
 
                 validateSettings() {
                     if (!this.settings.server.host) {
-                        return this.invalidSetting('general', 'Host darf nicht leer sein.', 'settings.server.host');
+                        return this.invalidSetting('general', uiText('Host darf nicht leer sein.'), 'settings.server.host');
                     }
                     if (!Number.isInteger(this.settings.server.port) || this.settings.server.port < 1 || this.settings.server.port > 65535) {
-                        return this.invalidSetting('general', 'Port muss zwischen 1 und 65535 liegen.', 'settings.server.port');
+                        return this.invalidSetting('general', uiText('Port muss zwischen 1 und 65535 liegen.'), 'settings.server.port');
                     }
                     if (this.settings.backup.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(this.settings.backup.time)) {
-                        return this.invalidSetting('backup', 'Backup-Zeit muss im Format HH:MM sein.', 'settings.backup.time');
+                        return this.invalidSetting('backup', uiText('Backup-Zeit muss im Format HH:MM sein.'), 'settings.backup.time');
                     }
                     if (!Number.isInteger(this.settings.backup.retentionDays) || this.settings.backup.retentionDays < 1) {
-                        return this.invalidSetting('backup', 'Retention muss mindestens 1 Tag betragen.', 'settings.backup.retentionDays');
+                        return this.invalidSetting('backup', uiText('Retention muss mindestens 1 Tag betragen.'), 'settings.backup.retentionDays');
                     }
                     if (this.settings.backup.notifyEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(this.settings.backup.notifyEmail)) {
-                        return this.invalidSetting('backup', 'E-Mail-Adresse ist ungültig.', 'settings.backup.notifyEmail');
+                        return this.invalidSetting('backup', uiText('E-Mail-Adresse ist ungültig.'), 'settings.backup.notifyEmail');
                     }
                     if (!Number.isInteger(this.settings.updates.checkIntervalMinutes) || this.settings.updates.checkIntervalMinutes < 15 || this.settings.updates.checkIntervalMinutes > 1440) {
-                        return this.invalidSetting('updates', 'Update-Prüfintervall muss zwischen 15 und 1440 Minuten liegen.', 'settings.updates.checkIntervalMinutes');
+                        return this.invalidSetting('updates', uiText('Update-Prüfintervall muss zwischen 15 und 1440 Minuten liegen.'), 'settings.updates.checkIntervalMinutes');
                     }
                     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(this.settings.updates.maintenanceWindow || '')) {
-                        return this.invalidSetting('updates', 'Update-Wartungsfenster muss im Format HH:MM sein.', 'settings.updates.maintenanceWindow');
+                        return this.invalidSetting('updates', uiText('Update-Wartungsfenster muss im Format HH:MM sein.'), 'settings.updates.maintenanceWindow');
                     }
                     if (!Number.isInteger(this.settings.security.sessionTimeoutMinutes)) {
-                        return this.invalidSetting('security', 'Session-Timeout muss eine Zahl sein.', 'settings.security.sessionTimeoutMinutes');
+                        return this.invalidSetting('security', uiText('Session-Timeout muss eine Zahl sein.'), 'settings.security.sessionTimeoutMinutes');
                     }
                     if (!Number.isInteger(this.settings.security.maxFailedAttempts)) {
-                        return this.invalidSetting('security', 'Maximale Fehlversuche müssen eine Zahl sein.', 'settings.security.maxFailedAttempts');
+                        return this.invalidSetting('security', uiText('Maximale Fehlversuche müssen eine Zahl sein.'), 'settings.security.maxFailedAttempts');
                     }
                     if (!Number.isInteger(this.settings.security.lockoutMinutes)) {
-                        return this.invalidSetting('security', 'Sperrdauer muss eine Zahl sein.', 'settings.security.lockoutMinutes');
+                        return this.invalidSetting('security', uiText('Sperrdauer muss eine Zahl sein.'), 'settings.security.lockoutMinutes');
                     }
                     if (!Number.isInteger(this.settings.security.minPasswordLength)) {
-                        return this.invalidSetting('security', 'Mindest-Passwortlänge muss eine Zahl sein.', 'settings.security.minPasswordLength');
+                        return this.invalidSetting('security', uiText('Mindest-Passwortlänge muss eine Zahl sein.'), 'settings.security.minPasswordLength');
                     }
                     return '';
                 },
@@ -1733,7 +1733,7 @@
                     const raw = (this.terminalCommand || '').trim();
                     if (!raw) return;
                     if (!this.terminalSessionId) {
-                        this.terminalError = 'Session nicht aktiv.';
+                        this.terminalError = uiText('Session nicht aktiv.');
                         return;
                     }
                     const parts = raw.split(' ');
@@ -1812,7 +1812,7 @@
                         time: this.formatTerminalTimestamp(),
                         title: 'command',
                         status: 'error',
-                        output: 'Unbekanntes Kommando. Tippe help für die Liste.'
+                        output: uiText('Unbekanntes Kommando. Tippe help für die Liste.')
                     });
                 },
                 async copyTerminalOutput() {
@@ -1834,7 +1834,7 @@
                         });
                         const data = await response.json();
                         if (!response.ok) {
-                            throw new Error(data.error || 'Session konnte nicht gestartet werden.');
+                            throw new Error(data.error || uiText('Session konnte nicht gestartet werden.'));
                         }
                         this.terminalSessionId = data.session_id;
                         this.terminalSessionExpiresAt = data.expires_at;
@@ -1868,7 +1868,7 @@
                         });
                         const data = await response.json();
                         if (!response.ok) {
-                            throw new Error(data.error || 'Session konnte nicht beendet werden.');
+                            throw new Error(data.error || uiText('Session konnte nicht beendet werden.'));
                         }
                         this.pushTerminalOutput({
                             time: this.formatTerminalTimestamp(),
@@ -1996,14 +1996,14 @@
                         const data = await response.json();
                         if (!response.ok) {
                             const detail = data.details ? JSON.stringify(data.details) : '';
-                            throw new Error(data.error || detail || 'Speichern fehlgeschlagen.');
+                            throw new Error(data.error || detail || uiText('Speichern fehlgeschlagen.'));
                         }
                         this.settings = data.settings;
                         this.meta = data.meta;
                         this.originalSettings = JSON.parse(JSON.stringify(this.settings));
                         this.ipWhitelistInput = (this.settings.security.ipWhitelist || []).join(', ');
                         this.terminalAllowlistInput = (this.settings.terminal.ipAllowlist || []).join(', ');
-                        this.successMessage = 'Einstellungen gespeichert.';
+                        this.successMessage = uiText('Einstellungen gespeichert.');
                         if(this.settings.appearance.language!==document.documentElement.lang)location.reload();
                     } catch (error) {
                         this.errorMessage = error.message;
@@ -2066,7 +2066,7 @@
                             }
                         }
                     } catch (error) {
-                        this.customizeError = error.message || 'Customize konnte nicht geladen werden.';
+                        this.customizeError = error.message || uiText('Customize konnte nicht geladen werden.');
                     }
                     const localOverride = window.InventoryCustomization ? window.InventoryCustomization.getLocalOverride() : null;
                     if (localOverride) {
@@ -2089,10 +2089,10 @@
                     const bg = this.customization.baseTokens.colors.background;
                     const text = this.customization.baseTokens.colors.text;
                     if (this.contrastRatio(primary, primaryText) < 3.5) {
-                        warnings.push('Button-Text hat zu wenig Kontrast zum Primärhintergrund.');
+                        warnings.push(uiText('Button-Text hat zu wenig Kontrast zum Primärhintergrund.'));
                     }
                     if (this.contrastRatio(bg, text) < 4.5) {
-                        warnings.push('Fließtext hat zu wenig Kontrast zum Hintergrund.');
+                        warnings.push(uiText('Fließtext hat zu wenig Kontrast zum Hintergrund.'));
                     }
                     this.contrastWarnings = warnings;
                 },
@@ -2127,7 +2127,7 @@
                     if (window.InventoryCustomization) {
                         window.InventoryCustomization.setLocalOverride(null);
                     }
-                    this.customizeMessage = 'Alle Anpassungen wurden zurückgesetzt.';
+                    this.customizeMessage = uiText('Alle Anpassungen wurden zurückgesetzt.');
                     this.customizeError = '';
                     this.resetHistory();
                     setTimeout(() => {
@@ -2143,7 +2143,7 @@
                     if (section === 'components') {
                         this.customization.componentOverrides = defaults.componentOverrides;
                     }
-                    this.customizeMessage = 'Bereich wurde zurückgesetzt.';
+                    this.customizeMessage = uiText('Bereich wurde zurückgesetzt.');
                     setTimeout(() => {
                         this.customizeMessage = '';
                     }, 3000);
@@ -2157,7 +2157,7 @@
                             window.InventoryCustomization.setLocalOverride(this.customization);
                         }
                         this.originalCustomization = JSON.stringify(this.customization);
-                        this.customizeMessage = 'Lokal gespeichert. Server-Konfiguration bleibt unverändert.';
+                        this.customizeMessage = uiText('Lokal gespeichert. Server-Konfiguration bleibt unverändert.');
                         setTimeout(() => {
                             this.customizeMessage = '';
                         }, 3000);
@@ -2172,7 +2172,7 @@
                         });
                         const data = await response.json();
                         if (!response.ok) {
-                            throw new Error(data.error || 'Speichern fehlgeschlagen.');
+                            throw new Error(data.error || uiText('Speichern fehlgeschlagen.'));
                         }
                         this.customization = window.InventoryCustomization.migrate(data.customization || this.customization);
                         if (window.InventoryCustomization) {
@@ -2188,7 +2188,7 @@
                         this.customizeMessage = 'Darstellung gespeichert.';
                         await this.fetchCustomizationHistory();
                     } catch (error) {
-                        this.customizeError = error.message || 'Speichern fehlgeschlagen.';
+                        this.customizeError = error.message || uiText('Speichern fehlgeschlagen.');
                     }
                 },
 
@@ -2214,7 +2214,7 @@
                             this.customizeMessage = 'Import erfolgreich geladen.';
                             this.resetHistory();
                         } catch (error) {
-                            this.customizeError = 'Import fehlgeschlagen: JSON ungültig.';
+                            this.customizeError = uiText('Import fehlgeschlagen: JSON ungültig.');
                         }
                     };
                     reader.readAsText(file);

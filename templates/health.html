@@ -327,11 +327,11 @@
         function healthApp() {
             return {
                 tabs: [
-                    { key: 'overview', label: 'Übersicht' },
+                    { key: 'overview', label: uiText('Übersicht') },
                     { key: 'services', label: 'Dienste' },
-                    { key: 'checks', label: 'Prüfungen' },
-                    { key: 'incidents', label: 'Störungen' },
-                    { key: 'history', label: 'Verlauf' }
+                    { key: 'checks', label: uiText('Prüfungen') },
+                    { key: 'incidents', label: uiText('Störungen') },
+                    { key: 'history', label: uiText('Verlauf') }
                 ],
                 activeTab: 'overview',
                 summary: { overall_status: 'UNKNOWN', last_updated: null, summary_cards: [], events: [], incidents: [] },
@@ -489,7 +489,7 @@
                     try {
                         parsed = JSON.parse(this.configDraft || '{}');
                     } catch (error) {
-                        alert('Ungültiges JSON.');
+                        alert(uiText('Ungültiges JSON.'));
                         return;
                     }
                     const response = await fetch(`/api/health/checks/${this.selectedCheck.id}`, {

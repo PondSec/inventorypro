@@ -118,7 +118,7 @@
             const locationLabels = statsData.locations.map(item => item.name);
             const locationCounts = statsData.locations.map(item => item.device_count);
             if (statsData.unknownLocationCount > 0) {
-                locationLabels.push('Unbekannt');
+                locationLabels.push(uiText('Unbekannt'));
                 locationCounts.push(statsData.unknownLocationCount);
             }
             new Chart(document.getElementById('locationChart'), {
