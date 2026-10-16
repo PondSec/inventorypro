@@ -46,8 +46,9 @@ def main():
     parser.add_argument('--phase',default='before')
     parser.add_argument('--full',action='store_true')
     parser.add_argument('--count',type=int,default=1000)
+    parser.add_argument('--output-dir',type=Path,default=ROOT/'.qa-artifacts'/'visual-audit')
     args=parser.parse_args()
-    output=ROOT/'docs/visual-audit'/args.phase;output.mkdir(parents=True,exist_ok=True)
+    output=args.output_dir/args.phase;output.mkdir(parents=True,exist_ok=True)
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
     results=[]
     with visual_instance(args.count) as (application,base),sync_playwright() as p:
@@ -89,7 +90,7 @@ def main():
         matrix.append(f"| `{r['route']}` | `{r['endpoint']}` | {', '.join(r['templates']) or r['kind']} | registriert |")
     matrix+=['','## Browseransichten','','| Ansicht | Route | HTTP | Browserfehler | Screenshot |','|---|---|---|---|---|']
     for r in results:matrix.append(f"| {r['name']} ({r['width']}, {r['theme']}) | `{r['route']}` | {r['http']} | {len(r['errors'])} | [{r['screenshot']}]({args.phase}/{r['screenshot']}) |")
-    (ROOT/'docs/visual-audit/route-matrix.md').write_text('\n'.join(matrix)+'\n')
+    (output/'route-matrix.md').write_text('\n'.join(matrix)+'\n')
     print(f"Captured {len(results)} views; inventoried {len(routes)} GET routes and {len(templates)} templates.")
     for r in results:
         if r['errors']:print(r['name'],r['errors'])
