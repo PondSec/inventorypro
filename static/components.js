@@ -103,7 +103,7 @@ document.addEventListener('click', async event => {
     const selection = window.getSelection();
     const range = document.createRange();
     range.selectNodeContents(button.parentElement); selection.removeAllRanges(); selection.addRange(range);
-    if (feedback) feedback.textContent = 'Bitte mit Strg/Cmd+C kopieren.';
+    if (feedback) feedback.textContent = uiText('Bitte mit Strg/Cmd+C kopieren.');
   }
 });
 

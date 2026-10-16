@@ -182,11 +182,11 @@
   const validateCustomization = (data) => {
     const errors = [];
     if (!data || typeof data !== 'object') {
-      errors.push('Customization muss ein Objekt sein.');
+      errors.push(uiText('Customization muss ein Objekt sein.'));
       return { valid: false, errors };
     }
     if (typeof data.schemaVersion !== 'number') {
-      errors.push('schemaVersion fehlt oder ist ungültig.');
+      errors.push(uiText('schemaVersion fehlt oder ist ungültig.'));
     }
     if (!data.baseTokens || !data.componentOverrides || !data.layoutPrefs) {
       errors.push('Basisbereiche fehlen.');
