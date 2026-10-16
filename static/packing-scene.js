@@ -160,7 +160,7 @@ window.InventoryPackingScene = {
             const viewWidth = 1000;
             const viewHeight = 620;
             const padding = 72;
-            const yaw = (Number(this.binpackingRotationZ) || -38) * (Math.PI / 180);
+            const yaw = (Number.isFinite(Number(this.binpackingRotationZ)) ? Number(this.binpackingRotationZ) : -38) * (Math.PI / 180);
             const topView = this.binpackingPreviewCamera === 'top';
             const rawPoint = (point) => {
                 const x = Number(point.x) || 0;
@@ -259,7 +259,7 @@ window.InventoryPackingScene = {
             const width = projector.width;
             const depth = projector.depth;
             const height = projector.height;
-            const yaw = (Number(this.binpackingRotationZ) || -38) * (Math.PI / 180);
+            const yaw = (Number.isFinite(Number(this.binpackingRotationZ)) ? Number(this.binpackingRotationZ) : -38) * (Math.PI / 180);
             const visibleX = Math.cos(yaw) >= 0 ? width : 0;
             const visibleY = Math.sin(yaw) >= 0 ? depth : 0;
             const projectFace = (points) => points.map((point) => projector.project(point));

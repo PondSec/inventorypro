@@ -1,4 +1,8 @@
 window.storagePlanning = () => ({
+  ...window.InventoryPackingScene,
+  binpackingPreviewLayerIndex: 0, binpackingPreviewActiveStep: null,
+  binpackingPreviewCamera: 'iso', binpackingRotationX: 60, binpackingRotationZ: -38,
+  binpacking3dDragging: false, binpacking3dDragStart: null,
   step: 1, labels: ['Lagerplatz', 'Abmessungen', uiText('Gegenstände'), uiText('Optionen'), uiText('Packliste')],
   options: [], page: 1, pages: 1, query: '', loading: false, error: '', requestNumber: 0,
   containerId: null, containerName: '', container: { width: '', height: '', depth: '' },
@@ -107,6 +111,8 @@ window.storagePlanning = () => ({
     finally { this.busy = false; }
   },
   async openSaved(id) {
+    if (this.busy || this.changed && !confirm(uiText('Ungespeicherte Änderungen verwerfen?'))) return;
+    this.busy = true; this.error = '';
     try {
       const response = await fetch(`/api/planning/plans/${id}`);
       const data = await response.json();
@@ -123,8 +129,23 @@ window.storagePlanning = () => ({
       this.gap = data.payload.gap;
       this.allowRotation = data.payload.allow_rotation;
       this.step = 5;
+      this.layerIndex = 0;
       this.changed = false;
     } catch (error) { this.error = error.message; }
+    finally { this.busy = false; }
+  },
+  async deleteSaved(plan) {
+    if (this.busy || !confirm(uiText('Plan „{0}“ löschen? Die inventarisierten Assets bleiben erhalten.', [plan.name]))) return;
+    this.busy = true; this.error = '';
+    try {
+      const response = await fetch(`/api/planning/plans/${plan.id}`, {method: 'DELETE'});
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || uiText('Plan konnte nicht gelöscht werden.'));
+      if (this.savedId === plan.id) {this.savedId = null; this.changed = true;}
+      await this.loadSaved();
+      this.$nextTick(() => document.getElementById('saved-plans-heading')?.focus());
+    } catch (error) {this.error = error.message;}
+    finally {this.busy = false;}
   },
   previewStyle() {
     const ratio = (this.preview?.container.width || 1) / (this.preview?.container.depth || 1);
@@ -135,5 +156,12 @@ window.storagePlanning = () => ({
     const container = this.preview.container;
     return { left: `${placement.x / container.width * 100}%`, top: `${placement.y / container.depth * 100}%`, width: `${placement.width / container.width * 100}%`, height: `${placement.depth / container.depth * 100}%`, backgroundColor: placement.color };
   },
-  open3d() { if (this.savedId) { this.changed = false; location.assign(`/?view=assets&preview_plan=${this.savedId}`); } }
+  currentBinpackingPreview() { return this.preview; },
+  open3d() {
+    if (!this.preview) return;
+    this.binpackingPreviewActiveStep = this.preview.steps?.[0]?.step || null;
+    this.binpackingPreviewLayerIndex = 0; this.setBinpackingCamera('iso');
+    this.$refs.packingDialog.showModal();
+  },
+  close3d() { this.$refs.packingDialog.close(); }
 });
