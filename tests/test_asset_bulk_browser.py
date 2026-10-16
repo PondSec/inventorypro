@@ -59,8 +59,27 @@ def test_bulk_selection_works_without_export_right_and_mobile_dialog_fits(unifie
     expect(page.locator('[data-selection-export]')).to_have_count(0)
     page.get_by_role('button',name='Gemeinsam bearbeiten',exact=True).click()
     dialog=page.get_by_role('dialog',name='Gemeinsam bearbeiten',exact=True)
-    expect(dialog.get_by_text('1 Assets ausgewählt.',exact=True)).to_be_visible()
+    expect(dialog.get_by_text('1 Asset ausgewählt.',exact=True)).to_be_visible()
     for theme in ['light','dark']:
         page.evaluate('(t)=>InventoryTheme.set(t)',theme)
         assert dialog.evaluate('(d)=>d.scrollWidth<=d.clientWidth+1')
     page.keyboard.press('Escape');expect(dialog).not_to_be_visible();context.close()
+
+
+def test_bulk_english_labels_keep_asset_names_and_save_fields(unified_live,browser):
+    from test_interface_language_browser import set_language
+    context=browser.new_context();page=context.new_page();sign_in(page,unified_live)
+    identifier=new_asset(page,unified_live,'QA bulk Standort');set_language(page,'en')
+    page.goto(unified_live+'/inventory?q=QA%20bulk')
+    page.locator('[data-select-entry]').check()
+    page.get_by_role('button',name='Edit selected assets',exact=True).click()
+    dialog=page.get_by_role('dialog',name='Edit selected assets',exact=True)
+    expect(dialog.get_by_text('1 asset selected.',exact=True)).to_be_visible()
+    dialog.get_by_text('Selected assets',exact=True).click()
+    expect(dialog.get_by_text('QA bulk Standort',exact=True)).to_be_visible()
+    field=dialog.locator('[data-bulk-field="cost_center"]')
+    field.get_by_role('combobox').select_option(label='Set value');field.get_by_role('textbox').fill('Standort')
+    dialog.get_by_role('button',name='Save changes',exact=True).click();expect(dialog).not_to_be_visible()
+    result=page.request.get(unified_live+f'/api/inventory/assets/{identifier}').json()
+    assert result['name']=='QA bulk Standort' and result['cost_center']=='Standort'
+    context.close()

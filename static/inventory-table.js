@@ -17,7 +17,7 @@
   function update() {
     const selected = items.filter(item => item.checked);
     toolbar.hidden = !selected.length;
-    toolbar.querySelector('[data-selection-count]').textContent = uiText('{0} Einträge dieser Seite ausgewählt', [selected.length]);
+    toolbar.querySelector('[data-selection-count]').textContent = uiText(selected.length === 1 ? '{0} Eintrag dieser Seite ausgewählt' : '{0} Einträge dieser Seite ausgewählt', [selected.length]);
     all.checked = !!items.length && selected.length === items.length;
     all.indeterminate = selected.length > 0 && selected.length < items.length;
     for (const item of items) item.closest('tr').toggleAttribute('data-bulk-selected', item.checked);

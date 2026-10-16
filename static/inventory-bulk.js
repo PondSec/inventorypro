@@ -49,7 +49,7 @@
       const selected = [...document.querySelectorAll('[data-select-entry]:checked')].map(input => ({id: Number(input.dataset.selectEntry.replace(/^asset-/, ''))}));
       const data = await api('/api/inventory/assets/bulk/prepare', {items: selected});
       items = data.items;
-      dialog.querySelector('[data-bulk-summary]').textContent = t('{0} Assets ausgewählt.', [items.length]);
+      dialog.querySelector('[data-bulk-summary]').textContent = t(items.length === 1 ? '{0} Asset ausgewählt.' : '{0} Assets ausgewählt.', [items.length]);
       for (const item of items) {const li = document.createElement('li'); li.textContent = item.name; dialog.querySelector('[data-bulk-names]').append(li);}
       for (const [key, values] of [['category_id', data.options.categories], ['location_id', data.options.locations]]) {
         const select = dialog.querySelector(`[data-bulk-field="${key}"] [data-field-value]`);
