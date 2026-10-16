@@ -61,3 +61,14 @@ def test_pages_pagination_and_literal_search(unified_client):
     assert client.get('/wishes?tab=projects').status_code == 200
     parent = client.post('/api/wishes/projects', json={'name': 'Workshop'}).json
     assert client.get(f"/wishes/projects/{parent['id']}").status_code == 200
+
+
+def test_user_deletion_returns_a_clear_conflict_without_destroying_private_research(unified_client):
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db()
+        user=db.execute("INSERT INTO users(username,password_hash) VALUES ('wish-owner','synthetic')").lastrowid
+        db.execute("INSERT INTO wishes(owner_id,name) VALUES (?,'Private research')",(user,));db.commit()
+    response=unified_client.delete(f'/api/users/{user}')
+    assert response.status_code==409 and response.json['error']
+    with inventory_app.app.app_context():
+        assert inventory_app.get_db().execute('SELECT 1 FROM users WHERE id=?',(user,)).fetchone()

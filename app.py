@@ -14099,6 +14099,9 @@ def remove_user(user_id):
     current = db.execute('SELECT id FROM users WHERE username = ?', (session.get('username'),)).fetchone()
     if current and current['id'] == user_id:
         return jsonify({"error": "Eigenes Konto kann nicht gelöscht werden"}), 400
+    if any(db.execute('SELECT 1 FROM '+table+' WHERE '+column+'=? LIMIT 1', (user_id,)).fetchone()
+           for table, column in [('wishes','owner_id'),('wish_projects','owner_id'),('wish_acquisitions','actor_id')]):
+        return jsonify(error='Das Konto ist noch mit Wünschen oder Projektverläufen verknüpft. Bitte diese Pläne vor dem Löschen des Kontos bereinigen.'), 409
     result = db.execute('DELETE FROM users WHERE id = ?', (user_id,))
     if result.rowcount == 0:
         return jsonify({"error": "Benutzer nicht gefunden"}), 404
