@@ -19,7 +19,7 @@
     for(const key of keys){
       const config=fields[key] || {},label=document.createElement('label');label.textContent=key+(config.unit ? ` (${config.unit})` : '');
       const input=document.createElement(config.type==='select' ? 'select' : 'input');input.className='input';input.dataset.specName=key;
-      if(config.type==='select')for(const value of ['',...(config.options || [])]){const option=document.createElement('option');option.value=value;option.textContent=value || 'Nicht festgelegt';input.append(option);}
+      if(config.type==='select')for(const value of ['',...(config.options || [])]){const option=document.createElement('option');option.value=value;option.textContent=value || uiText('Nicht festgelegt');input.append(option);}
       else input.type=config.type==='checkbox' ? 'checkbox' : ['number','date'].includes(config.type) ? config.type : 'text';
       if(input.type==='checkbox')input.checked=Boolean(values[key]);else input.value=values[key] ?? '';
       if(input.type==='number')input.step='any';
@@ -30,7 +30,7 @@
   renderFields();form.elements.category_id.addEventListener('change',renderFields);
   opener?.addEventListener('click',()=>setEditing(true));
   document.querySelector('[data-cancel-asset-edit]')?.addEventListener('click',()=>{
-    if(saving || dirty && !confirm('Ungespeicherte Änderungen verwerfen?'))return;
+    if(saving || dirty && !confirm(uiText('Ungespeicherte Änderungen verwerfen?')))return;
     form.reset();specs.replaceChildren();Object.keys(values).forEach(key=>delete values[key]);Object.assign(values,initial.asset.specs);
     renderFields();dirty=false;error.hidden=true;
     form.querySelectorAll('[aria-invalid]').forEach(input=>input.removeAttribute('aria-invalid'));
@@ -47,11 +47,11 @@
       const payload={...Object.fromEntries(new FormData(form)),specs:values,expectedRevision:initial.asset.revision};
       for(const key of ['category_id','location_id','vendor_id','purchase_order_id'])payload[key]=payload[key] ? Number(payload[key]) : null;
       const response=await fetch('/api/inventory/assets'+(initial.asset.id ? '/'+initial.asset.id : ''),{method:initial.asset.id ? 'PUT' : 'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-      if(response.redirected)throw new Error('Ihre Sitzung ist abgelaufen. Bitte erneut anmelden; Ihre Eingaben bleiben erhalten.');
+      if(response.redirected)throw new Error(uiText('Ihre Sitzung ist abgelaufen. Bitte erneut anmelden; Ihre Eingaben bleiben erhalten.'));
       const result=await response.json();
       if(!response.ok){
         for(const key of Object.keys(result.fields || {})){const input=key.startsWith('specs.') ? [...specs.querySelectorAll('[data-spec-name]')].find(input=>input.dataset.specName===key.slice(6)) : form.elements.namedItem(key);input?.setAttribute('aria-invalid','true');}
-        throw new Error(result.error || 'Das Asset konnte nicht gespeichert werden.');
+        throw new Error(result.error || uiText('Das Asset konnte nicht gespeichert werden.'));
       }
       dirty=false;
       if(initial.inplace){const url=new URL(location.href);url.searchParams.delete('edit');history.replaceState(null,'',url);location.reload();}

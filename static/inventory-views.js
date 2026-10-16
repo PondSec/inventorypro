@@ -19,7 +19,7 @@
   try {
     const stored = JSON.parse(localStorage.getItem(key) || '[]');
     if (Array.isArray(stored)) views = stored.filter(view => view && typeof view.name === 'string' && typeof view.query === 'string').slice(0, 12);
-  } catch (_) { status.textContent = 'Gespeicherte Ansichten sind in diesem Browser nicht verfügbar.'; }
+  } catch (_) { status.textContent = uiText('Gespeicherte Ansichten sind in diesem Browser nicht verfügbar.'); }
   function persist(next, message) {
     try {
       localStorage.setItem(key, JSON.stringify(next));
@@ -27,7 +27,7 @@
       render();
       status.textContent = message;
       return true;
-    } catch (_) { status.textContent = 'Speichern nicht möglich. Prüfen Sie die Speichereinstellungen des Browsers.'; return false; }
+    } catch (_) { status.textContent = uiText('Speichern nicht möglich. Prüfen Sie die Speichereinstellungen des Browsers.'); return false; }
   }
   function render() {
     list.replaceChildren();
@@ -39,7 +39,7 @@
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'btn btn-secondary';
-      remove.textContent = 'Entfernen';
+      remove.textContent = uiText('Entfernen');
       remove.setAttribute('aria-label', `${view.name.slice(0, 60)} als gespeicherte Ansicht entfernen`);
       remove.addEventListener('click', () => {
         if (persist(views.filter(candidate => candidate !== view), 'Ansicht entfernt.')) form.elements.view_name.focus();
@@ -53,7 +53,7 @@
     const name = form.elements.view_name.value.trim();
     if (!name) { form.elements.view_name.focus(); return; }
     const existing = views.findIndex(view => view.name === name);
-    if (existing < 0 && views.length >= 12) { status.textContent = 'Maximal zwölf Ansichten. Entfernen Sie zuerst eine Ansicht.'; return; }
+    if (existing < 0 && views.length >= 12) { status.textContent = uiText('Maximal zwölf Ansichten. Entfernen Sie zuerst eine Ansicht.'); return; }
     const next = views.slice();
     const view = { name: name.slice(0, 60), query: query(location.search) };
     if (existing < 0) next.push(view); else next[existing] = view;

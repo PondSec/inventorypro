@@ -16,7 +16,7 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Speichern fehlgeschlagen.');
+        if (!response.ok) throw new Error(data.error || uiText('Speichern fehlgeschlagen.'));
         dirty = false;
         window.location.reload();
       } catch (error) {
