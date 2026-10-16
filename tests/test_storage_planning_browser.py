@@ -33,7 +33,11 @@ def test_unified_3d_stays_in_planning_camera_keyboard_and_delete_work(unified_li
     step.focus();page.keyboard.press('Enter');expect(step).to_have_attribute('aria-pressed','true')
     for theme in ['light','dark']:
         page.evaluate('(t)=>InventoryTheme.set(t)',theme)
-        page.screenshot(path=str(tmp_path/f'packing-{theme}.png'))
+        expect(dialog).to_have_css('background-color', 'rgb(17, 24, 32)' if theme == 'dark' else 'rgb(255, 255, 255)')
+        svg=dialog.locator('.binpacking-scene__svg')
+        assert svg.evaluate('(s)=>s.getBoundingClientRect().height>250')
+        assert svg.evaluate('(s)=>[...s.querySelectorAll("polygon[data-binpacking-step]")].every(p=>{const a=p.getBoundingClientRect(), b=s.getBoundingClientRect(); return a.top>=b.top-1 && a.bottom<=b.bottom+1;})')
+        page.screenshot(path=str(tmp_path/f'packing-{theme}.png'),animations='disabled')
         assert dialog.evaluate('(d)=>d.scrollWidth<=d.clientWidth+1')
     page.set_viewport_size({'width':390,'height':844})
     assert dialog.evaluate('(d)=>d.scrollWidth<=d.clientWidth+1')

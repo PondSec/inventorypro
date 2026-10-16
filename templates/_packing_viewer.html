@@ -8,7 +8,7 @@
     <div class="packing-viewer-content">
         <div class="packing-viewer-steps" role="group" aria-label="Einräumfolge"><template x-for="step in (preview?.steps || [])" :key="step.step"><button class="btn btn-secondary" type="button" @click="focusBinpackingStep(step)" :aria-pressed="isBinpackingStepActive(step)"><span x-text="step.step"></span><span x-text="step.asset_name"></span></button></template><p x-show="!preview?.placed_count">Keine Gegenstände eingeplant.</p></div>
         <div class="binpacking-scene" @pointerdown="startBinpacking3dDrag($event)" @pointermove="dragBinpacking3dView($event)" @pointerup="endBinpacking3dDrag($event)" @pointercancel="endBinpacking3dDrag($event)">
-            <svg class="binpacking-scene__svg" :viewBox="binpackingSceneViewBox()" role="img" aria-label="3D Regalvorschau" x-html="binpackingSceneMarkup(preview)" @click.stop="handleBinpackingSceneEvent($event)" @keydown.enter.prevent="handleBinpackingSceneEvent($event)" @keydown.space.prevent="handleBinpackingSceneEvent($event)"></svg>
+            <svg width="1000" height="620" class="binpacking-scene__svg" :viewBox="binpackingSceneViewBox()" role="img" aria-label="3D Regalvorschau" x-html="binpackingSceneMarkup(preview)" @click.stop="handleBinpackingSceneEvent($event)" @keydown.enter.prevent="handleBinpackingSceneEvent($event)" @keydown.space.prevent="handleBinpackingSceneEvent($event)"></svg>
         </div>
     </div>
     <p class="packing-viewer-current" role="status"><strong x-text="currentBinpackingActiveStep()?.asset_name"></strong><span x-text="currentBinpackingActiveStep()?.coordinate_label"></span></p>

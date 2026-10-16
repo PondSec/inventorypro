@@ -549,3 +549,7 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 .packing-viewer-current { display: flex; flex-wrap: wrap; gap: 12px; padding-block: 12px; }
 .saved-plan-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 @media (max-width: 640px) { .packing-viewer-content { grid-template-columns: minmax(0,1fr); } .packing-viewer-steps { max-height: 140px; } }
+.packing-viewer .binpacking-scene { background: var(--color-surface-muted); border-color: var(--color-border); }
+.packing-viewer .binpacking-scene__edges line { stroke: var(--color-text-muted); }
+.packing-viewer .binpacking-scene__face.is-storage { fill: color-mix(in srgb,var(--color-surface-muted) 85%,transparent); stroke: var(--color-border-strong); }
+.packing-viewer .binpacking-scene__label .binpacking-scene__name { fill: var(--color-text); stroke: var(--color-surface-muted); }
