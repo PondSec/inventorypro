@@ -26,6 +26,7 @@ COPY migrations ./migrations
 COPY static ./static
 COPY templates ./templates
 COPY LICENSE ./LICENSE
+COPY NOTICE ./NOTICE
 
 VOLUME ["/data"]
 

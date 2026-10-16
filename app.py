@@ -15642,6 +15642,18 @@ def mfa_enroll():
     return render_template("mfa_enroll.html", username=session.get("username"))
 
 
+@app.route('/about')
+@login_required
+def about_page():
+    access = get_user_access(get_db())
+    return render_template(
+        'about.html', username=session.get('username'),
+        permissions=sorted(access['permissions']), is_superuser=access['is_superuser'],
+        application_version=os.environ.get('APP_VERSION', 'dev'),
+        license_text=(Path(__file__).resolve().parent / 'LICENSE').read_text(encoding='utf-8'),
+    )
+
+
 @app.route('/account/security')
 @login_required
 def account_security_page():

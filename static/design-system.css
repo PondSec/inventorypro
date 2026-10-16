@@ -524,3 +524,5 @@ a.object-list-item:hover strong { color: var(--color-accent); }
 /* Semantic tab states take precedence over retained legacy dark utility classes. */
 .app-body [role=tablist] [role=tab] { background: transparent !important; color: var(--color-text-muted) !important; }
 .app-body [role=tablist] [role=tab][aria-selected=true] { color: var(--color-accent) !important; }
+
+.ui-license-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;padding:1rem;max-width:100%}
