@@ -79,14 +79,14 @@
                                     <tr class="hover:bg-slate-50">
                                         <td class="py-3 font-semibold text-slate-900" x-text="user.username"></td>
                                         <td class="py-3 text-slate-600">
-                                            <span x-text="user.email || 'Nicht gesetzt'"></span>
+                                            <span x-text="user.email || uiText('Nicht gesetzt')"></span>
                                         </td>
                                         <td class="py-3">
                                             <span class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold"
                                                   :class="user.otp_enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">
                                                 <i data-feather="check-circle" x-show="user.otp_enabled" class="w-3 h-3"></i>
                                                 <i data-feather="x-circle" x-show="!user.otp_enabled" class="w-3 h-3"></i>
-                                                <span x-text="user.otp_enabled ? 'Aktiv' : 'Inaktiv'"></span>
+                                                <span x-text="user.otp_enabled ? uiText('Aktiv') : uiText('Inaktiv')"></span>
                                             </span>
                                         </td>
                                         <td class="py-3">

@@ -40,7 +40,7 @@
                         <div class="inventory-section-head">
                             <div>
                                 <p class="inventory-kicker">Geräte</p>
-                                <h3 x-text="activeCategory ? getCategoryName(activeCategory) : (locationFilter ? `Geräte in ${locationFilterName()}` : 'Alle Geräte')"></h3>
+                                <h3 x-text="activeCategory ? getCategoryName(activeCategory) : (locationFilter ? uiText(&quot;Geräte in {0}&quot;, [locationFilterName()]) : uiText('Alle Geräte'))"></h3>
                                 <p>Suche zuerst. Filter und Sortierung bleiben erreichbar, ohne die Liste zu überladen.</p>
                             </div>
                             <div class="inventory-section-meta">
@@ -260,7 +260,7 @@
                                                 <span class="asset-row__count" x-text="asset.device_count || 0"></span>
                                                 <span>
                                                     <strong x-text="asset.name"></strong>
-                                                    <small x-text="asset.category_name || 'Ohne Kategorie'"></small>
+                                                    <small x-text="asset.category_name || uiText('Ohne Kategorie')"></small>
                                                 </span>
                                             </button>
                                             <p x-text="asset.notes || 'Keine Notizen hinterlegt.'"></p>
@@ -520,10 +520,10 @@
                                     <div class="flex items-start justify-between gap-2">
                                         <div>
                                             <p class="font-semibold text-slate-800" x-text="task.title"></p>
-                                            <p class="text-xs text-slate-400" x-text="task.due_date ? `Fällig: ${task.due_date}` : 'Kein Datum'"></p>
+                                            <p class="text-xs text-slate-400" x-text="task.due_date ? uiText(&quot;Fällig: {0}&quot;, [task.due_date]) : 'Kein Datum'"></p>
                                         </div>
                                         <button @click="updateMaintenanceStatus(task.id, task.status === 'open' ? 'done' : 'open')" class="text-xs font-semibold text-indigo-600">
-                                            <span x-text="task.status === 'open' ? 'Erledigt' : 'Offen'"></span>
+                                            <span x-text="task.status === 'open' ? uiText('Erledigt') : uiText('Offen')"></span>
                                         </button>
                                     </div>
                                     <div class="space-y-2" x-show="can('attachment.download') || can('attachment.upload')">
@@ -745,7 +745,7 @@
                             <template x-for="relation in selectedAsset?.relations || []" :key="relation.id">
                                 <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
                                     <p class="font-semibold text-slate-800" x-text="relation.direction === 'outgoing' ? relation.related_asset_name : relation.asset_name"></p>
-                                    <p class="text-xs text-slate-500" x-text="relation.relation_type_name || 'Beziehung'"></p>
+                                    <p class="text-xs text-slate-500" x-text="relation.relation_type_name || uiText('Beziehung')"></p>
                                 </div>
                             </template>
                             <p x-show="(selectedAsset?.relations || []).length === 0" class="text-xs text-slate-400">Keine Beziehungen hinterlegt.</p>
@@ -966,7 +966,7 @@
                                         <div class="min-w-0">
                                             <div class="flex flex-wrap items-center gap-2">
                                                 <p class="font-semibold text-slate-900" x-text="step.asset_name"></p>
-                                                <span class="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600" x-text="`Ebene ${step.layer_index}`"></span>
+                                                <span class="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600" x-text="uiText(&quot;Ebene {0}&quot;, [step.layer_index])"></span>
                                             </div>
                                             <p class="mt-2 text-sm text-slate-700" x-text="step.zone_label"></p>
                                             <p class="mt-1 text-xs text-slate-500" x-text="`${step.dimensions_label} · ${step.orientation_label}`"></p>
@@ -1552,7 +1552,7 @@
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Kategorie</p>
-                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingCategory ? 'Kategorie bearbeiten' : 'Neue Kategorie'"></h3>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingCategory ? uiText('Kategorie bearbeiten') : uiText('Neue Kategorie')"></h3>
                 </div>
                 <button @click="closeCategoryModal()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Kategorie-Modal schließen">
                     <i data-feather="x" class="w-5 h-5"></i>
@@ -1664,7 +1664,7 @@
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Asset-Kategorie</p>
-                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingAssetCategory ? 'Asset-Kategorie bearbeiten' : 'Neue Asset-Kategorie'"></h3>
+                    <h3 class="text-lg font-semibold text-slate-900" x-text="editingAssetCategory ? uiText('Asset-Kategorie bearbeiten') : 'Neue Asset-Kategorie'"></h3>
                 </div>
                 <button @click="closeAssetCategoryModal()" data-modal-close class="icon-button text-slate-400 hover:text-slate-600" aria-label="Asset-Kategorie-Modal schließen">
                     <i data-feather="x" class="w-5 h-5"></i>
@@ -1869,7 +1869,7 @@
             <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Gerät</p>
-                    <h3 id="device-form-title" class="text-lg font-semibold text-slate-900" x-text="editingDevice ? 'Gerät bearbeiten' : 'Neues Gerät'"></h3>
+                    <h3 id="device-form-title" class="text-lg font-semibold text-slate-900" x-text="editingDevice ? 'Gerät bearbeiten' : uiText('Neues Gerät')"></h3>
                 </div>
                 <button @click="closeDeviceModal()" data-modal-close data-testid="device-modal-close" class="icon-button text-slate-400 hover:text-slate-600" aria-label="Geräte-Modal schließen">
                     <i data-feather="x" class="w-5 h-5"></i>

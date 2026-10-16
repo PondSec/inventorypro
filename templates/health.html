@@ -177,7 +177,7 @@
                                         <td class="px-4 py-3 text-right">
                                             <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
                                                 <input type="checkbox" class="rounded" :checked="check.enabled" @change="toggleCheck(check)">
-                                                <span x-text="check.enabled ? 'Ein' : 'Aus'"></span>
+                                                <span x-text="check.enabled ? 'Ein' : uiText('Aus')"></span>
                                             </label>
                                         </td>
                                     </tr>

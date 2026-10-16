@@ -36,3 +36,18 @@ def test_english_modules_dynamic_feedback_and_business_values(unified_live,brows
     set_language(page,'de');page.reload();expect(page.get_by_role('button',name='Bearbeiten',exact=True)).to_be_visible()
     assert not errors,errors
     context.close()
+
+
+def test_language_selector_saves_reloads_and_changes_anonymous_login(live_inventory,browser):
+    context=browser.new_context(viewport={'width':1280,'height':900});page=context.new_page();sign_in(page,live_inventory)
+    page.goto(live_inventory+'/settings');page.get_by_role('tab',name='Allgemein',exact=True).click()
+    selector=page.locator('#interface-language');selector.select_option('en')
+    form=page.locator('form').filter(has=selector)
+    with page.expect_navigation():form.locator('button[type=submit]').click()
+    expect(page.locator('html')).to_have_attribute('lang','en');expect(page.locator('#interface-language')).to_have_value('en')
+    second=browser.new_context();login=second.new_page();login.goto(live_inventory+'/login')
+    expect(login.get_by_label('Username',exact=True)).to_be_visible();expect(login.get_by_role('button',name='Sign in',exact=True)).to_be_visible()
+    page.locator('#interface-language').select_option('de')
+    with page.expect_navigation():page.locator('form').filter(has=page.locator('#interface-language')).locator('button[type=submit]').click()
+    expect(page.locator('html')).to_have_attribute('lang','de')
+    second.close();context.close()
