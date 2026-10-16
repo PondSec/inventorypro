@@ -1,36 +1,104 @@
-Inventory Pro – Lizenzvereinbarung
-© 2025 Joshua Pond <joshua@pondsec.com>
+Inventory Pro Community License 1.0
+Copyright © 2025–2026 Joshua Pond <joshua@pondsec.com>
 
-Dieses Projekt steht unter der GNU Affero General Public License Version 3 (AGPL-3.0).
+DEUTSCH
 
-Sie dürfen diese Software ausführen, kopieren, verbreiten, untersuchen und verändern – solange alle Änderungen und Erweiterungen unter denselben Bedingungen (AGPL-3.0) veröffentlicht werden, insbesondere bei Nutzung über ein Netzwerk (z. B. Webanwendung).
+1. Geltungsbereich
+Diese Lizenz gilt für den von Joshua Pond unter dieser Lizenz veröffentlichten
+Quellcode von Inventory Pro und daraus abgeleitete Fassungen. Bestandteile mit
+eigenen Lizenzhinweisen unterliegen weiterhin ihren jeweiligen Lizenzen.
 
-Wenn Sie Inventory Pro kommerziell nutzen oder in geschlossenen Systemen einsetzen möchten, ohne Quellcode offenlegen zu müssen, wenden Sie sich bitte an den Urheber für eine **kommerzielle Lizenz**.
+2. Erlaubte Nutzung
+Sie dürfen die Software kostenlos ausführen, untersuchen, kopieren, verändern
+und unentgeltlich weitergeben. Die interne Nutzung in Unternehmen und anderen
+kommerziellen Organisationen ist ausdrücklich erlaubt. Interne Änderungen
+müssen nicht veröffentlicht werden.
 
----
+3. Verkaufsverbot
+Ohne gesonderte schriftliche Erlaubnis von Joshua Pond dürfen Sie weder die
+Software noch daraus abgeleitete Fassungen verkaufen, kostenpflichtig
+lizenzieren, gegen Entgelt weitergeben oder Dritten als kostenpflichtigen
+gehosteten Dienst, SaaS-Angebot oder verwaltete Softwareinstanz bereitstellen.
+Das gilt auch bei Bündelung mit anderen Produkten oder Dienstleistungen, wenn
+die Vergütung den Zugang zu Inventory Pro oder einer abgeleiteten Fassung
+voraussetzt oder abdeckt.
 
-## Dual-Lizenz-Modell
+Die kostenpflichtige Bereitstellung allgemeiner Rechen-, Speicher- oder
+Netzinfrastruktur sowie unabhängige Schulungs-, Installations- und
+Supportleistungen ist erlaubt, sofern dafür keine Rechte an der Software und
+kein kostenpflichtiger Softwarezugang verkauft werden. Die kostenlose interne
+Nutzung nach Ziffer 2 bleibt hiervon unberührt.
 
-Inventory Pro wird unter einem dualen Lizenzmodell angeboten:
+4. Namensnennung und Weitergabe
+Bei jeder Weitergabe müssen diese Lizenz, bestehende Urheberrechtshinweise,
+der Name Joshua Pond und ein Verweis auf das Originalprojekt
+https://gitlab.pondsec.com/PondSec/inventorypro erhalten bleiben. Geänderte
+Fassungen müssen als solche mit Änderungsdatum gekennzeichnet werden. Auch
+in geänderten Anwendungen muss der ursprüngliche Urheber in einer erreichbaren
+Info- oder Lizenzansicht genannt werden. Eine Unterstützung oder Freigabe Ihrer
+Fassung durch den ursprünglichen Urheber darf nicht vorgetäuscht werden.
 
-1. **Community Edition (Open Source)**  
-   - Lizenz: GNU AGPLv3  
-   - Frei für nicht-kommerzielle und öffentliche Verwendung  
-   - Änderungen müssen öffentlich unter AGPLv3 geteilt werden
+Eine Weitergabe darf diese Nutzungsrechte nicht einschränken und das
+Verkaufsverbot nicht umgehen. Markenrechte werden nicht eingeräumt.
 
-2. **Enterprise Edition (kommerziell)** *(geplant)*  
-   - Zusätzliche Funktionen und Support  
-   - Proprietäre Lizenz mit individueller Vereinbarung  
-   - Kein Offenlegen des Quellcodes erforderlich  
-   - Lizenzanfragen bitte an: joshua@pondsec.com
+5. Gewährleistung und Haftung
+Die Software wird ohne zugesicherte Eigenschaften bereitgestellt. Soweit
+rechtlich zulässig, werden Gewährleistung und Haftung für Schäden aus Nutzung,
+Nichtverfügbarkeit oder Datenverlust ausgeschlossen. Zwingende gesetzliche
+Haftung, insbesondere für Vorsatz, grobe Fahrlässigkeit oder Schäden an Leben,
+Körper und Gesundheit, bleibt unberührt.
 
----
+6. Frühere Fassungen
+Rechte an früheren, unter einer anderen Lizenz veröffentlichten Fassungen
+werden durch diese Lizenz nicht rückwirkend geändert. Für insbesondere bereits
+unter AGPL-3.0 veröffentlichte Fassungen gelten deren damalige Lizenzbedingungen.
+Diese Lizenz ist wegen des Verkaufsverbots keine OSI-konforme Open-Source-Lizenz.
 
-## Rechtlicher Hinweis
+ENGLISH
 
-Dies ist eine freie Software: Sie können sie unter den Bedingungen der GNU Affero General Public License, Version 3, wie von der Free Software Foundation veröffentlicht, weiterverbreiten und/oder modifizieren.
+1. Scope
+This license applies to the Inventory Pro source code released by Joshua Pond
+under this license and to works derived from that code. Components carrying
+their own license notices remain subject to their respective licenses.
 
-Eine Kopie der vollständigen Lizenz finden Sie unter:
-https://www.gnu.org/licenses/agpl-3.0.de.html
+2. Permitted use
+You may run, inspect, copy, modify and distribute the software free of charge.
+Internal use in businesses and other commercial organizations is expressly
+permitted. Internal modifications do not have to be published.
 
-Durch die Nutzung dieser Software stimmen Sie den Bedingungen dieser Lizenz zu.
+3. No sale
+Without separate written permission from Joshua Pond, you may not sell the
+software or derived versions, license them for a fee, distribute them for
+payment, or offer them to third parties as a paid hosted service, SaaS product
+or managed software instance. This restriction also applies to bundles with
+other products or services where payment requires or covers access to
+Inventory Pro or a derived version.
+
+Charging for general-purpose computing, storage or network infrastructure and
+for independent training, installation or support services is permitted,
+provided that no software rights or paid software access are sold. The free
+internal use permitted under section 2 is unaffected.
+
+4. Attribution and distribution
+Every distribution must retain this license, existing copyright notices,
+Joshua Pond's name and a reference to the original project at
+https://gitlab.pondsec.com/PondSec/inventorypro. Modified versions must identify
+themselves as modified and state the date of modification. Modified
+applications must also identify the original author in an accessible About
+or License view. You may not falsely imply that the original author endorses
+or has approved your version.
+
+Distribution must not restrict these permissions or circumvent the prohibition
+on sale. No trademark rights are granted.
+
+5. Warranty and liability
+The software is provided without guaranteed properties. To the extent permitted
+by law, warranties and liability for damage arising from use, unavailability
+or loss of data are excluded. Mandatory legal liability, including liability
+for intent, gross negligence, or injury to life, body or health, is unaffected.
+
+6. Earlier versions
+This license does not retroactively change rights granted for versions released
+under a different license. In particular, versions already published under
+AGPL-3.0 remain subject to their original license terms. Because it restricts
+sale, this license is not an OSI-approved open-source license.

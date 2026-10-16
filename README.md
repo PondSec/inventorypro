@@ -98,7 +98,7 @@ Ein ausdrücklich versionierter Releaseauftrag auf `dev` startet die vorhandene 
 
 ## Lizenz und Kontakt
 
-Inventory Pro steht unter der [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.de.html). Für eine kommerzielle Nutzung ohne Offenlegungspflicht kann eine separate Lizenz vereinbart werden.
+Inventory Pro ist unter der [Inventory Pro Community License 1.0](LICENSE) quelloffen verfügbar. Nutzung und Änderung sind kostenlos, auch intern in Unternehmen. Namensnennung bleibt Pflicht. Verkauf und kostenpflichtige SaaS-Angebote benötigen eine gesonderte Erlaubnis. Bereits unter AGPL-3.0 veröffentlichte Fassungen behalten ihre damaligen Lizenzbedingungen.
 
 PondSec · [joshua@pondsec.com](mailto:joshua@pondsec.com)
 Stand: Oktober 2026
