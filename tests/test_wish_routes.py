@@ -72,3 +72,15 @@ def test_user_deletion_returns_a_clear_conflict_without_destroying_private_resea
     assert response.status_code==409 and response.json['error']
     with inventory_app.app.app_context():
         assert inventory_app.get_db().execute('SELECT 1 FROM users WHERE id=?',(user,)).fetchone()
+
+
+def test_large_planning_list_stays_paginated_and_never_creates_inventory(unified_client):
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();owner=db.execute("SELECT id FROM users WHERE username='admin'").fetchone()[0]
+        db.executemany('INSERT INTO wishes(owner_id,name) VALUES (?,?)',[(owner,f'Tool {index:04}') for index in range(1000)])
+        db.commit()
+    response=unified_client.get('/wishes?q=Tool%2009&per_page=20&page=5')
+    assert response.status_code==200
+    assert response.data.count(b'data-edit-wish=')==20
+    assert '81–100 von 100'.encode() in response.data
+    assert unified_client.get('/api/inventory/assets').json['total']==40

@@ -24,3 +24,17 @@ def test_plans_do_not_create_inventory_and_deleted_assets_leave_research_intact(
     assert not db.execute('PRAGMA foreign_key_check').fetchall()
     execute_migration_script(db, migration.with_suffix('.down.sql').read_text())
     assert db.execute('SELECT count(*) FROM assets').fetchone()[0] == 0
+
+
+def test_feature_migrations_can_be_removed_without_losing_owned_assets(isolated_inventory):
+    import app as inventory_app
+    from inventorypro.migrations import rollback_migrations
+    with isolated_inventory.app_context():
+        db=inventory_app.get_db()
+        db.execute("INSERT INTO assets(name,specs) VALUES ('Retain owned equipment','{}')")
+        db.commit()
+        result=rollback_migrations(db,Path(__file__).parents[1]/'migrations',steps=2)
+        assert result==['018_wish_lookup_indexes','017_wishes_and_projects']
+        assert db.execute("SELECT 1 FROM assets WHERE name='Retain owned equipment'").fetchone()
+        assert not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wishes'").fetchone()
+        assert not db.execute('PRAGMA foreign_key_check').fetchall()
