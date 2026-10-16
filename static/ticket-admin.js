@@ -52,7 +52,7 @@ document.addEventListener('alpine:init', () => {
         async api(url, options = {}) {
             const response = await fetch(url, options);
             const payload = await response.json().catch(() => null);
-            if (!response.ok) throw new Error(payload?.error || `Anfrage fehlgeschlagen (${response.status})`);
+            if (!response.ok) throw new Error(payload?.error || uiText("Anfrage fehlgeschlagen ({0})", [response.status]));
             return payload;
         },
 
@@ -145,7 +145,7 @@ document.addEventListener('alpine:init', () => {
                 });
                 this.alertModalOpen = false;
                 await this.loadAlerts();
-                this.showToast('Alert erstellt.');
+                this.showToast(uiText('Alert erstellt.'));
             } catch (error) {
                 this.showToast(error.message, 'error');
             }
@@ -212,7 +212,7 @@ document.addEventListener('alpine:init', () => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ recipients })
                 });
-                this.showToast('Test-E-Mail versendet.');
+                this.showToast(uiText('Test-E-Mail versendet.'));
             } catch (error) {
                 this.showToast(error.message, 'error');
             }

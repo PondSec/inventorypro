@@ -438,7 +438,7 @@ document.addEventListener('alpine:init', () => {
                 const data = await response.json();
                 this.otpEnabled = data.enabled;
             } catch (error) {
-                console.error('Fehler beim Abrufen des 2FA-Status:', error);
+                console.error(uiText('Fehler beim Abrufen des 2FA-Status:'), error);
             }
         },
 
@@ -1607,7 +1607,7 @@ document.addEventListener('alpine:init', () => {
                     alert(error.error || uiText('Tag konnte nicht gespeichert werden'));
                 }
             } catch (error) {
-                console.error('Error adding tag:', error);
+                console.error(uiText('Error adding tag:'), error);
             }
         },
 
@@ -1622,7 +1622,7 @@ document.addEventListener('alpine:init', () => {
                     await this.loadActivityFeed();
                 }
             } catch (error) {
-                console.error('Error removing tag:', error);
+                console.error(uiText('Error removing tag:'), error);
             }
         },
 
@@ -1739,7 +1739,7 @@ document.addEventListener('alpine:init', () => {
                 await this.loadMaintenanceAttachments();
             } else {
                 const error = await response.json();
-                this.maintenanceAttachmentErrors[taskId] = error.error || 'Upload fehlgeschlagen';
+                this.maintenanceAttachmentErrors[taskId] = error.error || uiText('Upload fehlgeschlagen');
             }
             event.target.value = '';
         },
@@ -1895,7 +1895,7 @@ document.addEventListener('alpine:init', () => {
                 await this.loadAssetAttachments(this.selectedAsset.id);
             } else {
                 const error = await response.json();
-                this.assetAttachmentError = error.error || 'Upload fehlgeschlagen';
+                this.assetAttachmentError = error.error || uiText('Upload fehlgeschlagen');
             }
             event.target.value = '';
         },
@@ -2134,7 +2134,7 @@ document.addEventListener('alpine:init', () => {
                 this.closeAssetModal();
                 await this.loadActivityFeed();
             } catch (error) {
-                console.error('Error saving asset:', error);
+                console.error(uiText('Error saving asset:'), error);
                 this.assetFormMessage = error.message || uiText('Asset konnte nicht gespeichert werden');
             } finally { this.assetSaving = false; }
         },
@@ -2979,7 +2979,7 @@ document.addEventListener('alpine:init', () => {
 
         binpackingLayerLabel(layer, index) {
             if (!layer) {
-                return `Ebene ${index + 1}`;
+                return uiText("Ebene {0}", [index + 1]);
             }
             const start = this.formatDimensionValue(layer.z);
             const height = this.formatDimensionValue(layer.height);

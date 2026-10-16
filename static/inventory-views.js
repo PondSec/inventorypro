@@ -42,7 +42,7 @@
       remove.textContent = uiText('Entfernen');
       remove.setAttribute('aria-label', `${view.name.slice(0, 60)} als gespeicherte Ansicht entfernen`);
       remove.addEventListener('click', () => {
-        if (persist(views.filter(candidate => candidate !== view), 'Ansicht entfernt.')) form.elements.view_name.focus();
+        if (persist(views.filter(candidate => candidate !== view), uiText('Ansicht entfernt.'))) form.elements.view_name.focus();
       });
       item.append(link, remove);
       list.append(item);
@@ -57,7 +57,7 @@
     const next = views.slice();
     const view = { name: name.slice(0, 60), query: query(location.search) };
     if (existing < 0) next.push(view); else next[existing] = view;
-    if (persist(next, existing < 0 ? 'Ansicht gespeichert.' : 'Ansicht aktualisiert.')) form.reset();
+    if (persist(next, existing < 0 ? uiText('Ansicht gespeichert.') : uiText('Ansicht aktualisiert.'))) form.reset();
   });
   render();
 })();

@@ -97,13 +97,13 @@
   const files=detail.querySelector('[data-asset-files]');
   if(files)api(`/attachments?entity_type=asset&entity_id=${id}`).then(items=>{
     files.replaceChildren();for(const item of items){if(!/^\/attachments\/[1-9][0-9]*\/download$/.test(item.download_url || ''))continue;const li=document.createElement('li'),link=document.createElement('a');link.textContent=item.original_filename;link.href=item.download_url;li.append(link);
-      if(files.dataset.canDelete==='true'){const remove=document.createElement('button');remove.type='button';remove.className='btn btn-secondary';remove.textContent=uiText('Entfernen');remove.setAttribute('aria-label',item.original_filename+' entfernen');remove.addEventListener('click',async()=>{if(!otherChanges(null)||!confirm('Datei entfernen?'))return;remove.disabled=true;try{await api('/attachments/'+item.id+'/delete','POST');dirtyForms.clear();li.remove();if(!files.children.length)files.textContent=uiText('Keine Dateien hochgeladen.');}catch(problem){showError(problem);remove.disabled=false;}});li.append(remove);}
+      if(files.dataset.canDelete==='true'){const remove=document.createElement('button');remove.type='button';remove.className='btn btn-secondary';remove.textContent=uiText('Entfernen');remove.setAttribute('aria-label',item.original_filename+' entfernen');remove.addEventListener('click',async()=>{if(!otherChanges(null)||!confirm(uiText('Datei entfernen?')))return;remove.disabled=true;try{await api('/attachments/'+item.id+'/delete','POST');dirtyForms.clear();li.remove();if(!files.children.length)files.textContent=uiText('Keine Dateien hochgeladen.');}catch(problem){showError(problem);remove.disabled=false;}});li.append(remove);}
       files.append(li);}if(!items.length)files.textContent=uiText('Keine Dateien hochgeladen.');
   }).catch(showError);
   const softwareSelect=detail.querySelector('[data-software-options]');
   if(softwareSelect)api('/api/software').then(items=>{for(const item of items)softwareSelect.append(new Option(item.name+(item.version ? ' · '+item.version : ''),String(item.id)));}).catch(showError);
   detail.querySelectorAll('[data-remove-software]').forEach(button=>button.addEventListener('click',async()=>{
-    if(!otherChanges(null) || !confirm('Softwarezuordnung entfernen?'))return;button.disabled=true;
+    if(!otherChanges(null) || !confirm(uiText('Softwarezuordnung entfernen?')))return;button.disabled=true;
     try{await api('/api/software-installations/'+button.dataset.removeSoftware,'DELETE');dirtyForms.clear();location.reload();}catch(problem){showError(problem);button.disabled=false;}
   }));
   detail.querySelectorAll('[data-maintenance-key]').forEach(button=>button.addEventListener('click',async()=>{
@@ -111,7 +111,7 @@
     button.disabled=true;try{await api(`/api/inventory/assets/${id}/maintenance/${button.dataset.maintenanceKey}`,'PUT',{status:button.dataset.maintenanceStatus});dirtyForms.clear();location.reload();}catch(problem){showError(problem);button.disabled=false;}
   }));
   detail.querySelectorAll('[data-remove-relation]').forEach(button=>button.addEventListener('click',async()=>{
-    if(!otherChanges(null)||!confirm('Beziehung entfernen? Beide Assets bleiben erhalten.'))return;
+    if(!otherChanges(null)||!confirm(uiText('Beziehung entfernen? Beide Assets bleiben erhalten.')))return;
     button.disabled=true;try{await api(`/api/inventory/assets/${id}/relations/${button.dataset.removeRelation}`,'DELETE',{expectedRevision:revision});dirtyForms.clear();location.reload();}catch(problem){showError(problem);button.disabled=false;}
   }));
 

@@ -654,7 +654,7 @@
                         body: JSON.stringify({ email: this.emailValue })
                     });
                     if (response.ok) {
-                        this.emailSuccess = 'E-Mail gespeichert.';
+                        this.emailSuccess = uiText('E-Mail gespeichert.');
                         await this.loadUsers();
                         this.emailModalOpen = false;
                     } else {
@@ -714,10 +714,10 @@
                     if (response.ok) {
                         const data = await response.json();
                         this.adSettings = { ...this.adSettings, ...data, bind_password: '' };
-                        this.adMessage = 'Active Directory verbunden.';
+                        this.adMessage = uiText('Active Directory verbunden.');
                     } else {
                         const error = await response.json();
-                        this.adError = error.error || 'Verbindung fehlgeschlagen.';
+                        this.adError = error.error || uiText('Verbindung fehlgeschlagen.');
                     }
                     this.$nextTick(() => feather.replace());
                 },
@@ -735,10 +735,10 @@
                         const data = await response.json();
                         this.adSettings = { ...this.adSettings, ...data, bind_password: '' };
                         this.adQuick.password = '';
-                        this.adMessage = 'Active Directory verbunden.';
+                        this.adMessage = uiText('Active Directory verbunden.');
                     } else {
                         const error = await response.json();
-                        this.adError = error.error || 'Verbindung fehlgeschlagen.';
+                        this.adError = error.error || uiText('Verbindung fehlgeschlagen.');
                     }
                     this.$nextTick(() => feather.replace());
                 },
@@ -750,10 +750,10 @@
                     if (response.ok) {
                         const data = await response.json();
                         this.adSettings = { ...this.adSettings, ...data, bind_password: '' };
-                        this.adMessage = 'Active Directory getrennt.';
+                        this.adMessage = uiText('Active Directory getrennt.');
                     } else {
                         const error = await response.json();
-                        this.adError = error.error || 'Trennen fehlgeschlagen.';
+                        this.adError = error.error || uiText('Trennen fehlgeschlagen.');
                     }
                     this.$nextTick(() => feather.replace());
                 }

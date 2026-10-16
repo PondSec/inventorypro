@@ -55,7 +55,7 @@
     if (error) {
       const retry = document.createElement('button');
       retry.type = 'button'; retry.className = 'btn btn-secondary';
-      retry.dataset.panelRetry = ''; retry.textContent = 'Erneut laden'; content.append(retry);
+      retry.dataset.panelRetry = ''; retry.textContent = uiText('Erneut laden'); content.append(retry);
       const detail = document.createElement('a');
       detail.href = trigger.href; detail.className = 'btn btn-secondary';
       detail.textContent = uiText('Detailseite'); content.append(detail);

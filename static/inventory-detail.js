@@ -9,7 +9,7 @@
       if (button.disabled) return;
       const status = form.querySelector('[data-form-status]');
       button.disabled = true;
-      status.textContent = 'Wird gespeichert …';
+      status.textContent = uiText('Wird gespeichert …');
       try {
         const payload = Object.fromEntries(new FormData(form));
         const response = await fetch(form.dataset.inventoryAction, {
@@ -21,7 +21,7 @@
         window.location.reload();
       } catch (error) {
         status.setAttribute('role', 'alert');
-        status.textContent = error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';
+        status.textContent = error.message || uiText('Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.');
         button.disabled = false;
       }
     });

@@ -75,7 +75,7 @@ document.addEventListener('alpine:init', () => {
                 this.listPages = data.pages;
                 this.listTotal = data.total;
             } catch (error) {
-                if (requestId === this.listRequestId) this.listError = error.message || 'Verbindung fehlgeschlagen.';
+                if (requestId === this.listRequestId) this.listError = error.message || uiText('Verbindung fehlgeschlagen.');
             } finally {
                 if (requestId === this.listRequestId) this.listLoading = false;
             }
@@ -89,7 +89,7 @@ document.addEventListener('alpine:init', () => {
                 this.selectedEntry=await response.json();
                 if (push) {const url=new URL(location.href);url.searchParams.set('entry_id',entry.id);history.pushState({},'',url);}
                 this.$nextTick(()=>feather.replace());
-            } catch(error) {this.listError=error.message || 'Verbindung fehlgeschlagen.';}
+            } catch(error) {this.listError=error.message || uiText('Verbindung fehlgeschlagen.');}
         },
 
         clearSelectedEntry() {
@@ -129,7 +129,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         closeEntryModal() {
-            if(this.saving || JSON.stringify(this.entryForm)!==this.entrySnapshot && !confirm('Ungespeicherte Eingaben verwerfen?'))return;
+            if(this.saving || JSON.stringify(this.entryForm)!==this.entrySnapshot && !confirm(uiText('Ungespeicherte Eingaben verwerfen?')))return;
             this.entryModalOpen = false;
         },
 
@@ -156,7 +156,7 @@ document.addEventListener('alpine:init', () => {
                 await this.loadEntries();
                 if(this.entryForm.id)await this.selectEntry({id:this.entryForm.id},false);
                 this.entryModalOpen=false;
-            } catch(error) {this.entryError=error.name==='AbortError' ? uiText('Zeitüberschreitung. Prüfen Sie vor erneutem Speichern, ob der Artikel bereits gespeichert wurde.') : error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';}
+            } catch(error) {this.entryError=error.name==='AbortError' ? uiText('Zeitüberschreitung. Prüfen Sie vor erneutem Speichern, ob der Artikel bereits gespeichert wurde.') : error.message || uiText('Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.');}
             finally {this.saving=false;}
         },
 
@@ -191,7 +191,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         closeCategoryModal() {
-            if(this.saving || JSON.stringify(this.categoryForm)!==this.categorySnapshot && !confirm('Ungespeicherte Eingaben verwerfen?'))return;
+            if(this.saving || JSON.stringify(this.categoryForm)!==this.categorySnapshot && !confirm(uiText('Ungespeicherte Eingaben verwerfen?')))return;
             this.categoryModalOpen = false;
         },
 
@@ -206,7 +206,7 @@ document.addEventListener('alpine:init', () => {
                 await this.loadCategories();await this.loadEntries();
                 if(this.selectedEntry)await this.selectEntry({id:this.selectedEntry.id},false);
                 this.categoryModalOpen=false;
-            } catch(error) {this.categoryError=error.name==='AbortError' ? uiText('Zeitüberschreitung. Bitte prüfen Sie, ob die Kategorie bereits gespeichert wurde.') : error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';}
+            } catch(error) {this.categoryError=error.name==='AbortError' ? uiText('Zeitüberschreitung. Bitte prüfen Sie, ob die Kategorie bereits gespeichert wurde.') : error.message || uiText('Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.');}
             finally {this.saving=false;}
         }
     }));

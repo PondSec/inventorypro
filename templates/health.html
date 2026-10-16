@@ -363,9 +363,9 @@
                     const cpu = this.history.metrics.cpu_load;
                     const memory = this.history.metrics.memory;
                     const disk = this.history.metrics.disk;
-                    summaries.push(this.buildMetricSummary('cpu', 'CPU Load', cpu));
+                    summaries.push(this.buildMetricSummary('cpu', uiText('CPU Load'), cpu));
                     summaries.push(this.buildMetricSummary('memory', 'Memory %', memory));
-                    summaries.push(this.buildMetricSummary('disk', 'Disk %', disk));
+                    summaries.push(this.buildMetricSummary('disk', uiText('Disk %'), disk));
                     return summaries;
                 },
                 buildMetricSummary(key, label, series) {

@@ -109,7 +109,7 @@ window.logout = async function logout() {
     }
 
     const data = await response.json().catch(() => ({}));
-    window.alert('Logout fehlgeschlagen: ' + (data.error || 'Unbekannter Fehler'));
+    window.alert('Logout fehlgeschlagen: ' + (data.error || uiText('Unbekannter Fehler')));
   } catch (error) {
     window.alert('Netzwerkfehler: ' + error.message);
   }

@@ -59,14 +59,14 @@ document.addEventListener('alpine:init', () => {
         },
         bulkDialog: { open: false, field: '', value: '', title: '' },
         queues: [
-            { key: 'my-work', label: 'Meine Arbeit', icon: 'briefcase' },
+            { key: 'my-work', label: uiText('Meine Arbeit'), icon: 'briefcase' },
             { key: 'unassigned', label: uiText('Nicht zugewiesen'), icon: 'user-x' },
-            { key: 'mine', label: 'Meine offenen Tickets', icon: 'user-check' },
+            { key: 'mine', label: uiText('Meine offenen Tickets'), icon: 'user-check' },
             { key: 'all-open', label: uiText('Alle offenen Tickets'), icon: 'inbox' },
             { key: 'waiting', label: uiText('Wartend'), icon: 'pause-circle' },
             { key: 'sla-risk', label: uiText('SLA gefährdet'), icon: 'clock' },
             { key: 'overdue', label: uiText('Überfällig'), icon: 'alert-triangle' },
-            { key: 'escalated', label: 'Eskaliert', icon: 'arrow-up-circle' },
+            { key: 'escalated', label: uiText('Eskaliert'), icon: 'arrow-up-circle' },
             { key: 'due-today', label: uiText('Heute fällig'), icon: 'calendar' },
             { key: 'recently-closed', label: uiText('Kürzlich geschlossen'), icon: 'check-circle' }
         ],
@@ -97,7 +97,7 @@ document.addEventListener('alpine:init', () => {
             { key: 'due_date', label: uiText('Fällig') }
         ],
         detailTabs: [
-            { key: 'conversation', label: 'Konversation' },
+            { key: 'conversation', label: uiText('Konversation') },
             { key: 'knowledge', label: uiText('Wissen & ähnliche Fälle') },
             { key: 'activity', label: uiText('Aktivitäten') },
             { key: 'attachments', label: uiText('Anhänge') }
@@ -106,7 +106,7 @@ document.addEventListener('alpine:init', () => {
         async init() {
             this.restoreStateFromUrl();
             window.addEventListener('popstate', () => this.handleHistory());
-            window.addEventListener('online', () => this.showToast('Verbindung wiederhergestellt.'));
+            window.addEventListener('online', () => this.showToast(uiText('Verbindung wiederhergestellt.')));
             window.addEventListener('offline', () => this.showToast(uiText('Du bist offline. Änderungen können nicht gespeichert werden.'), 'error'));
             await Promise.all([this.loadCategories(), this.loadQueueCounts(), this.loadSavedViews()]);
             await this.loadTickets();
@@ -222,7 +222,7 @@ document.addEventListener('alpine:init', () => {
             const contentType = response.headers.get('content-type') || '';
             const payload = contentType.includes('application/json') ? await response.json() : null;
             if (!response.ok) {
-                const message = payload?.error || `Anfrage fehlgeschlagen (${response.status})`;
+                const message = payload?.error || uiText("Anfrage fehlgeschlagen ({0})", [response.status]);
                 const apiError = new Error(message);
                 apiError.status = response.status;
                 apiError.code = payload?.code;
@@ -471,7 +471,7 @@ document.addEventListener('alpine:init', () => {
                 this.closeSaveView();
                 this.newView = { name: '', is_favorite: false, is_default: false };
                 await this.loadSavedViews();
-                this.showToast('Ansicht gespeichert.');
+                this.showToast(uiText('Ansicht gespeichert.'));
             } catch (error) {
                 this.showToast(error.message, 'error');
             }
@@ -556,7 +556,7 @@ document.addEventListener('alpine:init', () => {
                 const activeDetailTab = this.detailTab;
                 this.selectedTicket = await this.api(`/api/tickets/${ticket.id}`);
                 this.detailTab = activeDetailTab;
-                this.showToast('Ticket aktualisiert.');
+                this.showToast(uiText('Ticket aktualisiert.'));
                 await Promise.all([this.loadTickets(), this.loadQueueCounts()]);
             } catch (error) {
                 this.showToast(error.message, 'error');
@@ -583,7 +583,7 @@ document.addEventListener('alpine:init', () => {
                 const ticketId = this.selectedTicket.id;
                 this.newComment = '';
                 await this.loadTicket(ticketId, false);
-                this.showToast(this.internalComment ? uiText('Interne Notiz hinzugefügt.') : 'Antwort gesendet.');
+                this.showToast(this.internalComment ? uiText('Interne Notiz hinzugefügt.') : uiText('Antwort gesendet.'));
             } catch (error) {
                 this.showToast(error.message, 'error');
             } finally {
@@ -635,7 +635,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         closeCreateTicket() {
-            if ((this.newTicket.title || this.newTicket.description) && !window.confirm('Entwurf verwerfen?')) return;
+            if ((this.newTicket.title || this.newTicket.description) && !window.confirm(uiText('Entwurf verwerfen?'))) return;
             this.createOpen = false;
             this.restoreFocus();
         },
@@ -705,7 +705,7 @@ document.addEventListener('alpine:init', () => {
                 } else if (result.change_ticket_id) {
                     this.showToast(uiText("Review #{0} mit Change #{1} verknüpft.", [ticketId, result.change_ticket_id]));
                 } else {
-                    this.showToast(`Ticket #${ticketId} erstellt.`);
+                    this.showToast(uiText("Ticket #{0} erstellt.", [ticketId]));
                 }
             } catch (error) {
                 this.createError = error.message;
@@ -775,7 +775,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         openBulk(field) {
-            const labels = { assignee: 'Tickets zuweisen', status: 'Status ändern', priority: uiText('Priorität ändern') };
+            const labels = { assignee: uiText('Tickets zuweisen'), status: 'Status ändern', priority: uiText('Priorität ändern') };
             const defaults = { assignee: '', status: 'in_progress', priority: 'normal' };
             this.rememberFocus();
             this.bulkDialog = { open: true, field, value: defaults[field], title: labels[field] };
@@ -963,8 +963,8 @@ document.addEventListener('alpine:init', () => {
                 return `Change #${relation.change_ticket_id}`;
             }
             return relation.approved
-                ? `Review #${relation.review_ticket_id} freigegeben`
-                : `Review #${relation.review_ticket_id} ausstehend`;
+                ? uiText("Review #{0} freigegeben", [relation.review_ticket_id])
+                : uiText("Review #{0} ausstehend", [relation.review_ticket_id]);
         },
 
         activityIcon(action) {
@@ -984,7 +984,7 @@ document.addEventListener('alpine:init', () => {
             if (details.preview) {
                 return `${details.is_internal ? uiText('Interne Notiz') : 'Kommentar'}: ${details.preview}`;
             }
-            if (details.email) return `E-Mail: ${details.email}`;
+            if (details.email) return uiText("E-Mail: {0}", [details.email]);
             if (details.title) return details.title;
             if (details.merged_into) return uiText("Zusammengeführt in Ticket #{0}", [details.merged_into]);
             return '';
@@ -996,10 +996,10 @@ document.addEventListener('alpine:init', () => {
         },
 
         slaState(ticket) {
-            if (['closed', 'resolved'].includes(ticket.status)) return { state: 'met', icon: 'check-circle', label: 'SLA abgeschlossen' };
+            if (['closed', 'resolved'].includes(ticket.status)) return { state: 'met', icon: 'check-circle', label: uiText('SLA abgeschlossen') };
             if (!ticket.due_date) return { state: 'neutral', icon: 'clock', label: uiText('Kein Ziel') };
             const remaining = new Date(`${ticket.due_date}T23:59:59`) - new Date();
-            if (remaining < 0) return { state: 'breached', icon: 'alert-octagon', label: `Verletzt seit ${this.durationLabel(Math.abs(remaining))}` };
+            if (remaining < 0) return { state: 'breached', icon: 'alert-octagon', label: uiText("Verletzt seit {0}", [this.durationLabel(Math.abs(remaining))]) };
             if (remaining < 4 * 3600000) return { state: 'critical', icon: 'alert-triangle', label: `${this.durationLabel(remaining)} verbleibend` };
             if (remaining < 24 * 3600000) return { state: 'warning', icon: 'clock', label: `${this.durationLabel(remaining)} verbleibend` };
             return { state: 'neutral', icon: 'clock', label: `${this.durationLabel(remaining)} verbleibend` };
@@ -1064,7 +1064,7 @@ document.addEventListener('alpine:init', () => {
 
         copyTicketLink() {
             navigator.clipboard?.writeText(window.location.href);
-            this.showToast('Ticket-Link kopiert.');
+            this.showToast(uiText('Ticket-Link kopiert.'));
         },
 
         showToast(message, type = 'success') {

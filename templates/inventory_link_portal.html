@@ -144,7 +144,7 @@
                 }
 
                 const data = await response.json();
-                alert('Logout fehlgeschlagen: ' + (data.error || 'Unbekannter Fehler'));
+                alert('Logout fehlgeschlagen: ' + (data.error || uiText('Unbekannter Fehler')));
             } catch (error) {
                 alert('Netzwerkfehler: ' + error.message);
             }
@@ -209,7 +209,7 @@
                     });
                     const result = await response.json();
                     if (!response.ok) {
-                        throw new Error(result.error || 'Login fehlgeschlagen.');
+                        throw new Error(result.error || uiText('Login fehlgeschlagen.'));
                     }
                     hideOverlay();
                     setFrameSource();

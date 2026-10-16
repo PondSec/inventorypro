@@ -74,7 +74,7 @@ document.addEventListener('alpine:init', () => {
                     const write=name.startsWith('save') || name.startsWith('delete');
                     if(write && this.saving)return;if(write)this.saving=true;
                     this.workspaceError='';
-                    try{return await operation(...args);}catch(error){this.workspaceError=error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';}
+                    try{return await operation(...args);}catch(error){this.workspaceError=error.message || uiText('Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.');}
                     finally{if(write)this.saving=false;}
                 };
             }
@@ -111,7 +111,7 @@ document.addEventListener('alpine:init', () => {
         recordFields(){
             if(!this.selectedRecord)return [];
             const {kind,data}=this.selectedRecord;
-            const fields=kind==='vendor' ? {vendor_type:uiText('Typ'),contact_name:uiText('Kontakt'),email:uiText('E-Mail'),phone:uiText('Telefon'),website:'Website',address:uiText('Adresse'),rating:'Bewertung',notes:uiText('Notizen')} : kind==='contract' ? {vendor_name:uiText('Lieferant'),contract_type:uiText('Typ'),status:'Status',start_date:'Start',end_date:uiText('Ende'),renewal_type:uiText('Verlängerung'),renewal_notice_days:uiText('Kündigungsfrist in Tagen'),cost:uiText('Kosten'),currency:uiText('Währung'),owner:uiText('Verantwortlich'),service_level:uiText('Service-Level'),notes:uiText('Notizen')} : {vendor_name:uiText('Lieferant'),status:'Status',order_date:'Bestellt am',expected_date:'Erwartete Lieferung',received_date:'Erhalten am',requester:uiText('Angefragt von'),approver:'Freigabe',cost_center:uiText('Kostenstelle'),tax:uiText('Steuer'),total:uiText('Gesamt'),currency:uiText('Währung'),item_count:uiText('Positionen'),notes:uiText('Notizen')};
+            const fields=kind==='vendor' ? {vendor_type:uiText('Typ'),contact_name:uiText('Kontakt'),email:uiText('E-Mail'),phone:uiText('Telefon'),website:'Website',address:uiText('Adresse'),rating:'Bewertung',notes:uiText('Notizen')} : kind==='contract' ? {vendor_name:uiText('Lieferant'),contract_type:uiText('Typ'),status:'Status',start_date:'Start',end_date:uiText('Ende'),renewal_type:uiText('Verlängerung'),renewal_notice_days:uiText('Kündigungsfrist in Tagen'),cost:uiText('Kosten'),currency:uiText('Währung'),owner:uiText('Verantwortlich'),service_level:uiText('Service-Level'),notes:uiText('Notizen')} : {vendor_name:uiText('Lieferant'),status:'Status',order_date:uiText('Bestellt am'),expected_date:uiText('Erwartete Lieferung'),received_date:uiText('Erhalten am'),requester:uiText('Angefragt von'),approver:'Freigabe',cost_center:uiText('Kostenstelle'),tax:uiText('Steuer'),total:uiText('Gesamt'),currency:uiText('Währung'),item_count:uiText('Positionen'),notes:uiText('Notizen')};
             return Object.entries(fields).map(([key,label])=>[label,data[key] ?? uiText('Nicht erfasst')]);
         },
 

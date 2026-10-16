@@ -4,7 +4,7 @@
   let dirty=false;
   document.addEventListener('input',event=>{if(event.target.closest('[data-catalog-form],[data-catalog-upload],[data-public-source]'))dirty=true;});
   window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
-  function discard(){return !dirty || window.confirm('Ungespeicherte Eingaben verwerfen?');}
+  function discard(){return !dirty || window.confirm(uiText('Ungespeicherte Eingaben verwerfen?'));}
   function reload(){dirty=false;location.reload();}
   const model = document.querySelector('[data-model-state]');
   const photo = document.querySelector('[data-photo-state]');
@@ -57,7 +57,7 @@
   const publicCatalog=document.querySelector('[data-public-catalog]');
   const publicForm=publicCatalog?.querySelector('[data-public-source]');
   let sourcePoll=null;
-  const sourceLabels={queued:'Wartet',running:uiText('Wird geprüft'),matched:uiText('Bild verfügbar'),no_match:uiText('Kein eindeutiger Treffer'),no_image:uiText('Kein Bild verfügbar'),ambiguous:'Mehrdeutig',unlicensed:uiText('Keine freigegebene Lizenz'),insufficient:uiText('Produktdaten unvollständig'),error:'Abruf fehlgeschlagen'};
+  const sourceLabels={queued:'Wartet',running:uiText('Wird geprüft'),matched:uiText('Bild verfügbar'),no_match:uiText('Kein eindeutiger Treffer'),no_image:uiText('Kein Bild verfügbar'),ambiguous:'Mehrdeutig',unlicensed:uiText('Keine freigegebene Lizenz'),insufficient:uiText('Produktdaten unvollständig'),error:uiText('Abruf fehlgeschlagen')};
   async function refreshSource() {
     if(!publicCatalog)return;
     const result=await api('/api/catalog/external');

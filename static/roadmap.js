@@ -57,7 +57,7 @@ document.addEventListener('alpine:init', () => {
                     if(writing)this.workspaceBusy=true;
                     this.workspaceError='';
                     try {return await operation(...args);}
-                    catch(error){this.workspaceError=error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';if(this.roadmapModalOpen)this.roadmapError=this.workspaceError;}
+                    catch(error){this.workspaceError=error.message || uiText('Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.');if(this.roadmapModalOpen)this.roadmapError=this.workspaceError;}
                     finally {if(writing)this.workspaceBusy=false;}
                 };
             }
