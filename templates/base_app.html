@@ -1,8 +1,10 @@
 {% from '_ui.html' import page_header, icon with context %}
 {% from '_app_shell.html' import render_sidebar, render_breadcrumbs, render_page_tabs with context %}
 <!DOCTYPE html>
-<html lang="de" {% block html_attrs %}{% endblock %}>
+<html lang="{{ ui_language }}" {% block html_attrs %}{% endblock %}>
 <head>
+    {% if ui_language=='en' %}<script src="/i18n/en.js?v={{ ui_catalog_version }}"></script>{% endif %}
+    <script src="/static/i18n.js?v=1"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Inventory Pro{% endblock %}</title>

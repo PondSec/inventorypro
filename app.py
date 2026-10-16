@@ -310,6 +310,7 @@ HEALTH_CHECK_REGISTRY = {}
 DEFAULT_ROLE_NAME = "Mitarbeiter"
 DEFAULT_SERVER_SETTINGS = {
     "schemaVersion": SETTINGS_SCHEMA_VERSION,
+    "appearance": {"language": "de"},
     "server": {
         "host": "0.0.0.0",
         "port": 5000,
@@ -970,6 +971,7 @@ def serialize_server_settings(settings_row):
         )
         settings = {
             "schemaVersion": settings_row["schema_version"] or SETTINGS_SCHEMA_VERSION,
+            "appearance": {"language": settings_row["ui_language"] if "ui_language" in settings_row.keys() else "de"},
             "server": {
                 "host": settings_row["host"] or DEFAULT_SERVER_SETTINGS["server"]["host"],
                 "port": settings_row["port"] or DEFAULT_SERVER_SETTINGS["server"]["port"],
@@ -1041,6 +1043,9 @@ def validate_settings_payload(payload, partial=False):
     if not isinstance(payload, dict):
         return None, {"settings": "Payload muss ein Objekt sein."}
     merged = merge_settings(DEFAULT_SERVER_SETTINGS, payload) if not partial else merge_settings(DEFAULT_SERVER_SETTINGS, payload)
+    appearance=merged.get("appearance",{})
+    if not isinstance(appearance,dict) or appearance.get("language") not in ("de","en"):
+        errors["appearance.language"]="Bitte Deutsch oder Englisch auswählen."
     server = merged.get("server", {})
     host = (server.get("host") or "").strip()
     if not host:
@@ -1162,7 +1167,8 @@ def persist_server_settings(db, settings, updated_by):
     db.execute(
         '''
         UPDATE server_settings
-        SET host = ?,
+        SET ui_language = ?,
+            host = ?,
             port = ?,
             debug_mode = ?,
             backup_enabled = ?,
@@ -1198,6 +1204,7 @@ def persist_server_settings(db, settings, updated_by):
         WHERE id = 1
         ''',
         (
+            settings["appearance"]["language"],
             settings["server"]["host"],
             settings["server"]["port"],
             1 if settings["server"]["debug"] else 0,
@@ -15920,6 +15927,9 @@ app.register_blueprint(
     ),
 )
 
+
+from inventorypro.i18n import register_i18n
+register_i18n(app,get_db)
 
 if __name__ == '__main__':
     init_db()

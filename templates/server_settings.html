@@ -44,6 +44,7 @@
                                     </div>
                                 </div>
 
+                                <div class="mt-6"><label for="interface-language" class="text-sm font-semibold text-slate-700">Sprache der Anwendung</label><select id="interface-language" x-model="settings.appearance.language" class="input"><option value="de">Deutsch</option><option value="en">English</option></select><p class="text-xs text-slate-500">Gilt für die Oberfläche und Anmeldung dieser Instanz. Inventardaten bleiben unverändert.</p></div>
                                 <div class="mt-6 grid gap-6 md:grid-cols-2">
                                     <div class="space-y-2">
                                         <label class="text-sm font-semibold text-slate-700">Host</label>
@@ -1235,6 +1236,7 @@
                 canUseTerminal: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.use'),
                 canWriteDb: window.inventoryIsSuperuser || (window.inventoryPermissions || []).includes('terminal.db_write'),
                 settings: {
+                    appearance: { language: 'de' },
                     server: { host: '0.0.0.0', port: 5000, debug: false },
                     proFeaturesEnabled: false,
                     backup: {
@@ -2002,6 +2004,7 @@
                         this.ipWhitelistInput = (this.settings.security.ipWhitelist || []).join(', ');
                         this.terminalAllowlistInput = (this.settings.terminal.ipAllowlist || []).join(', ');
                         this.successMessage = 'Einstellungen gespeichert.';
+                        if(this.settings.appearance.language!==document.documentElement.lang)location.reload();
                     } catch (error) {
                         this.errorMessage = error.message;
                     } finally {
