@@ -15,6 +15,7 @@ from .network import fetch, IMAGE_HOSTS, ProviderError
 
 _WORKERS=set()
 _WORKER_LOCK=threading.Lock()
+_SCAN_CURSORS={}
 
 
 def settings(db):
@@ -167,6 +168,12 @@ def start_worker(app,get_db,uploads_dir):
         try:
             with app.app_context():
                 connection=get_db()
+                # Visit existing inventory incrementally as well as new edits.
+                # The bounded local scan never adds network I/O to page loads.
+                with _WORKER_LOCK:cursor=dict(_SCAN_CURSORS.get(database,{}))
+                scan=enqueue_inventory(connection,after=cursor,limit=250)
+                connection.commit()
+                with _WORKER_LOCK:_SCAN_CURSORS[database]=scan['last'] if scan['processed'] else {}
                 for _ in range(50):
                     if not process_next(connection,uploads_dir):break
         except (sqlite3.Error,OSError):app.logger.warning('Produktbild-Abgleich wird beim nächsten Zugriff fortgesetzt.')

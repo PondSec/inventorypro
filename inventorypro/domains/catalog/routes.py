@@ -70,7 +70,8 @@ def build_catalog_blueprint(*,get_db,get_access,user_can,login_required,get_uplo
                 if mapped:values['kind']='asset';values['identifier']=mapped[0]
     @bp.after_app_request
     def resume_public_lookups(response):
-        if response.status_code<400 and (request.method in {'POST','PUT','PATCH'} or str(request.endpoint or '').startswith('product_catalog.')):
+        inventory_page=request.method=='GET' and (request.path=='/' or request.path.startswith(('/inventory','/api/inventory/')))
+        if response.status_code<400 and (request.method in {'POST','PUT','PATCH'} or str(request.endpoint or '').startswith('product_catalog.') or inventory_page and session.get('logged_in')):
             jobs.start_worker(current_app._get_current_object(),get_db,get_uploads_dir())
         return response
     @bp.get('/api/catalog/external')

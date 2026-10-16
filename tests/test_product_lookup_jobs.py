@@ -11,6 +11,26 @@ def enable(db):
     return jobs.update_settings(db,{'enabled':True,'rightsReviewed':True,'expectedUpdatedAt':jobs.settings(db)['updated_at']})
 
 
+def test_inventory_page_starts_bounded_discovery_for_existing_name_only_assets(client,monkeypatch):
+    calls=provider(monkeypatch)
+    started=[]
+    class DeferredThread:
+        def __init__(self,*,target,**kwargs):self.target=target
+        def start(self):started.append(self.target)
+    monkeypatch.setattr(jobs.threading,'Thread',DeferredThread)
+    monkeypatch.setitem(inventory_app.app.config,'TESTING',False)
+    monkeypatch.setitem(inventory_app.app.config,'CATALOG_BACKGROUND_ENABLED',True)
+    with inventory_app.app.app_context():
+        db=inventory_app.get_db();enable(db)
+        db.execute("UPDATE devices SET name='Apple AirPods 4 ANC',specs='{}' WHERE id=40")
+        db.commit()
+    assert client.get('/inventory').status_code==200
+    assert len(started)==1
+    started[0]()
+    assert calls[0]['model']=='AirPods 4 ANC'
+    assert client.get('/api/inventory/device/40/photo').json['source']=='catalog'
+
+
 def identity():return {'manufacturer':'QA Maker','model':'QA Model 123','mpn':'','model_code':'','gtin':''}
 
 
