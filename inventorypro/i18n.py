@@ -42,7 +42,7 @@ def translate(message,values=None):
                 captured={index:found.group(i+1) for i,index in enumerate(indexes)}
                 text=re.sub(r'\{(\d+)\}',lambda m:captured.get(int(m[1]),m[0]),replacement);break
     if values is not None:
-        for index,value in enumerate(values):text=text.replace('{'+str(index)+'}',str(value))
+        text=re.sub(r'\{(\d+)\}',lambda m:str(values[int(m[1])]) if int(m[1])<len(values) else m[0],text)
     return prefix+text+suffix
 
 
@@ -138,6 +138,7 @@ class InterfaceCodeGenerator(CodeGenerator):
             item.expr1=InterfaceCodeGenerator.expression(item.expr1)
             if item.expr2 is not None:item.expr2=InterfaceCodeGenerator.expression(item.expr2)
         elif isinstance(item,nodes.Concat):item.nodes=[InterfaceCodeGenerator.expression(child) for child in item.nodes]
+        elif isinstance(item,nodes.Or):item.right=InterfaceCodeGenerator.expression(item.right)
         return item
 
     def visit_Output(self,node,frame):
@@ -154,7 +155,7 @@ class InterfaceCodeGenerator(CodeGenerator):
         # deliberately stay outside this list.
         positions={'render_nav_link':{1},'nav_group':{0},'property':{0},
                    'accordion':{0},'section':{0,1},'empty_state':{0,1},
-                   'page_header':{0,1,2},'kpi_tile':{0,3}}
+                   'page_header':{0,1,2},'kpi_tile':{0,3},'status':{0}}
         if isinstance(node.node,nodes.Name) and node.node.name in positions:
             for index in positions[node.node.name]:
                 if index<len(node.args):node.args[index]=self.expression(node.args[index])

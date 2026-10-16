@@ -73,3 +73,12 @@ def test_technical_blocks_keep_literal_attributes_and_css_classes(translated,mon
     monkeypatch.setattr(i18n.catalog,'_messages',{'sd-body':'translated-class','x-data="app()"':'translated-code'})
     source='{% block html_attrs %}x-data="app()"{% endblock %}{% block body_class %}sd-body{% endblock %}'
     assert render(source)=='x-data="app()"sd-body'
+
+
+def test_optional_model_values_and_placeholder_values_are_never_retranslated(translated,monkeypatch):
+    import inventorypro.i18n as i18n
+    env=Environment(loader=DictLoader({'test.html':'<p>{{ name or "Standort" }}</p>'}),autoescape=True,extensions=[InterfaceLanguage]);env.code_generator_class=InterfaceCodeGenerator;env.globals.update(ui_t=translate,ui_literal=literal)
+    assert env.get_template('test.html').render(name='Standort')=='<p>Standort</p>'
+    assert env.get_template('test.html').render(name='')=='<p>Location</p>'
+    monkeypatch.setattr(i18n.catalog,'_messages',{'{0} und {1}':'{0} and {1}'})
+    assert translate('{0} und {1}',['{1}','Standort'])=='{1} and Standort'
