@@ -21,7 +21,7 @@ document.addEventListener('alpine:init', () => {
                     body: JSON.stringify(removal.target ? { target_category_id: Number(removal.target) } : {})
                 });
                 const data = await response.json();
-                if (!response.ok) { removal.error = data.error || 'Löschen fehlgeschlagen.'; return; }
+                if (!response.ok) { removal.error = data.error || uiText('Löschen fehlgeschlagen.'); return; }
                 removal.open = false;
                 this.categoryModalOpen = false;
                 this.assetCategoryModalOpen = false;
@@ -29,7 +29,7 @@ document.addEventListener('alpine:init', () => {
                 this.selectedAssetCategory = null;
                 await Promise.all([this.loadCategories(), this.loadAssetCategories(), this.loadDevices(), this.loadAssets()]);
                 await this.loadActivityFeed();
-            } catch (error) { removal.error = 'Verbindung fehlgeschlagen. Bitte erneut versuchen.'; }
+            } catch (error) { removal.error = uiText('Verbindung fehlgeschlagen. Bitte erneut versuchen.'); }
             finally { removal.busy = false; }
         },
         dashboardTasks: [],
@@ -78,7 +78,7 @@ document.addEventListener('alpine:init', () => {
         enterpriseWorkflow: {
             score: 100,
             integration_score: 100,
-            status_label: 'Lädt',
+            status_label: uiText('Lädt'),
             signals: [],
             next_actions: [],
             summary: {
@@ -342,22 +342,22 @@ document.addEventListener('alpine:init', () => {
 
         workspaceTitle() {
             const titles = {
-                overview: 'Inventar',
+                overview: uiText('Inventar'),
                 devices: this.activeCategory
                     ? this.getCategoryName(this.activeCategory)
-                    : (this.locationFilter ? `Geräte in ${this.locationFilterName()}` : 'Geräte'),
+                    : (this.locationFilter ? uiText("Geräte in {0}", [this.locationFilterName()]) : uiText('Geräte')),
                 assets: this.selectedAssetCategory ? this.selectedAssetCategory.name : 'Assets',
-                taxonomy: 'Struktur'
+                taxonomy: uiText('Struktur')
             };
-            return titles[this.workspaceView] || 'Inventar';
+            return titles[this.workspaceView] || uiText('Inventar');
         },
 
         workspaceDescription() {
             const descriptions = {
-                overview: 'Überblick, nächste Aktionen und aktuelle Bewegung.',
-                devices: 'Geräte suchen, filtern und präzise pflegen.',
-                assets: 'Asset-Einträge, Komponenten, Zuweisungen und Lebenszyklus.',
-                taxonomy: 'Kategorien und Asset-Profile verwalten.'
+                overview: uiText('Überblick, nächste Aktionen und aktuelle Bewegung.'),
+                devices: uiText('Geräte suchen, filtern und präzise pflegen.'),
+                assets: uiText('Asset-Einträge, Komponenten, Zuweisungen und Lebenszyklus.'),
+                taxonomy: uiText('Kategorien und Asset-Profile verwalten.')
             };
             return descriptions[this.workspaceView] || '';
         },
@@ -392,7 +392,7 @@ document.addEventListener('alpine:init', () => {
             this.dashboardTasksError = '';
             try {
                 const response = await fetch('/api/workspace/tasks');
-                if (!response.ok) throw new Error('Aufgaben konnten nicht geladen werden.');
+                if (!response.ok) throw new Error(uiText('Aufgaben konnten nicht geladen werden.'));
                 this.dashboardTasks = (await response.json()).tasks;
             } catch (error) { this.dashboardTasksError = error.message; }
             finally { this.dashboardTasksLoading = false; }
@@ -438,7 +438,7 @@ document.addEventListener('alpine:init', () => {
                 const data = await response.json();
                 this.otpEnabled = data.enabled;
             } catch (error) {
-                console.error('Fehler beim Abrufen des 2FA-Status:', error);
+                console.error(uiText('Fehler beim Abrufen des 2FA-Status:'), error);
             }
         },
 
@@ -452,7 +452,7 @@ document.addEventListener('alpine:init', () => {
                 const data = await response.json();
 
                 if (data.enabled) {
-                    const confirmed = confirm('2FA ist bereits aktiviert. Möchten Sie es deaktivieren?');
+                    const confirmed = confirm(uiText('2FA ist bereits aktiviert. Möchten Sie es deaktivieren?'));
                     if (confirmed) {
                         const disableResponse = await fetch('/api/otp/disable', {
                             method: 'POST',
@@ -464,7 +464,7 @@ document.addEventListener('alpine:init', () => {
                             this.otpEnabled = false;
                             alert('2FA wurde deaktiviert.');
                         } else {
-                            alert('Fehler beim Deaktivieren von 2FA.');
+                            alert(uiText('Fehler beim Deaktivieren von 2FA.'));
                         }
                     }
                     return;
@@ -475,7 +475,7 @@ document.addEventListener('alpine:init', () => {
                 this.otpModalOpen = true;
             } catch (error) {
                 console.error('Fehler:', error);
-                alert('Ein Fehler ist aufgetreten');
+                alert(uiText('Ein Fehler ist aufgetreten'));
             }
         },
 		
@@ -1219,7 +1219,7 @@ document.addEventListener('alpine:init', () => {
                     const error = await response.json();
                     if (error.field_errors) {
                         const messages = Object.values(error.field_errors).join(' | ');
-                        throw new Error(messages || error.error || 'Asset-Kategorie konnte nicht gespeichert werden');
+                        throw new Error(messages || error.error || uiText('Asset-Kategorie konnte nicht gespeichert werden'));
                     }
                     throw new Error(error.error || 'Failed to save asset category');
                 }
@@ -1327,7 +1327,7 @@ document.addEventListener('alpine:init', () => {
 
         closeDeviceModal() {
             if (this.deviceSaving) return;
-            if (this.deviceDirty && !confirm('Ungespeicherte Änderungen verwerfen?')) return;
+            if (this.deviceDirty && !confirm(uiText('Ungespeicherte Änderungen verwerfen?'))) return;
             this.deviceDirty = false;
             this.isDeviceModalOpen = false;
             this.clearDeviceFormState();
@@ -1468,13 +1468,13 @@ document.addEventListener('alpine:init', () => {
 
                 if (!String(this.currentDevice.name || '').trim()) {
                     this.deviceFormErrors = { name: 'Name ist erforderlich' };
-                    this.deviceFormMessage = 'Bitte die markierten Felder prüfen.';
+                    this.deviceFormMessage = uiText('Bitte die markierten Felder prüfen.');
                     return;
                 }
 
                 if (!this.currentDevice.category_id) {
-                    this.deviceFormErrors = { category_id: 'Kategorie ist erforderlich' };
-                    this.deviceFormMessage = 'Bitte die markierten Felder prüfen.';
+                    this.deviceFormErrors = { category_id: uiText('Kategorie ist erforderlich') };
+                    this.deviceFormMessage = uiText('Bitte die markierten Felder prüfen.');
                     return;
                 }
 
@@ -1502,9 +1502,9 @@ document.addEventListener('alpine:init', () => {
                 }
 
                 if (!response.ok) {
-                    const error = await this.readErrorPayload(response, 'Gerät konnte nicht gespeichert werden');
+                    const error = await this.readErrorPayload(response, uiText('Gerät konnte nicht gespeichert werden'));
                     this.deviceFormErrors = error.field_errors || {};
-                    this.deviceFormMessage = error.error || 'Gerät konnte nicht gespeichert werden';
+                    this.deviceFormMessage = error.error || uiText('Gerät konnte nicht gespeichert werden');
                     return;
                 }
 
@@ -1516,12 +1516,12 @@ document.addEventListener('alpine:init', () => {
                 await this.loadActivityFeed();
             } catch (error) {
                 console.error('Error saving device:', error);
-                this.deviceFormMessage = error.message || 'Gerät konnte nicht gespeichert werden';
+                this.deviceFormMessage = error.message || uiText('Gerät konnte nicht gespeichert werden');
             } finally { this.deviceSaving = false; }
         },
 
         async deleteDevice(deviceId) {
-            if (confirm('Möchten Sie dieses Gerät wirklich löschen?')) {
+            if (confirm(uiText('Möchten Sie dieses Gerät wirklich löschen?'))) {
                 const response = await fetch(`/api/devices/${deviceId}`, {
                     method: 'DELETE'
                 });
@@ -1534,7 +1534,7 @@ document.addEventListener('alpine:init', () => {
                     await this.loadActivityFeed();
                 } else {
                     const error = await response.json();
-                    alert(error.error || 'Gerät konnte nicht gelöscht werden');
+                    alert(error.error || uiText('Gerät konnte nicht gelöscht werden'));
                 }
             }
         },
@@ -1604,10 +1604,10 @@ document.addEventListener('alpine:init', () => {
                     await this.loadActivityFeed();
                 } else {
                     const error = await response.json();
-                    alert(error.error || 'Tag konnte nicht gespeichert werden');
+                    alert(error.error || uiText('Tag konnte nicht gespeichert werden'));
                 }
             } catch (error) {
-                console.error('Error adding tag:', error);
+                console.error(uiText('Error adding tag:'), error);
             }
         },
 
@@ -1622,7 +1622,7 @@ document.addEventListener('alpine:init', () => {
                     await this.loadActivityFeed();
                 }
             } catch (error) {
-                console.error('Error removing tag:', error);
+                console.error(uiText('Error removing tag:'), error);
             }
         },
 
@@ -1640,7 +1640,7 @@ document.addEventListener('alpine:init', () => {
                     await this.loadActivityFeed();
                 } else {
                     const error = await response.json();
-                    alert(error.error || 'Notiz konnte nicht gespeichert werden');
+                    alert(error.error || uiText('Notiz konnte nicht gespeichert werden'));
                 }
             } catch (error) {
                 console.error('Error adding note:', error);
@@ -1682,7 +1682,7 @@ document.addEventListener('alpine:init', () => {
                     await this.loadActivityFeed();
                 } else {
                     const error = await response.json();
-                    alert(error.error || 'Wartung konnte nicht gespeichert werden');
+                    alert(error.error || uiText('Wartung konnte nicht gespeichert werden'));
                 }
             } catch (error) {
                 console.error('Error adding maintenance task:', error);
@@ -1739,13 +1739,13 @@ document.addEventListener('alpine:init', () => {
                 await this.loadMaintenanceAttachments();
             } else {
                 const error = await response.json();
-                this.maintenanceAttachmentErrors[taskId] = error.error || 'Upload fehlgeschlagen';
+                this.maintenanceAttachmentErrors[taskId] = error.error || uiText('Upload fehlgeschlagen');
             }
             event.target.value = '';
         },
 
         async deleteMaintenanceAttachment(taskId, attachmentId) {
-            if (!confirm('Anhang wirklich löschen?')) return;
+            if (!confirm(uiText('Anhang wirklich löschen?'))) return;
             const response = await fetch(`/attachments/${attachmentId}/delete`, { method: 'POST' });
             if (response.ok) {
                 await this.loadMaintenanceAttachments();
@@ -1781,11 +1781,11 @@ document.addEventListener('alpine:init', () => {
 
         assignmentStatusLabel(status) {
             const labels = {
-                assigned: 'Zugewiesen',
-                checked_out: 'Ausgegeben',
+                assigned: uiText('Zugewiesen'),
+                checked_out: uiText('Ausgegeben'),
                 checked_in: 'Eingecheckt',
-                transferred: 'Übertragen',
-                unassigned: 'Nicht zugewiesen'
+                transferred: uiText('Übertragen'),
+                unassigned: uiText('Nicht zugewiesen')
             };
             return labels[status] || status || '-';
         },
@@ -1867,7 +1867,7 @@ document.addEventListener('alpine:init', () => {
                 this.closeAssetAssignmentModal();
             } else {
                 const error = await response.json();
-                alert(error.error || 'Zuweisung konnte nicht gespeichert werden');
+                alert(error.error || uiText('Zuweisung konnte nicht gespeichert werden'));
             }
         },
 
@@ -1895,13 +1895,13 @@ document.addEventListener('alpine:init', () => {
                 await this.loadAssetAttachments(this.selectedAsset.id);
             } else {
                 const error = await response.json();
-                this.assetAttachmentError = error.error || 'Upload fehlgeschlagen';
+                this.assetAttachmentError = error.error || uiText('Upload fehlgeschlagen');
             }
             event.target.value = '';
         },
 
         async deleteAssetAttachment(attachmentId) {
-            if (!confirm('Anhang wirklich löschen?')) return;
+            if (!confirm(uiText('Anhang wirklich löschen?'))) return;
             const response = await fetch(`/attachments/${attachmentId}/delete`, { method: 'POST' });
             if (response.ok && this.selectedAsset) {
                 await this.loadAssetAttachments(this.selectedAsset.id);
@@ -1911,7 +1911,7 @@ document.addEventListener('alpine:init', () => {
         // Asset Entry Methods
         async openAddAssetModal() {
             if (this.assetCategories.length === 0) {
-                alert('Bitte zuerst eine Asset-Kategorie anlegen.');
+                alert(uiText('Bitte zuerst eine Asset-Kategorie anlegen.'));
                 return;
             }
             this.clearAssetFormState();
@@ -1966,7 +1966,7 @@ document.addEventListener('alpine:init', () => {
                 this.clearAssetFormState();
                 const response = await fetch(`/api/asset-entries/${asset.id}`);
                 if (!response.ok) {
-                    throw new Error('Asset konnte nicht geladen werden');
+                    throw new Error(uiText('Asset konnte nicht geladen werden'));
                 }
                 const data = await response.json();
                 if (this.assetCategories.length === 0) {
@@ -2025,7 +2025,7 @@ document.addEventListener('alpine:init', () => {
 
         closeAssetModal() {
             if (this.assetSaving) return;
-            if (this.assetDirty && !confirm('Ungespeicherte Änderungen verwerfen?')) return;
+            if (this.assetDirty && !confirm(uiText('Ungespeicherte Änderungen verwerfen?'))) return;
             this.assetDirty = false;
             this.isAssetModalOpen = false;
             this.clearAssetFormState();
@@ -2069,13 +2069,13 @@ document.addEventListener('alpine:init', () => {
 
                 if (!String(this.currentAsset.name || '').trim()) {
                     this.assetFormErrors = { name: 'Name ist erforderlich' };
-                    this.assetFormMessage = 'Bitte die markierten Felder prüfen.';
+                    this.assetFormMessage = uiText('Bitte die markierten Felder prüfen.');
                     return;
                 }
 
                 if (!this.currentAsset.category_id) {
-                    this.assetFormErrors = { category_id: 'Kategorie ist erforderlich' };
-                    this.assetFormMessage = 'Bitte die markierten Felder prüfen.';
+                    this.assetFormErrors = { category_id: uiText('Kategorie ist erforderlich') };
+                    this.assetFormMessage = uiText('Bitte die markierten Felder prüfen.');
                     return;
                 }
 
@@ -2121,9 +2121,9 @@ document.addEventListener('alpine:init', () => {
                 }
 
                 if (!response.ok) {
-                    const error = await this.readErrorPayload(response, 'Asset konnte nicht gespeichert werden');
+                    const error = await this.readErrorPayload(response, uiText('Asset konnte nicht gespeichert werden'));
                     this.assetFormErrors = error.field_errors || {};
-                    this.assetFormMessage = error.error || 'Asset konnte nicht gespeichert werden';
+                    this.assetFormMessage = error.error || uiText('Asset konnte nicht gespeichert werden');
                     return;
                 }
 
@@ -2134,13 +2134,13 @@ document.addEventListener('alpine:init', () => {
                 this.closeAssetModal();
                 await this.loadActivityFeed();
             } catch (error) {
-                console.error('Error saving asset:', error);
-                this.assetFormMessage = error.message || 'Asset konnte nicht gespeichert werden';
+                console.error(uiText('Error saving asset:'), error);
+                this.assetFormMessage = error.message || uiText('Asset konnte nicht gespeichert werden');
             } finally { this.assetSaving = false; }
         },
 
         async deleteAsset(assetId) {
-            if (!confirm('Möchten Sie dieses Asset wirklich löschen?')) {
+            if (!confirm(uiText('Möchten Sie dieses Asset wirklich löschen?'))) {
                 return;
             }
             const response = await fetch(`/api/asset-entries/${assetId}`, {
@@ -2152,7 +2152,7 @@ document.addEventListener('alpine:init', () => {
                 await this.loadActivityFeed();
             } else {
                 const error = await response.json();
-                alert(error.error || 'Asset konnte nicht gelöscht werden');
+                alert(error.error || uiText('Asset konnte nicht gelöscht werden'));
             }
         },
 
@@ -2160,7 +2160,7 @@ document.addEventListener('alpine:init', () => {
             try {
                 const response = await fetch(`/api/asset-entries/${asset.id}`);
                 if (!response.ok) {
-                    throw new Error('Asset konnte nicht geladen werden');
+                    throw new Error(uiText('Asset konnte nicht geladen werden'));
                 }
                 this.selectedAsset = await response.json();
                 this.assetAssignmentHistory = this.selectedAsset.assignment_history || [];
@@ -2822,7 +2822,7 @@ document.addEventListener('alpine:init', () => {
                 return '-';
             }
             if (typeof value === 'boolean') {
-                return value ? 'Ja' : 'Nein';
+                return value ? uiText('Ja') : uiText('Nein');
             }
             if (Array.isArray(value)) {
                 const items = value
@@ -2979,11 +2979,11 @@ document.addEventListener('alpine:init', () => {
 
         binpackingLayerLabel(layer, index) {
             if (!layer) {
-                return `Ebene ${index + 1}`;
+                return uiText("Ebene {0}", [index + 1]);
             }
             const start = this.formatDimensionValue(layer.z);
             const height = this.formatDimensionValue(layer.height);
-            return `Ebene ${index + 1} · Start ${start} · Höhe ${height}`;
+            return uiText("Ebene {0} · Start {1} · Höhe {2}", [index + 1, start, height]);
         },
 
         binpackingPlacementBadgeStyle(placement) {
@@ -2998,7 +2998,7 @@ document.addEventListener('alpine:init', () => {
 
         binpackingStepInstruction(step) {
             if (!step) return '';
-            return `${step.asset_name} auf Ebene ${step.layer_index} ${step.zone_label} platzieren. Maße: ${step.dimensions_label}.`;
+            return uiText("{0} auf Ebene {1} {2} platzieren. Maße: {3}.", [step.asset_name, step.layer_index, step.zone_label, step.dimensions_label]);
         },
 
         async readErrorPayload(response, fallbackMessage) {

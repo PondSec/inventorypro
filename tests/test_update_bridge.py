@@ -21,7 +21,7 @@ def test_bridge_is_accepted_by_real_legacy_validator_and_new_validator(tmp_path,
     modern, legacy = prepare_bridge('1.2.3', 'gitlab.pondsec.com/pondsec/inventorypro@sha256:' + 'a'*64,
                                     'ghcr.io/pondsec/inventorypro@sha256:' + 'b'*64, key, public)
     # Execute the exact validator shipped before migration; no publication/network.
-    source = subprocess.check_output(['git', 'show', '900b489:updater.py'])
+    source = subprocess.check_output(['git', 'show', '121dee5df67574373ab508bbba3ae95a20f1e8b3:updater.py'])
     legacy_file = tmp_path / 'legacy_updater.py'
     legacy_file.write_bytes(source)
     spec = importlib.util.spec_from_file_location('legacy_updater', legacy_file)

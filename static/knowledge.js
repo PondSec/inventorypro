@@ -67,7 +67,7 @@ document.addEventListener('alpine:init', () => {
             if (this.searchQuery) params.set('search', this.searchQuery);
             try {
                 const response = await fetch(`/api/knowledge/entries?${params.toString()}`);
-                if (!response.ok) throw new Error('Wissenseinträge konnten nicht geladen werden.');
+                if (!response.ok) throw new Error(uiText('Wissenseinträge konnten nicht geladen werden.'));
                 const data = await response.json();
                 if (requestId !== this.listRequestId) return;
                 this.entries = data.items;
@@ -75,7 +75,7 @@ document.addEventListener('alpine:init', () => {
                 this.listPages = data.pages;
                 this.listTotal = data.total;
             } catch (error) {
-                if (requestId === this.listRequestId) this.listError = error.message || 'Verbindung fehlgeschlagen.';
+                if (requestId === this.listRequestId) this.listError = error.message || uiText('Verbindung fehlgeschlagen.');
             } finally {
                 if (requestId === this.listRequestId) this.listLoading = false;
             }
@@ -85,11 +85,11 @@ document.addEventListener('alpine:init', () => {
             if (!/^[1-9]\d*$/.test(String(entry.id))) return;
             try {
                 const response=await fetch(`/api/knowledge/entries/${entry.id}`);
-                if (!response.ok || response.redirected) throw new Error('Der Artikel konnte nicht geöffnet werden. Bitte erneut versuchen.');
+                if (!response.ok || response.redirected) throw new Error(uiText('Der Artikel konnte nicht geöffnet werden. Bitte erneut versuchen.'));
                 this.selectedEntry=await response.json();
                 if (push) {const url=new URL(location.href);url.searchParams.set('entry_id',entry.id);history.pushState({},'',url);}
                 this.$nextTick(()=>feather.replace());
-            } catch(error) {this.listError=error.message || 'Verbindung fehlgeschlagen.';}
+            } catch(error) {this.listError=error.message || uiText('Verbindung fehlgeschlagen.');}
         },
 
         clearSelectedEntry() {
@@ -129,7 +129,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         closeEntryModal() {
-            if(this.saving || JSON.stringify(this.entryForm)!==this.entrySnapshot && !confirm('Ungespeicherte Eingaben verwerfen?'))return;
+            if(this.saving || JSON.stringify(this.entryForm)!==this.entrySnapshot && !confirm(uiText('Ungespeicherte Eingaben verwerfen?')))return;
             this.entryModalOpen = false;
         },
 
@@ -137,9 +137,9 @@ document.addEventListener('alpine:init', () => {
             const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
             try {
                 const response=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:controller.signal});
-                if (response.redirected) throw new Error('Die Sitzung ist abgelaufen. Bitte erneut anmelden.');
+                if (response.redirected) throw new Error(uiText('Die Sitzung ist abgelaufen. Bitte erneut anmelden.'));
                 const data=await response.json();
-                if (!response.ok) throw new Error(data.error || 'Speichern fehlgeschlagen. Ihre Eingaben bleiben erhalten.');
+                if (!response.ok) throw new Error(data.error || uiText('Speichern fehlgeschlagen. Ihre Eingaben bleiben erhalten.'));
                 return data;
             } finally {clearTimeout(timer);}
         },
@@ -147,7 +147,7 @@ document.addEventListener('alpine:init', () => {
         async saveEntry() {
             if(this.saving)return;
             this.entryError='';
-            if(!this.entryForm.title.trim()){this.entryError='Bitte einen Titel eingeben.';return;}
+            if(!this.entryForm.title.trim()){this.entryError=uiText('Bitte einen Titel eingeben.');return;}
             this.saving=true;
             try {
                 await this.write(this.entryForm.id ? `/api/knowledge/entries/${this.entryForm.id}` : '/api/knowledge/entries',this.entryForm.id ? 'PUT':'POST',{
@@ -156,12 +156,12 @@ document.addEventListener('alpine:init', () => {
                 await this.loadEntries();
                 if(this.entryForm.id)await this.selectEntry({id:this.entryForm.id},false);
                 this.entryModalOpen=false;
-            } catch(error) {this.entryError=error.name==='AbortError' ? 'Zeitüberschreitung. Prüfen Sie vor erneutem Speichern, ob der Artikel bereits gespeichert wurde.' : error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';}
+            } catch(error) {this.entryError=error.name==='AbortError' ? uiText('Zeitüberschreitung. Prüfen Sie vor erneutem Speichern, ob der Artikel bereits gespeichert wurde.') : error.message || uiText('Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.');}
             finally {this.saving=false;}
         },
 
         async deleteEntry(entry) {
-            if (!entry || !confirm('Diesen Wissenseintrag wirklich löschen?')) return;
+            if (!entry || !confirm(uiText('Diesen Wissenseintrag wirklich löschen?'))) return;
             const response = await fetch(`/api/knowledge/entries/${entry.id}`, { method: 'DELETE' });
             if (response.ok) {
                 if (this.selectedEntry && this.selectedEntry.id === entry.id) {
@@ -191,14 +191,14 @@ document.addEventListener('alpine:init', () => {
         },
 
         closeCategoryModal() {
-            if(this.saving || JSON.stringify(this.categoryForm)!==this.categorySnapshot && !confirm('Ungespeicherte Eingaben verwerfen?'))return;
+            if(this.saving || JSON.stringify(this.categoryForm)!==this.categorySnapshot && !confirm(uiText('Ungespeicherte Eingaben verwerfen?')))return;
             this.categoryModalOpen = false;
         },
 
         async saveCategory() {
             if(this.saving)return;
             this.categoryError='';
-            if(!this.categoryForm.name.trim()){this.categoryError='Bitte einen Namen eingeben.';return;}
+            if(!this.categoryForm.name.trim()){this.categoryError=uiText('Bitte einen Namen eingeben.');return;}
             this.saving=true;
             try {
                 await this.write(this.categoryForm.id ? `/api/knowledge/categories/${this.categoryForm.id}` : '/api/knowledge/categories',this.categoryForm.id ? 'PUT':'POST',{
@@ -206,7 +206,7 @@ document.addEventListener('alpine:init', () => {
                 await this.loadCategories();await this.loadEntries();
                 if(this.selectedEntry)await this.selectEntry({id:this.selectedEntry.id},false);
                 this.categoryModalOpen=false;
-            } catch(error) {this.categoryError=error.name==='AbortError' ? 'Zeitüberschreitung. Bitte prüfen Sie, ob die Kategorie bereits gespeichert wurde.' : error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';}
+            } catch(error) {this.categoryError=error.name==='AbortError' ? uiText('Zeitüberschreitung. Bitte prüfen Sie, ob die Kategorie bereits gespeichert wurde.') : error.message || uiText('Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.');}
             finally {this.saving=false;}
         }
     }));

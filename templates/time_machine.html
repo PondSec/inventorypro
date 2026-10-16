@@ -232,17 +232,17 @@
                 selectedRoadmaps: [],
                 selectedLayer: 'all',
                 layers: [
-                    {% if not unified_inventory %}{ key: 'devices', label: 'Geräte', color: 'slate' },{% endif %}
+                    {% if not unified_inventory %}{ key: 'devices', label: uiText('Geräte'), color: 'slate' },{% endif %}
                     { key: 'assets', label: 'Assets', color: 'indigo' },
                     { key: 'tickets', label: 'Tickets', color: 'amber' },
                     { key: 'roadmaps', label: 'Roadmaps', color: 'cyan' },
-                    { key: 'dependencies', label: 'Abhängigkeiten', color: 'purple' },
+                    { key: 'dependencies', label: uiText('Abhängigkeiten'), color: 'purple' },
                     { key: 'organisation', label: 'Organisation', color: 'emerald' }
                 ],
                 branchOptions: [
-                    { value: 'main', label: 'Gespeicherter Stand' },
-                    { value: 'no-ticket', label: 'Ticket ausblenden' },
-                    { value: 'roadmap-sim', label: 'Roadmaps berücksichtigen' }
+                    { value: 'main', label: uiText('Gespeicherter Stand') },
+                    { value: 'no-ticket', label: uiText('Ticket ausblenden') },
+                    { value: 'roadmap-sim', label: uiText('Roadmaps berücksichtigen') }
                 ],
                 async init() {
                     this.$watch('selectedLayer',()=>this.historyPage=1);
@@ -344,24 +344,24 @@
                 },
                 get branchSummary() {
                     if (this.branch === 'no-ticket' && this.branchTicketId) {
-                        return `Ticket #${this.branchTicketId} wird aus der Historie entfernt. Alle Folgewirkungen sind nicht mehr sichtbar.`;
+                        return uiText("Ticket #{0} wird aus der Historie entfernt. Alle Folgewirkungen sind nicht mehr sichtbar.", [this.branchTicketId]);
                     }
                     if (this.branch === 'roadmap-sim') {
                         if (this.selectedRoadmaps.length === 0) {
-                            return 'Wähle Roadmaps aus, um nur diese Zukunft zu simulieren.';
+                            return uiText('Wähle Roadmaps aus, um nur diese Zukunft zu simulieren.');
                         }
                         return `${this.selectedRoadmaps.length} Roadmap(s) werden als geplante Änderungen simuliert.`;
                     }
-                    return 'Der Hauptzweig zeigt den aktuellen Stand einschließlich aller Änderungen.';
+                    return uiText('Der Hauptzweig zeigt den aktuellen Stand einschließlich aller Änderungen.');
                 },
                 get comparisonMetrics() {
                     const metrics = [
                         { key: 'assets', label: 'Assets' },
-                        {% if not unified_inventory %}{ key: 'devices', label: 'Geräte' },{% endif %}
+                        {% if not unified_inventory %}{ key: 'devices', label: uiText('Geräte') },{% endif %}
                         { key: 'tickets', label: 'Tickets' },
                         { key: 'roadmaps', label: 'Roadmaps' },
-                        { key: 'dependencies', label: 'Abhängigkeiten' },
-                        { key: 'tickets_open', label: 'Tickets offen' }
+                        { key: 'dependencies', label: uiText('Abhängigkeiten') },
+                        { key: 'tickets_open', label: uiText('Tickets offen') }
                     ];
                     return metrics.map(metric => {
                         const baseValue = this.state?.[metric.key] ?? 0;

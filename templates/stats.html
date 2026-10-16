@@ -66,7 +66,7 @@
                 data: {
                     labels: statsData.devicesByMonth.map(item => item.month),
                     datasets: [{
-                        label: 'Neue Assets',
+                        label: uiText('Neue Assets'),
                         data: statsData.devicesByMonth.map(item => item.count),
                         borderColor: '#6366F1',
                         backgroundColor: 'rgba(99, 102, 241, 0.2)',
@@ -118,7 +118,7 @@
             const locationLabels = statsData.locations.map(item => item.name);
             const locationCounts = statsData.locations.map(item => item.device_count);
             if (statsData.unknownLocationCount > 0) {
-                locationLabels.push('Unbekannt');
+                locationLabels.push(uiText('Unbekannt'));
                 locationCounts.push(statsData.unknownLocationCount);
             }
             new Chart(document.getElementById('locationChart'), {

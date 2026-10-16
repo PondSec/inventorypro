@@ -91,9 +91,9 @@
             {% for item in items %}
             <li class="breadcrumb-item">
                 {% if item.href %}
-                <a href="{{ item.href }}" class="breadcrumb-link">{{ item.label }}</a>
+                <a href="{{ item.href }}" class="breadcrumb-link">{{ ui_t(item.label) }}</a>
                 {% else %}
-                <span class="breadcrumb-current">{{ item.label }}</span>
+                <span class="breadcrumb-current">{{ ui_t(item.label) }}</span>
                 {% endif %}
             </li>
             {% endfor %}
@@ -106,11 +106,11 @@
     {% if items %}
     <div class="page-tabbar">
         {% for item in items %}
-        <a href="{{ item.href }}" class="page-tab{% if item.active %} active{% endif %}" aria-label="{{ item.label }}" {% if item.active %}aria-current="page"{% endif %}>
+        <a href="{{ item.href }}" class="page-tab{% if item.active %} active{% endif %}" aria-label="{{ ui_t(item.label) }}" {% if item.active %}aria-current="page"{% endif %}>
             {% if item.icon %}
             <i data-feather="{{ item.icon }}" class="w-4 h-4"></i>
             {% endif %}
-            <span>{{ item.label }}</span>
+            <span>{{ ui_t(item.label) }}</span>
         </a>
         {% endfor %}
     </div>

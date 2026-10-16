@@ -81,7 +81,7 @@
                 <button type="button" @click="openBulk('status')"><i data-feather="repeat"></i>Status</button>
                 <button type="button" @click="openBulk('priority')"><i data-feather="alert-circle"></i>Priorität</button>
                 <button type="button" @click="exportSelected()"><i data-feather="download"></i>Export</button>
-                <button x-show="canDeleteSelection()" type="button" class="sd-bulk-danger" @click="deleteSelected()" :disabled="deletingTickets"><i data-feather="trash-2"></i><span x-text="deletingTickets ? 'Wird gelöscht …' : 'Löschen'"></span></button>
+                <button x-show="canDeleteSelection()" type="button" class="sd-bulk-danger" @click="deleteSelected()" :disabled="deletingTickets"><i data-feather="trash-2"></i><span x-text="deletingTickets ? 'Wird gelöscht …' : uiText('Löschen')"></span></button>
                 <button type="button" class="sd-bulk-clear" @click="selectedIds = []">Auswahl aufheben</button>
             </section>
 
@@ -117,9 +117,9 @@
                                             <template x-if="column.key === 'priority'"><span class="sd-priority" :data-priority="ticket.priority"><i data-feather="flag"></i><span x-text="priorityLabel(ticket.priority)"></span></span></template>
                                             <template x-if="column.key === 'title'"><span class="sd-cell-title" :title="ticket.title" x-text="ticket.title"></span></template>
                                             <template x-if="column.key === 'requester'"><span x-text="ticket.requester_name || ticket.created_by || '—'"></span></template>
-                                            <template x-if="column.key === 'assignee'"><span :class="{ muted: !ticket.assignee }" x-text="ticket.assignee || 'Nicht zugewiesen'"></span></template>
+                                            <template x-if="column.key === 'assignee'"><span :class="{ muted: !ticket.assignee }" x-text="ticket.assignee || uiText('Nicht zugewiesen')"></span></template>
                                             <template x-if="column.key === 'category'"><span x-text="ticket.category_name || '—'"></span></template>
-                                            <template x-if="column.key === 'assets'"><span x-text="ticket.asset_count ? `${ticket.asset_count} verknüpft` : '—'"></span></template>
+                                            <template x-if="column.key === 'assets'"><span x-text="ticket.asset_count ? uiText(&quot;{0} verknüpft&quot;, [ticket.asset_count]) : '—'"></span></template>
                                             <template x-if="column.key === 'sla'"><span class="sd-sla" :class="slaState(ticket).state"><span class="sd-icon-slot" x-html="iconSvg(slaState(ticket).icon)"></span><span x-text="slaState(ticket).label"></span></span></template>
                                             <template x-if="column.key === 'updated_at'"><time :datetime="ticket.updated_at" x-text="formatRelative(ticket.updated_at)"></time></template>
                                             <template x-if="column.key === 'due_date'"><time :class="{ overdue: isOverdue(ticket) }" :datetime="ticket.due_date" x-text="formatDate(ticket.due_date)"></time></template>
@@ -190,7 +190,7 @@
                             <div class="sd-timeline">
                                 <template x-for="comment in selectedTicket.comments || []" :key="comment.id">
                                     <article :class="{ internal: comment.is_internal }">
-                                        <header><span class="sd-avatar" x-text="initials(comment.author)"></span><div><strong x-text="comment.author || 'System'"></strong><small x-text="comment.is_internal ? 'Interne Notiz' : 'Öffentliche Antwort'"></small></div><time x-text="formatDateTime(comment.created_at)"></time></header>
+                                        <header><span class="sd-avatar" x-text="initials(comment.author)"></span><div><strong x-text="comment.author || 'System'"></strong><small x-text="comment.is_internal ? uiText('Interne Notiz') : uiText('Öffentliche Antwort')"></small></div><time x-text="formatDateTime(comment.created_at)"></time></header>
                                         <p x-text="comment.body"></p>
                                     </article>
                                 </template>
@@ -201,7 +201,7 @@
                                     <button type="button" @click="internalComment = false" :class="{ active: !internalComment }"><i data-feather="message-circle"></i>Öffentliche Antwort</button>
                                     <button x-show="can('tickets.comment_internal')" type="button" @click="internalComment = true" :class="{ active: internalComment }"><i data-feather="lock"></i>Interne Notiz</button>
                                 </div>
-                                <label><span class="sr-only" x-text="internalComment ? 'Interne Notiz' : 'Öffentliche Antwort'"></span><textarea x-ref="comment" x-model="newComment" rows="4" :placeholder="internalComment ? 'Nur für Mitarbeitende sichtbar …' : 'Antwort verfassen …'"></textarea></label>
+                                <label><span class="sr-only" x-text="internalComment ? uiText('Interne Notiz') : uiText('Öffentliche Antwort')"></span><textarea x-ref="comment" x-model="newComment" rows="4" :placeholder="internalComment ? 'Nur für Mitarbeitende sichtbar …' : 'Antwort verfassen …'"></textarea></label>
                                 <footer><span><button type="button" @click="$refs.detailFile.click()" aria-label="Datei anhängen"><i data-feather="paperclip"></i></button><input x-ref="detailFile" hidden type="file" @change="uploadAttachment($event)"></span><button type="submit" class="sd-button sd-button-primary" :disabled="!newComment.trim() || saving">Senden</button></footer>
                             </form>
                         </div>
@@ -233,7 +233,7 @@
                                             <span class="sd-icon-slot" x-html="iconSvg('check-circle')"></span>
                                             <span>
                                                 <strong><small x-text="`#${item.id}`"></small><span x-text="item.title"></span></strong>
-                                                <em x-text="item.category_name || 'Ohne Kategorie'"></em>
+                                                <em x-text="item.category_name || uiText('Ohne Kategorie')"></em>
                                                 <p x-text="item.resolution"></p>
                                             </span>
                                             <span class="sd-icon-slot" x-html="iconSvg('arrow-up-right')"></span>
@@ -253,7 +253,7 @@
                                             <span class="sd-icon-slot" x-html="iconSvg('book-open')"></span>
                                             <span>
                                                 <strong x-text="entry.title"></strong>
-                                                <em x-text="entry.category_name || 'Wissensartikel'"></em>
+                                                <em x-text="entry.category_name || uiText('Wissensartikel')"></em>
                                                 <p x-text="entry.summary || 'Keine Kurzbeschreibung hinterlegt.'"></p>
                                             </span>
                                             <span class="sd-icon-slot" x-html="iconSvg('arrow-up-right')"></span>
@@ -397,7 +397,7 @@
                 <aside><h3>Zuweisung & Planung</h3><label>Priorität<select x-model="newTicket.priority"><template x-for="item in priorities" :key="item.value"><option :value="item.value" x-text="item.label"></option></template></select></label><label x-show="can('tickets.update')">Zuständig<input type="text" x-model="newTicket.assignee" placeholder="Optional"></label><label x-show="can('tickets.update')">Fälligkeit<input type="date" x-model="newTicket.due_date"></label><div class="sd-form-hint"><i data-feather="info"></i><p>Der Anfragende wird aus deinem angemeldeten Benutzerkonto übernommen. SLA-Ziele folgen der gewählten Kategorie.</p></div></aside>
             </div>
             <p x-show="createError" class="sd-form-error" role="alert" x-text="createError"></p>
-            <footer><button type="button" class="sd-button" @click="closeCreateTicket()">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="createTicket()" :disabled="saving"><span x-text="saving ? 'Wird erstellt …' : 'Ticket erstellen'"></span></button></footer>
+            <footer><button type="button" class="sd-button" @click="closeCreateTicket()">Abbrechen</button><button type="button" class="sd-button sd-button-primary" @click="createTicket()" :disabled="saving"><span x-text="saving ? 'Wird erstellt …' : uiText('Ticket erstellen')"></span></button></footer>
         </section>
     </div>
 

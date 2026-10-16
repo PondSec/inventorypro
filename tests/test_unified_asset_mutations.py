@@ -88,16 +88,33 @@ def test_composition_rejects_bad_quantities_without_partial_change(isolated_inve
         assert not assets.get_asset(db,all_permissions,parent['id'])['components']
 
 
-def test_used_child_and_independent_ticket_references_block_unsafe_delete(isolated_inventory):
+def test_delete_detaches_both_directions_and_ticket_links_without_deleting_other_objects(isolated_inventory):
+    with isolated_inventory.app_context():
+        db=inventory_app.get_db();convert_inventory(db)
+        parent=create(db,'Workstation');middle=create(db,'PC');child=create(db,'RAM')
+        parent=assets.set_component(db,all_permissions,parent['id'],middle['id'],1,'Keep parent',parent['revision'])
+        middle=assets.set_component(db,all_permissions,middle['id'],child['id'],2,'Keep RAM',middle['revision'])
+        ticket=db.execute("INSERT INTO tickets(title,description,status,created_by) VALUES ('QA linked ticket','Synthetic','open','admin')").lastrowid
+        db.execute('INSERT INTO ticket_assets(ticket_id,asset_id) VALUES (?,?)',(ticket,middle['id']))
+        assets.delete_asset(db,all_permissions,middle['id'],middle['revision'])
+        assert db.execute('SELECT 1 FROM tickets WHERE id=?',(ticket,)).fetchone()
+        assert not db.execute('SELECT 1 FROM ticket_assets WHERE asset_id=?',(middle['id'],)).fetchone()
+        assert assets.get_asset(db,all_permissions,parent['id'])['components']==[]
+        assert assets.get_asset(db,all_permissions,parent['id'])['revision']>parent['revision']
+        assert assets.get_asset(db,all_permissions,child['id'])['used_in']==[]
+        assert not db.execute('PRAGMA foreign_key_check').fetchall()
+
+
+def test_unknown_reference_rolls_back_all_detached_links_and_parent_revisions(isolated_inventory):
     with isolated_inventory.app_context():
         db=inventory_app.get_db();convert_inventory(db);parent=create(db,'PC');child=create(db,'RAM')
-        parent=assets.set_component(db,all_permissions,parent['id'],child['id'],1,'',parent['revision'])
-        with pytest.raises(assets.AssetError,match='verwendet'):assets.delete_asset(db,all_permissions,child['id'],child['revision'])
-        parent=assets.remove_component(db,all_permissions,parent['id'],child['id'],parent['revision'])
-        ticket=db.execute("INSERT INTO tickets(title,description,status,created_by) VALUES ('QA linked ticket','Synthetic','open','admin')").lastrowid
-        db.execute('INSERT INTO ticket_assets(ticket_id,asset_id) VALUES (?,?)',(ticket,child['id']))
-        with pytest.raises(assets.AssetError,match='Vorgängen'):assets.delete_asset(db,all_permissions,child['id'],child['revision'])
-        assert db.execute('SELECT 1 FROM tickets WHERE id=?',(ticket,)).fetchone()
+        parent=assets.set_component(db,all_permissions,parent['id'],child['id'],1,'Retain on conflict',parent['revision'])
+        db.execute('CREATE TABLE qa_external_asset_reference (asset_id INTEGER REFERENCES assets(id))')
+        db.execute('INSERT INTO qa_external_asset_reference VALUES (?)',(child['id'],))
+        with pytest.raises(assets.AssetError) as problem:assets.delete_asset(db,all_permissions,child['id'],child['revision'])
+        assert problem.value.status==409
+        retained=assets.get_asset(db,all_permissions,parent['id'])
+        assert retained['revision']==parent['revision'] and retained['components']==parent['components']
         assert assets.get_asset(db,all_permissions,child['id'])['name']=='RAM'
         assert not db.execute('PRAGMA foreign_key_check').fetchall()
 

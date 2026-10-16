@@ -1,11 +1,11 @@
 window.storagePlanning = () => ({
-  step: 1, labels: ['Lagerplatz', 'Abmessungen', 'Gegenstände', 'Optionen', 'Packliste'],
+  step: 1, labels: ['Lagerplatz', 'Abmessungen', uiText('Gegenstände'), uiText('Optionen'), uiText('Packliste')],
   options: [], page: 1, pages: 1, query: '', loading: false, error: '', requestNumber: 0,
   containerId: null, containerName: '', container: { width: '', height: '', depth: '' },
   containerFields: [], containerWarnings: [], items: [], unit: 'mm', previousUnit: 'mm',
   clearance: 0, gap: 0, allowRotation: true, preview: null, busy: false, savedId: null,
   planName: '', savedPlans: [], layerIndex: 0, changed: false,
-  axes: [{ key: 'width', label: 'Breite' }, { key: 'height', label: 'Höhe' }, { key: 'depth', label: 'Tiefe' }],
+  axes: [{ key: 'width', label: uiText('Breite') }, { key: 'height', label: uiText('Höhe') }, { key: 'depth', label: uiText('Tiefe') }],
   async init() {
     await Promise.all([this.search(), this.loadSaved()]);
     window.addEventListener('beforeunload', event => {
@@ -23,7 +23,7 @@ window.storagePlanning = () => ({
     this.loading = true;
     try {
       const response = await fetch(`/api/planning/assets?q=${encodeURIComponent(this.query)}&page=${page}`);
-      if (!response.ok) throw new Error('Inventareinträge konnten nicht geladen werden.');
+      if (!response.ok) throw new Error(uiText('Inventareinträge konnten nicht geladen werden.'));
       const data = await response.json();
       if (requestNumber !== this.requestNumber) return;
       this.options = data.items;
@@ -68,9 +68,9 @@ window.storagePlanning = () => ({
   validDimensions(dimensions) { return this.axes.every(axis => Number.isFinite(Number(dimensions[axis.key])) && Number(dimensions[axis.key]) > 0); },
   async next() {
     this.error = '';
-    if (this.step === 1 && !this.containerName.trim()) { this.error = 'Bitte einen Lagerplatz auswählen oder benennen.'; return; }
-    if (this.step === 2 && !this.validDimensions(this.container)) { this.error = 'Bitte Breite, Höhe und Tiefe größer als null erfassen.'; return; }
-    if (this.step === 3 && (!this.items.length || this.items.some(item => !this.validDimensions(item.dimensions)))) { this.error = 'Bitte Gegenstände wählen und ihre drei Abmessungen vervollständigen.'; return; }
+    if (this.step === 1 && !this.containerName.trim()) { this.error = uiText('Bitte einen Lagerplatz auswählen oder benennen.'); return; }
+    if (this.step === 2 && !this.validDimensions(this.container)) { this.error = uiText('Bitte Breite, Höhe und Tiefe größer als null erfassen.'); return; }
+    if (this.step === 3 && (!this.items.length || this.items.some(item => !this.validDimensions(item.dimensions)))) { this.error = uiText('Bitte Gegenstände wählen und ihre drei Abmessungen vervollständigen.'); return; }
     if (this.step === 4) { await this.calculate(); return; }
     this.step++;
     if (this.step === 3) { this.query = ''; await this.search(); }
@@ -83,7 +83,7 @@ window.storagePlanning = () => ({
     try {
       const response = await fetch('/api/planning/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.payload()) });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Plan konnte nicht berechnet werden.');
+      if (!response.ok) throw new Error(data.error || uiText('Plan konnte nicht berechnet werden.'));
       this.preview = data;
       this.step = 5;
       this.layerIndex = 0;
@@ -99,7 +99,7 @@ window.storagePlanning = () => ({
     try {
       const response = await fetch('/api/planning/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.payload()) });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Plan konnte nicht gespeichert werden.');
+      if (!response.ok) throw new Error(data.error || uiText('Plan konnte nicht gespeichert werden.'));
       this.savedId = data.id;
       this.changed = false;
       await this.loadSaved();
@@ -110,7 +110,7 @@ window.storagePlanning = () => ({
     try {
       const response = await fetch(`/api/planning/plans/${id}`);
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Plan konnte nicht geladen werden.');
+      if (!response.ok) throw new Error(data.error || uiText('Plan konnte nicht geladen werden.'));
       this.preview = data.preview;
       this.savedId = data.id;
       this.planName = data.name;
@@ -118,7 +118,7 @@ window.storagePlanning = () => ({
       this.containerId = data.payload.container_id;
       this.containerName = data.name;
       this.unit = this.previousUnit = data.payload.unit;
-      this.items = data.payload.items.map(item => ({ ...item, name: data.preview.placements.find(p => p.asset_id === item.id)?.asset_name || `Eintrag ${item.id}` }));
+      this.items = data.payload.items.map(item => ({ ...item, name: data.preview.placements.find(p => p.asset_id === item.id)?.asset_name || uiText("Eintrag {0}", [item.id]) }));
       this.clearance = data.payload.clearance;
       this.gap = data.payload.gap;
       this.allowRotation = data.payload.allow_rotation;

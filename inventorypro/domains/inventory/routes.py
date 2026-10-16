@@ -13,10 +13,11 @@ from .service import SORTS, inventory_query, list_inventory, workspace_tasks
 from .objects import load_panel
 from .search import search_workspace
 from . import assets as canonical_assets
+from .asset_routes import editor_options
 from inventorypro.domains.catalog.objects import resolve_many, resolve
 
 
-def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, load_asset, ticket_visible, get_export_settings, get_uploads_dir):
+def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, load_asset, ticket_visible, get_export_settings, get_uploads_dir, parse_fields):
     blueprint = Blueprint('inventory_workspace', __name__)
 
     @blueprint.app_template_filter('inventory_date')
@@ -186,7 +187,7 @@ def build_inventory_blueprint(*, get_db, user_can, get_access, login_required, l
             if obj['can_history']:tabs.append(('history','Verlauf'))
             tab=request.args.get('tab','overview')
             if tab not in dict(tabs):abort(404)
-            return render_template('unified_asset_detail.html',asset=obj,object=obj,tabs=tabs,tab=tab,can_edit=obj['can_edit'],**context())
+            return render_template('unified_asset_detail.html',asset=obj,object=obj,tabs=tabs,tab=tab,can_edit=obj['can_edit'],options=editor_options(get_db(),user_can,parse_fields) if obj['can_edit'] else {},**context())
         if not can_read('asset'):
             abort(403)
         response = load_asset(object_id)

@@ -1,106 +1,93 @@
 # Inventory Pro
 
-Enterprise-Inventarisierung und Service-Management für Teams, die Assets, Standorte, Beschaffung und Supportvorgänge in einem nachvollziehbaren System steuern wollen.
+[Deutsch](#deutsch) · [English](#english) · [Dokumentation / Documentation](docs/INDEX.md)
 
-![Inventory Pro Assetbestand](docs/images/inventory-pro-dashboard.png)
+![Inventory Pro](docs/images/inventory-pro-dashboard.png)
 
-> Die Abbildung zeigt eine isolierte Demo-Instanz mit synthetischen Daten. Sie enthält keine Daten einer produktiven Installation.
+Die Abbildung zeigt ausschließlich synthetische Daten. / The screenshot contains synthetic data only.
 
-## Was Inventory Pro verbindet
+## Deutsch
 
-- **Inventar und Lebenszyklus:** Ein gemeinsamer Assetbestand mit Asset-Kategorien, Standorten, Zuweisungen, verschachtelten Assets und Mengen sowie Garantie- und Beschaffungsdaten. Bestehende Geräte werden beim Update mit privater Sicherung übernommen.
-- **Service Desk:** Tickets mit SLA, Prioritäten, Anhängen, Watchern, Kommentaren, Aktivitäten und nachvollziehbaren Statuswechseln.
-- **Wissensgestützte Bearbeitung:** Direkt im Ticket erscheinen passende Wissensartikel und vergleichbare, bereits gelöste Fälle – immer innerhalb der jeweiligen Berechtigung.
-- **Kontrollierte Änderungen:** Zu jedem Change wird ein Review geführt. Ein Change kann erst gelöst oder geschlossen werden, wenn das zugehörige Review abgenommen wurde.
-- **Operative Übersicht:** Der Bestand zeigt fehlende Angaben, Zuweisungen und anstehende Wartungen mit direkt gefilterten Arbeitslisten.
-- **Standortbezogene Arbeit:** Ein Standort führt direkt zu der auf ihn gefilterten Assetansicht.
-- **Sichere Instanzverknüpfung:** Verknüpfte Inventory-Pro-Instanzen bleiben getrennt. Die Zielinstanz liefert nur die Daten, für die der angemeldete Benutzer dort berechtigt ist.
+Inventory Pro verwaltet Assets, Standorte, enthaltene Komponenten, Beschaffung und Supporttickets. Dazu gehören Zuweisungen, Wartung, eine Wissensbasis, Roadmaps und Auswertungen. Rollen begrenzen den Zugriff auf Daten und Aktionen.
 
-## Produktbilder
+### Installation mit Docker
 
-Der [Produktkatalog](docs/product-images.md) ordnet geprüfte Modellbilder zu, enthält ein lizenziertes MacBook-Air-M4-Starterbild und kann nach Aktivierung passende Bilder aus Wikidata/Wikimedia Commons lokal zwischenspeichern. Eigene Fotos werden serverseitig gespeichert und sind auf allen berechtigten Clients sichtbar. Ohne passenden Treffer erscheinen einheitliche Typ-Symbole.
+1. Docker Engine mit Compose installieren oder Docker Desktop starten. Git muss verfügbar sein.
+2. Repository herunterladen:
 
-## Sicherheitsmodell
+   ```sh
+   git clone --branch main https://gitlab.pondsec.com/PondSec/inventorypro.git
+   cd inventorypro
+   ```
 
-- Rollen und fein abgestufte Berechtigungen für Daten und Aktionen
-- Passwort-Hashing, optionale TOTP-Zwei-Faktor-Authentifizierung und sichere Passwort-Resets
-- Auditierbare Ticket- und Änderungsverläufe
-- Verschlüsselte, serverseitige Verknüpfungsgeheimnisse; keine Zugangsdaten im Browser speichern
-- Zwei explizite Verbindungsarten für andere Instanzen:
-  - **Internet:** ausschließlich HTTPS mit geprüfter Zertifikatskette; private und lokale Zielnetze werden abgewiesen.
-  - **Lokales Netzwerk:** ausschließlich private LAN-Adressen; öffentliche, Loopback- und Metadaten-Ziele werden abgewiesen.
-- Release- und Update-Metadaten enthalten keine Inventar- oder Kundendaten.
+3. Anwendung bauen und starten:
 
-## Schnellstart für Entwicklung
+   ```sh
+   docker compose up --detach --build --wait app
+   ```
 
-Voraussetzung: Python 3.12 oder neuer.
+4. Einmalige Zugangsdaten lokal auslesen:
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python app.py
-```
+   ```sh
+   docker compose exec app cat /data/instance/initial_admin_credentials.txt
+   ```
 
-Danach ist die Anwendung standardmäßig unter `http://localhost:5000` verfügbar. Für reale Umgebungen müssen insbesondere `APP_SECRET_KEY`, der Datenpfad und die Uploads als geschützte Infrastruktur-Konfiguration gesetzt werden – keine Geheimnisse in Git ablegen.
+5. [http://127.0.0.1:5000](http://127.0.0.1:5000) öffnen, anmelden und das Passwort ändern. Es gibt kein gemeinsames Standardpasswort.
+6. Einen Standort und ein erstes Asset anlegen. Danach Rollen vergeben, Zwei-Faktor-Authentifizierung einrichten und eine Sicherung prüfen.
 
-## Betrieb mit Docker
+Die Anwendung ist zunächst nur lokal erreichbar. Für Netzwerkbetrieb HTTPS und die Bind-Adresse bewusst konfigurieren. Datenbank, Uploads und Instanzschlüssel liegen im persistenten Docker-Volume. Dieses Volume bei Updates behalten.
 
-Der [Compose-Schnellstart](docs/installation.md) erzeugt sichere persistente Secrets und zufällige Erstzugangsdaten ohne Standardpasswort.
+Optional prüft `python3 scripts/setup.py --start` Docker und freie Ports und erzeugt eine private `.env` mit persistenten Zufallsschlüsseln. Unter Windows kann `py scripts/setup.py --start` verwendet werden. [Installation, Sicherung und Betrieb](docs/de/installation.md).
 
-```bash
-docker compose up -d --build app
-```
+### Bestehende Installationen
 
-Die Standard-Compose-Datei nutzt ein Docker-Volume für `/data`. Bestehende Installationen mit einem Bind-Mount müssen diesen Mount in ihrer produktionsspezifischen Compose-Override-Datei ausdrücklich beibehalten, bevor sie auf Compose umgestellt werden. So bleibt die vorhandene Datenbank unangetastet.
+Keine Neuinstallation vornehmen. Konfigurierte alte Updater erhalten weiterhin signierte Updates über GitHub/GHCR; neue Updater verwenden GitLab. In **Einstellungen → Server → Updates** lassen sich automatische Updates ein- und ausschalten. Ohne laufenden Updater installiert der Schalter keinen Dienst. [Updateverfahren](docs/de/updates.md).
 
-Wichtige Konfigurationen:
+Produktbilder kommen aus einem lokalen Modellkatalog oder nach ausdrücklicher Aktivierung aus Wikidata/Wikimedia Commons. Eigene Fotos werden auf dem Server gespeichert. Ohne Treffer erscheint ein passendes Symbol. [Produktbilder](docs/de/product-images.md).
 
-| Variable | Zweck |
-| --- | --- |
-| `APP_SECRET_KEY` | Zufälliger, persistenter Flask-Session-Schlüssel |
-| `INVENTORY_DATABASE_PATH` | Pfad zur SQLite-Datenbank innerhalb der Instanz |
-| `INVENTORY_UPLOADS_DIR` | Persistenter Speicher für Uploads |
-| `INVENTORY_LINKS_ENCRYPTION_KEY` | Schlüssel zum Schutz von Instanzverknüpfungen |
-| `INVENTORY_UPDATER_ENABLED` | Schaltet die Update-Einstellungen frei; Standard ist `0` |
+### Lizenz
 
-## Signierte automatische Updates
+© 2025–2026 Joshua Pond. Kostenlose Nutzung und Veränderung, auch intern in Unternehmen, sind erlaubt. Namensnennung bleibt Pflicht. Verkauf, kostenpflichtige Softwarezugänge und bezahlte SaaS-Angebote sind ohne schriftliche Erlaubnis untersagt. Maßgeblich sind [LICENSE](LICENSE) und [NOTICE](NOTICE). Die Community-Lizenz ist wegen des Verkaufsverbots keine OSI-anerkannte Open-Source-Lizenz. Frühere, unter AGPL veröffentlichte Versionen behalten ihre damaligen Rechte.
 
-Automatische Updates sind standardmäßig ausgeschaltet. Nach bewusstem Aktivieren in **Einstellungen → Server → Updates → Automatische Updates** prüft ein separater Updater nur den stabilen Release-Kanal. Neue Sidecars lesen signierte Release-Manifeste bei GitLab und prüfen unveränderliche Container-Digests. Vorhandene Sidecars bleiben über einen kompatiblen GitHub/GHCR-Spiegel versorgt; siehe [Updatekompatibilität](docs/enterprise/UPDATE-COMPATIBILITY.md).
+## English
 
-Vor einem Update erstellt der Updater ein lokales SQLite-Backup und prüft dessen Integrität. Nach dem Rollout wartet er auf den Health-Check. Schlägt ein Schritt fehl, bleibt die laufende Version erhalten oder wird auf das vorherige Image zurückgesetzt. Die Instanzdaten verlassen dabei zu keinem Zeitpunkt den Server.
+Inventory Pro manages assets, locations, nested components, procurement and support tickets. It includes assignments, maintenance, a knowledge base, roadmaps and reports. Roles control access to records and actions.
 
-Der Updater wird bewusst separat und nur mit dem Compose-Profil `updater` gestartet:
+### Docker installation
 
-```bash
-docker compose --profile updater up -d
-```
+1. Install Docker Engine with Compose, or start Docker Desktop. Git is also required.
+2. Download the repository:
 
-Der Sidecar benötigt Zugriff auf den lokalen Docker-Socket, damit er einen geprüften Rollout und gegebenenfalls ein Rollback ausführen kann. Dieser privilegierte Zugriff gehört ausschließlich auf einen abgesicherten Server und ist regelmäßig zu überprüfen.
+   ```sh
+   git clone --branch main https://gitlab.pondsec.com/PondSec/inventorypro.git
+   cd inventorypro
+   ```
 
-## Qualitätssicherung
+3. Build and start the application:
 
-```bash
-python3 -m pip install -r requirements-dev.lock
-INVENTORY_ENV=test INVENTORY_SCHEDULER_ENABLED=0 python3 -m pytest -q
-```
+   ```sh
+   docker compose up --detach --build --wait app
+   ```
 
-Die Tests decken unter anderem Rollen- und Sicherheitsgrenzen, Ticket- und Review-Workflows, Wissenskontext, Standortfilter, mobile Bedienung, sichere Instanzverknüpfungen und den Update-Mechanismus ab.
+4. Read the one-time credentials locally:
 
-## Releases
+   ```sh
+   docker compose exec app cat /data/instance/initial_admin_credentials.txt
+   ```
 
-Stable [0.3.0](https://gitlab.pondsec.com/PondSec/inventorypro/-/releases/v0.3.0) ist
-einschließlich [GitHub-Kompatibilitätsfeed](https://github.com/PondSec/inventorypro/releases/tag/v0.3.0)
-veröffentlicht. Tatsächlich ausgeführte Installation, Datenübernahme, Signatur-
-und Updaterprüfungen: [Releaseabnahme](docs/release-0.3.0-qa.md).
+5. Open [http://127.0.0.1:5000](http://127.0.0.1:5000), sign in and change the password. There is no shared default password.
+6. Add a location and your first asset. Then assign roles, enable two-factor authentication and verify a backup.
 
-Ein ausdrücklich versionierter Releaseauftrag auf `dev` startet die vorhandene Vorbereitungspipeline. Sie prüft den Quellstand gegen GitLab, führt die Regression aus, baut das Multiarch-Image und signiert beide Update-Manifeste mit dem bereits ausgelieferten Schlüssel. Zunächst entsteht ein Entwurf. Nach Image-, Upgrade- und Rollbackabnahme werden GitLab-Stable und der kompatible GitHub-Feed freigegeben. Gewöhnliche Commits und ein Merge nach `main` veröffentlichen kein ungeprüftes Update. Der private Signaturschlüssel bleibt ausschließlich im bestehenden Actions-Secret `INVENTORY_UPDATE_SIGNING_KEY`.
+The application initially accepts local connections only. Configure HTTPS and the bind address before enabling network access. The persistent Docker volume holds the database, uploads and instance keys. Retain this volume during updates.
 
-## Lizenz und Kontakt
+The optional `python3 scripts/setup.py --start` helper checks Docker and ports and creates a private `.env` with persistent random keys. On Windows, use `py scripts/setup.py --start`. See [installation, backup and operation](docs/en/installation.md).
 
-Inventory Pro steht unter der [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.de.html). Für eine kommerzielle Nutzung ohne Offenlegungspflicht kann eine separate Lizenz vereinbart werden.
+### Existing installations
 
-PondSec · [joshua@pondsec.com](mailto:joshua@pondsec.com)
-Stand: Oktober 2026
+Do not reinstall. Configured older updaters continue to receive signed updates through GitHub/GHCR; new updaters use GitLab. Automatic updates can be enabled or disabled under **Settings → Server → Updates**. The switch does not install a missing updater service. See [updates](docs/en/updates.md).
 
-Die weitere Projekt- und Betriebsdokumentation steht im [Dokumentationsverzeichnis](docs/INDEX.md).
+Product pictures use a local model catalog or, when explicitly enabled, Wikidata/Wikimedia Commons. Uploaded photos are stored on the server. A type icon appears when no image matches. See [product images](docs/en/product-images.md).
+
+### License
+
+© 2025–2026 Joshua Pond. Free use and modification, including internal business use, are permitted. Attribution is required. Sale, paid software access and paid SaaS require written permission. [LICENSE](LICENSE) and [NOTICE](NOTICE) govern use. The Community License is not an OSI-approved open-source license because it prohibits sale. Earlier AGPL releases retain their original license rights.

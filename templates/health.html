@@ -177,7 +177,7 @@
                                         <td class="px-4 py-3 text-right">
                                             <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
                                                 <input type="checkbox" class="rounded" :checked="check.enabled" @change="toggleCheck(check)">
-                                                <span x-text="check.enabled ? 'Ein' : 'Aus'"></span>
+                                                <span x-text="check.enabled ? 'Ein' : uiText('Aus')"></span>
                                             </label>
                                         </td>
                                     </tr>
@@ -327,11 +327,11 @@
         function healthApp() {
             return {
                 tabs: [
-                    { key: 'overview', label: 'Übersicht' },
+                    { key: 'overview', label: uiText('Übersicht') },
                     { key: 'services', label: 'Dienste' },
-                    { key: 'checks', label: 'Prüfungen' },
-                    { key: 'incidents', label: 'Störungen' },
-                    { key: 'history', label: 'Verlauf' }
+                    { key: 'checks', label: uiText('Prüfungen') },
+                    { key: 'incidents', label: uiText('Störungen') },
+                    { key: 'history', label: uiText('Verlauf') }
                 ],
                 activeTab: 'overview',
                 summary: { overall_status: 'UNKNOWN', last_updated: null, summary_cards: [], events: [], incidents: [] },
@@ -363,9 +363,9 @@
                     const cpu = this.history.metrics.cpu_load;
                     const memory = this.history.metrics.memory;
                     const disk = this.history.metrics.disk;
-                    summaries.push(this.buildMetricSummary('cpu', 'CPU Load', cpu));
+                    summaries.push(this.buildMetricSummary('cpu', uiText('CPU Load'), cpu));
                     summaries.push(this.buildMetricSummary('memory', 'Memory %', memory));
-                    summaries.push(this.buildMetricSummary('disk', 'Disk %', disk));
+                    summaries.push(this.buildMetricSummary('disk', uiText('Disk %'), disk));
                     return summaries;
                 },
                 buildMetricSummary(key, label, series) {
@@ -489,7 +489,7 @@
                     try {
                         parsed = JSON.parse(this.configDraft || '{}');
                     } catch (error) {
-                        alert('Ungültiges JSON.');
+                        alert(uiText('Ungültiges JSON.'));
                         return;
                     }
                     const response = await fetch(`/api/health/checks/${this.selectedCheck.id}`, {

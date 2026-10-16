@@ -14,10 +14,10 @@ document.addEventListener('alpine:init', () => {
         },
         roadmapStatuses: ['planned', 'in_progress', 'blocked', 'done'],
         roadmapStatusLabels: {
-            planned: 'Geplant',
-            in_progress: 'In Arbeit',
-            blocked: 'Blockiert',
-            done: 'Erledigt'
+            planned: uiText('Geplant'),
+            in_progress: uiText('In Arbeit'),
+            blocked: uiText('Blockiert'),
+            done: uiText('Erledigt')
         },
         overview: {
             planned: 0,
@@ -57,7 +57,7 @@ document.addEventListener('alpine:init', () => {
                     if(writing)this.workspaceBusy=true;
                     this.workspaceError='';
                     try {return await operation(...args);}
-                    catch(error){this.workspaceError=error.message || 'Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.';if(this.roadmapModalOpen)this.roadmapError=this.workspaceError;}
+                    catch(error){this.workspaceError=error.message || uiText('Verbindung fehlgeschlagen. Ihre Eingaben bleiben erhalten.');if(this.roadmapModalOpen)this.roadmapError=this.workspaceError;}
                     finally {if(writing)this.workspaceBusy=false;}
                 };
             }
@@ -77,8 +77,8 @@ document.addEventListener('alpine:init', () => {
 
         async request(url,options={}) {
             const response=await fetch(url,options);
-            if(response.redirected)throw new Error('Die Sitzung ist abgelaufen. Bitte erneut anmelden.');
-            if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error || 'Die Änderung konnte nicht gespeichert werden. Ihre Eingaben bleiben erhalten.');}
+            if(response.redirected)throw new Error(uiText('Die Sitzung ist abgelaufen. Bitte erneut anmelden.'));
+            if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error || uiText('Die Änderung konnte nicht gespeichert werden. Ihre Eingaben bleiben erhalten.'));}
             return response;
         },
 
@@ -254,7 +254,7 @@ document.addEventListener('alpine:init', () => {
                 await this.loadRoadmaps();
             } else {
                 const error = await response.json();
-                this.roadmapError = error.error || 'Roadmap konnte nicht erstellt werden.';
+                this.roadmapError = error.error || uiText('Roadmap konnte nicht erstellt werden.');
             }
         },
 

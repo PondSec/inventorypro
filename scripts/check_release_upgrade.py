@@ -60,7 +60,7 @@ def main():
         runtime.mkdir()
         archive = fixture / 'baseline.tar'
         subprocess.run(['git', 'archive', '--format=tar', '--output', str(archive),
-                        '9e3ffb2', 'inventorypro', 'migrations'], cwd=ROOT, check=True)
+                        'fde7ccc734578ee6eb49347e68466712ede2b962', 'inventorypro', 'migrations'], cwd=ROOT, check=True)
         with tarfile.open(archive) as tar:
             tar.extractall(runtime, filter='data')
         # This package was originally hidden by an overly broad ignore rule.
@@ -95,7 +95,7 @@ def main():
         compose_file.write_text(json.dumps(compose))
         compose_file.chmod(0o600)
         old_file = fixture / 'legacy_updater.py'
-        old_file.write_text(command(['git', 'show', '900b489:updater.py'], cwd=ROOT))
+        old_file.write_text(command(['git', 'show', '121dee5df67574373ab508bbba3ae95a20f1e8b3:updater.py'], cwd=ROOT))
         old = load_module('release_qa_legacy_updater', old_file)
         modern = load_module('release_qa_modern_updater', ROOT / 'updater.py')
         for module in (old, modern):

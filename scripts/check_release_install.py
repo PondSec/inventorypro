@@ -37,8 +37,12 @@ import app, openpyxl
 from inventorypro.domains.backups import service
 from inventorypro.domains.inventory import upgrade, graph
 from inventorypro.domains.catalog import commons, jobs, media
+assert 'Joshua Pond' in Path('/app/NOTICE').read_text()
+assert 'Inventory Pro Community License' in Path('/app/LICENSE').read_text()
 assert os.environ['APP_VERSION']
-if sys.argv[1]: assert os.environ['APP_VERSION'] == sys.argv[1]
+if sys.argv[1]: assert 'Joshua Pond' in Path('/app/NOTICE').read_text()
+assert 'Inventory Pro Community License' in Path('/app/LICENSE').read_text()
+assert os.environ['APP_VERSION'] == sys.argv[1]
 secret = Path('/data/instance/application-secret.key')
 credentials = Path('/data/instance/initial_admin_credentials.txt')
 assert secret.stat().st_mode & 0o777 == 0o600

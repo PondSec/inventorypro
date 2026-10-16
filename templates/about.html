@@ -1,0 +1,12 @@
+{% extends 'base_app.html' %}
+{% set hide_page_intro=true %}{% set page_title='Über Inventory Pro' %}{% set page_section_label='Inventory Pro' %}
+{% block content %}
+<section class="workspace-panel ui-section"><h2>Inventory Pro {{ application_version }}</h2>
+<p>© 2025–2026 Joshua Pond</p><h3>Lizenz und Urheber</h3>
+<p>Freie interne Nutzung, auch in Unternehmen. Verkauf und kostenpflichtige SaaS-Angebote sind ohne schriftliche Erlaubnis untersagt.</p>
+<p>Namensnennung: Joshua Pond. Änderungen müssen gekennzeichnet werden.</p>
+<p>Produktbilder und eingebundene Bibliotheken behalten ihre jeweiligen Lizenzen.</p>
+<p><a href="https://gitlab.pondsec.com/PondSec/inventorypro" rel="noreferrer" target="_blank">Quellcode</a></p>
+<details class="object-accordion"><summary>Vollständige Lizenz</summary><pre class="ui-license-text">{{ license_text }}</pre></details>
+</section>
+{% endblock %}

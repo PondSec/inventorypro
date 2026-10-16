@@ -1,8 +1,10 @@
 {% from '_ui.html' import page_header, icon with context %}
 {% from '_app_shell.html' import render_sidebar, render_breadcrumbs, render_page_tabs with context %}
 <!DOCTYPE html>
-<html lang="de" {% block html_attrs %}{% endblock %}>
+<html lang="{{ ui_language }}" {% block html_attrs %}{% endblock %}>
 <head>
+    {% if ui_language=='en' %}<script src="/i18n/en.js?v={{ ui_catalog_version }}"></script>{% endif %}
+    <script src="/static/i18n.js?v=1"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Inventory Pro{% endblock %}</title>
@@ -43,7 +45,7 @@
                     </button>
                     <details class="account-menu" data-account-menu>
                         <summary aria-label="Kontomenü"><span class="user-avatar">{{ (username or 'IP')[0:2] | upper }}</span><span class="account-menu__name">{{ username }}<small>{{ 'Administrator' if is_superuser else 'Konto' }}</small></span>{{ icon('chevron-down') }}</summary>
-                        <div class="ui-menu"><a href="/account/security">{{ icon('shield') }}Kontosicherheit</a><button type="button" onclick="logout()">{{ icon('log-out') }}Abmelden</button></div>
+                        <div class="ui-menu"><a href="/account/security">{{ icon('shield') }}Kontosicherheit</a><a href="/about">{{ icon('info') }}Über Inventory Pro</a><button type="button" onclick="logout()">{{ icon('log-out') }}Abmelden</button></div>
                     </details>
                 </div>
             </header>

@@ -77,6 +77,9 @@ def test_auto_updates_toggle_persists_with_csrf(live_inventory, browser):
             save.click()
         assert saved.value.status == 200, saved.value.text()
         assert saved.value.json()['settings']['updates']['autoUpdateEnabled'] is enabled
+        # The HTTP response arrives before the browser clears its dirty-form
+        # guard. Reload only after the user-visible save confirmation.
+        expect(page.locator('form').filter(has=toggle)).to_contain_text('Einstellungen gespeichert.')
         page.reload()
         expect(toggle).to_be_checked(checked=enabled)
     context.close()

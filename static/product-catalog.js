@@ -4,22 +4,22 @@
   let dirty=false;
   document.addEventListener('input',event=>{if(event.target.closest('[data-catalog-form],[data-catalog-upload],[data-public-source]'))dirty=true;});
   window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
-  function discard(){return !dirty || window.confirm('Ungespeicherte Eingaben verwerfen?');}
+  function discard(){return !dirty || window.confirm(uiText('Ungespeicherte Eingaben verwerfen?'));}
   function reload(){dirty=false;location.reload();}
   const model = document.querySelector('[data-model-state]');
   const photo = document.querySelector('[data-photo-state]');
   async function api(url, options = {}) {
     const response = await fetch(url, options);
-    if (response.redirected) throw new Error('Die Sitzung ist abgelaufen. Bitte erneut anmelden.');
+    if (response.redirected) throw new Error(uiText('Die Sitzung ist abgelaufen. Bitte erneut anmelden.'));
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Die Änderung konnte nicht gespeichert werden.');
+    if (!response.ok) throw new Error(data.error || uiText('Die Änderung konnte nicht gespeichert werden.'));
     return data;
   }
   const json = data => ({method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
   async function perform(button, status, task) {
     if (button?.disabled) return;
     if (button) button.disabled = true;
-    if (status) { status.classList.remove('form-error'); status.textContent='Wird verarbeitet …'; }
+    if (status) { status.classList.remove('form-error'); status.textContent=uiText('Wird verarbeitet …'); }
     try { await task(); }
     catch (error) { if (status) {status.classList.add('form-error');status.textContent=error.message;} }
     finally { if (button) button.disabled=false; }
@@ -39,7 +39,7 @@
       await api(`/api/catalog/models/${model.dataset.modelId}/images/${image.dataset.imageId}`,json({action:image.dataset.modelImage,expectedUpdatedAt:model.dataset.modelVersion}));reload();
     });
     const remove=event.target.closest('[data-delete-model]');
-    if (remove && model && window.confirm('Produktmodell löschen? Inventarisierte Geräte, Sets und eigene Fotos bleiben erhalten.')) perform(remove,document.querySelector('[data-delete-status]'),async () => {
+    if (remove && model && window.confirm(uiText('Produktmodell löschen? Inventarisierte Geräte, Sets und eigene Fotos bleiben erhalten.'))) perform(remove,document.querySelector('[data-delete-status]'),async () => {
       await api('/api/catalog/models/'+model.dataset.modelId,{...json({expectedUpdatedAt:model.dataset.modelVersion}),method:'DELETE'});dirty=false;location.assign('/inventory/catalog');
     });
     const reconcile=event.target.closest('[data-reconcile]');
@@ -47,7 +47,7 @@
       let after={},processed=0,matched=0;
       for (;;) {
         const result=await api('/api/catalog/reconcile',json({after}));after=result.last;processed+=result.processed;matched+=result.matched;
-        document.querySelector('[data-reconcile-status]').textContent=`${processed} Einträge geprüft, ${matched} zugeordnet.`;
+        document.querySelector('[data-reconcile-status]').textContent=uiText("{0} Einträge geprüft, {1} zugeordnet.", [processed, matched]);
         if (result.processed===0) break;
         // Stay below the server's per-user reconciliation rate limit.
         await new Promise(resolve => setTimeout(resolve,2100));
@@ -57,11 +57,11 @@
   const publicCatalog=document.querySelector('[data-public-catalog]');
   const publicForm=publicCatalog?.querySelector('[data-public-source]');
   let sourcePoll=null;
-  const sourceLabels={queued:'Wartet',running:'Wird geprüft',matched:'Bild verfügbar',no_match:'Kein eindeutiger Treffer',no_image:'Kein Bild verfügbar',ambiguous:'Mehrdeutig',unlicensed:'Keine freigegebene Lizenz',insufficient:'Produktdaten unvollständig',error:'Abruf fehlgeschlagen'};
+  const sourceLabels={queued:'Wartet',running:uiText('Wird geprüft'),matched:uiText('Bild verfügbar'),no_match:uiText('Kein eindeutiger Treffer'),no_image:uiText('Kein Bild verfügbar'),ambiguous:'Mehrdeutig',unlicensed:uiText('Keine freigegebene Lizenz'),insufficient:uiText('Produktdaten unvollständig'),error:uiText('Abruf fehlgeschlagen')};
   async function refreshSource() {
     if(!publicCatalog)return;
     const result=await api('/api/catalog/external');
-    publicCatalog.querySelector('[data-public-counts]').textContent=Object.entries(result.counts).map(([key,value])=>`${sourceLabels[key] || key}: ${value}`).join(' · ') || 'Noch keine öffentlichen Bildabgleiche.';
+    publicCatalog.querySelector('[data-public-counts]').textContent=Object.entries(result.counts).map(([key,value])=>`${sourceLabels[key] || key}: ${value}`).join(' · ') || uiText('Noch keine öffentlichen Bildabgleiche.');
     const list=publicCatalog.querySelector('[data-public-jobs]');list.replaceChildren();
     for(const job of result.recent){
       const li=document.createElement('li'),name=document.createElement('strong'),state=document.createElement('span');
@@ -72,7 +72,7 @@
         const link=document.createElement('a');
         // Never accept provider-controlled schemes/hosts in browser links.
         if(!/^https:\/\/www\.wikidata\.org\/wiki\/Q[1-9][0-9]*$/.test(candidate.source_url || ''))continue;
-        link.href=candidate.source_url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=`Vorschlag prüfen: ${candidate.name}`;li.append(link);
+        link.href=candidate.source_url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=uiText("Vorschlag prüfen: {0}", [candidate.name]);li.append(link);
       }
       list.append(li);
     }
@@ -86,7 +86,7 @@
     publicCatalog.querySelector('[data-public-queue]').addEventListener('click',event=>perform(event.currentTarget,publicCatalog.querySelector('[data-public-status]'),async()=>{
       let after={},processed=0;
       for(;;){const result=await api('/api/catalog/external/queue',json({after}));after=result.last;processed+=result.processed;
-        publicCatalog.querySelector('[data-public-status]').textContent=`${processed} Einträge geprüft. Geeignete Produktdaten werden im Hintergrund abgeglichen.`;
+        publicCatalog.querySelector('[data-public-status]').textContent=uiText("{0} Einträge geprüft. Geeignete Produktdaten werden im Hintergrund abgeglichen.", [processed]);
         await refreshSource();if(!result.processed)break;await new Promise(resolve=>setTimeout(resolve,2100));
       }
     }));
@@ -94,7 +94,7 @@
       const result=await api('/api/catalog/external',{...json({enabled:publicForm.elements.enabled.checked,rightsReviewed:publicForm.elements.reviewed.checked,expectedUpdatedAt:publicForm.dataset.sourceVersion}),method:'PUT'});
       publicForm.dataset.sourceVersion=result.updated_at;dirty=false;
       publicCatalog.querySelector('[data-public-queue]').disabled=!result.external_enabled;
-      publicCatalog.querySelector('[data-public-status]').textContent=result.external_enabled ? 'Öffentliche Bildquelle aktiviert.' : 'Öffentliche Bildquelle deaktiviert. Bereits gespeicherte Bilder bleiben verfügbar.';
+      publicCatalog.querySelector('[data-public-status]').textContent=result.external_enabled ? uiText('Öffentliche Bildquelle aktiviert.') : uiText('Öffentliche Bildquelle deaktiviert. Bereits gespeicherte Bilder bleiben verfügbar.');
       await refreshSource();
     });});
   }
@@ -118,9 +118,9 @@
         for (const item of result.models) {
           const li=document.createElement('li'),copy=document.createElement('span'),name=document.createElement('strong'),maker=document.createElement('small'),button=document.createElement('button');
           name.textContent=item.name;maker.textContent=item.manufacturer;copy.append(name,maker);
-          button.type='button';button.className='btn btn-secondary';button.dataset.assignModel=item.id;button.textContent='Zuordnen';li.append(copy,button);list.append(li);
+          button.type='button';button.className='btn btn-secondary';button.dataset.assignModel=item.id;button.textContent=uiText('Zuordnen');li.append(copy,button);list.append(li);
         }
-        document.querySelector('[data-search-status]').textContent=result.total ? `${Math.min(20,result.total)} von ${result.total} Modellen. Bitte das passende Modell bestätigen.` : 'Kein passendes Modell gefunden. Eigene Fotos können Sie weiterhin hochladen.';
+        document.querySelector('[data-search-status]').textContent=result.total ? uiText("{0} von {1} Modellen. Bitte das passende Modell bestätigen.", [Math.min(20,result.total), result.total]) : uiText('Kein passendes Modell gefunden. Eigene Fotos können Sie weiterhin hochladen.');
       });
     }
   });

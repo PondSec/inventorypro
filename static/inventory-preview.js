@@ -55,10 +55,10 @@
     if (error) {
       const retry = document.createElement('button');
       retry.type = 'button'; retry.className = 'btn btn-secondary';
-      retry.dataset.panelRetry = ''; retry.textContent = 'Erneut laden'; content.append(retry);
+      retry.dataset.panelRetry = ''; retry.textContent = uiText('Erneut laden'); content.append(retry);
       const detail = document.createElement('a');
       detail.href = trigger.href; detail.className = 'btn btn-secondary';
-      detail.textContent = 'Detailseite'; content.append(detail);
+      detail.textContent = uiText('Detailseite'); content.append(detail);
     } else {
       const skeleton = document.createElement('div');
       skeleton.className = 'object-skeleton'; skeleton.setAttribute('aria-hidden', 'true');
@@ -70,12 +70,12 @@
     if (controller) controller.abort();
     const pending = new AbortController(); controller = pending;
     loaded = false; content.setAttribute('aria-busy', 'true');
-    message('Objektdaten werden geladen …');
+    message(uiText('Objektdaten werden geladen …'));
     try {
       const key = row.dataset.previewKey.split('-');
       const response = await fetch('/api/inventory/' + key[0] + '/' + key[1] + '/panel?format=html', {signal: pending.signal, headers: {'Accept': 'text/html'}});
-      if (response.redirected) throw new Error('Die Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.');
-      if (!response.ok) throw new Error(response.status === 403 ? 'Keine Berechtigung für diesen Eintrag.' : response.status === 404 ? 'Dieser Eintrag ist nicht mehr vorhanden.' : 'Die Objektdaten konnten nicht geladen werden.');
+      if (response.redirected) throw new Error(uiText('Die Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.'));
+      if (!response.ok) throw new Error(response.status === 403 ? uiText('Keine Berechtigung für diesen Eintrag.') : response.status === 404 ? uiText('Dieser Eintrag ist nicht mehr vorhanden.') : uiText('Die Objektdaten konnten nicht geladen werden.'));
       const html = await response.text();
       if (pending.signal.aborted || currentRow !== row) return;
       // Only our server-rendered, autoescaped fragment is inserted, never object
@@ -84,7 +84,7 @@
       loaded = true; switchTab(selectedTab());
     } catch (error) {
       if (pending.signal.aborted || currentRow !== row) return;
-      message(error.message || 'Verbindung fehlgeschlagen. Bitte versuchen Sie es erneut.', true);
+      message(error.message || uiText('Verbindung fehlgeschlagen. Bitte versuchen Sie es erneut.'), true);
     } finally {
       if (controller === pending) content.removeAttribute('aria-busy');
     }

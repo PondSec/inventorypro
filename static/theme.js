@@ -25,7 +25,7 @@
       const label = button.querySelector('[data-theme-label]');
       const icon = button.querySelector('[data-theme-icon]');
       if (label) {
-        label.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+        label.textContent = isDark ? uiText('Light Mode') : uiText('Dark Mode');
       }
       if (icon) {
         icon.textContent = isDark ? '☀️' : '🌙';
@@ -182,14 +182,14 @@
   const validateCustomization = (data) => {
     const errors = [];
     if (!data || typeof data !== 'object') {
-      errors.push('Customization muss ein Objekt sein.');
+      errors.push(uiText('Customization muss ein Objekt sein.'));
       return { valid: false, errors };
     }
     if (typeof data.schemaVersion !== 'number') {
-      errors.push('schemaVersion fehlt oder ist ungültig.');
+      errors.push(uiText('schemaVersion fehlt oder ist ungültig.'));
     }
     if (!data.baseTokens || !data.componentOverrides || !data.layoutPrefs) {
-      errors.push('Basisbereiche fehlen.');
+      errors.push(uiText('Basisbereiche fehlen.'));
     }
     return { valid: errors.length === 0, errors };
   };

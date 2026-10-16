@@ -79,14 +79,14 @@
                                     <tr class="hover:bg-slate-50">
                                         <td class="py-3 font-semibold text-slate-900" x-text="user.username"></td>
                                         <td class="py-3 text-slate-600">
-                                            <span x-text="user.email || 'Nicht gesetzt'"></span>
+                                            <span x-text="user.email || uiText('Nicht gesetzt')"></span>
                                         </td>
                                         <td class="py-3">
                                             <span class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold"
                                                   :class="user.otp_enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">
                                                 <i data-feather="check-circle" x-show="user.otp_enabled" class="w-3 h-3"></i>
                                                 <i data-feather="x-circle" x-show="!user.otp_enabled" class="w-3 h-3"></i>
-                                                <span x-text="user.otp_enabled ? 'Aktiv' : 'Inaktiv'"></span>
+                                                <span x-text="user.otp_enabled ? uiText('Aktiv') : uiText('Inaktiv')"></span>
                                             </span>
                                         </td>
                                         <td class="py-3">
@@ -520,19 +520,19 @@
                 async createUser() {
                     if(this.creatingUser)return;
                     this.errorMessage='';this.successMessage='';
-                    if(this.newUser.email && !this.isValidEmail(this.newUser.email)){this.errorMessage='Ungültige E-Mail-Adresse';return;}
+                    if(this.newUser.email && !this.isValidEmail(this.newUser.email)){this.errorMessage=uiText('Ungültige E-Mail-Adresse');return;}
                     this.creatingUser=true;
                     try{
                         const response=await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.newUser)});
-                        if(response.redirected)throw new Error('Ihre Sitzung ist abgelaufen. Bitte erneut anmelden.');
+                        if(response.redirected)throw new Error(uiText('Ihre Sitzung ist abgelaufen. Bitte erneut anmelden.'));
                         const result=await response.json().catch(()=>({}));
-                        if(!response.ok)throw new Error(result.error || 'Benutzer konnte nicht erstellt werden. Bitte erneut versuchen.');
-                        this.successMessage='Benutzer erstellt.';
+                        if(!response.ok)throw new Error(result.error || uiText('Benutzer konnte nicht erstellt werden. Bitte erneut versuchen.'));
+                        this.successMessage=uiText('Benutzer erstellt.');
                         this.newUser={username:'',email:'',password:'',role_ids:[]};
                         this.$refs.createUserPanel.removeAttribute('open');
                         this.$refs.createUserPanel.querySelector('summary').focus();
                         await this.loadUsers();
-                    }catch(error){this.errorMessage=error.message || 'Server nicht erreichbar. Ihre Eingaben bleiben erhalten.';}
+                    }catch(error){this.errorMessage=error.message || uiText('Server nicht erreichbar. Ihre Eingaben bleiben erhalten.');}
                     finally{this.creatingUser=false;}
                 },
 
@@ -561,12 +561,12 @@
                         body: JSON.stringify(payload)
                     });
                     if (response.ok) {
-                        this.roleMessage = 'Rolle erstellt.';
+                        this.roleMessage = uiText('Rolle erstellt.');
                         this.newRole = { name: '', description: '' };
                         await this.loadRoles();
                     } else {
                         const error = await response.json();
-                        this.roleError = error.error || 'Fehler beim Erstellen';
+                        this.roleError = error.error || uiText('Fehler beim Erstellen');
                     }
                 },
 
@@ -588,19 +588,19 @@
                         await this.loadRoles();
                     } else {
                         const error = await response.json();
-                        alert(error.error || 'Fehler beim Speichern');
+                        alert(error.error || uiText('Fehler beim Speichern'));
                     }
                 },
 
                 async deleteRole(role) {
                     if (!this.can('roles.manage')) return;
-                    if (!confirm(`Rolle ${role.name} wirklich löschen?`)) return;
+                    if (!confirm(uiText("Rolle {0} wirklich löschen?", [role.name]))) return;
                     const response = await fetch(`/api/roles/${role.id}`, { method: 'DELETE' });
                     if (response.ok) {
                         await this.loadRoles();
                     } else {
                         const error = await response.json();
-                        alert(error.error || 'Fehler beim Löschen');
+                        alert(error.error || uiText('Fehler beim Löschen'));
                     }
                 },
 
@@ -622,7 +622,7 @@
                         await this.loadUsers();
                     } else {
                         const error = await response.json();
-                        alert(error.error || 'Fehler beim Speichern');
+                        alert(error.error || uiText('Fehler beim Speichern'));
                     }
                 },
 
@@ -645,7 +645,7 @@
                     this.emailError = '';
                     this.emailSuccess = '';
                     if (this.emailValue && !this.isValidEmail(this.emailValue)) {
-                        this.emailError = 'Ungültige E-Mail-Adresse';
+                        this.emailError = uiText('Ungültige E-Mail-Adresse');
                         return;
                     }
                     const response = await fetch(`/api/users/${this.emailUser.id}`, {
@@ -654,12 +654,12 @@
                         body: JSON.stringify({ email: this.emailValue })
                     });
                     if (response.ok) {
-                        this.emailSuccess = 'E-Mail gespeichert.';
+                        this.emailSuccess = uiText('E-Mail gespeichert.');
                         await this.loadUsers();
                         this.emailModalOpen = false;
                     } else {
                         const error = await response.json();
-                        this.emailError = error.error || 'Fehler beim Speichern';
+                        this.emailError = error.error || uiText('Fehler beim Speichern');
                     }
                 },
 
@@ -675,18 +675,18 @@
                         await this.loadUsers();
                     } else {
                         const error = await response.json();
-                        alert(error.error || 'Fehler beim Zurücksetzen');
+                        alert(error.error || uiText('Fehler beim Zurücksetzen'));
                     }
                 },
 
                 async deleteUser(user) {
-                    if (!confirm(`Benutzer ${user.username} wirklich löschen?`)) return;
+                    if (!confirm(uiText("Benutzer {0} wirklich löschen?", [user.username]))) return;
                     const response = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
                     if (response.ok) {
                         await this.loadUsers();
                     } else {
                         const error = await response.json();
-                        alert(error.error || 'Fehler beim Löschen');
+                        alert(error.error || uiText('Fehler beim Löschen'));
                     }
                 },
 
@@ -714,10 +714,10 @@
                     if (response.ok) {
                         const data = await response.json();
                         this.adSettings = { ...this.adSettings, ...data, bind_password: '' };
-                        this.adMessage = 'Active Directory verbunden.';
+                        this.adMessage = uiText('Active Directory verbunden.');
                     } else {
                         const error = await response.json();
-                        this.adError = error.error || 'Verbindung fehlgeschlagen.';
+                        this.adError = error.error || uiText('Verbindung fehlgeschlagen.');
                     }
                     this.$nextTick(() => feather.replace());
                 },
@@ -735,10 +735,10 @@
                         const data = await response.json();
                         this.adSettings = { ...this.adSettings, ...data, bind_password: '' };
                         this.adQuick.password = '';
-                        this.adMessage = 'Active Directory verbunden.';
+                        this.adMessage = uiText('Active Directory verbunden.');
                     } else {
                         const error = await response.json();
-                        this.adError = error.error || 'Verbindung fehlgeschlagen.';
+                        this.adError = error.error || uiText('Verbindung fehlgeschlagen.');
                     }
                     this.$nextTick(() => feather.replace());
                 },
@@ -750,10 +750,10 @@
                     if (response.ok) {
                         const data = await response.json();
                         this.adSettings = { ...this.adSettings, ...data, bind_password: '' };
-                        this.adMessage = 'Active Directory getrennt.';
+                        this.adMessage = uiText('Active Directory getrennt.');
                     } else {
                         const error = await response.json();
-                        this.adError = error.error || 'Trennen fehlgeschlagen.';
+                        this.adError = error.error || uiText('Trennen fehlgeschlagen.');
                     }
                     this.$nextTick(() => feather.replace());
                 }
