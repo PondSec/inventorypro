@@ -11,7 +11,16 @@ Checked on 16 October 2026.
 - Browser tests cover German and English interfaces and unchanged user content. Existing visual baselines were compared; new storage views were also inspected as screenshots.
 - New commits were scanned for credentials with no findings. Private operational documents are excluded from release artifacts.
 
-Signed release artifacts also undergo the Linux release pipeline and installation, upgrade and rollback acceptance before publication. Results will be added after completion. Windows and Safari were not run. The public image source does not guarantee complete product coverage.
+## Signed artifacts
+
+- The signing Linux pipeline passes 704 tests and 46 subtests. Ten pixel comparisons with macOS-only baselines are skipped on Linux; functional Chromium/Firefox checks remain active.
+- The final signed image passes fresh installation, first login with password change and restart with an unchanged persistent key. Python packages, migrations and starter pictures are included.
+- The real old updater installs 0.4.0 using the compatible manifest. The new updater restores the previous schema and image after an intentionally rejected health check; restoration was also exercised inside a Docker data volume.
+- A separate direct upgrade from 0.3.1 retains assets, contained components, permissions, ticket links and server-uploaded photos. An earlier deliberately failed upgrade attempt restored the exact schema and records.
+- Both manifest formats validate with the previously shipped Ed25519 key. AMD64 and ARM64 images are anonymously available from both registries under the same digest.
+- A separate GitLab run exposed three synchronization problems in older browser tests. They now wait for document readiness, dialog focus and completed save navigation. Their functional assertions are retained; all 18 affected tests and two subtests pass together.
+
+The signed runtime image comes from commit `88c8da3`; later changes affect only tests and this report. Windows and Safari were not run. The public image source does not guarantee complete product coverage.
 
 ## Earlier verification: 0.3.1
 
