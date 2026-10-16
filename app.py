@@ -15784,6 +15784,7 @@ app.register_blueprint(build_inventory_blueprint(
     ticket_visible=ensure_ticket_access,
     get_export_settings=lambda db: serialize_server_settings(get_server_settings(db))[0],
     get_uploads_dir=lambda: UPLOADS_DIR,
+    parse_fields=parse_field_definitions,
 ))
 
 app.register_blueprint(

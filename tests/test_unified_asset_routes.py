@@ -50,7 +50,7 @@ def test_converted_device_reader_keeps_access_without_seeing_old_assets(unified_
     with inventory_app.app.app_context():identifier=inventory_app.get_db().execute('SELECT asset_id FROM asset_legacy_devices WHERE device_id=1').fetchone()[0]
     assert client.get(f'/api/inventory/assets/{identifier}').status_code==200
     assert client.get(f'/api/inventory/asset/{identifier}/panel').status_code==200
-    assert client.get(f'/inventory/assets/{identifier}/edit').status_code==200
+    assert client.get(f'/inventory/assets/{identifier}/edit').location==f'/inventory/assets/{identifier}?edit=1'
     assert client.post(f'/api/inventory/asset/{identifier}/photo/upload',data=image_data(expectedUpdatedAt='')).status_code==201
     assert client.get(f'/api/inventory/asset/{identifier}/photo').json['source']=='individual'
 

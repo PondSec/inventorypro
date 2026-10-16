@@ -4,24 +4,6 @@
 {% set page_breadcrumbs=[{'label':'Inventar','href':'/inventory'},{'label':'Bestand','href':'/inventory'},{'label':page_title}] %}
 {% block page_actions %}<a class="btn btn-secondary" href="{{ '/inventory/assets/' ~ asset.id if asset.id else '/inventory' }}">Abbrechen</a><button class="btn btn-primary" type="submit" form="asset-editor">{{ icon('check') }}Speichern</button>{% endblock %}
 {% block content %}
-<form id="asset-editor" class="asset-editor-layout" data-asset-editor>
-<section class="workspace-panel ui-section"><h2>Asset</h2><p class="muted">Ein Name genügt für die Erfassung. Standort, Identifikation und weitere Eigenschaften können Sie ergänzen.</p>
-<div class="editor-fields"><label>Name <span aria-hidden="true">*</span><input class="input" name="name" required maxlength="240" value="{{ asset.name }}" autofocus></label>
-<label>Asset-Kategorie<select class="input" name="category_id"><option value="">Keine Kategorie</option>{% for item in options.categories %}<option value="{{ item.id }}" {% if item.id==asset.category_id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></label>
-<label>Inventar-/Seriennummer<input class="input" name="serial_number" maxlength="240" value="{{ asset.serial_number or '' }}"></label>
-<label>Standort<select class="input" name="location_id"><option value="">Nicht festgelegt</option>{% for item in options.locations %}<option value="{{ item.id }}" {% if item.id==asset.location_id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></label>
-</div><label class="editor-note">Beschreibung<textarea class="input" name="notes" rows="3">{{ asset.notes or '' }}</textarea></label>
-<p class="form-error" role="alert" data-asset-error hidden></p>
-</section>
-<section class="workspace-panel ui-section"><h2>Eigenschaften</h2><p class="muted">Felder stammen aus der Asset-Kategorie. Bestehende zusätzliche Eigenschaften bleiben erhalten.</p><div class="editor-fields" data-asset-specs></div><p class="muted" data-no-specs hidden>Diese Kategorie enthält keine zusätzlichen Felder.</p></section>
-<details class="workspace-panel ui-section asset-editor-advanced"><summary>Beschaffung, Garantie und Lebenszyklus</summary><div class="editor-fields">
-{% for key,label in [('acquisition_date','Beschafft am'),('commissioning_date','In Betrieb seit'),('warranty_end','Garantie bis'),('retirement_date','Ausgemustert am')] %}<label>{{ label }}<input class="input" type="date" name="{{ key }}" value="{{ asset.get(key) or '' }}"></label>{% endfor %}
-{% for key,label in [('purchase_cost','Anschaffungskosten'),('depreciation_months','Abschreibung in Monaten')] %}<label>{{ label }}<input class="input" type="number" min="0" step="{{ '1' if key=='depreciation_months' else '0.01' }}" name="{{ key }}" value="{{ asset.get(key) if asset.get(key) is not none else '' }}"></label>{% endfor %}
-{% for key,label in [('currency','Währung'),('cost_center','Kostenstelle'),('invoice_number','Rechnungsnummer'),('retirement_reason','Ausmusterungsgrund')] %}<label>{{ label }}<input class="input" name="{{ key }}" maxlength="{{ 3 if key=='currency' else 2000 if key=='retirement_reason' else 240 }}" value="{{ asset.get(key) or '' }}"></label>{% endfor %}
-{% for key,label,items in [('vendor_id','Lieferant',options.vendors),('purchase_order_id','Bestellung',options.orders)] %}<label>{{ label }}<select class="input" name="{{ key }}"><option value="">Nicht verknüpft</option>{% if asset.get(key) and asset.get(key) not in items | map(attribute='id') | list %}<option value="{{ asset[key] }}" selected>Bestehende Verknüpfung</option>{% endif %}{% for item in items %}<option value="{{ item.id }}" {% if item.id==asset.get(key) %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></label>{% endfor %}
-</div></details>
-{% if asset.id %}<section class="workspace-panel ui-section"><h2>Produktbild und Inhalt</h2><div class="ui-actions"><a class="btn btn-secondary" href="/inventory/asset/{{ asset.id }}/photo">{{ icon('image') }}Produktbild verwalten</a><a class="btn btn-secondary" href="/inventory/assets/{{ asset.id }}?tab=accessories">{{ icon('package') }}Enthaltene Assets verwalten</a></div></section>{% endif %}
-</form>
-<script type="application/json" data-asset-initial>{{ {'asset':asset,'options':options} | tojson }}</script>
+{% include '_asset_editor_form.html' %}
 {% endblock %}
-{% block page_scripts %}<script src="/static/asset-editor.js?v=1"></script>{% endblock %}
+{% block page_scripts %}<script src="/static/asset-editor.js?v=2"></script>{% endblock %}

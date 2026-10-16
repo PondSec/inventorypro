@@ -3,6 +3,14 @@
   const form=document.querySelector('[data-asset-editor]');if(!form)return;
   const initial=JSON.parse(document.querySelector('[data-asset-initial]').textContent);
   const values={...initial.asset.specs};let dirty=false,saving=false;
+  const inline=document.querySelector('[data-inline-asset-editor]'),opener=document.querySelector('[data-edit-asset]');
+  function setEditing(open){
+    if(!inline)return;
+    inline.hidden=!open;document.querySelector('[data-asset-detail]').hidden=open;
+    document.querySelector('[data-inline-editor-actions]').hidden=!open;opener.hidden=open;
+    document.querySelector('.page-tabbar').hidden=open;
+    (open ? form.elements.name : opener).focus();
+  }
   const error=form.querySelector('[data-asset-error]'),specs=form.querySelector('[data-asset-specs]');
   function remember(){for(const input of specs.querySelectorAll('[data-spec-name]'))values[input.dataset.specName]=input.type==='checkbox' ? input.checked : input.value;}
   function renderFields(){
@@ -20,6 +28,15 @@
     form.querySelector('[data-no-specs]').hidden=keys.length>0;
   }
   renderFields();form.elements.category_id.addEventListener('change',renderFields);
+  opener?.addEventListener('click',()=>setEditing(true));
+  document.querySelector('[data-cancel-asset-edit]')?.addEventListener('click',()=>{
+    if(saving || dirty && !confirm('Ungespeicherte Änderungen verwerfen?'))return;
+    form.reset();specs.replaceChildren();Object.keys(values).forEach(key=>delete values[key]);Object.assign(values,initial.asset.specs);
+    renderFields();dirty=false;error.hidden=true;
+    form.querySelectorAll('[aria-invalid]').forEach(input=>input.removeAttribute('aria-invalid'));
+    const url=new URL(location.href);url.searchParams.delete('edit');history.replaceState(null,'',url);setEditing(false);
+  });
+  if(initial.inplace && initial.open)setEditing(true);
   form.addEventListener('input',()=>dirty=true);form.addEventListener('change',()=>dirty=true);
   window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
   form.addEventListener('submit',async event=>{
@@ -36,7 +53,9 @@
         for(const key of Object.keys(result.fields || {})){const input=key.startsWith('specs.') ? [...specs.querySelectorAll('[data-spec-name]')].find(input=>input.dataset.specName===key.slice(6)) : form.elements.namedItem(key);input?.setAttribute('aria-invalid','true');}
         throw new Error(result.error || 'Das Asset konnte nicht gespeichert werden.');
       }
-      dirty=false;location.assign('/inventory/assets/'+result.id);
+      dirty=false;
+      if(initial.inplace){const url=new URL(location.href);url.searchParams.delete('edit');history.replaceState(null,'',url);location.reload();}
+      else location.assign('/inventory/assets/'+result.id);
     }catch(problem){error.textContent=problem.message;error.hidden=false;error.scrollIntoView({block:'nearest'});}
     finally{saving=false;document.querySelectorAll('[form="asset-editor"]').forEach(button=>button.disabled=false);}
   });

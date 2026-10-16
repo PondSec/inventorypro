@@ -33,7 +33,7 @@ def test_asset_editor_nested_picker_reverse_links_and_retained_error_inputs(unif
     expect(page.locator('tbody')).to_contain_text('QA CPU XY');expect(page.locator('tbody')).to_contain_text('QA RAM XY')
     page.get_by_role('link',name='QA RAM XY',exact=True).click()
     expect(page.get_by_role('link',name='QA Mini PC XY Menge 2',exact=True)).to_be_visible()
-    page.get_by_role('link',name='Bearbeiten',exact=True).click();page.get_by_label('Name *',exact=True).fill('QA RAM XY revised')
+    page.get_by_role('button',name='Bearbeiten',exact=True).click();page.get_by_label('Name *',exact=True).fill('QA RAM XY revised')
     page.route('**/api/inventory/assets/*',lambda route:route.fulfill(status=503,json={'error':'QA unavailable'}) if route.request.method=='PUT' else route.continue_())
     page.get_by_role('button',name='Speichern',exact=True).click();expect(page.get_by_role('alert')).to_contain_text('QA unavailable')
     expect(page.get_by_label('Name *',exact=True)).to_have_value('QA RAM XY revised')
@@ -101,4 +101,27 @@ def test_asset_tags_shared_file_and_software_remain_operable(unified_live,browse
     page.get_by_role('button',name='Software zuordnen',exact=True).click()
     page.locator('summary').filter(has_text='Software').click();expect(page.get_by_text('QA App',exact=True)).to_be_visible()
     assert context.request.get(unified_live+file_url).status==200
+    context.close()
+
+
+def test_detail_edit_stays_on_object_page_and_cancel_restores_values_and_focus(unified_live,browser):
+    context=browser.new_context(viewport={'width':1280,'height':900});page=context.new_page();sign_in(page,unified_live)
+    identifier=new_asset(page,unified_live,'QA inline original');original=page.url
+    page.get_by_role('button',name='Bearbeiten',exact=True).click()
+    assert page.url==original and '/edit' not in page.url
+    expect(page.get_by_label('Name *',exact=True)).to_be_focused()
+    page.get_by_label('Name *',exact=True).fill('QA inline discarded')
+    page.once('dialog',lambda dialog:dialog.accept())
+    page.get_by_role('button',name='Abbrechen',exact=True).click()
+    expect(page.locator('.object-header h1')).to_have_text('QA inline original')
+    expect(page.get_by_role('button',name='Bearbeiten',exact=True)).to_be_focused()
+    page.get_by_role('button',name='Bearbeiten',exact=True).click()
+    expect(page.get_by_label('Name *',exact=True)).to_have_value('QA inline original')
+    page.get_by_label('Name *',exact=True).fill('QA inline saved')
+    page.get_by_role('button',name='Speichern',exact=True).click()
+    expect(page.locator('.object-header h1')).to_have_text('QA inline saved')
+    assert page.url==original
+    page.goto(unified_live+f'/inventory/assets/{identifier}/edit')
+    expect(page.get_by_label('Name *',exact=True)).to_be_visible()
+    assert page.url.endswith(f'/inventory/assets/{identifier}?edit=1')
     context.close()

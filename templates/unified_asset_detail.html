@@ -4,6 +4,7 @@
 {% block workspace_heading %}{% endblock %}
 {% block content %}
 {% include '_object_detail_header.html' %}
+{% if can_edit %}<section data-inline-asset-editor hidden aria-label="Asset bearbeiten">{% with inline_editor=true %}{% include '_asset_editor_form.html' %}{% endwith %}</section>{% endif %}
 <div class="object-detail-grid" data-asset-detail="{{ asset.id }}" data-asset-revision="{{ asset.revision }}">
 <section class="workspace-panel ui-section object-detail-primary"><h2>{{ dict(tabs)[tab] }}</h2><p class="form-error" role="alert" data-detail-error hidden></p>
 {% if tab=='overview' %}{% include '_object_overview_properties.html' %}{% if asset.notes %}<h3>Beschreibung</h3><p class="preserve-lines">{{ asset.notes }}</p>{% endif %}
@@ -43,4 +44,4 @@
 <label data-relation-type-label hidden>Beziehungstyp<select class="input" data-relation-type aria-label="Beziehungstyp"><option value="">Allgemeine Verknüpfung</option></select></label>
 <div data-component-results class="component-results"></div><h3>Ausgewählte Assets</h3><div data-component-selection class="component-selection"></div>
 <p role="status" data-component-status></p><footer><button type="button" class="btn btn-secondary" data-close-components>Abbrechen</button><button type="button" class="btn btn-primary" data-save-components>Assets übernehmen</button></footer></dialog>{% endif %}{% endblock %}
-{% block page_scripts %}<script src="/static/asset-detail.js?v=1"></script>{% endblock %}
+{% block page_scripts %}<script src="/static/asset-detail.js?v=2"></script>{% if can_edit %}<script src="/static/asset-editor.js?v=2"></script>{% endif %}{% endblock %}

@@ -7,7 +7,7 @@ def load_asset_panel(db,identifier,*,can,access,ticket_visible):
     obj=assets.get_asset(db,can,identifier)
     obj.update(kind='asset',unified=True,icon=fallback_icon(obj['name'],obj.get('category') or '','asset'))
     obj.update(product_identity(obj['specs']))
-    obj['detail_url']=f'/inventory/assets/{identifier}';obj['edit_url']=obj['detail_url']+'/edit'
+    obj['detail_url']=f'/inventory/assets/{identifier}';obj['edit_url']=obj['detail_url']+'?edit=1'
     obj['can_history']=can('activity.view') or can('asset.view_history');obj['can_maintenance']=can('maintenance.view') or can('maintenance.manage')
     obj['can_tickets']=can('tickets.view_all') or can('tickets.view_own')
     obj['can_links']=True;obj['can_relations']=True

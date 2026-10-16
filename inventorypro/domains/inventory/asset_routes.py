@@ -2,11 +2,17 @@
 import json
 import re
 from datetime import date
-from flask import Blueprint,abort,jsonify,render_template,request,session
+from flask import Blueprint,abort,jsonify,render_template,request,session,redirect
 from . import assets
 from .service import list_inventory
 from inventorypro.domains.catalog.objects import resolve,resolve_many
 
+
+def editor_options(db,user_can,parse_fields):
+    return dict(categories=[{**dict(row),'fields':parse_fields(row['fields'])} for row in db.execute('SELECT id,name,fields FROM asset_categories ORDER BY name')],
+        locations=[dict(row) for row in db.execute('SELECT id,name FROM locations ORDER BY name')],
+        vendors=[dict(row) for row in db.execute('SELECT id,name FROM vendors ORDER BY name')] if user_can('procurement.view') or user_can('procurement.manage') else [],
+        orders=[dict(row) for row in db.execute('SELECT id,po_number AS name FROM purchase_orders ORDER BY id DESC LIMIT 500')] if user_can('procurement.view') or user_can('procurement.manage') else [])
 
 def build_assets_blueprint(*,get_db,user_can,get_access,login_required,parse_fields,validate_specs,log_activity,get_uploads_dir):
     bp=Blueprint('unified_assets',__name__)
@@ -20,11 +26,6 @@ def build_assets_blueprint(*,get_db,user_can,get_access,login_required,parse_fie
         if not isinstance(value,dict):raise assets.AssetError('Bitte gültige Assetdaten eingeben.')
         return value
     def write(action,identifier):log_activity(get_db(),action,'asset',identifier);get_db().commit()
-    def options():
-        return dict(categories=[{**dict(row),'fields':parse_fields(row['fields'])} for row in get_db().execute('SELECT id,name,fields FROM asset_categories ORDER BY name')],
-            locations=[dict(row) for row in get_db().execute('SELECT id,name FROM locations ORDER BY name')],
-            vendors=[dict(row) for row in get_db().execute('SELECT id,name FROM vendors ORDER BY name')] if user_can('procurement.view') or user_can('procurement.manage') else [],
-            orders=[dict(row) for row in get_db().execute('SELECT id,po_number AS name FROM purchase_orders ORDER BY id DESC LIMIT 500')] if user_can('procurement.view') or user_can('procurement.manage') else [])
     @bp.before_app_request
     def legacy_access_guard():
         if not session.get('logged_in') or not (request.path.startswith('/api/asset-entries/') or request.path.startswith('/assets/') or request.endpoint=='handle_device' and request.method=='DELETE'):
@@ -171,6 +172,7 @@ def build_assets_blueprint(*,get_db,user_can,get_access,login_required,parse_fie
             if not (user_can('assets.manage') or user_can('devices.manage')):abort(403)
             asset={'id':None,'name':'','specs':{},'revision':None}
         else:
-            assets.require(get_db(),user_can,identifier,write=True);asset=assets.get_asset(get_db(),user_can,identifier)
-        return render_template('asset_editor.html',asset=asset,options=options(),**context())
+            assets.require(get_db(),user_can,identifier,write=True)
+            return redirect(f'/inventory/assets/{identifier}?edit=1')
+        return render_template('asset_editor.html',asset=asset,options=editor_options(get_db(),user_can,parse_fields),**context())
     return bp
