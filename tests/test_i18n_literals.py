@@ -1,7 +1,7 @@
 import pytest
 from flask import Flask,g
 from jinja2 import Environment,DictLoader
-from inventorypro.i18n import InterfaceLanguage,translate,literal,template_literals
+from inventorypro.i18n import InterfaceLanguage,InterfaceCodeGenerator,translate,literal,template_literals
 
 
 @pytest.fixture
@@ -43,3 +43,26 @@ def test_scripts_styles_dynamic_attributes_and_escaping_remain_intact(translated
 ])
 def test_german_template_rendering_is_unchanged(source):
     assert render(source,flag=True,name='QA name')==render(source,localized=False,flag=True,name='QA name')
+
+
+def test_compiler_translates_macro_labels_but_preserves_dynamic_properties(translated):
+    env=Environment(loader=DictLoader({'test.html':"{% macro property(label,value) %}<dt>{{label}}</dt><dd>{{value}}</dd>{% endmacro %}{% set page_title='Standort' %}<h1>{{page_title}}</h1>{{property('Standort',name)}}{{property(field_name,name)}}"}),autoescape=True,extensions=[InterfaceLanguage])
+    env.code_generator_class=InterfaceCodeGenerator;env.globals.update(ui_t=translate,ui_literal=literal)
+    assert env.get_template('test.html').render(name='Standort',field_name='Standort')=='<h1>Location</h1><dt>Location</dt><dd>Standort</dd><dt>Standort</dt><dd>Standort</dd>'
+
+
+def test_pattern_translation_preserves_whitespace_and_inserted_values(translated,monkeypatch):
+    import inventorypro.i18n as i18n
+    monkeypatch.setattr(i18n.catalog,'_messages',{'Menge für {0}':'Quantity for {0}'})
+    assert translate('  Menge für Standort \n')=='  Quantity for Standort \n'
+
+
+def test_english_catalog_preserves_placeholders_and_core_vocabulary():
+    import json,re
+    from inventorypro.i18n import CATALOG_PATH
+    messages=json.loads(CATALOG_PATH.read_text())
+    assert messages['Abbrechen']=='Cancel' and messages['Speichern']=='Save'
+    assert messages['Berechtigungen']=='Permissions' and messages['Sicherung']=='Backup'
+    for key,value in messages.items():
+        assert isinstance(value,str) and value.strip(),key
+        assert sorted(re.findall(r'\{\d+\}',key))==sorted(re.findall(r'\{\d+\}',value)),key

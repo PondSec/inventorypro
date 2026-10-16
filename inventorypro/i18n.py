@@ -35,8 +35,8 @@ def translate(message,values=None):
     prefix,key,suffix=match.groups()
     text=catalog().get(key,key) if language()=='en' else key
     if language()=='en' and key not in catalog():
-        for pattern,indexes,prefix,replacement in message_patterns():
-            if not key.startswith(prefix):continue
+        for pattern,indexes,pattern_prefix,replacement in message_patterns():
+            if not key.startswith(pattern_prefix):continue
             found=pattern.fullmatch(key)
             if found:
                 captured={index:found.group(i+1) for i,index in enumerate(indexes)}
@@ -128,15 +128,35 @@ class InterfaceLanguage(Extension):
 
 
 class InterfaceCodeGenerator(CodeGenerator):
+    @staticmethod
+    def expression(item):
+        if isinstance(item,nodes.Const) and isinstance(item.value,str):
+            return nodes.Call(nodes.Getitem(nodes.EnvironmentAttribute('globals'),nodes.Const('ui_t'),'load'),[item],[],None,None).set_lineno(item.lineno)
+        if isinstance(item,nodes.CondExpr):
+            item.expr1=InterfaceCodeGenerator.expression(item.expr1)
+            if item.expr2 is not None:item.expr2=InterfaceCodeGenerator.expression(item.expr2)
+        elif isinstance(item,nodes.Concat):item.nodes=[InterfaceCodeGenerator.expression(child) for child in item.nodes]
+        return item
+
     def visit_Output(self,node,frame):
-        def expression(item):
-            if isinstance(item,nodes.Const) and isinstance(item.value,str):
-                return nodes.Call(nodes.Getitem(nodes.EnvironmentAttribute('globals'),nodes.Const('ui_t'),'load'),[item],[],None,None).set_lineno(item.lineno)
-            if isinstance(item,nodes.CondExpr):item.expr1=expression(item.expr1);item.expr2=expression(item.expr2)
-            elif isinstance(item,nodes.Concat):item.nodes=[expression(child) for child in item.nodes]
-            return item
-        node.nodes=[expression(item) for item in node.nodes]
+        node.nodes=[self.expression(item) for item in node.nodes]
         return super().visit_Output(node,frame)
+
+    def visit_Assign(self,node,frame):
+        if isinstance(node.target,nodes.Name) and node.target.name in {'page_title','page_description','page_section_label'}:
+            node.node=self.expression(node.node)
+        return super().visit_Assign(node,frame)
+
+    def visit_Call(self,node,frame,forward_caller=False):
+        # Only literal labels in known presentation macros; model values and keys
+        # deliberately stay outside this list.
+        positions={'render_nav_link':{1},'nav_group':{0},'property':{0},
+                   'accordion':{0},'section':{0,1},'empty_state':{0,1},
+                   'page_header':{0,1,2},'kpi_tile':{0,3}}
+        if isinstance(node.node,nodes.Name) and node.node.name in positions:
+            for index in positions[node.node.name]:
+                if index<len(node.args):node.args[index]=self.expression(node.args[index])
+        return super().visit_Call(node,frame,forward_caller=forward_caller)
 
 
 def register_i18n(application,get_db):
