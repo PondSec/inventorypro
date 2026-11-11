@@ -1,0 +1,17 @@
+name: Documentation improvement
+description: Report inaccurate or incomplete technical documentation.
+title: "docs: "
+labels: [documentation]
+body:
+  - type: textarea
+    id: location
+    attributes:
+      label: Affected document or section
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Suggested correction
+    validations:
+      required: true

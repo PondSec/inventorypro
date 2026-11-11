@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+coverage.xml
+.venv/
+venv/
+node_modules/
+.env
+inventory.db
+instance/runtime_config.json
+instance/initial_admin_credentials*.txt
+uploads/
+/backups/

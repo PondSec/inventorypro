@@ -1,0 +1,860 @@
+(() => {
+  const root = document.documentElement;
+  const stored = localStorage.getItem('theme');
+  const initial = stored || 'light';
+  const customizationCacheKey = 'inventorypro.customization.cache';
+  const legacyCustomizationKey = 'inventorypro.customization';
+  let activeCustomization = null;
+  let activeCustomizationRevision = null;
+  let customizationLoadSequence = 0;
+
+  const defaultCustomization = {
+    schemaVersion: 1,
+    branding: {
+      name: 'Inventory Pro',
+      tagline: 'Inventarisierung',
+      logoDataUrl: '',
+      logoLightDataUrl: '',
+      logoDarkDataUrl: '',
+      faviconDataUrl: '',
+      authBackgroundDataUrl: '',
+    },
+    baseTokens: {
+      colors: {
+        primary: '#2563eb',
+        secondary: '#6366f1',
+        accent: '#14b8a6',
+        neutral: '#64748b',
+        background: '#f6f7fb',
+        surface: '#ffffff',
+        text: '#0f172a',
+        textMuted: '#6b7280',
+        border: '#e5e7eb',
+        shadow: 'rgba(15, 23, 42, 0.12)',
+        focus: 'rgba(37, 99, 235, 0.35)',
+        success: '#16a34a',
+        warning: '#f59e0b',
+        danger: '#dc2626',
+        info: '#0ea5e9',
+      },
+      typography: {
+        fontFamily: '"Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+        fontSizes: {
+          xs: '12px',
+          sm: '14px',
+          base: '15px',
+          lg: '18px',
+          xl: '22px',
+        },
+        fontWeights: {
+          normal: 400,
+          medium: 500,
+          semibold: 600,
+          bold: 700,
+        },
+        lineHeights: {
+          tight: 1.2,
+          normal: 1.6,
+          relaxed: 1.75,
+        },
+        letterSpacing: {
+          tight: '-0.01em',
+          normal: '0',
+          wide: '0.05em',
+        },
+      },
+      spacing: {
+        radius: {
+          sm: 8,
+          md: 12,
+          lg: 18,
+          pill: 999,
+        },
+        paddingScale: [4, 8, 12, 16, 20, 24, 32, 40, 48, 64],
+        gapScale: [4, 8, 12, 16, 20, 24, 32, 40],
+      },
+      layout: {
+        containerWidth: 1200,
+        sidebarWidth: 280,
+        tableDensity: 'normal',
+      },
+      states: {
+        hover: 0.92,
+        active: 0.86,
+        disabled: 0.6,
+      },
+    },
+    componentOverrides: {
+      button: {
+        primary: {
+          radius: 12,
+          background: '#2563eb',
+          text: '#ffffff',
+          border: 'transparent',
+          shadow: '0 6px 16px rgba(15, 23, 42, 0.08)',
+          hoverBg: '#1d4ed8',
+          activeBg: '#1e40af',
+          disabledBg: '#e5e7eb',
+          disabledText: '#94a3b8',
+        },
+        secondary: {
+          radius: 12,
+          background: '#ffffff',
+          text: '#1f2937',
+          border: '#e2e8f0',
+          shadow: 'none',
+          hoverBg: '#f8fafc',
+          activeBg: '#e2e8f0',
+          disabledBg: '#f1f5f9',
+          disabledText: '#94a3b8',
+        },
+      },
+      input: {
+        radius: 12,
+        background: '#ffffff',
+        text: '#0f172a',
+        border: '#e2e8f0',
+        focusRing: 'rgba(37, 99, 235, 0.35)',
+        shadow: '0 1px 2px rgba(15, 23, 42, 0.06)',
+        placeholder: '#94a3b8',
+      },
+      card: {
+        radius: 18,
+        background: '#ffffff',
+        border: '#e5e7eb',
+        shadow: '0 12px 30px rgba(15, 23, 42, 0.12)',
+      },
+      table: {
+        radius: 16,
+        headerBg: '#f8fafc',
+        rowBg: '#ffffff',
+        zebraBg: '#f8fafc',
+        border: '#e2e8f0',
+      },
+      modal: {
+        radius: 20,
+        background: '#ffffff',
+        shadow: '0 20px 50px rgba(15, 23, 42, 0.16)',
+      },
+      toast: {
+        radius: 16,
+        background: '#0f172a',
+        text: '#ffffff',
+        shadow: '0 12px 30px rgba(15, 23, 42, 0.2)',
+      },
+      badge: {
+        radius: 999,
+        background: '#eef2ff',
+        text: '#4338ca',
+      },
+      navbar: {
+        background: '#ffffff',
+        border: '#e5e7eb',
+        text: '#0f172a',
+      },
+      sidebar: {
+        background: '#ffffff',
+        border: '#e5e7eb',
+        text: '#0f172a',
+      },
+    },
+    layoutPrefs: {
+      density: 1,
+      containerWidth: 1200,
+      sidebarWidth: 280,
+      tableDensity: 'normal',
+      rowHeight: 44,
+      zebraStriping: true,
+      formSpacing: 16,
+    },
+    featurePrefs: {
+      iconSet: 'feather',
+      tableDefaults: {
+        defaultSort: 'updated_at:desc',
+        defaultColumns: ['name', 'status', 'owner', 'updated_at'],
+      },
+      compactSidebar: false,
+    },
+    navigation: {
+      groups: {
+        legacyPrimary: 'Hauptbereiche',
+        assetOperations: 'Asset Operations',
+        serviceWorkflow: 'Service & Workflow',
+        legacyAnalysis: 'Auswertung',
+        analysisPlatform: 'Analyse & Plattform',
+        linkedInstances: 'Verknüpfte Instanzen',
+        administration: 'Administration',
+      },
+      items: {
+        dashboard: { label: 'Dashboard', visible: true, order: 10 },
+        devices: { label: 'Geräte', visible: true, order: 20 },
+        assets: { label: 'Assets', visible: true, order: 30 },
+        categories: { label: 'Kategorien', visible: true, order: 40 },
+        locations: { label: 'Standorte', visible: true, order: 50 },
+        tickets: { label: 'Ticketsystem', visible: true, order: 60 },
+        knowledge: { label: 'Wissensbasis', visible: true, order: 70 },
+        roadmap: { label: 'Roadmap', visible: true, order: 80 },
+        procurement: { label: 'Beschaffung', visible: true, order: 90 },
+        statistics: { label: 'Statistiken', visible: true, order: 100 },
+        dependencies: { label: 'Abhängigkeiten', visible: true, order: 110 },
+        timeMachine: { label: 'Zeitmaschine', visible: true, order: 120 },
+        health: { label: 'Health', visible: true, order: 130 },
+        users: { label: 'Benutzer & Rollen', visible: true, order: 140 },
+        settings: { label: 'Einstellungen', visible: true, order: 150 },
+      },
+    },
+  };
+
+  const navigationTargets = {
+    dashboard: ['/', '/?view=overview'],
+    devices: ['/?view=devices'],
+    assets: ['/?view=assets'],
+    categories: ['/?view=taxonomy'],
+    locations: ['/locations'],
+    tickets: ['/tickets'],
+    knowledge: ['/knowledge'],
+    roadmap: ['/roadmap'],
+    procurement: ['/procurement'],
+    statistics: ['/stats'],
+    dependencies: ['/dependencies'],
+    timeMachine: ['/time-machine'],
+    health: ['/health'],
+    users: ['/users'],
+    settings: ['/settings'],
+  };
+
+  const navigationGroupDefaults = {
+    legacyPrimary: 'Hauptbereiche',
+    assetOperations: 'Asset Operations',
+    serviceWorkflow: 'Service & Workflow',
+    legacyAnalysis: 'Auswertung',
+    analysisPlatform: 'Analyse & Plattform',
+    linkedInstances: 'Verknüpfte Instanzen',
+    administration: 'Administration',
+  };
+
+  const navigationLinkSelector = [
+    '.app-sidebar .sidebar-link',
+    '.sidebar .sidebar-link',
+    '.sd-global-nav [data-navigation-item]',
+  ].join(', ');
+
+  if (initial === 'dark') {
+    root.classList.add('dark');
+  }
+
+  const updateButtons = () => {
+    const isDark = root.classList.contains('dark');
+    document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(isDark));
+      const label = button.querySelector('[data-theme-label]');
+      const icon = button.querySelector('[data-theme-icon]');
+      if (label) {
+        label.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+      }
+      if (icon) {
+        icon.textContent = isDark ? '☀️' : '🌙';
+      }
+    });
+  };
+
+  const applyModeTokens = (customization) => {
+    if (!customization) return;
+    if (!root.classList.contains('dark')) {
+      return;
+    }
+
+    root.style.setProperty('--color-bg', '#0b0f14');
+    root.style.setProperty('--color-surface', '#111820');
+    root.style.setProperty('--color-surface-muted', '#16202a');
+    root.style.setProperty('--color-surface-elevated', '#111820');
+    root.style.setProperty('--color-text', '#e6edf3');
+    root.style.setProperty('--color-text-muted', '#93a4b5');
+    root.style.setProperty('--color-border', '#263442');
+    root.style.setProperty('--color-border-strong', '#344454');
+    root.style.setProperty('--color-accent', '#7aa2f7');
+    root.style.setProperty('--color-accent-strong', '#9ab7ff');
+    root.style.setProperty('--color-accent-soft', 'rgba(122, 162, 247, 0.16)');
+    root.style.setProperty('--focus-ring', 'rgba(122, 162, 247, 0.34)');
+    root.style.setProperty('--input-bg', '#0f151d');
+    root.style.setProperty('--input-text', '#e6edf3');
+    root.style.setProperty('--input-border', '#263442');
+    root.style.setProperty('--input-placeholder', '#718196');
+    root.style.setProperty('--button-bg', '#e6edf3');
+    root.style.setProperty('--button-bg-hover', '#f4f7fb');
+    root.style.setProperty('--button-bg-active', '#cbd5e1');
+    root.style.setProperty('--button-text', '#0b0f14');
+    root.style.setProperty('--button-secondary-bg', '#111820');
+    root.style.setProperty('--button-secondary-bg-hover', '#16202a');
+    root.style.setProperty('--button-secondary-bg-active', '#1c2936');
+    root.style.setProperty('--button-secondary-text', '#e6edf3');
+    root.style.setProperty('--button-secondary-border', '#263442');
+    root.style.setProperty('--card-bg', '#111820');
+    root.style.setProperty('--card-border', '#263442');
+    root.style.setProperty('--table-header-bg', '#16202a');
+    root.style.setProperty('--table-row-bg', '#111820');
+    root.style.setProperty('--table-zebra-bg', '#131c25');
+    root.style.setProperty('--table-border', '#263442');
+    root.style.setProperty('--modal-bg', '#111820');
+    root.style.setProperty('--navbar-bg', '#111820');
+    root.style.setProperty('--navbar-border', '#263442');
+    root.style.setProperty('--navbar-text', '#e6edf3');
+    root.style.setProperty('--sidebar-bg', '#101720');
+    root.style.setProperty('--sidebar-border', '#263442');
+    root.style.setProperty('--sidebar-text', '#e6edf3');
+  };
+
+  const refreshModeAwareTheme = () => {
+    if (!activeCustomization) return;
+    applyThemeToCSSVars(activeCustomization);
+    applyModeTokens(activeCustomization);
+    applyBrandingContent(activeCustomization);
+  };
+
+  const setTheme = (mode) => {
+    if (mode === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    localStorage.setItem('theme', mode);
+    refreshModeAwareTheme();
+    updateButtons();
+  };
+
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+  const hexToRgb = (hex) => {
+    if (!hex) return [79, 70, 229];
+    const normalized = hex.replace('#', '');
+    if (normalized.length === 3) {
+      const r = parseInt(normalized[0] + normalized[0], 16);
+      const g = parseInt(normalized[1] + normalized[1], 16);
+      const b = parseInt(normalized[2] + normalized[2], 16);
+      return [r, g, b];
+    }
+    if (normalized.length !== 6) {
+      return [79, 70, 229];
+    }
+    return [
+      parseInt(normalized.slice(0, 2), 16),
+      parseInt(normalized.slice(2, 4), 16),
+      parseInt(normalized.slice(4, 6), 16),
+    ];
+  };
+
+  const adjustHex = (hex, amount) => {
+    const [r, g, b] = hexToRgb(hex);
+    const factor = 1 + amount;
+    const next = [
+      clamp(Math.round(r * factor), 0, 255),
+      clamp(Math.round(g * factor), 0, 255),
+      clamp(Math.round(b * factor), 0, 255),
+    ];
+    return `#${next.map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+  };
+
+  const deepMerge = (base, override) => {
+    if (typeof base !== 'object' || base === null) return override;
+    if (typeof override !== 'object' || override === null) return base;
+    const output = Array.isArray(base) ? [...base] : { ...base };
+    Object.keys(override).forEach((key) => {
+      if (Array.isArray(override[key])) {
+        output[key] = [...override[key]];
+      } else if (typeof override[key] === 'object' && override[key] !== null) {
+        output[key] = deepMerge(base[key] || {}, override[key]);
+      } else {
+        output[key] = override[key];
+      }
+    });
+    return output;
+  };
+
+  const migrateCustomization = (data) => {
+    if (!data || typeof data !== 'object') {
+      return deepMerge({}, defaultCustomization);
+    }
+
+    const hasLegacy = data.branding || data.formStyle || data.layout;
+    if (hasLegacy && !data.baseTokens) {
+      const migrated = deepMerge({}, defaultCustomization);
+      const branding = data.branding || {};
+      const formStyle = data.formStyle || {};
+      migrated.branding.name = branding.name || migrated.branding.name;
+      migrated.branding.tagline = branding.tagline || migrated.branding.tagline;
+      migrated.branding.logoDataUrl = branding.logoDataUrl || migrated.branding.logoDataUrl;
+      migrated.branding.logoLightDataUrl = branding.logoLightDataUrl || migrated.branding.logoLightDataUrl;
+      migrated.branding.logoDarkDataUrl = branding.logoDarkDataUrl || migrated.branding.logoDarkDataUrl;
+      migrated.branding.faviconDataUrl = branding.faviconDataUrl || migrated.branding.faviconDataUrl;
+      migrated.branding.authBackgroundDataUrl = branding.authBackgroundDataUrl || migrated.branding.authBackgroundDataUrl;
+      migrated.baseTokens.colors.primary = branding.primary || migrated.baseTokens.colors.primary;
+      migrated.baseTokens.colors.accent = branding.accent || migrated.baseTokens.colors.accent;
+      migrated.baseTokens.colors.background = branding.background || migrated.baseTokens.colors.background;
+      migrated.baseTokens.spacing.radius.md = branding.radius || migrated.baseTokens.spacing.radius.md;
+      migrated.layoutPrefs.density = branding.density || migrated.layoutPrefs.density;
+      migrated.componentOverrides.button.primary.background = formStyle.buttonColor || migrated.componentOverrides.button.primary.background;
+      migrated.componentOverrides.button.primary.text = formStyle.buttonText || migrated.componentOverrides.button.primary.text;
+      migrated.componentOverrides.input.background = formStyle.inputBackground || migrated.componentOverrides.input.background;
+      migrated.componentOverrides.input.border = formStyle.inputBorder || migrated.componentOverrides.input.border;
+      migrated.layoutPrefs.formSpacing = formStyle.spacing || migrated.layoutPrefs.formSpacing;
+      return migrated;
+    }
+
+    const merged = deepMerge(defaultCustomization, data);
+    merged.schemaVersion = 1;
+    return merged;
+  };
+
+  const validateCustomization = (data) => {
+    const errors = [];
+    if (!data || typeof data !== 'object') {
+      errors.push('Customization muss ein Objekt sein.');
+      return { valid: false, errors };
+    }
+    if (typeof data.schemaVersion !== 'number') {
+      errors.push('schemaVersion fehlt oder ist ungültig.');
+    }
+    if (!data.baseTokens || !data.componentOverrides || !data.layoutPrefs) {
+      errors.push('Basisbereiche fehlen.');
+    }
+    return { valid: errors.length === 0, errors };
+  };
+
+  const applySpacingScale = (values = [], density = 1) => {
+    const base = values.length ? values : defaultCustomization.baseTokens.spacing.paddingScale;
+    base.forEach((value, index) => {
+      const scaled = Math.round(value * density);
+      root.style.setProperty(`--space-${index + 1}`, `${scaled}px`);
+    });
+  };
+
+  const applyThemeToCSSVars = (customization) => {
+    const base = customization.baseTokens;
+    const colors = base.colors;
+    const typography = base.typography;
+    const spacing = base.spacing;
+    const layout = base.layout;
+    const states = base.states;
+
+    root.style.setProperty('--font-sans', typography.fontFamily);
+    root.style.setProperty('--font-size-xs', typography.fontSizes.xs);
+    root.style.setProperty('--font-size-sm', typography.fontSizes.sm);
+    root.style.setProperty('--font-size-base', typography.fontSizes.base);
+    root.style.setProperty('--font-size-lg', typography.fontSizes.lg);
+    root.style.setProperty('--font-size-xl', typography.fontSizes.xl);
+    root.style.setProperty('--font-weight-normal', typography.fontWeights.normal);
+    root.style.setProperty('--font-weight-medium', typography.fontWeights.medium);
+    root.style.setProperty('--font-weight-semibold', typography.fontWeights.semibold);
+    root.style.setProperty('--font-weight-bold', typography.fontWeights.bold);
+    root.style.setProperty('--line-height-tight', typography.lineHeights.tight);
+    root.style.setProperty('--line-height-normal', typography.lineHeights.normal);
+    root.style.setProperty('--line-height-relaxed', typography.lineHeights.relaxed);
+    root.style.setProperty('--letter-spacing-tight', typography.letterSpacing.tight);
+    root.style.setProperty('--letter-spacing-normal', typography.letterSpacing.normal);
+    root.style.setProperty('--letter-spacing-wide', typography.letterSpacing.wide);
+
+    root.style.setProperty('--color-bg', colors.background);
+    root.style.setProperty('--color-surface', colors.surface);
+    root.style.setProperty('--color-surface-muted', adjustHex(colors.surface, -0.04));
+    root.style.setProperty('--color-surface-elevated', colors.surface);
+    root.style.setProperty('--color-text', colors.text);
+    root.style.setProperty('--color-text-muted', colors.textMuted);
+    root.style.setProperty('--color-border', colors.border);
+    root.style.setProperty('--color-accent', colors.primary);
+    root.style.setProperty('--color-accent-strong', adjustHex(colors.primary, -0.18));
+    root.style.setProperty('--color-accent-soft', `rgba(${hexToRgb(colors.primary).join(', ')}, 0.12)`);
+    root.style.setProperty('--color-success', colors.success);
+    root.style.setProperty('--color-warning', colors.warning);
+    root.style.setProperty('--color-danger', colors.danger);
+    root.style.setProperty('--color-info', colors.info);
+    root.style.setProperty('--brand-accent', colors.accent);
+    root.style.setProperty('--focus-ring', colors.focus);
+
+    root.style.setProperty('--radius-sm', `${spacing.radius.sm}px`);
+    root.style.setProperty('--radius-md', `${spacing.radius.md}px`);
+    root.style.setProperty('--radius-lg', `${spacing.radius.lg}px`);
+    root.style.setProperty('--radius-pill', `${spacing.radius.pill}px`);
+
+    root.style.setProperty('--max-content', `${customization.layoutPrefs.containerWidth || layout.containerWidth}px`);
+    root.style.setProperty('--sidebar-width', `${customization.layoutPrefs.sidebarWidth || layout.sidebarWidth}px`);
+
+    applySpacingScale(spacing.paddingScale, customization.layoutPrefs.density || 1);
+
+    const density = customization.layoutPrefs.density || 1;
+    const formSpacing = customization.layoutPrefs.formSpacing || 16;
+    root.style.setProperty('--density-scale', density);
+    root.style.setProperty('--form-gap', `${formSpacing}px`);
+
+    const button = customization.componentOverrides.button;
+    root.style.setProperty('--button-radius', `${button.primary.radius}px`);
+    root.style.setProperty('--button-bg', button.primary.background);
+    root.style.setProperty('--button-text', button.primary.text);
+    root.style.setProperty('--button-border', button.primary.border);
+    root.style.setProperty('--button-shadow', button.primary.shadow);
+    root.style.setProperty('--button-bg-hover', button.primary.hoverBg);
+    root.style.setProperty('--button-bg-active', button.primary.activeBg);
+    root.style.setProperty('--button-bg-disabled', button.primary.disabledBg);
+    root.style.setProperty('--button-text-disabled', button.primary.disabledText);
+
+    root.style.setProperty('--button-secondary-radius', `${button.secondary.radius}px`);
+    root.style.setProperty('--button-secondary-bg', button.secondary.background);
+    root.style.setProperty('--button-secondary-text', button.secondary.text);
+    root.style.setProperty('--button-secondary-border', button.secondary.border);
+    root.style.setProperty('--button-secondary-shadow', button.secondary.shadow);
+    root.style.setProperty('--button-secondary-bg-hover', button.secondary.hoverBg);
+    root.style.setProperty('--button-secondary-bg-active', button.secondary.activeBg);
+    root.style.setProperty('--button-secondary-bg-disabled', button.secondary.disabledBg);
+    root.style.setProperty('--button-secondary-text-disabled', button.secondary.disabledText);
+
+    const input = customization.componentOverrides.input;
+    root.style.setProperty('--input-radius', `${input.radius}px`);
+    root.style.setProperty('--input-bg', input.background);
+    root.style.setProperty('--input-text', input.text);
+    root.style.setProperty('--input-border', input.border);
+    root.style.setProperty('--input-focus', input.focusRing);
+    root.style.setProperty('--input-shadow', input.shadow);
+    root.style.setProperty('--input-placeholder', input.placeholder);
+
+    const card = customization.componentOverrides.card;
+    root.style.setProperty('--card-radius', `${card.radius}px`);
+    root.style.setProperty('--card-bg', card.background);
+    root.style.setProperty('--card-border', card.border);
+    root.style.setProperty('--card-shadow', card.shadow);
+
+    const table = customization.componentOverrides.table;
+    root.style.setProperty('--table-radius', `${table.radius}px`);
+    root.style.setProperty('--table-header-bg', table.headerBg);
+    root.style.setProperty('--table-row-bg', table.rowBg);
+    const zebra = customization.layoutPrefs.zebraStriping;
+    root.style.setProperty('--table-zebra-bg', zebra ? table.zebraBg : table.rowBg);
+    root.style.setProperty('--table-border', table.border);
+
+    const modal = customization.componentOverrides.modal;
+    root.style.setProperty('--modal-radius', `${modal.radius}px`);
+    root.style.setProperty('--modal-bg', modal.background);
+    root.style.setProperty('--modal-shadow', modal.shadow);
+
+    const toast = customization.componentOverrides.toast;
+    root.style.setProperty('--toast-radius', `${toast.radius}px`);
+    root.style.setProperty('--toast-bg', toast.background);
+    root.style.setProperty('--toast-text', toast.text);
+    root.style.setProperty('--toast-shadow', toast.shadow);
+
+    const badge = customization.componentOverrides.badge;
+    root.style.setProperty('--badge-radius', `${badge.radius}px`);
+    root.style.setProperty('--badge-bg', badge.background);
+    root.style.setProperty('--badge-text', badge.text);
+
+    const navbar = customization.componentOverrides.navbar;
+    root.style.setProperty('--navbar-bg', navbar.background);
+    root.style.setProperty('--navbar-border', navbar.border);
+    root.style.setProperty('--navbar-text', navbar.text);
+
+    const sidebar = customization.componentOverrides.sidebar;
+    root.style.setProperty('--sidebar-bg', sidebar.background);
+    root.style.setProperty('--sidebar-border', sidebar.border);
+    root.style.setProperty('--sidebar-text', sidebar.text);
+
+    root.style.setProperty('--state-hover', states.hover);
+    root.style.setProperty('--state-active', states.active);
+    root.style.setProperty('--state-disabled', states.disabled);
+
+    const tableDensity = customization.layoutPrefs.tableDensity;
+    const rowHeight = customization.layoutPrefs.rowHeight;
+    const densityMap = {
+      compact: 10,
+      normal: 14,
+      comfortable: 18,
+    };
+    const rowPadding = densityMap[tableDensity] || densityMap.normal;
+    root.style.setProperty('--table-row-padding', `${rowPadding}px`);
+    root.style.setProperty('--table-row-height', `${rowHeight}px`);
+  };
+
+  const logoForCurrentTheme = (branding) => {
+    if (root.classList.contains('dark')) {
+      return branding.logoDarkDataUrl || branding.logoDataUrl || branding.logoLightDataUrl;
+    }
+    return branding.logoLightDataUrl || branding.logoDataUrl || branding.logoDarkDataUrl;
+  };
+
+  const applyFavicon = (faviconDataUrl) => {
+    if (!faviconDataUrl) return;
+    let favicon = document.querySelector('link[rel~="icon"]');
+    if (!favicon) {
+      favicon = document.createElement('link');
+      favicon.rel = 'icon';
+      document.head.appendChild(favicon);
+    }
+    favicon.href = faviconDataUrl;
+  };
+
+  const applyAuthenticationBackground = (authBackgroundDataUrl) => {
+    document.querySelectorAll('.auth-body').forEach((element) => {
+      element.style.backgroundImage = authBackgroundDataUrl
+        ? `linear-gradient(rgba(246, 247, 251, 0.72), rgba(246, 247, 251, 0.72)), url(${JSON.stringify(authBackgroundDataUrl)})`
+        : '';
+    });
+  };
+
+  const navigationIdForLink = (link) => {
+    const href = link.getAttribute('href');
+    if (!href || href.startsWith('#')) return null;
+    const target = new URL(href, window.location.origin);
+    const relativeTarget = `${target.pathname}${target.search}`;
+    return Object.entries(navigationTargets).find(([, targets]) => targets.includes(relativeTarget))?.[0] || null;
+  };
+
+  const updateNavigationLabel = (link, label) => {
+    const explicitNavigationLabel = link.querySelector('[data-navigation-label]');
+    if (explicitNavigationLabel) {
+      explicitNavigationLabel.textContent = label;
+      return;
+    }
+    const explicitLabel = link.querySelector('.sidebar-text');
+    if (explicitLabel) {
+      explicitLabel.textContent = label;
+      return;
+    }
+    const icon = link.querySelector('.sidebar-link-icon');
+    const labelContainer = icon && icon.parentElement;
+    if (!labelContainer) return;
+    const textNode = Array.from(labelContainer.childNodes).find((node) => (
+      node.nodeType === Node.TEXT_NODE && node.textContent.trim()
+    ));
+    if (textNode) {
+      textNode.textContent = ` ${label}`;
+    }
+  };
+
+  const applyNavigationCustomization = (customization) => {
+    const navigation = customization.navigation || defaultCustomization.navigation;
+    const itemSettings = navigation.items || {};
+    const groupSettings = navigation.groups || {};
+    const sortableContainers = new Set();
+
+    document.querySelectorAll(navigationLinkSelector).forEach((link) => {
+      const itemId = link.dataset.navigationItem || navigationIdForLink(link);
+      if (!itemId || !itemSettings[itemId]) return;
+      link.dataset.navigationItem = itemId;
+      const item = itemSettings[itemId];
+      link.hidden = item.visible === false;
+      link.setAttribute('aria-hidden', item.visible === false ? 'true' : 'false');
+      updateNavigationLabel(link, item.label);
+      if (link.parentElement) sortableContainers.add(link.parentElement);
+    });
+
+    document.querySelectorAll('.app-sidebar .sidebar-panel, .sidebar .sidebar-panel').forEach((panel) => {
+      const title = panel.querySelector('.sidebar-panel-title');
+      if (!title) return;
+      const groupId = panel.dataset.navigationGroup || Object.entries(navigationGroupDefaults).find(([, label]) => (
+        label === title.textContent.trim()
+      ))?.[0];
+      if (!groupId || !groupSettings[groupId]) return;
+      panel.dataset.navigationGroup = groupId;
+      title.textContent = groupSettings[groupId];
+    });
+
+    sortableContainers.forEach((container) => {
+      const links = Array.from(container.children).filter((child) => (
+        child.matches('.sidebar-link') && child.dataset.navigationItem
+      ));
+      links.sort((left, right) => (
+        itemSettings[left.dataset.navigationItem].order - itemSettings[right.dataset.navigationItem].order
+      )).forEach((link) => container.appendChild(link));
+    });
+  };
+
+  const applyBrandingContent = (customization) => {
+    const branding = customization.branding;
+    document.querySelectorAll('[data-brand-name]').forEach((element) => {
+      element.textContent = branding.name || defaultCustomization.branding.name;
+    });
+    document.querySelectorAll('[data-brand-tagline]').forEach((element) => {
+      element.textContent = branding.tagline || defaultCustomization.branding.tagline;
+    });
+    document.querySelectorAll('[data-brand-logo]').forEach((element) => {
+      const logo = logoForCurrentTheme(branding);
+      const icon = element.querySelector('[data-brand-logo-icon]');
+      if (logo) {
+        element.style.backgroundImage = `url(${JSON.stringify(logo)})`;
+        element.style.backgroundPosition = 'center';
+        element.style.backgroundRepeat = 'no-repeat';
+        element.style.backgroundSize = 'cover';
+        if (icon) {
+          icon.style.display = 'none';
+        }
+      } else {
+        element.style.backgroundImage = '';
+        element.style.backgroundPosition = '';
+        element.style.backgroundRepeat = '';
+        element.style.backgroundSize = '';
+        if (icon) {
+          icon.style.display = '';
+        }
+      }
+    });
+    applyFavicon(branding.faviconDataUrl || logoForCurrentTheme(branding));
+    applyAuthenticationBackground(branding.authBackgroundDataUrl);
+    applyNavigationCustomization(customization);
+    if (branding.name && document.title.includes(defaultCustomization.branding.name)) {
+      document.title = document.title.replace(defaultCustomization.branding.name, branding.name);
+    }
+  };
+
+  const applyCustomization = (data) => {
+    const merged = migrateCustomization(data);
+    activeCustomization = merged;
+    applyThemeToCSSVars(merged);
+    applyModeTokens(merged);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => applyBrandingContent(merged), { once: true });
+    } else {
+      applyBrandingContent(merged);
+    }
+    return merged;
+  };
+
+  const getCachedCustomization = () => {
+    const cached = localStorage.getItem(customizationCacheKey);
+    if (!cached) return null;
+    try {
+      return JSON.parse(cached);
+    } catch (error) {
+      console.warn('Customize cache could not be loaded', error);
+      return null;
+    }
+  };
+
+  const normalizeRevisionId = (revisionId) => {
+    const parsed = Number(revisionId);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  };
+
+  const isOlderRevision = (candidateRevision, currentRevision) => (
+    currentRevision !== null && (
+      candidateRevision === null || candidateRevision < currentRevision
+    )
+  );
+
+  const applyCachedCustomization = (payload) => {
+    if (!payload || !payload.customization) return null;
+    const revisionId = normalizeRevisionId(payload.revisionId);
+    if (isOlderRevision(revisionId, activeCustomizationRevision)) return null;
+    const applied = applyCustomization(payload.customization);
+    if (revisionId !== null) {
+      activeCustomizationRevision = revisionId;
+    }
+    return applied;
+  };
+
+  const migrateLegacyCustomization = () => {
+    const legacy = localStorage.getItem(legacyCustomizationKey);
+    if (!legacy) return null;
+    try {
+      const parsed = JSON.parse(legacy);
+      const migrated = migrateCustomization(parsed);
+      localStorage.removeItem(legacyCustomizationKey);
+      setCachedCustomization({ customization: migrated, cachedAt: new Date().toISOString() });
+      return migrated;
+    } catch (error) {
+      console.warn('Legacy customization could not be migrated', error);
+      return null;
+    }
+  };
+
+  const setCachedCustomization = (payload) => {
+    const cached = getCachedCustomization();
+    const revisionId = normalizeRevisionId(payload && payload.revisionId);
+    const cachedRevisionId = normalizeRevisionId(cached && cached.revisionId);
+    const newestRevisionId = activeCustomizationRevision === null
+      ? cachedRevisionId
+      : cachedRevisionId === null
+        ? activeCustomizationRevision
+        : Math.max(activeCustomizationRevision, cachedRevisionId);
+    if (isOlderRevision(revisionId, newestRevisionId)) return false;
+    localStorage.setItem(customizationCacheKey, JSON.stringify(payload));
+    if (revisionId !== null) {
+      activeCustomizationRevision = revisionId;
+    }
+    return true;
+  };
+
+  const loadCustomization = async () => {
+    const loadSequence = ++customizationLoadSequence;
+    let applied = activeCustomization || applyCustomization(defaultCustomization);
+    const legacy = migrateLegacyCustomization();
+    if (legacy) {
+      applied = applyCachedCustomization({ customization: legacy }) || applied;
+    }
+    const cached = getCachedCustomization();
+    applied = applyCachedCustomization(cached) || applied;
+
+    try {
+      const response = await fetch('/api/customize', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
+        const serverData = await response.json();
+        const serverRevisionId = normalizeRevisionId(serverData.revision_id);
+        if (
+          serverData.customization
+          && loadSequence === customizationLoadSequence
+          && !isOlderRevision(serverRevisionId, activeCustomizationRevision)
+        ) {
+          applied = applyCustomization(serverData.customization);
+          if (serverRevisionId !== null) {
+            activeCustomizationRevision = serverRevisionId;
+          }
+          setCachedCustomization({
+            customization: applied,
+            updatedAt: serverData.updated_at,
+            revisionId: serverData.revision_id,
+            cachedAt: new Date().toISOString(),
+          });
+        }
+      }
+    } catch (error) {
+      console.warn('Customize settings could not be loaded', error);
+    }
+
+    return applied;
+  };
+
+  window.InventoryTheme = {
+    toggle() {
+      const next = root.classList.contains('dark') ? 'light' : 'dark';
+      setTheme(next);
+    },
+    set: setTheme,
+  };
+
+  window.InventoryCustomization = {
+    defaults: () => deepMerge({}, defaultCustomization),
+    merge: deepMerge,
+    migrate: migrateCustomization,
+    validate: validateCustomization,
+    apply: applyCustomization,
+    applyThemeToCSSVars,
+    load: loadCustomization,
+    getCached: getCachedCustomization,
+    setCached: setCachedCustomization,
+  };
+
+  const startCustomization = () => {
+    loadCustomization();
+    updateButtons();
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startCustomization, { once: true });
+  } else {
+    startCustomization();
+  }
+  window.addEventListener('storage', (event) => {
+    if (event.key === customizationCacheKey) {
+      loadCustomization();
+    }
+  });
+})();
